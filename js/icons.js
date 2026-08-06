@@ -86,6 +86,13 @@
 
     download: svg('<path d="M12 3v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M7 10l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M4 19h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
 
+    // Added for postpack-h4mv.html's watermarked-export download button
+    // (tracker item for-product-ig-account-live-dreamtube-ai-qij3yn) — a
+    // plain image frame with a small filled corner mark, standing in for
+    // "this export carries the logo watermark" without needing a literal
+    // tiny render of the logo itself at icon size.
+    watermark: svg('<rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="1.8" fill="none"/><circle cx="8.5" cy="9.5" r="1.6" stroke="currentColor" stroke-width="1.6" fill="none"/><path d="M4.5 16.5l4.5-4.5 3 3 3.5-4.5 4 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="16.5" cy="16.5" r="2.3" fill="currentColor" opacity="0.55"/>'),
+
     volumeOn: svg('<path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16.5 8.5a5 5 0 010 7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M19 6a9 9 0 010 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" fill="none"/>'),
 
     volumeMuted: svg('<path d="M4 9v6h4l5 5V4L8 9H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" fill="none"/><path d="M16 9l5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21 9l-5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),

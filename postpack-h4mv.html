@@ -40,6 +40,13 @@
   .pp-copied{ color: var(--accent-growth); font-size:11px; margin-left:2px; align-self:center; opacity:0; transition:opacity .15s; }
   .pp-copied.show{ opacity:1; }
   .pp-empty{ padding:40px 20px; text-align:center; color:var(--text-muted); font-size:13px; }
+  /* Watermarked-export button (tracker item
+     for-product-ig-account-live-dreamtube-ai-qij3yn) — a second, opt-in
+     download action alongside the existing plain .pp-download-btn, NOT a
+     replacement for it (see this feature's own script-block comment for
+     why: the founder's own instruction is that this must not become the
+     default download until he's eyeballed a real watermarked sample). */
+  .pp-wm-error{ color: var(--danger); font-size:11px; margin-left:2px; align-self:center; max-width:100%; }
 </style>
 </head>
 <body>
@@ -193,7 +200,15 @@
         '<div class="pp-actions">' +
           '<button type="button" class="btn btn-ghost pp-copy-btn" data-item-id="' + esc(item.id) + '"><span class="icon"></span>Copy</button>' +
           '<a class="btn btn-ghost pp-download-btn" href="' + esc(item.mediaUrl) + '" download target="_blank" rel="noopener"><span class="icon"></span>Download</a>' +
+          // Watermarked export — images only for now (see the
+          // WATERMARK_VIDEO_NOTE comment below in this same script block
+          // for why video is scoped out of this pass). Opt-in, alongside
+          // the plain Download above, never replacing it.
+          (item.mediaType === 'image'
+            ? '<button type="button" class="btn btn-ghost pp-watermark-btn" data-item-id="' + esc(item.id) + '"><span class="icon"></span>Download (watermark)</button>'
+            : '') +
           '<span class="pp-copied" id="pp-copied-' + esc(item.id) + '">Copied!</span>' +
+          (item.mediaType === 'image' ? '<span class="pp-wm-error" id="pp-wm-error-' + esc(item.id) + '"></span>' : '') +
         '</div>' +
       '</div>' +
     '</div>';
@@ -219,6 +234,166 @@
     Array.prototype.forEach.call(gridEl.querySelectorAll('.vcard-video'), function (v) { lazyVideoObserver.observe(v); });
     Array.prototype.forEach.call(gridEl.querySelectorAll('.pp-copy-btn .icon'), function (el) { el.innerHTML = Icons.copy; });
     Array.prototype.forEach.call(gridEl.querySelectorAll('.pp-download-btn .icon'), function (el) { el.innerHTML = Icons.download; });
+    Array.prototype.forEach.call(gridEl.querySelectorAll('.pp-watermark-btn .icon'), function (el) { el.innerHTML = Icons.watermark; });
+  }
+
+  // --- Watermarked export (tracker item
+  // for-product-ig-account-live-dreamtube-ai-qij3yn) ---------------------
+  //
+  // Founder's watermark call was YES, tasteful corner placement, but with
+  // an explicit gate: this must not become the default/only download
+  // until he's actually looked at one real watermarked export. That gate
+  // is enforced two ways — (1) this is a SEPARATE opt-in button next to
+  // the unchanged plain .pp-download-btn above, never a replacement for
+  // it, and (2) the branch that ships this stays an open, unmerged PR
+  // until he's previewed a real sample (see that PR's own description).
+  //
+  // IMAGES: straightforward and fully implemented below — canvas draw +
+  // logo overlay + canvas.toBlob, all client-side, no server dependency.
+  //
+  // VIDEO (WATERMARK_VIDEO_NOTE): deliberately NOT implemented in this
+  // pass, scoped down rather than shipped half-broken (this repo's build
+  // agent instructions explicitly allow that call when a client-side
+  // re-encode is genuinely unreliable). What was actually investigated,
+  // for whoever picks this up next:
+  //   - The only technique that can burn a persistent overlay into an
+  //     existing MP4 client-side, with no new server dependency, is
+  //     real-time playback into a <canvas> (drawing the logo every frame)
+  //     captured via canvas.captureStream() + MediaRecorder, combined
+  //     with the source <video>'s own captureStream() audio track. This
+  //     takes roughly the video's own playback length to run (fine for
+  //     this app's Veo-generated dream lengths, well under a minute).
+  //   - The blocking problem is OUTPUT FORMAT, not runtime: MediaRecorder
+  //     in Chrome has, as of this writing, only reliable support for
+  //     WEBM output (vp8/vp9 + opus) — Chrome does have an active
+  //     "MP4 container support for MediaRecorder" intent-to-ship
+  //     (H264+AAC), but its rollout/default-on status in a normal Chrome
+  //     install could not be confirmed as stable at build time. Instagram
+  //     feed posts require MP4 or MOV — WEBM is not directly postable
+  //     there (confirmed via a live source check, not memory) — so a
+  //     video watermark button that silently hands back a .webm file
+  //     would produce something the founder often can't actually use for
+  //     the one thing this page exists for.
+  //   - This sandbox's own Playwright/Chromium build has ZERO H.264
+  //     decode support at all (confirmed directly: canPlayType on an
+  //     avc1 mp4 returns "", and this repo's real dream-style mp4 test
+  //     fixture fails to load into a <video> element with
+  //     DEMUXER_ERROR_NO_SUPPORTED_STREAMS) — so even setting format
+  //     concerns aside, a real end-to-end video watermark verification
+  //     against this app's actual H.264 output was NOT possible in this
+  //     environment, only against a synthetic VP8 source (which proved
+  //     the capture/overlay/record mechanics work, not the H.264 path).
+  //   - No ffmpeg/wasm transcoder exists in this repo today, and adding
+  //     one (client-side ffmpeg.wasm, ~25-30MB, worker-based, or a
+  //     server-side ffmpeg dependency in a Netlify Function) is a real
+  //     new-dependency/infra decision this task's own scope explicitly
+  //     didn't call for.
+  //   Recommended follow-up, whenever this gets picked back up: re-check
+  //   Chrome's native MP4-MediaRecorder rollout status first (if it's
+  //   stable/default-on by then, the exact technique above just works,
+  //   no new dependency needed) — only reach for ffmpeg.wasm or a
+  //   server-side encode if that's still not reliably available.
+
+  var LOGO_URL = 'assets/logo-v4-512.png';
+  var WATERMARK_LOGO_SIZE_RATIO = 0.09; // ~9% of the shorter image dimension
+  var WATERMARK_PADDING_RATIO = 0.035;
+  var WATERMARK_OPACITY = 0.82;
+
+  var logoImagePromise = null;
+  function loadLogoImage() {
+    if (!logoImagePromise) {
+      logoImagePromise = new Promise(function (resolve, reject) {
+        var img = new Image();
+        img.onload = function () { resolve(img); };
+        img.onerror = function () { reject(new Error('logo_load_failed')); };
+        img.src = LOGO_URL;
+      });
+    }
+    return logoImagePromise;
+  }
+
+  /** Resolves to a Blob of `mediaUrl`'s image with the logo drawn in the bottom-right corner. */
+  function watermarkImageBlob(mediaUrl) {
+    return fetch(mediaUrl, { mode: 'cors' }).then(function (res) {
+      if (!res.ok) throw new Error('fetch_failed');
+      return res.blob();
+    }).then(function (srcBlob) {
+      return new Promise(function (resolve, reject) {
+        var img = new Image();
+        var objectUrl = URL.createObjectURL(srcBlob);
+        img.onload = function () { URL.revokeObjectURL(objectUrl); resolve(img); };
+        img.onerror = function () { URL.revokeObjectURL(objectUrl); reject(new Error('decode_failed')); };
+        img.src = objectUrl;
+      });
+    }).then(function (img) {
+      return loadLogoImage().then(function (logo) {
+        var canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        var shortSide = Math.min(canvas.width, canvas.height);
+        var logoW = Math.max(24, Math.round(shortSide * WATERMARK_LOGO_SIZE_RATIO));
+        var logoAspect = (logo.naturalWidth && logo.naturalHeight) ? (logo.naturalWidth / logo.naturalHeight) : 1;
+        var logoH = Math.round(logoW / logoAspect);
+        var pad = Math.max(8, Math.round(shortSide * WATERMARK_PADDING_RATIO));
+
+        ctx.save();
+        ctx.globalAlpha = WATERMARK_OPACITY;
+        ctx.drawImage(logo, canvas.width - logoW - pad, canvas.height - logoH - pad, logoW, logoH);
+        ctx.restore();
+
+        return new Promise(function (resolve, reject) {
+          canvas.toBlob(function (outBlob) {
+            if (!outBlob) { reject(new Error('encode_failed')); return; }
+            resolve(outBlob);
+          }, 'image/jpeg', 0.92);
+        });
+      });
+    });
+  }
+
+  function watermarkedFileName(item) {
+    var base = String(item.dreamId || item.id || 'dreamtube-export').replace(/[^a-z0-9_-]+/gi, '-');
+    return base + '-watermarked.jpg';
+  }
+
+  function watermarkErrorMessage(err) {
+    var msg = (err && err.message) || '';
+    if (msg === 'fetch_failed' || msg === 'decode_failed') {
+      return "Couldn't load the source image (cross-origin) — use plain Download instead.";
+    }
+    return "Couldn't create a watermarked copy — use plain Download instead.";
+  }
+
+  function handleWatermarkDownload(btn) {
+    var itemId = btn.getAttribute('data-item-id');
+    var item = allItems.filter(function (it) { return it.id === itemId; })[0];
+    var errorEl = document.getElementById('pp-wm-error-' + itemId);
+    if (errorEl) errorEl.textContent = '';
+    if (!item) return;
+
+    var originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = 'Working…';
+
+    watermarkImageBlob(item.mediaUrl).then(function (blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = watermarkedFileName(item);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+    }).catch(function (err) {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+      if (errorEl) errorEl.textContent = watermarkErrorMessage(err);
+    });
   }
 
   // Copy caption+hashtags (event-delegated on #pp-grid, since its innerHTML
@@ -231,6 +406,9 @@
   // the textarea itself is always there as a manual select-all/copy
   // fallback even if the button's own attempt silently does nothing.
   document.getElementById('pp-grid').addEventListener('click', function (e) {
+    var wmBtn = e.target.closest('.pp-watermark-btn');
+    if (wmBtn) { handleWatermarkDownload(wmBtn); return; }
+
     var btn = e.target.closest('.pp-copy-btn');
     if (!btn) return;
     var itemId = btn.getAttribute('data-item-id');
