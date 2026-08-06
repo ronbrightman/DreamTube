@@ -150,6 +150,19 @@ proceed without stopping to ask, as long as it stays on the branch.
   this and what you saw; if this sandbox has no way to (no `FAL_KEY`, no
   real deploy reachable), say that explicitly rather than letting it go
   unmentioned.
+- **Verify browser-capability claims against current sources, not
+  memory or an old thread.** Found in review on `watermark-postpack-
+  exports` (qij3yn): a scope-out decision was justified by claiming
+  Chrome's MediaRecorder MP4 output was still an unconfirmed
+  intent-to-ship — it had actually shipped and been stable since Chrome
+  114, over a year before the comment was written. The scope-out itself
+  turned out to still be correct for an unrelated reason (this sandbox
+  can't decode H.264 to verify anything real), but the reasoning
+  written into a permanent code comment as settled fact was wrong. When
+  a decision hinges on whether/when a browser API shipped, check it
+  live (`WebSearch`, current MDN/browser release notes, or
+  `X.isTypeSupported(...)`-style runtime checks) rather than trusting
+  training-data recall or an old mailing-list/intent-to-ship thread.
 
 ## Reading and writing tracker.html
 
