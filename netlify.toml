@@ -137,14 +137,13 @@
 # deploying independently; the funnel's existing root address keeps
 # working untouched (live ad traffic points there today).
 #
-# Two rules, ORDER MATTERS (Netlify applies the first matching rule):
-#  1. Bare /go 301s to /go/ first. Without it, a page served AT /go (no
-#     trailing slash) would resolve its relative subresources (the
-#     funnel's js/analytics-config.js) against the site root and 404.
-#     Netlify forwards the query string on a 301 by default, so ad-click
-#     params (fbclid, utm_*) survive the hop.
-#  2. /go/* proxies to the funnel site with :splat carrying the sub-path
-#     (empty for /go/ itself, which serves the funnel's index.html).
+# ONE rule only -- a bare-/go 301 to /go/ was tried first and REMOVED:
+# Netlify normalizes trailing slashes when matching redirect rules, so
+# `from = "/go"` also matched /go/ itself and 301'd it to itself forever
+# (live loop, caught 08-07 minutes after deploy). Instead, /go (bare) is
+# proxied like everything else and the FUNNEL's index.html carries a tiny
+# self-redirect to /go/ (see dreamtube-growth index.html head) so relative
+# subresources always resolve under /go/.
 #
 # force = true is safe here because nothing in this repo lives under /go:
 # no go.html, no go/ directory, no function route (functions are all under
@@ -152,12 +151,6 @@
 # checked against the full repo file listing when added. Keep it that way:
 # never add a top-level file or directory named `go` to this repo.
 # ==========================================================================
-[[redirects]]
-  from = "/go"
-  to = "/go/"
-  status = 301
-  force = true
-
 [[redirects]]
   from = "/go/*"
   to = "https://dreamtubeapp.netlify.app/:splat"
