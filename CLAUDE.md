@@ -31,6 +31,45 @@ knowing this specific codebase.
 This pipeline is run manually / on demand for now — nothing about it is
 scheduled or automatically triggered.
 
+## TRACKER QUEUE IS A HARD GATE (Manager fix, 2026-08-07, founder-backed)
+
+This session repeatedly reported "queue is genuinely empty / staying
+quiet" while the live tracker held 40+ open `[for product]` items,
+several of them founder-urgent — the founder caught it, twice. The
+failure is in HOW the queue is read, so the reading rule is now fixed
+in writing:
+
+1. **THE QUEUE IS**: every open (`done:false`) tracker item whose title
+   carries `[for product]`, PLUS this repo's own open PRs, PLUS the
+   Board's (`board-x7q4.html`) "In flight — PRODUCT" section. Nothing
+   narrower. "No NEW comments since last check" is NOT emptiness — an
+   open item with no Product comment in the last cycle is actionable BY
+   DEFINITION: act on it, or post a one-line status comment ("seen,
+   doing X first"). An uncommented open item older than one cycle is a
+   process failure, full stop (same hard gate Growth has carried since
+   2026-07-28).
+2. **PARSER LANDMINE (the bug that blinded Manager for days, and very
+   likely this session's "identical state" too)**: tracker comment
+   timestamps live in the `timestamp` field — NOT `at`, NOT
+   `createdAt`. Any freshness scan keyed on the wrong field returns
+   "nothing new" forever. Before trusting ANY "no change" conclusion,
+   verify your reader against one comment you know exists.
+3. **"Queue empty" must be PROVEN, never asserted**: it may only be
+   reported together with the number returned by a fresh
+   `get-tracker-items` GET filtered per rule 1 — and that number must
+   actually be zero. If it is not zero, the queue is not empty, and
+   items previously self-classified as "non-actionable" must be
+   re-justified item-by-item in a tracker comment, not silently
+   re-skipped: "Manager-owned" is only true if a Manager comment on
+   that item says so; "gated on founder" is only true if the item
+   carries waitingFor:ron AND the Board shows it to him.
+4. Current founder-priority order on next wake: mood-music candidate
+   generation (2 per mood x 6 — the audition page shows 0 of 12,
+   founder waiting) → claim-erasure race → edit-shows-old-video
+   escalation → dream-vanish refund closure → double-credit
+   reconciliation → social slice 2 → the tracker hygiene close-pass
+   (dozens of shipped items still open).
+
 ## Working with Ron
 
 - Keep replies short and plain — no long technical dumps or internal
