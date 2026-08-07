@@ -11,28 +11,40 @@
 //
 // A DEDICATED store, not folded into tracker-store.js's items list: a
 // content report is a different shape (tied to a specific dream, with a
-// reporter/reason/snapshot) and a different lifecycle (append-only, no
-// priority/waitingFor/done workflow) from tracker.html's own
-// task/idea-with-workflow-state items — forcing it into that schema would
-// mean either dropping fields tracker-store.js doesn't model or growing
-// that file's schema for a use case it was never designed around. This
-// mirrors lib/support-store.js's own reasoning almost exactly (a support
-// message isn't a tracker item either) — same "small single-purpose store"
+// reporter/reason/snapshot) and a different lifecycle (append-only writes,
+// with one narrow later-mutation for the handled marker below — see that
+// section's own comment) from tracker.html's own full priority/waitingFor/
+// done workflow items — forcing it into that schema would mean either
+// dropping fields tracker-store.js doesn't model or growing that file's
+// schema for a use case it was never designed around. This mirrors
+// lib/support-store.js's own reasoning almost exactly (a support message
+// isn't a tracker item either) — same "small single-purpose store"
 // convention, adapted for a different record shape.
 //
 // Backed by a single Netlify Blobs store ("dreamtube-moderation-reports"),
-// ONE KEY ("reports") whose value is the full append-only reports array —
-// same small-record singleton-key pattern as support-store.js's "messages"
-// key. Uses Blobs' default eventual consistency (not strong) — same
-// reasoning as every other Blobs-backed store in this codebase: strong
-// consistency threw BlobsConsistencyError unconditionally in this deploy
-// environment.
+// ONE KEY ("reports") whose value is the full array — same small-record
+// singleton-key pattern as support-store.js's "messages" key. Uses Blobs'
+// default eventual consistency (not strong) — same reasoning as every
+// other Blobs-backed store in this codebase: strong consistency threw
+// BlobsConsistencyError unconditionally in this deploy environment.
 //
 // Report shape: { id, dreamId, dreamOwnerHandle, dreamCaption,
 //   reporterHandle: string|null, reason: string|null,
 //   targetType: 'dream'|'comment', commentId: string|null,
 //   commentText: string|null, commentAuthorHandle: string|null,
-//   createdAt (ISO) }
+//   createdAt (ISO), handled: boolean, dismissedAt: string|null (ISO) }
+//
+// handled/dismissedAt (added for moderation-x7q4.html, tracker item
+// for-product-build-the-moderation-review--sbf5ol) are the founder's own
+// "I've looked at this report" marker — modeled exactly like
+// tracker-store.js's reviewedAt/startedAt precedent: a one-way signal (see
+// markHandled below — there is no un-handle operation), set the moment the
+// founder clicks the review page's dismiss control. Every report written
+// before this field existed simply has no `handled` key at all (not a
+// placeholder `false`) — get-moderation-reports.js needed no change for
+// this (see this file's own COMMENT TARGET TYPE precedent two paragraphs
+// down for why an additive field never requires touching the read side),
+// and moderation-x7q4.html treats a missing `handled` the same as `false`.
 //
 // targetType/commentId/commentText/commentAuthorHandle were ADDED
 // (additively, not a schema rewrite) for Social Layer v2 slice 2 —
@@ -126,4 +138,51 @@ async function appendReport(event, entry) {
   return entry;
 }
 
-module.exports = { STORE_NAME, KEY, getReports, appendReport };
+/**
+ * Marks one existing report `handled` (sets `handled: true` and a real
+ * `dismissedAt` ISO timestamp) by id. Same read-mutate-write-then-verify
+ * shape as appendReport above, and the same one-way-signal idempotency
+ * discipline as tracker-store.js's updateItem: if the report is already
+ * handled, `mutate` returns the array UNCHANGED (not a fresh `dismissedAt`)
+ * so a retry triggered by this call's own eventually-consistent verify-read
+ * never clobbers the original dismiss time. Returns the updated report as
+ * stored, or `null` if no report with that id exists (the caller — see
+ * mark-report-handled.js — turns that into a 404).
+ */
+async function markHandled(event, id) {
+  var updated = null;
+  var alreadyHandled = false;
+  await blobsRetry.retryingWrite(event, STORE_NAME, KEY, {
+    maxAttempts: MAX_WRITE_ATTEMPTS,
+    read: getReports,
+    mutate: function (reports) {
+      var idx = -1;
+      for (var i = 0; i < reports.length; i++) {
+        if (reports[i].id === id) { idx = i; break; }
+      }
+      if (idx === -1) { updated = null; alreadyHandled = false; return reports; }
+      if (reports[idx].handled) {
+        // Already handled — idempotent no-op, leaves the original
+        // dismissedAt untouched (see this function's own doc comment).
+        updated = reports[idx];
+        alreadyHandled = true;
+        return reports;
+      }
+      var next = Object.assign({}, reports[idx], { handled: true, dismissedAt: new Date().toISOString() });
+      updated = next;
+      alreadyHandled = false;
+      var out = reports.slice();
+      out[idx] = next;
+      return out;
+    },
+    verify: function (verifyReports) {
+      if (updated === null) return true; // not found — nothing to verify, stop immediately
+      if (alreadyHandled) return true; // no write to verify — stop immediately
+      var found = (verifyReports || []).filter(function (r) { return r.id === id; })[0];
+      return !!(found && found.handled);
+    }
+  });
+  return updated;
+}
+
+module.exports = { STORE_NAME, KEY, getReports, appendReport, markHandled };
