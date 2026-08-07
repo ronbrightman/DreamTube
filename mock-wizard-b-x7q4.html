@@ -45,6 +45,8 @@
 </div>
 <script>
 var STEPS = [
+  { q:'What did you dream?', sub:'However it comes back to you — we take it from there.', entry:true, opts:[
+    ['🪄','Build it step by step'],['✍️','Write it in your own words'],['🎙️','Speak it — just talk']]},
   { q:'Who was in the dream?', sub:'Pick everyone who was there — more than one is fine.', multi:true, opts:[
     ['🙋','Me'],['👥','Someone I know'],['🕶️','A stranger'],['🐺','An animal or creature'],['🏞️','No people — just a place or thing'],['✨','+ Something else']]},
   { q:'Where did it happen?', sub:'The closest match sets the scene.', opts:[
@@ -102,14 +104,14 @@ function render(){
         return; // multi steps advance via Continue only
       }
       picks[idx] = o.getAttribute('data-label') || o.textContent.trim();
-      if (idx <= 4) setTimeout(next, 260); // auto-advance on every single-select step, style included (founder round 4)
+      if (idx <= 5) setTimeout(next, 260); // auto-advance on every single-select step (entry chooser + style included)
     });
   });
   if (s.recap){
     // Founder fix (mock round 2): show the assembled dream as editable
     // text before anything generates — same as the real wizard's recap.
     var parts = [];
-    var who = picks[0] || 'Me', where = picks[1] || 'somewhere unreal', what = picks[2] || 'flying', mood = picks[3] || 'dreamy';
+    var who = picks[1] || 'Me', where = picks[2] || 'somewhere unreal', what = picks[3] || 'flying', mood = picks[4] || 'dreamy';
     document.getElementById('recap-field').value =
       'I dreamt of ' + who.toLowerCase().replace('me','myself') + ' in ' + where.toLowerCase() +
       ', ' + what.toLowerCase() + ' — it all felt ' + mood.toLowerCase().replace(' & ',' and ') + '.';
