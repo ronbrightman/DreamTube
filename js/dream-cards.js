@@ -179,7 +179,10 @@
       '<div class="vcard-thumb">' + media +
         '<div class="priv' + (d.isPublished ? ' pub' : '') + '">' + (d.isPublished ? 'Public' : 'Private') + '</div>' +
         '<div class="play-indicator icon">' + (opts.playIcon || '') + '</div>' +
-        (d.dur ? '<div class="dur">' + esc(d.dur) + '</div>' : '') +
+        // Duration badge removed (founder, 2026-08-07): every video is the
+        // same ~8s, so the badge was pure noise on every card. d.dur stays
+        // on the record (harmless, and future variable-length videos can
+        // bring the badge back with real information in it).
       '</div>' +
       '<div class="vcard-title" dir="auto">' + esc(d.caption) + '</div>' +
       (metaParts.length ? '<div class="vcard-meta">' + esc(metaParts.join(' · ')) + '</div>' : '') +
