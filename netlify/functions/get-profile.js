@@ -31,11 +31,17 @@
 // same reasoning get-feed.js's own header comment gives for leaving those
 // flags out of its own response).
 //
-// `commentCounts` is a placeholder empty object in THIS slice — slice 2
-// ("comments", not built here) is what will ever populate it, keyed by
-// dream id. Shipped now, empty, so slice 2 only has to fill in a value
-// that's already part of this response's shape rather than also having to
-// widen the shape itself.
+// `commentCounts` — filled in as of Social Layer v2 slice 2 ("comments",
+// docs/SOCIAL_LAYER_V2_DESIGN.md), keyed by dream id, value = that dream's
+// `commentCount` (denormalized onto the shared feed record itself by
+// add-comment.js/delete-comment.js via lib/feed-comment-count.js — see
+// that module's own header comment). Built directly off the ALREADY-FETCHED
+// `dreams` array below rather than a second read against the comments
+// store (lib/comment-store.js) — no extra Blobs round trip needed, since
+// the count already lives on the very feed records this function reads
+// regardless. A dream published before this slice shipped simply has no
+// `commentCount` field yet, which reads as 0 (`d.commentCount || 0`), an
+// honest value (it really does have zero comments), not a placeholder.
 //
 // Handle matching is CASE-INSENSITIVE and '@'-agnostic against each
 // dream's own `ownerHandle` (which carries whatever case the owner's
@@ -90,6 +96,11 @@ exports.handler = async function (event) {
 
     var exists = !!profile || dreams.length > 0;
 
+    // See this file's own header comment for why this is built off
+    // `dreams` directly rather than a second store read.
+    var commentCounts = {};
+    dreams.forEach(function (d) { commentCounts[d.id] = d.commentCount || 0; });
+
     return {
       statusCode: 200,
       headers: CORS_HEADERS,
@@ -98,8 +109,7 @@ exports.handler = async function (event) {
         profile: profile,
         dreams: dreams,
         publishedCount: dreams.length,
-        // Slice 2 seam — see this file's own header comment.
-        commentCounts: {}
+        commentCounts: commentCounts
       })
     };
   } catch (e) {

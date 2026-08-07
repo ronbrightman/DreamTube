@@ -108,12 +108,6 @@
 .dj-action span{ font-size:13px; font-weight:600; color:var(--text-muted); }
 .dj-action.liked .icon{ color:var(--danger); }
 .dj-action.liked span{ color:var(--text-primary); }
-/* Comment-count is a static, non-interactive placeholder in THIS slice
-   (comments themselves are Social Layer v2 slice 2, not built here — see
-   the markup comment below and docs/SOCIAL_LAYER_V2_DESIGN.md's own build
-   order). Visually identical to the other two actions but not a button:
-   no hover/active affordance, no cursor pointer, no click handler wired. */
-.dj-action.dj-action-inert{ cursor:default; }
 .dj-caption{ font-size:14px; line-height:1.5; color:var(--text-primary); margin-top:2px; }
 .dj-caption.clamped{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 /* Reserved interpretation seam (design doc's "state G") — an empty,
@@ -123,6 +117,18 @@
    rather than a visible placeholder box, so this slice ships with no
    visual trace of an unbuilt feature. */
 .dj-interp-seam{ min-height:0; }
+
+/* Comment preview + teaser (Social Layer v2 slice 2 — design doc's own
+   Direction B card spec: "top-2 comment preview lines, 'View all N',
+   'Add a thought…' teaser -> same sheet"). Preview lines are fetched
+   best-effort per card once it's rendered (see loadCommentPreviewFor in
+   the script below) — a fast, low-stakes read; a failure just leaves the
+   preview area empty, the teaser link still opens the full js/comment-sheet.js
+   sheet regardless. */
+.dj-comments-preview{ margin-top:4px; }
+.dj-comment-preview-line{ font-size:13px; line-height:1.5; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dj-comment-preview-line b{ color:var(--text-primary); font-weight:700; }
+.dj-comments-teaser{ margin-top:4px; font-size:13px; color:var(--text-faint); cursor:pointer; min-height:22px; display:flex; align-items:center; }
 
 .u-empty{ padding:34px 24px; text-align:center; color:var(--text-muted); font-size:13.5px; line-height:1.6; }
 .u-empty .btn{ margin-top:16px; display:inline-flex; }
@@ -215,6 +221,7 @@
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/share-sheet.js"></script>
+<script src="js/comment-sheet.js"></script>
 <script>
   var esc = DreamCards.esc;
   function showToast(msg){
@@ -264,14 +271,17 @@
   // explore's full-screen scroll-snap .feed-card) =====
   //
   // SCOPE NOTE: unlike explore.html's feed-card, there is deliberately no
-  // Report/Block ("More") action here in this slice — Social Layer v2
+  // Report/Block ("More") action on the DREAM itself here — Social Layer v2
   // slice 1 is "profile shell + share" only (see docs/
   // SOCIAL_LAYER_V2_DESIGN.md's own build-order section). Every dream
   // rendered here is also reachable via explore.html (same shared feed,
-  // same dream ids), where reporting/blocking already fully works today —
-  // this is a narrower surface for the same content, not a new
+  // same dream ids), where reporting/blocking the DREAM already fully works
+  // today — this is a narrower surface for the same content, not a new
   // unmoderatable one. Worth reconsidering if/when u.html becomes a
   // primary discovery surface rather than a profile/share destination.
+  // (Comments themselves — added in slice 2 — DO carry their own
+  // per-comment Report/Block, inside js/comment-sheet.js's own overflow
+  // menu; that's a different, additive surface from this scope note.)
   function cardHTML(d, isFirst){
     var soundOn = DreamStore.getSoundPref();
     var media = d.videoUrl
@@ -285,21 +295,43 @@
     var playBadge = d.videoUrl
       ? '<div class="dj-play-badge hidden" data-play="'+esc(d.id)+'"><div class="badge-circle">'+Icons.play+'</div></div>'
       : '';
+    var commentCount = d.commentCount || 0;
+    var teaserLabel = commentCount > 0
+      ? ('View all ' + commentCount + (commentCount === 1 ? ' comment' : ' comments'))
+      : 'Add a thought…';
     return '<div class="dj-card" data-id="'+esc(d.id)+'">' +
       '<div class="dj-media">' + media + muteBtn + playBadge + '</div>' +
       '<div class="dj-actions">' +
         '<div class="dj-action'+(d.likedByMe?' liked':'')+'" data-like="'+esc(d.id)+'"><span class="icon">'+(d.likedByMe?Icons.heartFilled:Icons.heartOutline)+'</span><span data-count="'+esc(d.id)+'">'+formatCount(d.likes||0)+'</span></div>' +
-        // Comment count — static, non-interactive placeholder for THIS
-        // slice (see the .dj-action-inert CSS comment above). commentCounts
-        // is an empty object until Social Layer v2 slice 2 ships comments;
-        // this always reads 0 until then, which is honest (there really
-        // are no comments to show yet), not a fake/misleading number.
-        '<div class="dj-action dj-action-inert"><span class="icon">'+Icons.messageCircle+'</span><span>0</span></div>' +
+        // Comment count — real and interactive as of Social Layer v2
+        // slice 2 (js/comment-sheet.js). d.commentCount is denormalized
+        // onto the shared feed record server-side (see
+        // lib/feed-comment-count.js) and comes straight off the raw dream
+        // record get-profile.js already returns.
+        '<div class="dj-action" data-comments="'+esc(d.id)+'"><span class="icon">'+Icons.messageCircle+'</span><span data-comment-count="'+esc(d.id)+'">'+formatCount(commentCount)+'</span></div>' +
         '<div class="dj-action" data-share="'+esc(d.id)+'"><span class="icon">'+Icons.share+'</span><span>Share</span></div>' +
       '</div>' +
       '<div class="dj-caption clamped" dir="auto">'+esc(d.caption)+'</div>' +
       '<div class="dj-interp-seam"></div>' +
+      '<div class="dj-comments-preview" id="dj-comments-preview-'+esc(d.id)+'"></div>' +
+      '<div class="dj-comments-teaser" data-comments-teaser="'+esc(d.id)+'">'+esc(teaserLabel)+'</div>' +
     '</div>';
+  }
+
+  /** Best-effort top-2 newest-first comment preview lines for a card, fetched once it's rendered — design doc's own Direction B card spec. A failure just leaves the preview area empty; the teaser link still opens the full sheet regardless. */
+  function loadCommentPreviewFor(d){
+    if(!d.commentCount) return; // nothing to preview -- skip the network call entirely
+    fetch('/.netlify/functions/get-comments?dreamId=' + encodeURIComponent(d.id))
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        var el = document.getElementById('dj-comments-preview-' + d.id);
+        if(!el) return; // card no longer in the DOM (dehydrated/re-rendered) -- no-op
+        var blocked = DreamStore.getBlockedHandles();
+        var top2 = (data.comments || []).filter(function(c){ return blocked.indexOf(c.handle) === -1; }).slice(0, 2);
+        el.innerHTML = top2.map(function(c){
+          return '<div class="dj-comment-preview-line" dir="auto"><b>' + esc(DreamStore.displayHandle(c.handle)) + '</b> ' + esc(c.text) + '</div>';
+        }).join('');
+      }).catch(function(){ /* best-effort preview -- see this function's own doc comment */ });
   }
 
   // ===== Windowing (design doc's explicit QA note: "reuse vcardVideoObserver-
@@ -386,6 +418,7 @@
       scrollSentinel = null;
     }
     observeVideos();
+    slice.forEach(loadCommentPreviewFor);
   }
 
   function renderDreams(dreams){
@@ -601,8 +634,43 @@
         shareText: 'Check out this dream: "' + dream.caption + '" — create your own on DreamTube!',
         onToast: showToast
       });
+      return;
+    }
+
+    var commentsEl = e.target.closest('[data-comments]') || e.target.closest('[data-comments-teaser]');
+    if(commentsEl){
+      var commentsDreamId = commentsEl.dataset.comments || commentsEl.dataset.commentsTeaser;
+      openCommentSheetFor(commentsDreamId);
     }
   });
+
+  // Social Layer v2 slice 2 — opens js/comment-sheet.js against a specific
+  // dream. Shared by the action-row comment icon and the below-caption
+  // "View all N"/"Add a thought…" teaser (design doc's own Direction B
+  // card spec — both open the SAME sheet).
+  function openCommentSheetFor(dreamId){
+    var dream = findLoadedDream(dreamId);
+    if(!dream) return;
+    CommentSheet.show({
+      dream: dream,
+      currentUser: DreamStore.getCurrentUser(),
+      onRequireLogin: function(){ requireLogin(); },
+      onToast: showToast,
+      onCountChange: function(id, newCount){
+        var d = findLoadedDream(id);
+        if(d) d.commentCount = newCount;
+        var countEl = document.querySelector('[data-comment-count="' + id + '"]');
+        if(countEl) countEl.textContent = formatCount(newCount);
+        var teaserEl = document.querySelector('[data-comments-teaser="' + id + '"]');
+        if(teaserEl){
+          teaserEl.textContent = newCount > 0
+            ? ('View all ' + newCount + (newCount === 1 ? ' comment' : ' comments'))
+            : 'Add a thought…';
+        }
+        if(d) loadCommentPreviewFor(d);
+      }
+    });
+  }
 
   // ===== Kick off the actual load — deliberately the LAST thing this
   // script does, after every function/variable loadProfile (and the

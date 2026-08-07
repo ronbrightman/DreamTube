@@ -29,7 +29,21 @@
 // environment.
 //
 // Report shape: { id, dreamId, dreamOwnerHandle, dreamCaption,
-//   reporterHandle: string|null, reason: string|null, createdAt (ISO) }
+//   reporterHandle: string|null, reason: string|null,
+//   targetType: 'dream'|'comment', commentId: string|null,
+//   commentText: string|null, commentAuthorHandle: string|null,
+//   createdAt (ISO) }
+//
+// targetType/commentId/commentText/commentAuthorHandle were ADDED
+// (additively, not a schema rewrite) for Social Layer v2 slice 2 —
+// report-dream.js's own COMMENT TARGET TYPE header comment has the full
+// "why". This module itself needed no code change for that addition — it
+// already treats `entry` as an opaque, pre-validated record built entirely
+// by its caller (see appendReport's own doc comment), so a wider entry
+// shape passes through unchanged. Every report written before slice 2
+// simply has targetType:'dream' (the field's own default) and null for the
+// three comment-only fields, not a placeholder value; get-moderation-reports.js
+// needed no change either, for the same "opaque passthrough" reason.
 //
 // dreamOwnerHandle/dreamCaption are CLIENT-SUPPLIED SNAPSHOTS, not
 // independently re-verified server-side against the shared feed — same

@@ -1162,6 +1162,47 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .share-sheet-option-label{ font-size:15px; font-weight:700; color:var(--text-primary);}
 .share-sheet-error{ text-align:center; font-size:12px; color:var(--danger); margin-top:10px;}
 
+/* ===== Comment sheet (js/comment-sheet.js) =====
+   Social Layer v2 slice 2 (docs/SOCIAL_LAYER_V2_DESIGN.md, tracker item
+   for-product-build-social-layer-v2-direct-34047c, design doc's own state
+   E). Mounted on both u.html and explore.html — one shared component.
+
+   DELIBERATELY no `overflow`/`max-height` override here on `.comment-sheet`
+   itself — it stays the exact same single scrolling container as every
+   other `.sheet` in this app (see js/comment-sheet.js's own SCROLL SHAPE
+   header comment for why introducing a second, nested scrollable region
+   here would silently break js/sheet-dismiss.js's drag-vs-scroll check).
+   The composer instead pins itself to the bottom of that SAME scroll flow
+   via `position:sticky`. */
+.cs-empty{ padding:28px 4px; text-align:center; color:var(--text-muted); font-size:13.5px; line-height:1.6;}
+.cs-comment{ display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--border);}
+.cs-comment:last-child{ border-bottom:none;}
+.cs-avatar{ width:28px; height:28px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:800; text-transform:uppercase; margin-top:1px;}
+.cs-body{ flex:1; min-width:0;}
+.cs-meta{ display:flex; align-items:baseline; gap:8px; margin-bottom:2px;}
+.cs-handle{ font-weight:700; font-size:13px; color:var(--text-primary); cursor:pointer;}
+.cs-time{ font-size:11.5px; color:var(--text-faint); flex:none;}
+.cs-text{ font-size:13.5px; line-height:1.45; color:var(--text-primary); word-break:break-word; white-space:pre-wrap;}
+/* Kebab button — >=44px tap target via padding/negative-margin (design doc
+   QA checklist explicitly calls this out), not a visually-44px icon. */
+.cs-overflow-wrap{ position:relative; flex:none;}
+.cs-overflow-btn{ width:44px; height:44px; margin:-10px -8px -10px 0; display:flex; align-items:center; justify-content:center; background:none; border:none; color:var(--text-muted); cursor:pointer;}
+.cs-overflow-btn .icon, .cs-overflow-btn svg{ width:18px; height:18px;}
+.cs-overflow-menu{ display:none; position:absolute; right:6px; top:36px; background:var(--surface); border:1px solid var(--border-strong); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.4); overflow:hidden; z-index:5; min-width:140px;}
+.cs-overflow-menu.open{ display:block;}
+.cs-overflow-item{ display:block; width:100%; min-height:44px; padding:0 16px; background:none; border:none; text-align:left; font-family:var(--font-body); font-size:13.5px; font-weight:600; color:var(--text-primary); cursor:pointer;}
+.cs-overflow-item:hover{ background:var(--surface-alt);}
+.cs-overflow-item[data-action="delete"]{ color:var(--danger);}
+
+.cs-composer-wrap{ position:sticky; bottom:0; background:var(--bg-app); padding-top:10px; margin-top:6px; border-top:1px solid var(--border);}
+.cs-composer-row{ display:flex; align-items:flex-end; gap:8px;}
+.cs-composer-textarea{ flex:1; resize:none; border:1px solid var(--border); background:var(--surface); border-radius:16px; padding:10px 14px; font-family:var(--font-body); font-size:13.5px; line-height:1.4; color:var(--text-primary); max-height:72px; overflow-y:hidden;}
+.cs-composer-post{ flex:none; min-width:44px; min-height:44px; border-radius:100px; background:#fff; color:#000; font-weight:800; font-size:13px; border:none; padding:0 18px; cursor:pointer; font-family:var(--font-body);}
+.cs-composer-post:disabled{ opacity:.4; cursor:not-allowed;}
+.cs-composer-counter{ text-align:right; font-size:11px; color:var(--text-faint); margin-top:4px;}
+.cs-composer-counter.warn{ color:var(--danger);}
+.cs-login-row{ display:flex; align-items:center; justify-content:center; min-height:44px; padding:10px 0; font-size:13.5px; font-weight:700; color:var(--accent-trust); cursor:pointer;}
+
 /* ===== "Payment received" resume state (processing.html) =====
    Shown after a successful checkout return, while polling for the
    webhook's token credit (js/purchase-sheet.js's pollForCredit) — the
