@@ -66,12 +66,18 @@ in writing:
    re-skipped: "Manager-owned" is only true if a Manager comment on
    that item says so; "gated on founder" is only true if the item
    carries waitingFor:ron AND the Board shows it to him.
-4. **HEARTBEAT (protocol §3)**: end every real work cycle by appending
+4. **FOUNDER-GATED = FLAGGED AT BIRTH (protocol §5)**: any PR or task
+   that needs the founder's look/decision gets a tracker item with
+   waitingFor:"ron", a `[for ron]` title, and a directly-actionable
+   detail (preview link + steps + the reply that unblocks) AT THE MOMENT
+   it becomes gated — the Board renders these live; unflagged = invisible
+   to the founder by construction.
+5. **HEARTBEAT (protocol §3)**: end every real work cycle by appending
    one `HB <ISO-time> queue=<n> acted=<n> note=<...>` comment to the
    tracker item titled `[HB] product session heartbeat` (create it once
    if missing) — this is how the rest of the portfolio tells "quiet"
    from "down" without waking the founder.
-5. Current founder-priority order on next wake: mood-music candidate
+6. Current founder-priority order on next wake: mood-music candidate
    generation (2 per mood x 6 — the audition page shows 0 of 12,
    founder waiting) → claim-erasure race → edit-shows-old-video
    escalation → dream-vanish refund closure → double-credit

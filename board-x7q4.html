@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>DreamTube — The Board</title>
-<!-- The Founder Board (Manager-maintained, 2026-08-03). ONE page for everything open, by side. Zero scripts — works in any viewer. Replaces waiting-x7q4.html. Updated by Manager every cycle; anything said in chat as "waiting on you / I'll follow up" MUST land here same turn. STANDING RULE (Ron, 08-03): the .sub line stamps the exact refresh time in IDT (TZ=Asia/Jerusalem) — update it on EVERY edit. STANDING RULE (Ron, 08-03): every Waiting-on-RON item carries its exact do-steps INLINE (the .do box) so he can act from this page directly — never a pointer to steps that live somewhere else; if the task needs a tool (password-gated call etc.), build the owner page and link it. -->
+<!-- The Founder Board (Manager-maintained, 2026-08-03). ONE page for everything open, by side. One deliberate script (below): the Waiting-on-RON section is DERIVED LIVE from the tracker's waitingFor:ron flags, so nothing can wait on the founder invisibly again (founder escalation 2026-08-07: three finished PRs sat unseen; hand-curation proved unreliable twice). Everything else stays static and works with JS off. Replaces waiting-x7q4.html. Updated by Manager every cycle; anything said in chat as "waiting on you / I'll follow up" MUST land here same turn. STANDING RULE (Ron, 08-03): the .sub line stamps the exact refresh time in IDT (TZ=Asia/Jerusalem) — update it on EVERY edit. STANDING RULE (Ron, 08-03): every Waiting-on-RON item carries its exact do-steps INLINE (the .do box) so he can act from this page directly — never a pointer to steps that live somewhere else; if the task needs a tool (password-gated call etc.), build the owner page and link it. -->
 <style>
 html{background:#0c0a1a}body{font-family:system-ui,sans-serif;color:#eae7fb;margin:0;padding:18px 14px 60px;max-width:760px;margin-inline:auto;font-size:14px;line-height:1.5}
 h1{font-size:20px;font-weight:800;margin:2px 0 0;color:#fff}
@@ -21,9 +21,31 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-07 10:35 IDT</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-07 12:08 IDT</div>
 
 <h2 class="ron">🔴 Waiting on RON — 1</h2>
+
+<div id="live-ron-queue"><div class="note">Loading the live waiting-on-you list from the tracker…</div></div>
+<script>
+(function(){
+  var box = document.getElementById('live-ron-queue');
+  fetch('/.netlify/functions/get-tracker-items').then(function(r){ return r.json(); }).then(function(data){
+    var items = (data.items || []).filter(function(i){ return !i.done && i.waitingFor === 'ron'; });
+    var h2 = document.querySelector('h2.ron');
+    if (h2) h2.textContent = '🔴 Waiting on RON — ' + items.length + ' (live from the tracker)';
+    if (!items.length) { box.innerHTML = '<div class="donebox">✅ Nothing is waiting on you right now — every open flag is with the workers.</div>'; return; }
+    function esc(s){ var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+    function linkify(s){ return s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>'); }
+    box.innerHTML = items.map(function(i){
+      var title = esc((i.title || '').replace(/^\[for ron\]\s*/i, ''));
+      return '<details class="ron"><summary>' + title + ' <span class="tag new">live</span></summary>' +
+             '<div class="body"><div class="do">' + linkify(esc(i.detail || '')) + '</div></div></details>';
+    }).join('');
+  }).catch(function(){
+    box.innerHTML = '<div class="note">Live list unavailable (offline?) — the curated items below still apply.</div>';
+  });
+})();
+</script>
 
 <div class="donebox">✅ Your three "go"s from this afternoon are <b>MERGED AND LIVE</b> on dreamtube.life: <b>"Dream Meaning"</b> makeover (rename + persona tile grid) · <b>ElevenLabs reading voice</b> — including word captions, which I fixed against a real API call before merging (the preview's caption bug is gone) · <b>Sage offered during generation</b> (the ~4s button delay is filed as a fast-follow). Your "Tell your dream should offer write/record first" note is routed to Product as a design ask — you'll get a mock before it changes. <b>Social slice 1 is merged and live too</b> (your ok + your call: the share button now shows only to the profile's owner, never to visitors); slice 2 (comments) is next with Product.</div>
 

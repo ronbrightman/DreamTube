@@ -69,3 +69,17 @@ as tasks, never let them page the founder.
 - Takeovers: whoever takes over work routed to another session comments
   the takeover ON THAT ITEM within the hour (who, what exactly, what
   remains for the original owner). Routing is a lock.
+
+## 5. Founder-gated work is flagged, or it does not exist (added 2026-08-07, founder escalation)
+
+The moment any work becomes gated on the founder — a preview PR awaiting
+his go, a decision, an account/key only he holds — its owner files (or
+updates) a tracker item with `waitingFor: "ron"`, a title starting
+`[for ron]`, and a `detail` that is DIRECTLY ACTIONABLE: the preview
+link, the exact steps, and the exact reply that unblocks it ("reply
+'comments go'"). For preview PRs this happens AT PR-OPEN TIME, not at
+review time. The founder Board renders every such flag LIVE (no Manager
+edit involved), so an unflagged founder-gated item is invisible to the
+founder BY CONSTRUCTION — three finished PRs sat unseen for a day
+because this depended on hand-curation; it no longer does. Clear the
+flag the moment the founder answers (stale flags destroy the signal).
