@@ -375,6 +375,32 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
           <span>Email saved.</span>
         </div>
         <button class="btn btn-primary btn-block" id="account-save-btn">Save</button>
+
+        <!-- On-demand email verification (tracker item for-product-no-on-
+             demand-way-to-open-ema-ebj04z) -- founder repro 2026-08-07: he
+             dismissed/missed js/email-verify-sheet.js's one-shot "next
+             visit" auto-show (home.html's maybeShowOnNextVisit(), at most
+             once per tab session) and had no other way to reopen it short
+             of triggering another purchase. This row is that on-demand
+             entry point -- same sheet, same shared plumbing (opts.source
+             is analytics-only, see email-verify-sheet.js's show() doc
+             comment), nothing new added to the sheet itself. Hidden by
+             default; shown only for a signed-in account with
+             DreamStore.getAccountEmailVerified() === false -- see
+             refreshVerifyEmailRow() below, called from openAccountSheet()
+             (same "recompute every time Settings opens" convention this
+             sheet already uses for ownerTopupBlock / renderBlockedAccounts
+             just below) and again right after the verify sheet itself
+             closes, so a same-session verification hides this row without
+             needing a full page reload. -->
+        <div class="settings-row" id="verify-email-row" style="display:none; margin-top:10px;">
+          <div class="settings-row-icon icon" id="verify-email-row-icon"></div>
+          <div class="settings-row-text">
+            <div class="settings-row-title">Verify your email</div>
+            <div class="settings-row-sub">Confirm it so you can always get back into your account.</div>
+          </div>
+          <div class="settings-row-chevron icon" id="verify-email-row-chevron"></div>
+        </div>
       </div>
 
       <!-- Morning WhatsApp reminder (tracker item for-product-build-whatsapp-
@@ -774,6 +800,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 <script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
+<script src="js/email-verify-sheet.js"></script>
 <script>
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   // Install-to-home-screen nudge for a real-browser visitor's 2nd+ time on
@@ -807,6 +834,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   document.getElementById('privacy-row-chevron').innerHTML = Icons.chevronDown;
   document.getElementById('terms-row-icon').innerHTML = Icons.check;
   document.getElementById('terms-row-chevron').innerHTML = Icons.chevronDown;
+  document.getElementById('verify-email-row-icon').innerHTML = Icons.mail;
+  document.getElementById('verify-email-row-chevron').innerHTML = Icons.chevronDown;
 
   // ===== FAQ accordion (tracker.html's idea-faq-section item) =====
   // Static content, no backend involvement. Each .faq-item toggles
@@ -1367,6 +1396,39 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
       .catch(function(){ /* best-effort prefill only -- leave the field blank on a network hiccup, same fail-open posture as the owner-check fetch below */ });
   }
 
+  // See the row's own markup comment above (tracker item for-product-no-
+  // on-demand-way-to-open-ema-ebj04z) for the full write-up. Signed-out or
+  // already-verified accounts never see this row.
+  function refreshVerifyEmailRow(){
+    var row = document.getElementById('verify-email-row');
+    if(!row) return;
+    var shouldShow = !!(DreamStore.getCurrentUser() && !DreamStore.getAccountEmailVerified());
+    row.style.display = shouldShow ? 'flex' : 'none';
+  }
+  // Extra listeners (alongside email-verify-sheet.js's own) on the two
+  // elements that close the sheet after it's actually been mounted --
+  // ensureMounted() runs synchronously inside EmailVerifySheet.show(), so
+  // both exist by the time this fires. Wired once per page load (the
+  // sheet's DOM is created once and reused across opens, same as every
+  // other sheet in this codebase), so a same-session verification hides
+  // this row immediately without waiting for Settings to be closed and
+  // reopened.
+  var verifyEmailCloseListenersWired = false;
+  function wireVerifyEmailCloseListeners(){
+    if(verifyEmailCloseListenersWired) return;
+    var doneBtn = document.getElementById('email-verify-done-close-btn');
+    var laterLink = document.getElementById('email-verify-later-link');
+    if(!doneBtn || !laterLink) return; // sheet not mounted yet -- nothing to wire
+    verifyEmailCloseListenersWired = true;
+    doneBtn.addEventListener('click', refreshVerifyEmailRow);
+    laterLink.addEventListener('click', refreshVerifyEmailRow);
+  }
+  document.getElementById('verify-email-row').addEventListener('click', function(){
+    if(!window.EmailVerifySheet) return;
+    EmailVerifySheet.show({ source: 'settings' });
+    wireVerifyEmailCloseListeners();
+  });
+
   function openAccountSheet(){
     var user = DreamStore.getCurrentUser();
     document.getElementById('account-username').value = user ? user.username : '';
@@ -1376,6 +1438,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     document.getElementById('whatsapp-error').textContent = '';
     document.getElementById('whatsapp-success').style.display = 'none';
     loadWhatsappNumber();
+    refreshVerifyEmailRow();
     ownerTopupBlock.style.display = isOwnerAccount ? 'block' : 'none';
     renderBlockedAccounts();
     // Always reopen Settings with the support/feedback compose panel
