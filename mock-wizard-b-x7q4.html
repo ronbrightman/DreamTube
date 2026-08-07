@@ -90,15 +90,23 @@ function render(){
         // Someone reveals an OPTIONAL detail line right under the rows.
         // Never blocks Continue; the real build wires this to the existing
         // Me-character description/photo machinery.
-        var wantsDetail = Array.prototype.some.call(document.querySelectorAll('.opt.sel'), function(x){
+        // Founder round 7: the detail line opens DIRECTLY below the
+        // chosen row, not at the bottom of the list — one per selected
+        // detail-worthy row (Me and Someone each get their own).
+        document.querySelectorAll('.opt').forEach(function(x){
           var l = x.getAttribute('data-label') || '';
-          return l === 'Me' || l === 'Someone I know';
+          if (l !== 'Me' && l !== 'Someone I know') return;
+          var existing = x.nextElementSibling && x.nextElementSibling.classList.contains('custom-in') ? x.nextElementSibling : null;
+          if (x.classList.contains('sel') && !existing){
+            var d = document.createElement('div');
+            d.className = 'custom-in on';
+            d.innerHTML = '<input placeholder="Optional: a few words about how ' + (l === 'Me' ? 'you look' : 'they look') + ' — helps the video match">';
+            x.after(d);
+            if (x === o) d.querySelector('input').focus();
+          } else if (!x.classList.contains('sel') && existing){
+            existing.remove();
+          }
         });
-        var ci = document.getElementById('custom-in');
-        if (ci){
-          ci.classList.toggle('on', wantsDetail);
-          if (wantsDetail) document.getElementById('custom-field').placeholder = 'Optional: a few words about how you/they look — helps the video match';
-        }
       } else {
         document.querySelectorAll('.opt').forEach(function(x){x.classList.remove('sel');});
         o.classList.add('sel');
