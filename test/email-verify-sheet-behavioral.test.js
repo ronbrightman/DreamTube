@@ -168,11 +168,17 @@ test('email-verify-sheet: "Resend code" calls the resend endpoint', async functi
     });
 
     await page.waitForSelector('#email-verify-sheet-overlay.open', { timeout: 4000 });
+    // Opening the sheet now auto-sends a code (founder repro 2026-08-07:
+    // the copy claimed "we sent a code" while nothing had been sent) —
+    // so by the time the sheet is open, one call has already happened.
+    await page.waitForFunction(function () { return true; });
+    var manualBaseline = resendCalls;
+    assert.equal(manualBaseline, 1, 'opening the sheet must itself send a code — the copy promises one');
     await page.click('#email-verify-resend-link');
     await page.waitForFunction(function () {
       return document.getElementById('email-verify-resend-link').textContent.indexOf('Sent') !== -1;
     }, { timeout: 3000 });
-    assert.equal(resendCalls, 1);
+    assert.equal(resendCalls, 2, 'manual Resend still works on top of the auto-send');
   } finally {
     await context.close();
   }
@@ -225,6 +231,31 @@ test('email-verify-sheet: does NOT reopen on this same tab session once already 
 
     await page.waitForTimeout(1800);
     assert.equal(await page.locator('#email-verify-sheet-overlay').count(), 0, 'a tab that already marked this session as offered must stay silent');
+  } finally {
+    await context.close();
+  }
+});
+
+
+test('email-verify-sheet: the on-open auto-send fires ONCE per page load — dismissing and re-opening the sheet does not send again', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    await seedHomeUser(page, { emailVerified: false, password: null });
+    var resendCalls = 0;
+    await page.route('**/.netlify/functions/resend-verification-code', function (route) {
+      resendCalls++;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await page.waitForSelector('#email-verify-sheet-overlay.open', { timeout: 4000 });
+    await page.click('#email-verify-later-link');
+    await page.evaluate(function () { EmailVerifySheet.show({ source: 'test_reopen' }); });
+    await page.waitForSelector('#email-verify-sheet-overlay.open', { timeout: 3000 });
+    await page.waitForTimeout(400);
+    assert.equal(resendCalls, 1, 're-opening in the same page load reuses the already-sent code (manual Resend covers a lost email)');
   } finally {
     await context.close();
   }

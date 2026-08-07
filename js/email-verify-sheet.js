@@ -112,12 +112,30 @@
     document.getElementById('email-verify-sheet-done').style.display = 'none';
   }
 
+  // Opening the sheet must actually SEND a code (founder repro 2026-08-07:
+  // he was shown "We sent a 6-digit code" post-purchase and no email ever
+  // came — the only automatic send was at signup time, possibly days
+  // earlier or never, and the sheet's copy simply lied). One auto-send per
+  // page load: re-opens in the same page reuse the same still-valid code
+  // (the manual Resend link covers a genuinely lost email), so the server's
+  // per-IP daily cap isn't burned by sheet-open churn.
+  var autoSentThisLoad = false;
+  function autoSendOnOpen() {
+    if (autoSentThisLoad) return;
+    autoSentThisLoad = true;
+    if (!window.DreamStore || typeof DreamStore.resendVerificationCode !== 'function') return;
+    DreamStore.resendVerificationCode().then(function (result) {
+      trackLocal('email_verify_auto_send', { ok: !!(result && result.ok) });
+    }).catch(function () { /* the Resend link remains the manual fallback */ });
+  }
+
   /** opts.source — free-text, purely for analytics (e.g. 'next_visit') — which trigger opened this sheet. */
   function show(opts) {
     opts = opts || {};
     ensureMounted();
     currentGen++;
     resetForm();
+    autoSendOnOpen();
     document.getElementById(SHEET_ID).classList.add('open');
     trackLocal('email_verify_sheet_shown', { source: opts.source || null });
     document.getElementById('email-verify-code-input').focus();
