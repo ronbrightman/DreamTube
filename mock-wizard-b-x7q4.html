@@ -45,7 +45,7 @@
 </div>
 <script>
 var STEPS = [
-  { q:'Who was in the dream?', sub:'Pick one — you can add details later.', opts:[
+  { q:'Who was in the dream?', sub:'Pick everyone who was there — more than one is fine.', multi:true, opts:[
     ['🙋','Me'],['👥','Someone I know'],['🕶️','A stranger'],['🐺','An animal or creature'],['🏞️','No people — just a place or thing'],['✨','+ Something else']]},
   { q:'Where did it happen?', sub:'The closest match sets the scene.', opts:[
     ['🏙️','Urban / city'],['🌲','Nature / outdoors'],['🏠','Inside a house'],['🌊','Water / ocean'],['🌌','Sky / space'],['🌀','Somewhere unreal'],['✨','+ Something else']]},
@@ -77,8 +77,15 @@ function render(){
   document.getElementById('cta').textContent = s.wall ? 'Send me my dream' : 'Continue';
   document.querySelectorAll('.opt').forEach(function(o){
     o.addEventListener('click', function(){
-      document.querySelectorAll('.opt').forEach(function(x){x.classList.remove('sel');});
-      o.classList.add('sel');
+      if (s.multi){
+        // Founder round 3: real wizard's subject step is MULTI-select
+        // (Me AND someone known AND a stranger can all be in one dream) —
+        // rows toggle independently, Continue advances.
+        o.classList.toggle('sel');
+      } else {
+        document.querySelectorAll('.opt').forEach(function(x){x.classList.remove('sel');});
+        o.classList.add('sel');
+      }
       var isElse = o.textContent.indexOf('Something else') !== -1;
       var custom = document.getElementById('custom-in');
       if (isElse && custom){
@@ -89,7 +96,11 @@ function render(){
         document.getElementById('custom-field').focus();
         return; // no auto-advance — the user is typing
       }
-      if (custom) custom.classList.remove('on');
+      if (custom && !s.multi) custom.classList.remove('on');
+      if (s.multi){
+        picks[idx] = Array.prototype.map.call(document.querySelectorAll('.opt.sel'), function(x){ return x.getAttribute('data-label'); }).filter(function(l){ return l && l[0] !== '+'; }).join(' and ') || picks[idx];
+        return; // multi steps advance via Continue only
+      }
       picks[idx] = o.getAttribute('data-label') || o.textContent.trim();
       if (idx < 4) setTimeout(next, 260); // auto-advance on single-select steps, Flo-style
     });
