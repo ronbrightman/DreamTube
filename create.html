@@ -1673,21 +1673,25 @@
    * storyText (tracker item for-product-split-prompttext-storytext-
    * f-yt5kc7): assembled.caption above is promptText — camera-direction/
    * style-modifier language, generation-only, never shown to the user as
-   * "their dream" again. Two cases, per the founder's own amendment:
-   *   - buildFreeText non-empty: the user's OWN words are storyText,
-   *     completely verbatim — the chip-derived context is NOT woven in
-   *     here at all (it still rides along in promptText/assembled.caption
-   *     for generation, unchanged). Their sentence stands alone.
-   *   - buildFreeText empty: there's no human sentence to fall back to
-   *     except one built purely from the chip selections. buildDeterministicStory
-   *     gives an immediate, zero-cost, always-available one; style.html's
-   *     own load then opportunistically tries to upgrade it via
-   *     rewrite-dream-story.js (fired as soon as the preview step loads,
-   *     so it's very likely already resolved by the time Generate is
-   *     tapped) — see that file's header comment for why this can't
-   *     literally run "parallel with generation" and still be visible at
-   *     preview time, and style.html's own script for the resolution.
-   *     needsStoryRewrite:true is what tells style.html to attempt that.
+   * "their dream" again.
+   *
+   * Contract CHANGED 08-07 (founder ruling, already shipped in wizard.html's
+   * own Build mode — see that file's computeStoryText doc comment): typed
+   * "Anything to add?" text JOINS the chip-assembled story, it never
+   * REPLACES it — the founder hit the old replace behavior losing the
+   * whole chip story the moment free text was typed. So storyText is
+   * always buildDeterministicStory(chipFields), with the free text (if
+   * any) appended — same shape wizard.html builds. needsStoryRewrite is
+   * now always true for Build mode (it used to be gated on "no free
+   * text" under the old verbatim-replace contract): style.html's own load
+   * opportunistically upgrades this via rewrite-dream-story.js (fired as
+   * soon as the preview step loads, so it's very likely already resolved
+   * by the time Generate is tapped — see that file's header comment for
+   * why this can't literally run "parallel with generation" and still be
+   * visible at preview time), whose promptText input is assembled.caption
+   * — which already carries the free text baked in — so the LLM blends
+   * chip context and the user's own words properly, exactly like
+   * wizard.html's rewrite call does.
    */
   function finishBuildWizard(){
     var subjectKey = 'none';
@@ -1707,12 +1711,13 @@
     var assembled = WizardChips.assembleCaption(Object.assign({}, chipFields, { style: null, freeText: buildFreeText }));
 
     var hasFreeText = !!(buildFreeText && buildFreeText.trim());
-    var storyText = hasFreeText ? buildFreeText.trim() : WizardChips.buildDeterministicStory(chipFields);
+    var storyText = WizardChips.buildDeterministicStory(chipFields) +
+      (hasFreeText ? ' ' + buildFreeText.trim() : '');
 
     DreamStore.setDraft({
       caption: assembled.caption,
       storyText: storyText,
-      needsStoryRewrite: !hasFreeText,
+      needsStoryRewrite: true,
       characterIds: assembled.characterIdsForGeneration,
       sceneryPlace: buildSettingPlaceKey,
       // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
