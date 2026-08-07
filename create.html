@@ -339,7 +339,16 @@
   // no `bt` param / not in a detected webview, the overwhelmingly common
   // case for every normal, non-webview page load.
   DreamStore.consumeSessionTransferTokenFromUrlSync();
-  if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
+  // ?next= carries this page's own current URL (including ?record=1 —
+  // tracker item for-product-speak-path-from-the-wizard-e-ycos08) back
+  // through login.html's own existing ?next= redirect-after-login
+  // mechanism (see that file's own doc comment), so a logged-out Speak
+  // tap doesn't silently drop into the ordinary Build/Write/Record choice
+  // screen post-login instead of actually starting the recording it
+  // promised. Full pathname+search, not just the page name (unlike e.g.
+  // admin.html's static ?next=admin.html — that page has no meaningful
+  // query params on entry, this one does).
+  if(!DreamStore.getCurrentUser()){ location.href = 'login.html?next=' + encodeURIComponent(location.pathname + location.search); }
   DreamStore.maintainSessionTransferUrl();
   // Same "just escaped the webview -- offer the next step" moment
   // processing.html/result.html already use (see js/install-nudge.js's own
