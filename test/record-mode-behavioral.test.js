@@ -275,6 +275,69 @@ test('create.html: without ?record=1, a normal visit still shows the Build/Write
 });
 
 // ===========================================================================
+// Logged-out ?record=1 round-trip through login.html — tracker item
+// for-product-speak-path-from-the-wizard-e-ycos08 (found via the new
+// Layout-B wizard's entry chooser, whose Speak card is create.html?record=1
+// same as this file's other tests, but the gap is pre-existing and equally
+// reachable from any other ?record=1 deep-link, not specific to that
+// branch). Before this fix, create.html's sign-in guard bounced a
+// logged-out visitor to a bare 'login.html' with no ?next= at all, so the
+// record intent was silently dropped -- post-login they landed on the
+// ordinary Build/Write/Record choice screen instead of recording.
+// ===========================================================================
+
+test('create.html: a logged-out ?record=1 visit round-trips the record intent through login.html\'s own ?next= mechanism and starts recording post-login', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await installMediaRecorderMock(context);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    await page.goto(baseUrl + '/create.html?record=1', { waitUntil: 'domcontentloaded' });
+    await page.waitForURL(function (url) { return url.pathname === '/login.html'; }, { timeout: 5000, waitUntil: 'domcontentloaded' });
+    assert.equal(
+      new URL(page.url()).searchParams.get('next'),
+      '/create.html?record=1',
+      'the logged-out redirect must carry the full record=1 intent as ?next=, not drop it'
+    );
+
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      if (!state.accounts) state.accounts = {};
+      state.accounts.speakroundtriptester = { password: 'testpass1', email: 'speakroundtriptester@example.com' };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.fill('#login-username', 'speakroundtriptester');
+    await page.fill('#login-password', 'testpass1');
+    await page.click('#login-submit');
+
+    await page.waitForURL(function (url) { return url.pathname === '/create.html' && url.searchParams.get('record') === '1'; }, { timeout: 5000, waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#create-record[style*="display: flex"]', { timeout: 5000 });
+    var getUserMediaCalls = await page.evaluate(function () { return window.__getUserMediaCalls; });
+    assert.equal(getUserMediaCalls, 1, 'landing back on create.html?record=1 post-login must actually start recording, with no extra tap');
+  } finally {
+    await context.close();
+  }
+});
+
+test('create.html: a logged-out plain visit (no ?record=1) still redirects to login.html with the plain path as ?next=', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForURL(function (url) { return url.pathname === '/login.html'; }, { timeout: 5000, waitUntil: 'domcontentloaded' });
+    assert.equal(new URL(page.url()).searchParams.get('next'), '/create.html', 'a plain logged-out visit must still land back on plain create.html, not a login.html without ?next= at all');
+  } finally {
+    await context.close();
+  }
+});
+
+// ===========================================================================
 // Bug fix coverage — tracker item
 // for-product-bug-founder-high-record-it-f-8ng0nf (founder repro,
 // 2026-07-26 night): "click Record it in the growth funnel -> recording
