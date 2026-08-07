@@ -603,16 +603,20 @@ test('publish-dream: an account with no record on file at all (e.g. a token mint
 
 // ===== Gate list: create-checkout-session-dodo.js =====
 
-test('create-checkout-session-dodo: an UNVERIFIED account cannot create a checkout session (E10) -- no purchases, per the founder\'s explicit instruction', async function () {
+test('create-checkout-session-dodo: an UNVERIFIED account CAN create a checkout session -- founder reversal 2026-08-07, payment never blocks on verification (old E10 gate removed; verification is soft-prompted post-purchase instead)', async function () {
   return withEnv({
     DODO_API_KEY: 'test-dodo-key',
     DODO_PRODUCT_PACK_STARTER300: 'pdt_pack099_test'
   }, async function () {
     var signup = await signUpPasswordless('rhea@example.com');
+    global.fetch = async function () {
+      return new Response(JSON.stringify({ session_id: 'cks_unverified', checkout_url: 'https://checkout.dodopayments.com/cks_unverified' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    };
     var handler = require('../netlify/functions/create-checkout-session-dodo').handler;
     var res = await handler(reqEvent({ body: { email: 'rhea@example.com', pack: 'pack099' } }));
-    assert.equal(res.statusCode, 400);
-    assert.match(JSON.parse(res.body).error, /^E10: email_not_verified/);
+    global.fetch = realFetch;
+    assert.equal(res.statusCode, 200, 'an unverified account must reach checkout -- the money moment never blocks on email verification');
+    assert.ok(JSON.parse(res.body).url);
   });
 });
 

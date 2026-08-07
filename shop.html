@@ -636,18 +636,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         // staying visible offering something the server will keep
         // refusing.
         var isStarterAlreadyUsed = !!(err && err.message && err.message.indexOf('E9') === 0);
-        // E10 email_not_verified (tracker item for-product-build-
-        // passwordless-signup-fo-at2fko's gate list, "no purchases" for an
-        // unverified account) — a real, actionable outcome: unlike every
-        // other rejection here, this one has a real fix the visitor can do
-        // right now, so open the same deferred-verification sheet home.html
-        // uses (js/email-verify-sheet.js) rather than a dead-end toast.
-        var isEmailNotVerified = !!(err && err.message && err.message.indexOf('E10') === 0);
-        if(isEmailNotVerified && window.EmailVerifySheet){
-          EmailVerifySheet.show({ source: 'purchase_blocked' });
-        } else {
-          showToast(isStarterAlreadyUsed ? "That welcome offer's already been used on this account" : "Checkout isn't available right now — try again soon");
-        }
+        // (The old E10 email_not_verified branch lived here — removed
+        // 2026-08-07 with the server gate itself, founder reversal: an
+        // unverified email no longer blocks checkout at all; verification
+        // is prompted on the ?checkout=success return leg instead. See
+        // create-checkout-session-dodo.js's GATE REMOVED comment.)
+        showToast(isStarterAlreadyUsed ? "That welcome offer's already been used on this account" : "Checkout isn't available right now — try again soon");
         if(isStarterAlreadyUsed) loadBalance(false);
       });
   }
@@ -1191,6 +1185,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
       // state — it can't manufacture tokens, since only the webhook ever
       // credits anything.
       startCreditConfirmation(pending, Date.now());
+
+      // ===== Post-purchase soft verification prompt (founder reversal
+      // 2026-08-07) ===== Replaces the removed pre-checkout E10 hard gate
+      // (create-checkout-session-dodo.js's old "no purchases for
+      // unverified accounts" check — see its GATE REMOVED comment for the
+      // full why): verification is now ASKED FOR after the money moment,
+      // never blocking it. Same deferred-verification sheet home.html
+      // uses; it no-ops for verified accounts and dismisses freely — a
+      // buyer who ignores it keeps everything they paid for.
+      try {
+        if(window.EmailVerifySheet && DreamStore.getCurrentUser() && !DreamStore.getAccountEmailVerified()){
+          EmailVerifySheet.show({ source: 'post_purchase' });
+        }
+      } catch(e) { /* the prompt is best-effort — never break the success screen */ }
     } else if(checkout === 'cancelled'){
       // A cancelled attempt went through the exact same "set marker, then
       // redirect to Dodo" step in purchasePack() as a successful one — if

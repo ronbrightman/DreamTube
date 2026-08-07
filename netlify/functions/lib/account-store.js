@@ -140,9 +140,15 @@
 // build" — this is that list, the single source of truth for it; every
 // caller that checks `emailVerified` should point back here rather than
 // re-deriving its own scope):
-//   1. netlify/functions/create-checkout-session-dodo.js — a real-money
-//      purchase requires `emailVerified !== false` on the paying account
-//      (the one gate the founder named explicitly: "no purchases").
+//   1. (REMOVED 2026-08-07, founder reversal) create-checkout-session-
+//      dodo.js no longer gates purchases on `emailVerified` — the founder
+//      hit his own "no purchases" gate live at the payment moment and
+//      overruled it ("payment must never block on verification"). The
+//      ?checkout=success return leg now soft-prompts verification instead
+//      (shop.html + js/email-verify-sheet.js, source 'post_purchase').
+//      Kept as a numbered tombstone so the gate list's history stays
+//      readable; see that function's GATE REMOVED comment for the full
+//      reasoning.
 //   2. netlify/functions/publish-dream.js — publishing a dream into the
 //      shared, cross-account public feed requires `emailVerified !== false`
 //      (the founder's own deferred-verification trigger list literally

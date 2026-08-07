@@ -790,3 +790,42 @@ test('a window that never yields any baseline at all resolves into the retryable
     await context.close();
   }
 });
+
+test('post-purchase soft verification (founder reversal 2026-08-07): an UNVERIFIED buyer sees the email-verify sheet on the ?checkout=success return, a verified buyer never does — and it never blocks the confirmation flow', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await shrinkPollWindow(context, 150, 20000);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, 50);
+
+    // Unverified passwordless-style account: emailVerified false on the
+    // local account entry is what DreamStore.getAccountEmailVerified reads.
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      state.user = { handle: '@shopper', username: 'shopper' };
+      state.accounts = { shopper: { password: null, email: 'shopper@example.com', emailVerified: false } };
+      if (!state.dreams) state.dreams = [];
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#email-verify-sheet-overlay.open', { state: 'attached', timeout: 5000 });
+    assert.ok(true, 'unverified buyer is offered verification AFTER paying, not blocked before');
+
+    // Flip to verified, reload the same success shape: no sheet.
+    await page.evaluate(function () {
+      var state = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+      state.accounts.shopper.emailVerified = true;
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(800);
+    var open = await page.$('#email-verify-sheet-overlay.open');
+    assert.equal(open, null, 'a verified buyer must never see the verification sheet on the success return');
+  } finally {
+    await context.close();
+  }
+});
