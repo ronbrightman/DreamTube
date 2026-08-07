@@ -130,9 +130,25 @@
     --fn-card:rgba(255,255,255,0.08); --fn-line:rgba(255,255,255,0.14);
     --fn-accent-grad:linear-gradient(135deg,#B0A8DC,#9FC6E8 55%,#F3C08C);
     --fn-accent-solid:#7C82C4;
+    /* Flo-layout pill accent (tracker item
+       for-product-founder-picked-layout-b-flo--lks7mj, founder verdict
+       08-07 on mock-wizard-layouts-x7q4.html's `.fB` block) — the pink
+       border+tint pair every selected option row now uses, and what the
+       "now" progress dot highlights with. Values ported verbatim from
+       that mock's own `.fB .opt.sel`/`.fB .dots i.on` rules, the
+       literal source-of-truth spec for this redesign. */
+    --fn-pill-sel-border:#ff8bb3; --fn-pill-sel-bg:rgba(255,139,179,.16);
     --fn-font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,sans-serif;
     --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
-    background:linear-gradient(160deg,#211B33,#14121F 55%,#0A0912);
+    /* Soft gradient backdrop (Flo layout spec) — same purple-toward-black
+       direction as before, just carrying the mock's own richer violet
+       stops (`.fB`'s background:linear-gradient(180deg,#2a2150,#1b1438
+       60%,#141028)) instead of the flatter grey-violet this shell used
+       pre-redesign, so every step (including the free-text step and the
+       signup wall, per the tracker item's "wall... only the visual
+       language changes" instruction) reads as one consistent Flo-style
+       backdrop. */
+    background:linear-gradient(165deg,#2a2150,#1b1438 55%,#0c0a1a);
     font-family:var(--fn-font-body);
     /* #app's own base rule (css/styles.css) only sets min-height:100dvh
        -- a floor, not a cap. .sheet-overlay is position:absolute;inset:0
@@ -155,10 +171,14 @@
   .fn-back{ width:34px; height:34px; border-radius:50%; flex:none; cursor:pointer; background:var(--fn-card); border:1px solid var(--fn-line); color:var(--fn-ink); display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent;}
   .fn-back .icon, .fn-back svg{ width:15px; height:15px;}
   .fn-topbar-spacer{ width:34px; flex:none;}
-  .fn-progress{ flex:1; display:flex; gap:4px;}
-  .fn-progress i{ flex:1; height:3px; border-radius:3px; background:var(--fn-line); display:block;}
-  .fn-progress i.done{ background:var(--fn-ink); opacity:.55;}
-  .fn-progress i.now{ background:var(--fn-ink);}
+  /* Progress DOTS, not a bar (Flo layout spec — mock's `.fB .dots`):
+     renderProgress() below still builds the exact same number of `<i>`
+     elements with the exact same done/now class logic as the old bar did
+     — only these rules changed, not a line of the JS that drives them. */
+  .fn-progress{ flex:1; display:flex; gap:6px; justify-content:center; align-items:center;}
+  .fn-progress i{ width:8px; height:8px; border-radius:99px; background:var(--fn-line); display:block; flex:none; transition:width .15s ease, background .15s ease;}
+  .fn-progress i.done{ background:var(--fn-ink-soft); opacity:.6;}
+  .fn-progress i.now{ background:var(--fn-pill-sel-border); width:22px;}
 
   .fn-screen{ flex:1; display:flex; flex-direction:column; padding:18px 24px calc(24px + env(safe-area-inset-bottom,0px)); position:relative; overflow-y:auto; min-height:0; color:var(--fn-ink);}
 
@@ -169,31 +189,73 @@
   .fn-mini-label:first-child{ margin-top:0;}
   .fn-spacer{ flex:1;}
 
-  .fn-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;}
-  .fn-chip{ padding:9px 15px; border-radius:100px; background:var(--fn-card); border:1px solid var(--fn-line); font-size:13px; font-weight:700; color:var(--fn-ink); cursor:pointer; -webkit-tap-highlight-color:transparent;}
-  .fn-chip.sel{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
+  /* ===== Flo-style option rows (tracker item
+     for-product-founder-picked-layout-b-flo--lks7mj) — single-column,
+     full-width TRUE-PILL rows with a leading circular icon chip, ported
+     verbatim from mock-wizard-layouts-x7q4.html's `.fB .opt`/`.fB .opt
+     .chip`/`.fB .opt.sel` rules (that mock is deleted in this same PR —
+     see the tracker item's own instruction). `.fn-chip-row` switching to
+     flex-direction:column is the whole trick that turns every existing
+     multi-chip step (Setting/Action/Mood, and the Subject step's
+     "other" row) into stacked full-width pills with ZERO changes to any
+     of those steps' own selection/toggle JS — only the chip's own
+     markup gained two new inner spans (.chip-emoji/.chip-label, see
+     chipEmoji()/the render*() functions below), selection state is
+     still driven by the exact same .sel class toggle every step already
+     had. ===== */
+  .fn-chip-row{ display:flex; flex-direction:column; gap:12px; margin-bottom:18px;}
+  .fn-chip{
+    display:flex; align-items:center; gap:14px; text-align:left;
+    background:var(--fn-card); border:1.5px solid var(--fn-line); border-radius:999px;
+    padding:11px 18px 11px 11px; font-size:15px; font-weight:700; color:var(--fn-ink);
+    cursor:pointer; -webkit-tap-highlight-color:transparent;
+    transition:border-color .12s ease, background .12s ease;
+  }
+  /* Leading circular icon chip — a filled ~38px circle holding one literal
+     emoji per option (see WIZARD_CHIP_EMOJI below). Tinted pink regardless
+     of selection state, exactly the mock's own `.fB .opt .chip` (which is
+     never itself the thing that changes on select — only the pill's own
+     border+background do, via .fn-chip.sel below). */
+  .fn-chip .chip-emoji{ width:38px; height:38px; border-radius:999px; flex:none; background:var(--fn-pill-sel-bg); display:flex; align-items:center; justify-content:center; font-size:19px; line-height:1;}
+  .fn-chip .chip-label{ flex:1; min-width:0;}
+  .fn-chip.sel{ border-color:var(--fn-pill-sel-border); background:var(--fn-pill-sel-bg); color:#fff;}
 
   /* "+N more" / "Show less" expander chip (Action step curation — tracker
      item for-product-wizard-step-3-has-too-many-c-lrg1ct). Dashed/
      transparent so it reads as a disclosure affordance, not a selectable
      option — same visual language as css/styles.css's .char-chip-add
-     "+ Add character" tile elsewhere in this app, not an invented look. */
-  .fn-chip-more{ padding:9px 15px; border-radius:100px; background:transparent; border:1px dashed var(--fn-line); font-size:13px; font-weight:700; color:var(--fn-ink-soft); cursor:pointer; -webkit-tap-highlight-color:transparent;}
-  .fn-chip-more:hover{ border-color:var(--fn-accent-solid); color:var(--fn-ink);}
+     "+ Add character" tile elsewhere in this app, not an invented look.
+     Stretches full-width automatically now that .fn-chip-row is a column
+     flex container (align-items defaults to stretch), matching the pill
+     rows around it instead of standing out as a leftover wrapped chip. */
+  .fn-chip-more{ padding:12px 18px; border-radius:999px; background:transparent; border:1px dashed var(--fn-line); font-size:13.5px; font-weight:700; color:var(--fn-ink-soft); cursor:pointer; text-align:center; -webkit-tap-highlight-color:transparent;}
+  .fn-chip-more:hover{ border-color:var(--fn-pill-sel-border); color:var(--fn-ink);}
 
-  /* Character chips (Subject step) reuse create.html/start.html's exact
-     .char-chip/.char-chip-add classes, dark-themed to match this shell —
-     see start.html's own identical override block (its 'night' phase) for
-     the same reasoning. */
-  #app.funnel-app .char-chip{ background:var(--fn-card); border-color:var(--fn-line); color:var(--fn-ink);}
-  #app.funnel-app .char-chip .chip-check{ border-color:var(--fn-ink-faint);}
-  #app.funnel-app .char-chip.selected{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
-  #app.funnel-app .char-chip.selected .chip-check{ background:#fff; border-color:#fff;}
-  #app.funnel-app .char-chip.selected .chip-check .icon{ opacity:1; color:var(--fn-accent-solid);}
+  /* Character chips (Subject step, the wizard's one multi-select step —
+     see renderSubject's own design note) reuse create.html/start.html's
+     exact .char-chip/.char-chip-add classes/JS UNCHANGED (still toggled
+     via the same .selected class, same click handlers) — only restyled
+     here, scoped to this page alone via #app.funnel-app, to the same
+     full-width true-pill row shape as every other step's .fn-chip, per
+     the tracker item's "multi-select steps keep their existing semantics
+     in the same new row shape" instruction. No per-character emoji
+     exists (these are user-named/described, not a fixed taxonomy like
+     SUBJECT_CHIPS) — the existing .chip-check circle (already a real
+     leading circular element, just enlarged to the same ~38px chip size)
+     stands in as the leading icon slot instead, filling solid pink+check
+     once selected. */
+  #app.funnel-app .char-chip-row{ display:flex; flex-direction:column; gap:12px;}
+  #app.funnel-app .char-chip{ background:var(--fn-card); border-color:var(--fn-line); border-width:1.5px; border-radius:999px; color:var(--fn-ink); gap:14px; padding:9px 18px 9px 9px; font-size:15px;}
+  #app.funnel-app .char-chip .chip-check{ width:38px; height:38px; border-radius:999px; background:var(--fn-pill-sel-bg); border-color:transparent;}
+  #app.funnel-app .char-chip .chip-check .icon{ width:16px; height:16px;}
+  #app.funnel-app .char-chip.selected{ background:var(--fn-pill-sel-bg); color:var(--fn-ink); border-color:var(--fn-pill-sel-border);}
+  #app.funnel-app .char-chip.selected .chip-check{ background:var(--fn-pill-sel-border); border-color:var(--fn-pill-sel-border);}
+  #app.funnel-app .char-chip.selected .chip-check .icon{ opacity:1; color:#fff;}
+  #app.funnel-app .char-chip .chip-edit-area{ flex:1; min-width:0;}
   #app.funnel-app .char-chip .chip-edit{ color:var(--fn-ink-faint);}
-  #app.funnel-app .char-chip.selected .chip-edit{ color:#fff; opacity:.75;}
-  #app.funnel-app .char-chip-add{ background:transparent; border:1px dashed var(--fn-line); color:var(--fn-ink-soft);}
-  #app.funnel-app .char-chip-add:hover{ border-color:var(--fn-accent-solid); color:var(--fn-ink);}
+  #app.funnel-app .char-chip.selected .chip-edit{ color:var(--fn-ink); opacity:.75;}
+  #app.funnel-app .char-chip-add{ display:flex; align-items:center; justify-content:center; gap:10px; border-radius:999px; padding:12px 18px; background:transparent; border:1px dashed var(--fn-line); color:var(--fn-ink-soft);}
+  #app.funnel-app .char-chip-add:hover{ border-color:var(--fn-pill-sel-border); color:var(--fn-ink);}
   /* .sheet/.sheet-handle/.sheet-title are DELIBERATELY not overridden here
      anymore (unlike the old light "dawn" theme, which needed a light
      override) -- css/styles.css's own base .sheet rules already resolve
@@ -214,7 +276,7 @@
   textarea.fn-field, input.fn-field{ background:var(--fn-card); border:1px solid var(--fn-line); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:var(--fn-ink); font-size:15px; width:100%; margin-bottom:12px; display:block;}
   textarea.fn-field{ resize:none; line-height:1.5;}
   textarea.fn-field::placeholder, input.fn-field::placeholder{ color:var(--fn-ink-faint);}
-  textarea.fn-field:focus, input.fn-field:focus{ outline:2px solid var(--fn-accent-solid); border-color:transparent;}
+  textarea.fn-field:focus, input.fn-field:focus{ outline:2px solid var(--fn-pill-sel-border); border-color:transparent;}
 
   .fn-field-pw-wrap{ position:relative; margin-bottom:12px;}
   .fn-field-pw-wrap .fn-field{ margin-bottom:0; padding-right:46px;}
@@ -248,7 +310,7 @@
   .fn-switch input{ opacity:0; width:0; height:0;}
   .fn-switch .fn-switch-track{ position:absolute; inset:0; background:var(--fn-line); border-radius:100px; transition:.15s; cursor:pointer;}
   .fn-switch .fn-switch-track:before{ content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.15s; box-shadow:0 1px 3px rgba(0,0,0,.25);}
-  .fn-switch input:checked + .fn-switch-track{ background:var(--fn-accent-grad);}
+  .fn-switch input:checked + .fn-switch-track{ background:var(--fn-pill-sel-border);}
   .fn-switch input:checked + .fn-switch-track:before{ transform:translateX(18px);}
 
   .fn-microcopy{ font-size:12.5px; color:var(--fn-ink-faint); margin:-8px 0 16px; line-height:1.5;}
@@ -373,6 +435,62 @@
   }
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
+
+  // ===================================================================
+  // Chip emoji lookup (tracker item
+  // for-product-founder-picked-layout-b-flo--lks7mj) — the Flo layout's
+  // leading circular icon chip needs one literal emoji per option.
+  // js/wizard-chips.js's own header comment explicitly documents "no
+  // per-chip icons yet" as a deliberately-deferred gap (no honest SVG
+  // match in js/icons.js's existing library) — this map is exactly that
+  // follow-up, but kept HERE (wizard.html-local), not added to
+  // js/wizard-chips.js itself, since that module is also required
+  // as-is by create.html's own separate "Build it" retrofit (out of
+  // scope for this visual-only redesign — see that file's own header
+  // comment) and this task's own instructions are explicit: don't touch
+  // the shared taxonomy's shape, add new data instead. Keyed by each
+  // chip's existing `key` (SUBJECT_CHIPS/SETTING_PLACE_CHIPS/
+  // ACTION_CHIPS/MOOD_CHIPS — the Style step keeps its own
+  // .sc-icon/Icons.palette system untouched, see renderStyleStep, so it
+  // has no entries here). `other` (every list's "+ Something else" chip)
+  // deliberately shares one entry — same open-ended meaning everywhere.
+  // Mood's six real entries are the mock's own literal worked example
+  // (mock-wizard-layouts-x7q4.html's `.fB` MOOD row), copied verbatim as
+  // the source of truth; every other list's entries are this build's own
+  // best-literal pick per option — see the build report for the couple
+  // of judgment calls flagged there (e.g. 'falling' has no single
+  // unambiguous "falling" emoji in wide use, so a falling-into-a-hole
+  // pictograph was chosen instead).
+  // ===================================================================
+  var WIZARD_CHIP_EMOJI = {
+    // Subject (SUBJECT_CHIPS) — 'me'/'someone' are listed for
+    // completeness but never actually render through this lookup: those
+    // two resolve to real staged characters via the .char-chip system
+    // instead (see renderSubjectChips), which has no per-character
+    // taxonomy to key an emoji off. Only stranger/animal/none/other
+    // render as plain .fn-chip pills and actually use this map.
+    me: '🙋', someone: '👥', stranger: '👤', animal: '🐾', none: '🏞️',
+    // Setting / place (SETTING_PLACE_CHIPS)
+    urban: '🏙️', nature: '🌳', house: '🏠', water: '🌊', sky: '🌌', unreal: '🌀',
+    // Action (ACTION_CHIPS)
+    flying: '🦅', running: '🏃', falling: '🕳️', exam: '📝', late: '⏰', trying: '🔁',
+    newroom: '🚪', child: '🧒', exploring: '🧭', calm: '🧘', magical: '🪄', meeting: '🤝',
+    // Mood (MOOD_CHIPS) — verbatim from the founder-approved mock's own
+    // MOOD example (mock-wizard-layouts-x7q4.html's `.fB` frame).
+    peaceful: '🕊️', joyful: '😊', dreamy: '🌫️', mysterious: '🔮', tense: '😨', epic: '🏔️',
+    // Shared across every list's open-ended escape hatch.
+    other: '✨',
+    // Setting step's separate Time-of-day chips (DreamStore.getDraft()'s
+    // sceneryTime field — 'Day'/'Night' literally, not part of
+    // SETTING_PLACE_CHIPS) — not from wizard-chips.js's taxonomy at all,
+    // but the same Flo pill row shape applies to this row too.
+    Day: '☀️', Night: '🌙'
+  };
+  function chipEmoji(key){ return WIZARD_CHIP_EMOJI[key] || WIZARD_CHIP_EMOJI.other; }
+  /** Standard Flo-pill option row markup: a leading circular emoji chip + label, sharing one .fn-chip/.sel contract every existing per-step click handler already reads via classList/dataset — see this section's own header comment. */
+  function chipOptHtml(dataAttr, key, label){
+    return '<span class="fn-chip" data-' + dataAttr + '="' + key + '"><span class="chip-emoji">' + chipEmoji(key) + '</span><span class="chip-label">' + esc(label) + '</span></span>';
+  }
 
   // ===== Facebook Login — return-leg markers (screen-13 parity, tracker
   // item for-product-wizard-signup-wall-is-the-ol-lt1l9j) =====
@@ -838,10 +956,10 @@
       '<div class="fn-headline">Who’s the dream about?</div>' +
       '<div class="char-chip-row" id="subject-chip-row"></div>' +
       '<div class="fn-chip-row" id="subject-other-row">' +
-        '<span class="fn-chip" data-subj-other="stranger">A stranger</span>' +
-        '<span class="fn-chip" data-subj-other="animal">An animal or creature</span>' +
-        '<span class="fn-chip" data-subj-other="none">No people — just a place/thing</span>' +
-        '<span class="fn-chip" data-subj-other="other">+ Something else</span>' +
+        chipOptHtml('subj-other', 'stranger', 'A stranger') +
+        chipOptHtml('subj-other', 'animal', 'An animal or creature') +
+        chipOptHtml('subj-other', 'none', 'No people — just a place/thing') +
+        chipOptHtml('subj-other', 'other', '+ Something else') +
       '</div>' +
       '<div class="fn-other-reveal" id="subject-other-reveal" style="display:none;">' +
         '<input class="fn-field" id="subject-other-input" placeholder="Who (or what) is this dream about?" dir="auto">' +
@@ -895,15 +1013,15 @@
 
   function renderSetting(el){
     var chips = WizardChips.SETTING_PLACE_CHIPS.map(function(c){
-      return '<span class="fn-chip" data-setting-place="' + c.key + '">' + esc(c.label) + '</span>';
+      return chipOptHtml('setting-place', c.key, c.label);
     }).join('');
     el.innerHTML =
       '<div class="fn-eyebrow">Step 2 of 5</div>' +
       '<div class="fn-headline">Where does it take place?</div>' +
       '<div class="fn-mini-label">Time of day</div>' +
       '<div class="fn-chip-row" id="setting-time-row">' +
-        '<span class="fn-chip" data-scenery-time="Day">Day</span>' +
-        '<span class="fn-chip" data-scenery-time="Night">Night</span>' +
+        chipOptHtml('scenery-time', 'Day', 'Day') +
+        chipOptHtml('scenery-time', 'Night', 'Night') +
       '</div>' +
       '<div class="fn-mini-label">Place</div>' +
       '<div class="fn-chip-row" id="setting-place-row">' + chips + '</div>' +
@@ -972,7 +1090,7 @@
     var expanded = actionExpanded || moreChips.some(function(c){ return c.key === actionKey; });
 
     function chipHtml(c){
-      return '<span class="fn-chip" data-action="' + c.key + '">' + esc(c.label) + '</span>';
+      return chipOptHtml('action', c.key, c.label);
     }
     var chipsHtml = defaultChips.map(chipHtml).join('');
     if(moreChips.length){
@@ -1063,7 +1181,7 @@
 
   function renderMood(el){
     var chips = WizardChips.MOOD_CHIPS.map(function(c){
-      return '<span class="fn-chip" data-mood="' + c.key + '">' + esc(c.label) + '</span>';
+      return chipOptHtml('mood', c.key, c.label);
     }).join('');
     el.innerHTML =
       '<div class="fn-eyebrow">Step 4 of 5</div>' +

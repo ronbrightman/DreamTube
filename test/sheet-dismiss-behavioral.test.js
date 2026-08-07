@@ -1083,7 +1083,40 @@ test('wizard.html character sheet: #app stays capped and the sheet still has a c
     var appHeight = await page.evaluate(function () { return document.getElementById('app').getBoundingClientRect().height; });
     assert.ok(appHeight <= 844, '#app.funnel-app must stay capped at the real viewport even once #fnScreen\'s content is deliberately inflated, got ' + appHeight);
 
-    await page.click('#subj-add-other');
+    // Dispatched programmatically rather than via a real Playwright
+    // page.click() (which auto-scrolls the target into view first) --
+    // same reasoning, and same fix, as create.html's own copy of this
+    // test just above (see its "legitimately confused by this test's
+    // own artificial 1400px spacer" comment). Root-caused via a real
+    // repro during the wizard Flo-pill redesign (tracker item
+    // for-product-founder-picked-layout-b-flo--lks7mj): Playwright's
+    // real click() scrolls #fnScreen just enough to bring #subj-add-
+    // other into view using the browser's own "nearest edge" heuristic,
+    // which lands the button at a DIFFERENT on-screen Y every time the
+    // row's own height changes (it moved from ~592px pre-redesign to
+    // ~448px post-redesign here, purely because the Flo pills are
+    // taller) -- and post-redesign that landed only ~23px above the
+    // subsequent tap-outside point (box.y-10), well inside
+    // sheet-dismiss.js's real, deliberate SAME_TAP_RADIUS_PX (48px)
+    // same-spot re-tap guard (see that file's own header comment),
+    // causing this test's own dismiss tap to be swallowed as a
+    // probable duplicate of the opening tap. Confirmed via a targeted
+    // Playwright repro that this Y is an artifact of the synthetic
+    // spacer + Playwright's scroll-into-view specifically: on the real,
+    // uninflated page (no spacer), #subj-add-other renders 260px+ away
+    // from the sheet's eventual position on BOTH the old and new
+    // layout -- nowhere near the guard radius -- so this was never a
+    // real user's tap-then-dismiss geometry, just this test's own
+    // programmatic-scroll side effect landing in a different (and, in
+    // the new layout, coincidentally much tighter) spot. Dispatching
+    // the click directly opens the sheet identically (same click
+    // listener, see wizard.html's #subj-add-other wiring) without
+    // moving #fnScreen's scroll position, so the test still genuinely
+    // exercises "does the sheet render/dismiss correctly once #app is
+    // capped" (what this test is actually about) without depending on
+    // an incidental, ever-narrowing pixel gap between two unrelated
+    // click targets.
+    await page.evaluate(function () { document.getElementById('subj-add-other').click(); });
     await waitForSheetSettled(page, '#sheet-character-overlay');
     var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
     assert.ok(box.y > 0 && box.y < 844, 'the character sheet must render within the real viewport (y between 0 and 844), got y=' + box.y + ' -- if this is a large negative number, the sheet is STILL nested inside #fnScreen\'s own scrollable box rather than mounted directly on #app');
