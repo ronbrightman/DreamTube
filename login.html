@@ -207,6 +207,24 @@
   // bottom nav so nothing reachable from here is lost).
   var nextParam = (new RegExp('[?&]next=([^&]*)').exec(location.search) || [])[1];
   var nextUrl = nextParam ? decodeURIComponent(nextParam) : 'home.html';
+  // Round 9 (08-07 bug-hunt finding #4): a brand-new visitor who picked
+  // "Speak it" on the wizard's entry chooser arrives here via create.html's
+  // login gate with the record intent in `next` (create.html?record=1 —
+  // the shape #37 threads through login), and was being greeted with
+  // "Welcome back" — a returning-user login wall for someone who has
+  // never had an account, signup demoted to a footer link. PRESENTATION-
+  // ONLY fix: that arrival defaults into this page's EXISTING signup mode
+  // (isSignup — same fields, same DreamStore.signup call, same toggle;
+  // zero auth-logic changes) with the copy framed around recording, and
+  // the login path one tap away via the unchanged "Already have an
+  // account?" toggle. Scoped to visitors with NO local account history —
+  // a device that has held an account before plausibly IS a returning
+  // user and keeps the login-first default (same
+  // DreamStore.hasLocalAccountHistory signal wizard.html's entry guard
+  // uses). An explicit ?mode=signup still wins independently, as always.
+  var recordIntent = nextUrl.indexOf('create.html') !== -1 && /[?&]record=1/.test(nextUrl);
+  var recordSignupFirst = recordIntent && !DreamStore.hasLocalAccountHistory();
+  if(recordSignupFirst && !isSignup) isSignup = true;
   var heading = document.getElementById('auth-heading');
   var sub = document.getElementById('auth-sub');
   var toggle = document.getElementById('auth-toggle');
@@ -215,9 +233,18 @@
   var forgotLink = document.getElementById('forgot-link');
 
   function syncAuthUI(){
-    heading.textContent = isSignup ? 'Create your account' : 'Welcome back';
+    // Record-intent arrivals get recording-framed signup copy (see
+    // recordSignupFirst above); everything else is byte-identical to the
+    // pre-round-9 copy. The framing follows the MODE, not the arrival —
+    // toggling to "Log in" shows the normal login copy, and toggling back
+    // re-frames for recording again.
+    heading.textContent = isSignup
+      ? (recordIntent ? 'Sign up to record your dream' : 'Create your account')
+      : 'Welcome back';
     sub.textContent = isSignup
-      ? 'Your dreams turned into videos — private by default, shared only if you choose to.'
+      ? (recordIntent
+        ? 'Speak your dream out loud and we’ll turn it into a video — your account is where it gets saved.'
+        : 'Your dreams turned into videos — private by default, shared only if you choose to.')
       : 'Log in to keep making dreams.';
     toggle.innerHTML = isSignup ? 'Already have an account? <b>Log in</b>' : 'New here? <b>Sign up</b>';
     emailField.style.display = isSignup ? 'block' : 'none';

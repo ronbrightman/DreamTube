@@ -489,3 +489,29 @@ test('persistedMood does NOT change prompt or story assembly -- a skipped mood s
   var story = WizardChips.buildDeterministicStory({ actionKey: 'flying', moodKey: WizardChips.DEFAULT_MOOD });
   assert.match(story, /feeling dreamy and surreal/, 'the deterministic story is likewise unaffected');
 });
+
+// ── joinStorySentences (round 9, 08-07 live bug hunt #3) ──────────────────
+// The shared sentence-cased chips+freetext join — one implementation for
+// wizard.html and create.html's Build-it (same never-drift charter as the
+// chip tables). Deliberately dumb: punctuation + capitalization only.
+var joinCases = [
+  // [base, extra, expected, label]
+  ['I was flying, feeling dreamy and surreal.', 'the sea was made of glass',
+    'I was flying, feeling dreamy and surreal. The sea was made of glass.',
+    'lowercase, unterminated addition gets capitalized + final period (the founder-visible bug shape)'],
+  ['I was flying, feeling dreamy and surreal', 'the sea was made of glass.',
+    'I was flying, feeling dreamy and surreal. The sea was made of glass.',
+    'unterminated base gains its period; already-terminated addition untouched'],
+  ['I was falling.', 'Then I woke up!', 'I was falling. Then I woke up!',
+    'already-proper addition passes through byte-identical'],
+  ['I was falling…', 'so strange', 'I was falling… So strange.',
+    'ellipsis counts as terminal punctuation on the base'],
+  ['I was falling.', '', 'I was falling.', 'empty addition returns the base alone'],
+  ['', 'just this', 'Just this.', 'empty base returns only the cased addition'],
+  ['I was falling.', '   the wind sang   ', 'I was falling. The wind sang.', 'addition is trimmed before casing']
+];
+joinCases.forEach(function (c) {
+  test('joinStorySentences: ' + c[3], function () {
+    assert.equal(WizardChips.joinStorySentences(c[0], c[1]), c[2]);
+  });
+});

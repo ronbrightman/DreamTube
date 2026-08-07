@@ -220,6 +220,18 @@ function networkFirst(request, offlineFallbackUrl) {
     if (response && response.status === 200 && response.type === 'basic') {
       var responseToCache = response.clone();
       caches.open(CACHE_NAME).then(function (cache) {
+        // Cache keyed by the request URL as-is. Netlify serves the same
+        // page at both /wizard.html and /wizard (extensionless), so a
+        // visitor who has hit both shapes holds two cache entries for one
+        // page — DELIBERATELY not normalized (round 9): navigations here
+        // are network-first, so online behavior is identical either way;
+        // the only effect is a possible offline-fallback miss on the
+        // shape they didn't visit, which degrades to ./offline.html —
+        // exactly the designed offline experience. The rewriting that
+        // MINTED /wizard-shaped links is off as of the same commit
+        // (netlify.toml [build.processing.html] pretty_urls=false), and
+        // CACHE_VERSION rotates per deploy, so stray extensionless
+        // entries age out on their own.
         return cache.put(request, responseToCache);
       }).catch(function () { /* caching is best-effort -- must never break the real response */ });
     }

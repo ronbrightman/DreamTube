@@ -465,3 +465,51 @@ test('start.html: a normal (no mode=record) visitor still sees the original scre
     await context.close();
   }
 });
+
+// ===========================================================================
+// Round 9 (08-07 live bug hunt #4): a brand-new visitor who picked "Speak
+// it" on wizard.html's entry chooser used to land here on a "Welcome back"
+// LOGIN wall — returning-user framing for someone with no account, signup
+// demoted to a footer link. login.html now defaults a record-intent
+// arrival (?next=/create.html?record=1) WITH no local account history into
+// its existing signup mode, with recording-framed copy. Presentation only:
+// same fields, same DreamStore calls, same toggle — the round-trip test
+// above (which seeds an account first, so it keeps login-first) is the
+// proof the auth flow itself is untouched.
+// ===========================================================================
+
+test('login.html: a record-intent arrival on a FRESH browser (no account history) renders signup-first with recording-framed copy, login one tap away — while the same arrival WITH account history keeps "Welcome back" login-first', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    // Fresh browser, record intent -> signup-first, recording framing.
+    await page.goto(baseUrl + '/login.html?next=' + encodeURIComponent('/create.html?record=1'), { waitUntil: 'domcontentloaded' });
+    assert.match(await page.locator('#auth-heading').textContent(), /Sign up to record your dream/, 'a fresh record-intent visitor must see recording-framed SIGNUP copy, never "Welcome back"');
+    assert.equal(await page.locator('#login-email').isVisible(), true, 'signup mode (email field) must be the default for this arrival');
+    assert.match(await page.locator('#auth-toggle').textContent(), /Already have an account/, 'login must stay one tap away as the secondary path');
+    // The toggle still swaps to plain login mode — auth flow untouched.
+    await page.click('#auth-toggle');
+    assert.match(await page.locator('#auth-heading').textContent(), /Welcome back/, 'toggling to login must show the normal login copy');
+
+    // Same arrival with existing local account history -> login-first,
+    // exactly as before round 9 (that device plausibly IS a returning user).
+    await page.evaluate(function () {
+      var raw = localStorage.getItem('dreamtube_state_v1');
+      var state = raw ? JSON.parse(raw) : {};
+      if (!state.accounts) state.accounts = {};
+      state.accounts.historyholder = { password: 'testpass1', email: 'historyholder@example.com' };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+    await page.goto(baseUrl + '/login.html?next=' + encodeURIComponent('/create.html?record=1'), { waitUntil: 'domcontentloaded' });
+    assert.match(await page.locator('#auth-heading').textContent(), /Welcome back/, 'a device with account history keeps the login-first default');
+
+    // A plain, no-intent login visit is byte-identical to before.
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    assert.match(await page.locator('#auth-heading').textContent(), /Welcome back/, 'plain login.html is unchanged');
+  } finally {
+    await context.close();
+  }
+});
