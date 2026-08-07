@@ -29,6 +29,18 @@
 // deleting a dream already removes every comment/report attached to it
 // without re-checking permission per attached item.
 //
+// KNOWN NARROW RACE (accepted, not eliminated — same posture as this
+// codebase's other documented read-modify-write races): idsToDelete is
+// computed from ONE snapshot read of `comments` below, then handed to
+// commentStore.deleteComments, which does its own fresh read internally. A
+// reply landing in that window survives the cascade (not in idsToDelete)
+// but is left pointing at a parentId that will never render again, and its
+// earlier +1 to commentCount is never offset. Unlike this file's other RMW
+// races this doesn't self-heal on retry; narrow enough (needs a reply to
+// land in the same instant its parent is being deleted) that a full fix —
+// recomputing the cascade set from deleteComments' own fresh read — is
+// deferred rather than blocking this PR.
+//
 // commentCount SEMANTICS: the denormalized feed counter counts the WHOLE
 // comment tree (top-level + replies), not just top-level rows — see
 // add-comment.js's own +1-per-post (fires identically for a reply) and this
