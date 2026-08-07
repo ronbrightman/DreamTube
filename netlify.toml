@@ -121,3 +121,45 @@
 # a real backlog at this app's current traffic.
 [functions."send-pending-first-dream-emails"]
   schedule = "* * * * *"
+
+# ==========================================================================
+# /go/* -- serve the marketing ads funnel under this site's own domain
+# (https://dreamtube.life/go/), so paid-ad visitors can land and stay on
+# dreamtube.life end-to-end instead of hopping origins mid-funnel.
+#
+# The funnel is its OWN Netlify site (repo ronbrightman/dreamtube-growth,
+# deployed at https://dreamtubeapp.netlify.app) -- these rules don't copy
+# anything into this repo, they PROXY: status 200 + a full URL `to` is
+# Netlify's documented cross-site rewrite
+# (https://docs.netlify.com/manage/routing/redirects/rewrites-proxies/),
+# so the browser's address bar stays on dreamtube.life/go/... while
+# Netlify's CDN fetches the response from the funnel site. Both sites keep
+# deploying independently; the funnel's existing root address keeps
+# working untouched (live ad traffic points there today).
+#
+# Two rules, ORDER MATTERS (Netlify applies the first matching rule):
+#  1. Bare /go 301s to /go/ first. Without it, a page served AT /go (no
+#     trailing slash) would resolve its relative subresources (the
+#     funnel's js/analytics-config.js) against the site root and 404.
+#     Netlify forwards the query string on a 301 by default, so ad-click
+#     params (fbclid, utm_*) survive the hop.
+#  2. /go/* proxies to the funnel site with :splat carrying the sub-path
+#     (empty for /go/ itself, which serves the funnel's index.html).
+#
+# force = true is safe here because nothing in this repo lives under /go:
+# no go.html, no go/ directory, no function route (functions are all under
+# /.netlify/functions/), so this prefix cannot shadow any app page --
+# checked against the full repo file listing when added. Keep it that way:
+# never add a top-level file or directory named `go` to this repo.
+# ==========================================================================
+[[redirects]]
+  from = "/go"
+  to = "/go/"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/go/*"
+  to = "https://dreamtubeapp.netlify.app/:splat"
+  status = 200
+  force = true
