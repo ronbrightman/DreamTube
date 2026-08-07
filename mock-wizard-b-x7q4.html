@@ -1,0 +1,83 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Wizard — Layout B mockup</title>
+<!-- Founder mockup (2026-08-07): the FULL wizard step-through in the chosen
+     Layout B (Flo pattern) — real steps, real option copy, tappable
+     front-to-back. Non-functional beyond navigation: no draft, no signup,
+     no analytics. DELETE when the real Layout-B wizard build merges. -->
+<style>
+  html{background:#0c0a1a}
+  body{font-family:system-ui,sans-serif;margin:0;color:#f2eefc;min-height:100vh;
+    background:linear-gradient(180deg,#2a2150,#1b1438 55%,#141028)}
+  .wrap{max-width:420px;margin:0 auto;padding:18px 18px 120px;position:relative;min-height:100vh;box-sizing:border-box}
+  .top{display:flex;align-items:center;gap:10px;margin-bottom:18px}
+  .back{width:38px;height:38px;border-radius:99px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer;flex:none}
+  .dots{display:flex;gap:6px;justify-content:center;flex:1}
+  .dots i{width:8px;height:8px;border-radius:99px;background:#463d78;transition:all .2s}
+  .dots i.on{background:#ff8bb3;width:22px}
+  .dots i.done{background:#8f7bdc}
+  h2{font-size:23px;font-weight:800;margin:6px 0 4px;text-align:center;color:#fff}
+  .sub{color:#b7aede;font-size:13.5px;text-align:center;margin:0 0 20px}
+  .opt{display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.14);border-radius:999px;padding:12px 16px;margin-bottom:11px;font-size:16px;font-weight:600;color:#f2eefc;cursor:pointer;transition:all .12s}
+  .opt .chip{width:38px;height:38px;border-radius:99px;background:rgba(255,139,179,.16);display:flex;align-items:center;justify-content:center;font-size:19px;flex:none}
+  .opt.sel{border-color:#ff8bb3;background:rgba(255,139,179,.16)}
+  .opt.ghost{opacity:.75;font-weight:500}
+  textarea{width:100%;box-sizing:border-box;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.14);border-radius:22px;color:#fff;font-size:16px;font-family:inherit;padding:16px 18px;min-height:110px;resize:none;outline:none}
+  .cta{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;width:min(384px,calc(100vw - 36px));background:linear-gradient(90deg,#ff8bb3,#b783ff);color:#fff;font-weight:800;font-size:17px;text-align:center;border-radius:999px;padding:16px;cursor:pointer;box-shadow:0 12px 30px -8px rgba(255,139,179,.45)}
+  .cta.dim{opacity:.45;pointer-events:none}
+  .skip{text-align:center;color:#8f88b3;font-size:13.5px;margin-top:4px;cursor:pointer;text-decoration:underline}
+  .step{display:none}.step.on{display:block}
+  /* wall */
+  .veil{border-radius:22px;background:radial-gradient(70% 90% at 50% 0%,rgba(183,131,255,.35),transparent 70%),rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.12);padding:18px;text-align:center;margin-bottom:16px}
+  .veil .pulse{width:52px;height:52px;margin:4px auto 10px;border-radius:99px;background:radial-gradient(circle,#ffd9a0,#b783ff);animation:pu 2.2s ease-in-out infinite}
+  @keyframes pu{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.12);opacity:1}}
+  .veil b{display:block;font-size:16px;margin-bottom:3px}
+  .veil span{color:#cfc8ea;font-size:13px;font-style:italic}
+  input[type=email]{width:100%;box-sizing:border-box;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.14);border-radius:999px;color:#fff;font-size:16px;padding:14px 18px;outline:none;margin-bottom:12px}
+  .fb{display:flex;align-items:center;justify-content:center;gap:10px;background:#1877f2;border-radius:999px;padding:13px;font-weight:700;font-size:15.5px;margin-bottom:12px;cursor:pointer}
+  .or{display:flex;align-items:center;gap:12px;color:#8f88b3;font-size:11px;font-weight:800;letter-spacing:.08em;margin:2px 0 12px}
+  .or:before,.or:after{content:'';flex:1;height:1px;background:rgba(255,255,255,.14)}
+</style></head><body><div class="wrap">
+  <div class="top"><div class="back" id="back">‹</div><div class="dots" id="dots"></div><div style="width:38px"></div></div>
+  <div id="steps"></div>
+  <div class="cta" id="cta">Continue</div>
+</div>
+<script>
+var STEPS = [
+  { q:'Who was in the dream?', sub:'Pick one — you can add details later.', opts:[
+    ['🙋','Me'],['👥','Someone I know'],['🕶️','A stranger'],['🐺','An animal or creature'],['🏞️','No people — just a place or thing'],['✨','+ Something else']]},
+  { q:'Where did it happen?', sub:'The closest match sets the scene.', opts:[
+    ['🏙️','Urban / city'],['🌲','Nature / outdoors'],['🏠','Inside a house'],['🌊','Water / ocean'],['🌌','Sky / space'],['🌀','Somewhere unreal'],['✨','+ Something else']]},
+  { q:'What was happening?', sub:'', opts:[
+    ['🕊️','Flying or floating'],['🏃','Running / being chased'],['🫂','Meeting someone'],['🗺️','Exploring somewhere new'],['🪄','Something magical happened'],['🧘','A calm, still moment'],['✨','+ Something else']]},
+  { q:'How did the dream feel?', sub:'This shapes your video’s music and light.', opts:[
+    ['🕊️','Peaceful'],['😊','Joyful'],['🌫️','Dreamy & surreal'],['🔮','Mysterious'],['😨','Tense or scary'],['🏔️','Epic & awe-inspiring']]},
+  { q:'Pick your dream’s style', sub:'', opts:[
+    ['🎨','Cartoon'],['🎬','Cinematic'],['🌸','Anime'],['📷','Realistic']]},
+  { q:'Anything to add?', sub:'A few extra words — totally optional.', free:true },
+  { q:'Where should we send your first dream?', sub:'', wall:true }
+];
+var idx = 0;
+function render(){
+  var dots = STEPS.map(function(_,i){ return '<i class="'+(i<idx?'done':i===idx?'on':'')+'"></i>'; }).join('');
+  document.getElementById('dots').innerHTML = dots;
+  var s = STEPS[idx], html = '<div class="step on"><h2>'+s.q+'</h2>'+(s.sub?'<p class="sub">'+s.sub+'</p>':'<div style="height:8px"></div>');
+  if (s.opts) html += s.opts.map(function(o,i){ return '<div class="opt'+(o[1][0]==='+'?' ghost':'')+'" data-i="'+i+'"><span class="chip">'+o[0]+'</span>'+o[1]+'</div>'; }).join('');
+  else if (s.free) html += '<textarea placeholder="Anything else about your dream…"></textarea><p class="skip">Skip</p>';
+  else if (s.wall) html += '<div class="veil"><div class="pulse"></div><b>Your dream is forming…</b><span>“I was flying over a quiet sea, feeling weightless.”</span></div>'+
+    '<div class="fb">📘 Continue with Facebook</div><div class="or">OR</div>'+
+    '<input type="email" placeholder="you@email.com"><div style="color:#8f88b3;font-size:12px;text-align:center;margin-bottom:4px">Free to start, no card — we email your dream the moment it’s ready.</div>';
+  html += '</div>';
+  document.getElementById('steps').innerHTML = html;
+  document.getElementById('cta').textContent = s.wall ? 'Send me my dream' : 'Continue';
+  document.querySelectorAll('.opt').forEach(function(o){
+    o.addEventListener('click', function(){
+      document.querySelectorAll('.opt').forEach(function(x){x.classList.remove('sel');});
+      o.classList.add('sel');
+      if (idx < 4) setTimeout(next, 260); // auto-advance on single-select steps, Flo-style
+    });
+  });
+}
+function next(){ if (idx < STEPS.length-1){ idx++; render(); } }
+document.getElementById('cta').addEventListener('click', next);
+document.getElementById('back').addEventListener('click', function(){ if (idx>0){ idx--; render(); } });
+render();
+</script></body></html>
