@@ -1712,6 +1712,50 @@
   InterpretExperience._tapOverlayLabel = tapOverlayLabel;
   InterpretExperience._preparingCaptionText = preparingCaptionText;
 
+  // ── Scroll-lock release safety net (tracker item
+  //    for-product-bug-founder-video-08-07-resu-f4u8zy, founder screen
+  //    recording: result.html sometimes becomes entirely unscrollable —
+  //    swiping down only rubber-bands into Safari's pull-to-refresh bubble,
+  //    intermittently). Root cause: open() (below) is the ONLY place in
+  //    this whole app that locks document.body.style.overflow — every
+  //    OTHER overlay/sheet on result.html (.player-overlay, .sheet-overlay,
+  //    .modal-overlay) is a position:fixed/absolute layer that goes
+  //    pointer-events:none when closed, so a stuck `.open` class there is
+  //    at worst a visibly-stuck overlay, never an invisible scroll block —
+  //    confirmed by reading every such overlay's CSS/JS on this page; this
+  //    module is the sole scroll-lock owner. close() already releases the
+  //    lock correctly on its three explicit triggers (topbar X, the
+  //    post-reading Close link, the error-state Close link) — the gap is
+  //    every OTHER way the page can go away while the lock is held: real
+  //    navigation elsewhere, and critically iOS Safari's native edge-swipe
+  //    back gesture, which does not run this page's click handlers and can
+  //    freeze the page into the back/forward cache (bfcache) exactly as it
+  //    stood — lock still on — to be restored verbatim on a later visit,
+  //    with no fresh page load to ever reset it.
+  //
+  //    `pagehide` is the standard, portable event for "this page is about
+  //    to be hidden, possibly for bfcache storage" — it fires for both a
+  //    real unload AND a bfcache-store, on iOS Safari too (unlike
+  //    `beforeunload`, which iOS Safari does not reliably fire on
+  //    gesture-driven navigation). Releasing the lock here — via the SAME
+  //    `close()` every other dismiss path already uses, not a second
+  //    bespoke reset — means a bfcache-restored copy of this page can never
+  //    come back locked. `pageshow`'s `persisted:true` case below is pure
+  //    defense-in-depth for the should-be-impossible case a restore
+  //    happens anyway with the lock still set (e.g. an already-frozen
+  //    bfcache entry from before this fix shipped) — same "release
+  //    unconditionally, in one centralized place" principle this comment
+  //    block opened with, just covering the one path `close()` itself
+  //    can't reach after the fact.
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', function () {
+      if (session) close();
+    });
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted) document.body.style.overflow = '';
+    });
+  }
+
   if (typeof window !== 'undefined') window.InterpretExperience = InterpretExperience;
   if (typeof module !== 'undefined' && module.exports) module.exports = InterpretExperience;
 })();
