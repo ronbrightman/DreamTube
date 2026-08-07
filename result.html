@@ -1661,13 +1661,44 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   })();
 
   // ===== Client-side "frame 1" thumbnail capture (tracker item
-  // for-product-dream-ready-email-real-first-qr9fbj, founder request) =====
+  // for-product-dream-ready-email-real-first-qr9fbj, founder request;
+  // cross-origin-taint root-cause fix per tracker item
+  // for-product-p1-regression-evidence-found-7lbwkx, 2026-08-07) =====
   // Backs a real image in the "your dream is ready" retention email
   // (instead of its flat colored placeholder banner) — see
   // js/store.js's DreamStore.saveThumbnailBestEffort for the upload/
   // local-state/sync half of this feature; this IIFE owns only the
-  // DOM-specific bit (drawing the already-decoded <video> frame to a
-  // <canvas>) since that can't live in store.js.
+  // DOM-specific bit (drawing a decoded video frame to a <canvas>) since
+  // that can't live in store.js.
+  //
+  // ROOT CAUSE of the original bug (confirmed via a real headless-
+  // Chromium repro, not theory): dream.videoUrl is very often
+  // cross-origin under the hood — video-file.mjs 302-redirects to fal's
+  // own raw CDN (fal.media) whenever the media exceeds an 18MB threshold
+  // (see media-rehost.js / video-file.mjs's own comments, commit
+  // dc0e34b), and standard veo3.1 720p/8s/audio-on clips routinely
+  // exceed that, so this is the COMMON case. Drawing a cross-origin
+  // media element to a <canvas> with no `crossOrigin` attribute ALWAYS
+  // taints the canvas and makes toDataURL() throw SecurityError —
+  // regardless of whether the remote server even sends
+  // Access-Control-Allow-Origin — because CORS-mode loading has to be
+  // requested BEFORE the browser starts loading the resource. The old
+  // code drew the real, VISIBLE #result-video (which never sets
+  // crossOrigin, and must never start — see below) to canvas, so this
+  // fired silently on essentially every real dream and the catch block
+  // swallowed it every time.
+  //
+  // THE FIX: capture from a SEPARATE, detached <video> element created
+  // only for this attempt, with crossOrigin='anonymous' set before .src.
+  // #result-video (the real playback element) is NEVER touched by this
+  // IIFE — no crossOrigin, no src changes, nothing. This is deliberate
+  // and non-negotiable: naively adding crossOrigin to the existing
+  // playback element would make the ENTIRE video fail to load whenever
+  // the remote CDN doesn't send CORS headers (unverifiable from this
+  // sandbox), trading a cosmetic missing-thumbnail bug for a much worse
+  // broken-playback regression. This detached element can fail its own
+  // CORS-mode load instead — same honest silent no-op as before, never
+  // worse, and playback is completely unaffected either way.
   //
   // Owner-only (isMyDream) — a viewer who isn't this dream's own account
   // must never trigger a capture here: DreamStore.saveThumbnailBestEffort
@@ -1680,35 +1711,112 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // alone: 'loadeddata' only guarantees the frame at currentTime 0 is
   // decoded, and a generated video's very first frame is sometimes
   // black/blank (a real, observed class of "first frame" issue, not
-  // hypothetical). The <video> above already autoplays muted/looped the
-  // instant it has a src (see the ambient-preview IIFE just above), so by
-  // the time 'timeupdate' reports currentTime past a small threshold, a
-  // genuine mid-clip frame is already the one actually decoded and on
-  // screen — captured with zero visible seek/jump, since nothing is being
-  // manipulated that autoplay wasn't already doing on its own. If
-  // autoplay is blocked for any reason, currentTime never advances and
-  // this simply never fires — an honest degrade, same as every other
-  // best-effort step in this feature.
+  // hypothetical). The trigger is still gated on the REAL #result-video's
+  // own 'timeupdate' (proof that autoplay is actually advancing in this
+  // browser at all) before the detached capture element is even created —
+  // if autoplay is blocked for any reason, this never fires, an honest
+  // degrade same as every other best-effort step in this feature. The
+  // detached capture element then applies the SAME "real decoded frame,
+  // not just metadata" discipline independently against its own
+  // currentTime/readyState, since it has its own separate load/decode
+  // race against the real element.
   (function(){
     var video = document.getElementById('result-video');
     var CAPTURE_AFTER_SECONDS = 0.1;
+    var CAPTURE_TIMEOUT_MS = 6000;
     var attempted = false;
+
+    function runCapture(){
+      // A SEPARATE, detached <video> used ONLY for this capture attempt —
+      // never #result-video above. crossOrigin must be set BEFORE .src
+      // for CORS-mode loading to even be attempted (see header comment).
+      var capture = document.createElement('video');
+      capture.crossOrigin = 'anonymous';
+      capture.muted = true;
+      capture.playsInline = true;
+      capture.preload = 'auto';
+      capture.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:-9999px;left:-9999px;';
+
+      var settled = false;
+      var timeoutId = null;
+
+      function cleanup(){
+        if(timeoutId){ clearTimeout(timeoutId); timeoutId = null; }
+        capture.removeEventListener('timeupdate', onTimeUpdate);
+        capture.removeEventListener('error', onError);
+        try { capture.pause(); } catch (e) {}
+        capture.removeAttribute('src');
+        try { capture.load(); } catch (e) {}
+        if(capture.parentNode) capture.parentNode.removeChild(capture);
+      }
+
+      function finish(){
+        if(settled) return;
+        settled = true;
+        cleanup();
+      }
+
+      function onError(){
+        // Most likely cause: the remote CDN doesn't send
+        // Access-Control-Allow-Origin, so the crossOrigin='anonymous' load
+        // itself fails outright -- the SAME underlying failure a tainted
+        // canvas would have hit anyway, just surfaced earlier as a load
+        // error instead of a toDataURL() SecurityError. Either way: same
+        // honest silent no-op as before this fix.
+        finish();
+      }
+
+      function onTimeUpdate(){
+        if(settled) return;
+        if(capture.currentTime < CAPTURE_AFTER_SECONDS) return;
+        if(capture.readyState < 2) return; // HAVE_CURRENT_DATA -- a real decoded frame, not just metadata
+        try {
+          var w = capture.videoWidth || 480;
+          var h = capture.videoHeight || 270;
+          var canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(capture, 0, 0, w, h);
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+          DreamStore.saveThumbnailBestEffort(dream.id, dataUrl);
+        } catch (e) {
+          // Canvas still tainted for some other reason (e.g. CORS headers
+          // present on the redirect but not the final asset) -- same
+          // best-effort no-op as always; playback is untouched either way.
+        }
+        finish();
+      }
+
+      capture.addEventListener('timeupdate', onTimeUpdate);
+      capture.addEventListener('error', onError);
+      // Never let a hung/never-resolving cross-origin load keep this
+      // element (and its in-flight network request) alive indefinitely —
+      // matches this feature's existing "best-effort must never leak"
+      // convention.
+      timeoutId = setTimeout(finish, CAPTURE_TIMEOUT_MS);
+
+      try {
+        capture.src = dream.videoUrl;
+        // Appended (off-screen, not display:none) rather than left
+        // detached from the DOM -- some browsers decode more reliably
+        // for an in-DOM element even when it's never visible.
+        document.body.appendChild(capture);
+        var playResult = capture.play();
+        if(playResult && typeof playResult.catch === 'function'){
+          playResult.catch(function(){ /* autoplay blocked -- the timeout above cleans up */ });
+        }
+      } catch (e) {
+        finish();
+      }
+    }
+
     function maybeCapture(){
       if(attempted) return;
       if(!isMyDream || !dream || !dream.videoUrl || dream.imageUrl) return;
       if(video.currentTime < CAPTURE_AFTER_SECONDS) return;
-      if(video.readyState < 2) return; // HAVE_CURRENT_DATA -- a real decoded frame, not just metadata
+      if(video.readyState < 2) return; // HAVE_CURRENT_DATA -- proof the real element is actually decoding/playing
       attempted = true;
-      try {
-        var w = video.videoWidth || 480;
-        var h = video.videoHeight || 270;
-        var canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext('2d').drawImage(video, 0, 0, w, h);
-        var dataUrl = canvas.toDataURL('image/jpeg', 0.72);
-        DreamStore.saveThumbnailBestEffort(dream.id, dataUrl);
-      } catch (e) { /* best-effort -- a canvas taint/decode error must never affect playback */ }
+      try { runCapture(); } catch (e) { /* best-effort -- must never affect the real playback video */ }
     }
     video.addEventListener('timeupdate', maybeCapture);
   })();
