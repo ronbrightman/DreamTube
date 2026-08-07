@@ -21,7 +21,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-06 18:06 IDT</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-07 10:35 IDT</div>
 
 <h2 class="ron">🔴 Waiting on RON — 1</h2>
 
@@ -137,7 +137,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 
 
-<details><summary>End the scheduler saga <span class="tag today"></span></summary><div class="body">Durable server-side schedules are blocked on a permission approval that isn't reaching you; today I find the settings-level path. Until then: self-armed wakeups + honest flagging when one dies.</div></details>
+<details><summary>Scheduler saga: SOLVED — restart-proof wake-ups live and proven <span class="tag new">closed 08-07</span></summary><div class="body">The schedule now lives on GitHub's own infrastructure (survives every restart on our side): a twice-daily cron posts to a pinned PR in the Manager repo, and the Manager session wakes on that PR's webhook — proven end-to-end with a live test ping today. 03:47 UTC → 7am morning ritual · 13:02 UTC → afternoon Product check. Session-local crons stay armed as backup. <b>Rule: never close or merge Manager PR #1</b> — it's the wake-up bell. Also shipped alongside: tracker protocol v1 (timestamp aliases at the API, one reading contract, per-session heartbeats) closing the week's communication-failure class.</div></details>
 
 <details><summary>Morning report upgrades <span class="tag today">tomorrow's edition</span></summary><div class="body">Charts become tap-throughs to the live dashboard. Test-traffic exclusions extended (gfgg@shdh.com and friends).</div></details>
 
