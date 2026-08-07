@@ -62,12 +62,19 @@
   repo, out of scope for this build). See this branch's PR description /
   the build report for the full reasoning.
 
-  FLOW (steps, one screen each, chip-first / zero required typing):
-    0 Subject   ("Who's the dream about?")   — reuses the character sheet
-    1 Setting   ("Where does it take place?") — reuses+widens scenery chips
-    2 Action    ("What's happening?")         — NEW, required, no skip
-    3 Mood      ("What's the mood?")          — NEW
-    4 Style     ("Pick a look")               — reuses style.html's cards
+  FLOW (steps, one screen each, chip-first / zero required typing).
+  Since 2026-08-07 every screen wears the founder-approved Layout-B
+  ("Flo pattern") skin — pill option rows with leading emoji chips,
+  progress dots, auto-advancing single-select steps, per-row optional
+  Me/Someone detail inputs, an editable wall recap — with the STEP LIST,
+  step numbering (wizard_step_viewed), logic, and data flow all
+  unchanged. See the in-body <style> header + each renderer's own
+  comments for the redesign's provenance and per-step specifics.
+    0 Subject   ("Who was in the dream?")     — reuses the character sheet
+    1 Setting   ("Where did it happen?")      — reuses+widens scenery chips
+    2 Action    ("What was happening?")       — required, no skip
+    3 Mood      ("How did the dream feel?")
+    4 Style     ("Pick your dream's style")   — pill rows (was style.html's cards)
     5 Free text (optional escape hatch)       — the demoted old textarea
     6 Signup wall (renderSignupWall) — ONE hybrid screen, at parity with
       start.html's screen 13 (founder order, tracker item
@@ -109,30 +116,43 @@
 </div>
 
 <style>
-  /* Dark "night" funnel shell (tracker item
-     for-product-realign-index-html-organic-w-lzbmfu, founder 07-31) —
-     this used to be a verbatim copy of start.html's OWN former light
-     "dawn" shell, back when start.html's Advanced/pricing screens were
-     still light. start.html's own funnel tail moved to a dark 'night'
-     phase for its remaining screens (tracker item
-     for-product-funnel-handoff-screens-theme-5ttymn) but this file was
-     never updated to match, leaving it the one light-themed screen on the
-     organic path — a real, felt "different pages" experience the founder
-     hit directly walking index.html -> wizard.html right after the
-     (already-dark) ad funnel. Values below are start.html's own resolved
-     'night' phase colors (see that file's PHASES.night constant and
-     applyPhase, ~start.html:1958) ported here directly as this file's
-     single, permanent theme — wizard.html never needs start.html's
-     multi-phase switching machinery (it only ever had ONE look to begin
-     with), so these are hardcoded, not phase-swapped. */
+  /* Layout-B ("Flo pattern") shell — the founder-picked wizard redesign
+     (tracker item for-product-founder-picked-layout-b-flo--lks7mj,
+     seven founder mock rounds on mock-wizard-b-x7q4.html, "go live"
+     2026-08-07; the mock itself was deleted on the branch that built
+     this, per its own DELETE-when-merged header). Visual grammar, all
+     from the approved mock: soft purple gradient backdrop, progress
+     DOTS (active = elongated pink pill), a circled back chevron, every
+     option a full-width true-pill row with a leading 38px circular
+     emoji chip, pink selected state, pink→purple gradient CTA.
+     SKIN ONLY: every step's logic, data flow, and analytics
+     (wizard_step_viewed step numbers included — SCREEN_RENDERERS is
+     unchanged) are byte-identical to the pre-redesign wizard; the one
+     founder-directed interaction change is documented per-step below
+     (single-select steps auto-advance; the Subject step's per-row
+     optional detail inputs per his 08-04 ruling).
+
+     This intentionally replaces the previous "night" shell (tracker
+     item for-product-realign-index-html-organic-w-lzbmfu) as this
+     file's single permanent theme — still hardcoded, still no phase
+     machinery. start.html's ad funnel keeps its own night look for
+     now; growth is adopting this same Layout-B language funnel-side
+     (tracker item for-growth-heads-up-ask-founder-picked-t-9m06u7), so
+     the cross-page continuity the night shell existed for re-converges
+     on THIS look, not that one. */
   #app.funnel-app{
-    --fn-ink:#FFFFFF; --fn-ink-soft:#C9C4DA; --fn-ink-faint:#8A84A0;
-    --fn-card:rgba(255,255,255,0.08); --fn-line:rgba(255,255,255,0.14);
-    --fn-accent-grad:linear-gradient(135deg,#B0A8DC,#9FC6E8 55%,#F3C08C);
-    --fn-accent-solid:#7C82C4;
+    --fn-ink:#F2EEFC; --fn-ink-soft:#B7AEDE; --fn-ink-faint:#8F88B3;
+    --fn-card:rgba(255,255,255,0.07); --fn-line:rgba(255,255,255,0.14);
+    /* Mock accent pair: pink #FF8BB3 (selection, active dot), purple
+       #B783FF (CTA gradient tail). --fn-accent-grad/-solid keep their
+       pre-redesign ROLES (selected chips, switch track, focus rings,
+       spinner) so every consumer below recolors in one place. */
+    --lb-pink:#FF8BB3; --lb-purple:#B783FF;
+    --lb-pink-tint:rgba(255,139,179,0.16);
+    --fn-accent-grad:linear-gradient(90deg,#FF8BB3,#B783FF);
+    --fn-accent-solid:#FF8BB3;
     --fn-font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,sans-serif;
-    --fn-font-display:Georgia,'Iowan Old Style','Palatino Linotype',serif;
-    background:linear-gradient(160deg,#211B33,#14121F 55%,#0A0912);
+    background:linear-gradient(180deg,#2A2150,#1B1438 55%,#141028);
     font-family:var(--fn-font-body);
     /* #app's own base rule (css/styles.css) only sets min-height:100dvh
        -- a floor, not a cap. .sheet-overlay is position:absolute;inset:0
@@ -152,48 +172,80 @@
   }
 
   .fn-topbar{ display:flex; align-items:center; gap:10px; padding:calc(env(safe-area-inset-top,0px) + 16px) 20px 4px; flex:none;}
-  .fn-back{ width:34px; height:34px; border-radius:50%; flex:none; cursor:pointer; background:var(--fn-card); border:1px solid var(--fn-line); color:var(--fn-ink); display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent;}
+  .fn-back{ width:38px; height:38px; border-radius:50%; flex:none; cursor:pointer; background:rgba(255,255,255,.08); border:none; color:var(--fn-ink); display:flex; align-items:center; justify-content:center; -webkit-tap-highlight-color:transparent;}
   .fn-back .icon, .fn-back svg{ width:15px; height:15px;}
-  .fn-topbar-spacer{ width:34px; flex:none;}
-  .fn-progress{ flex:1; display:flex; gap:4px;}
-  .fn-progress i{ flex:1; height:3px; border-radius:3px; background:var(--fn-line); display:block;}
-  .fn-progress i.done{ background:var(--fn-ink); opacity:.55;}
-  .fn-progress i.now{ background:var(--fn-ink);}
+  .fn-topbar-spacer{ width:38px; flex:none;}
+  /* Progress DOTS (mock grammar): 8px circles; the active step is an
+     elongated 22px pink pill; completed steps go purple. Same i.done/
+     i.now element structure renderProgress always produced — this is a
+     pure restyle of the old flex bars. */
+  .fn-progress{ flex:1; display:flex; gap:6px; justify-content:center;}
+  .fn-progress i{ width:8px; height:8px; flex:none; border-radius:99px; background:#463D78; display:block; transition:all .2s;}
+  .fn-progress i.done{ background:#8F7BDC;}
+  .fn-progress i.now{ background:var(--lb-pink); width:22px;}
 
   .fn-screen{ flex:1; display:flex; flex-direction:column; padding:18px 24px calc(24px + env(safe-area-inset-bottom,0px)); position:relative; overflow-y:auto; min-height:0; color:var(--fn-ink);}
 
-  .fn-eyebrow{ font-size:11px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--fn-ink-faint); margin-bottom:10px;}
-  .fn-headline{ font-family:var(--fn-font-display); font-size:25px; font-weight:600; letter-spacing:-0.005em; line-height:1.25; text-wrap:balance; margin-bottom:10px; color:var(--fn-ink);}
-  .fn-body-copy{ font-size:14.5px; color:var(--fn-ink-soft); line-height:1.55; margin-bottom:18px;}
+  /* Centered bold sans headline + centered sub, per the mock (the old
+     shell's serif/left-aligned pairing retired with it). text-wrap:
+     balance kept — it reads even better centered. */
+  .fn-headline{ font-family:var(--fn-font-body); font-size:23px; font-weight:800; letter-spacing:-0.005em; line-height:1.25; text-wrap:balance; text-align:center; margin:6px 0 4px; color:#fff;}
+  .fn-body-copy{ font-size:13.5px; color:var(--fn-ink-soft); line-height:1.55; text-align:center; margin:0 0 18px;}
   .fn-mini-label{ font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--fn-ink-faint); margin:14px 0 8px;}
   .fn-mini-label:first-child{ margin-top:0;}
   .fn-spacer{ flex:1;}
 
-  .fn-chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px;}
-  .fn-chip{ padding:9px 15px; border-radius:100px; background:var(--fn-card); border:1px solid var(--fn-line); font-size:13px; font-weight:700; color:var(--fn-ink); cursor:pointer; -webkit-tap-highlight-color:transparent;}
-  .fn-chip.sel{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
+  /* Option rows (mock grammar): every option is a full-width TRUE-PILL
+     row — border-radius:999px, leading 38px circular emoji chip
+     (.lb-chip), stacked single-column. Selected = pink border + tinted
+     fill (NOT the old gradient fill — the mock's .opt.sel). The class
+     names (.fn-chip/.sel) and every data-* attribute are unchanged from
+     the old wrap-chips so all existing wiring and tests keep meaning the
+     same thing. */
+  .fn-chip-row{ display:block; margin-bottom:18px;}
+  .fn-chip{ display:flex; align-items:center; gap:14px; width:100%; box-sizing:border-box; padding:12px 16px; border-radius:999px; background:var(--fn-card); border:1.5px solid var(--fn-line); font-size:16px; font-weight:600; color:var(--fn-ink); cursor:pointer; margin-bottom:11px; transition:all .12s; -webkit-tap-highlight-color:transparent;}
+  .fn-chip.sel{ border-color:var(--lb-pink); background:var(--lb-pink-tint); color:var(--fn-ink);}
+  .lb-chip{ width:38px; height:38px; border-radius:99px; background:var(--lb-pink-tint); display:flex; align-items:center; justify-content:center; font-size:19px; flex:none;}
+  /* "+ Something else" rows keep the mock's ✨ ghost treatment. */
+  .fn-chip.lb-ghost{ opacity:.75; font-weight:500;}
+  /* Day/Night (Setting) — an auxiliary pair the mock doesn't have; kept
+     as two HALF-width pills side by side so the seven place rows below
+     stay the screen's main body. Same pill grammar, just not full-width. */
+  .fn-chip-row.lb-half-row{ display:flex; gap:10px;}
+  .lb-half-row .fn-chip{ width:auto; flex:1; margin-bottom:0;}
 
-  /* "+N more" / "Show less" expander chip (Action step curation — tracker
-     item for-product-wizard-step-3-has-too-many-c-lrg1ct). Dashed/
-     transparent so it reads as a disclosure affordance, not a selectable
-     option — same visual language as css/styles.css's .char-chip-add
-     "+ Add character" tile elsewhere in this app, not an invented look. */
-  .fn-chip-more{ padding:9px 15px; border-radius:100px; background:transparent; border:1px dashed var(--fn-line); font-size:13px; font-weight:700; color:var(--fn-ink-soft); cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  /* "+N more" / "Show less" expander (Action step curation — tracker
+     item for-product-wizard-step-3-has-too-many-c-lrg1ct). Same
+     disclosure-not-option dashed treatment as before, widened to a full
+     pill row to sit in the new stacked column. */
+  .fn-chip-more{ display:block; width:100%; box-sizing:border-box; text-align:center; padding:12px 16px; border-radius:999px; background:transparent; border:1.5px dashed var(--fn-line); font-size:14px; font-weight:700; color:var(--fn-ink-soft); cursor:pointer; margin-bottom:11px; -webkit-tap-highlight-color:transparent;}
   .fn-chip-more:hover{ border-color:var(--fn-accent-solid); color:var(--fn-ink);}
 
-  /* Character chips (Subject step) reuse create.html/start.html's exact
-     .char-chip/.char-chip-add classes, dark-themed to match this shell —
-     see start.html's own identical override block (its 'night' phase) for
-     the same reasoning. */
-  #app.funnel-app .char-chip{ background:var(--fn-card); border-color:var(--fn-line); color:var(--fn-ink);}
-  #app.funnel-app .char-chip .chip-check{ border-color:var(--fn-ink-faint);}
-  #app.funnel-app .char-chip.selected{ background:var(--fn-accent-grad); color:#fff; border-color:transparent;}
-  #app.funnel-app .char-chip.selected .chip-check{ background:#fff; border-color:#fff;}
-  #app.funnel-app .char-chip.selected .chip-check .icon{ opacity:1; color:var(--fn-accent-solid);}
-  #app.funnel-app .char-chip .chip-edit{ color:var(--fn-ink-faint);}
-  #app.funnel-app .char-chip.selected .chip-edit{ color:#fff; opacity:.75;}
-  #app.funnel-app .char-chip-add{ background:transparent; border:1px dashed var(--fn-line); color:var(--fn-ink-soft);}
+  /* Character rows (Subject step) — the same .char-chip/.chip-check/
+     .chip-edit-area/.char-chip-add structure create.html/start.html's
+     character machinery always used, restyled into the Layout-B pill
+     rows: .chip-check IS the leading 38px circle (it now carries the
+     row's emoji instead of a checkmark — selection reads off the row's
+     pink border/fill, matching every other option row on this page),
+     .chip-edit-area keeps the name + pencil. The base .char-chip rules
+     in css/styles.css still apply on other pages untouched. */
+  #app.funnel-app .char-chip{ display:flex; align-items:center; gap:14px; width:100%; box-sizing:border-box; padding:12px 16px; border-radius:999px; background:var(--fn-card); border:1.5px solid var(--fn-line); color:var(--fn-ink); font-size:16px; font-weight:600; margin-bottom:11px; cursor:pointer; transition:all .12s;}
+  #app.funnel-app .char-chip .chip-check{ width:38px; height:38px; border-radius:99px; border:none; background:var(--lb-pink-tint); display:flex; align-items:center; justify-content:center; font-size:19px; flex:none;}
+  #app.funnel-app .char-chip .chip-check .icon{ display:none;}
+  #app.funnel-app .char-chip.selected{ border-color:var(--lb-pink); background:var(--lb-pink-tint); color:var(--fn-ink);}
+  #app.funnel-app .char-chip .chip-edit-area{ display:flex; align-items:center; gap:8px; flex:1; min-width:0;}
+  #app.funnel-app .char-chip .chip-edit{ color:var(--fn-ink-faint); margin-left:auto;}
+  #app.funnel-app .char-chip.selected .chip-edit{ color:var(--fn-ink-soft);}
+  #app.funnel-app .char-chip-add{ display:flex; align-items:center; gap:14px; width:100%; box-sizing:border-box; padding:12px 16px; border-radius:999px; background:transparent; border:1.5px dashed var(--fn-line); color:var(--fn-ink-soft); font-size:16px; font-weight:500; margin-bottom:11px; cursor:pointer;}
   #app.funnel-app .char-chip-add:hover{ border-color:var(--fn-accent-solid); color:var(--fn-ink);}
+
+  /* The per-row OPTIONAL detail input revealed directly below a selected
+     Me/"Someone I know" row (founder mock rounds 6-7 + his 08-04 ruling —
+     see renderSubjectChips below). Pill-shaped, pink-edged like the
+     mock's .custom-in. */
+  .lb-detail{ width:100%; box-sizing:border-box; margin:-4px 0 11px;}
+  .lb-detail input{ width:100%; box-sizing:border-box; background:var(--fn-card); border:1.5px solid var(--lb-pink); border-radius:999px; color:#fff; font-size:15px; font-family:var(--fn-font-body); padding:12px 18px; outline:none;}
+  .lb-detail input::placeholder{ color:var(--fn-ink-faint);}
   /* .sheet/.sheet-handle/.sheet-title are DELIBERATELY not overridden here
      anymore (unlike the old light "dawn" theme, which needed a light
      override) -- css/styles.css's own base .sheet rules already resolve
@@ -207,32 +259,53 @@
   #app.funnel-app .btn-secondary{ background:transparent; border:1px solid var(--fn-line); color:var(--fn-ink);}
   #app.funnel-app .btn-secondary:hover{ background:rgba(255,255,255,.05); border-color:var(--fn-ink-faint);}
 
-  /* Style step (Step 5) reuses style.html's real .style-card/.sc-* classes
-     from css/styles.css verbatim — same grid, same preview images. */
-  #app.funnel-app .style-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;}
+  /* Style step (Step 5) — pill rows like every other step (founder mock
+     round 4: the style pick auto-advances and looks like the rest of the
+     wizard). This replaced style.html's .style-card grid ON THIS WIZARD
+     ONLY — style.html itself (the logged-in flow's style picker) is
+     untouched and still uses its cards. #style-grid keeps its id and the
+     rows keep data-style, so all existing wiring/tests address the same
+     things. */
 
-  textarea.fn-field, input.fn-field{ background:var(--fn-card); border:1px solid var(--fn-line); border-radius:16px; padding:14px 15px; font-family:var(--fn-font-body); color:var(--fn-ink); font-size:15px; width:100%; margin-bottom:12px; display:block;}
-  textarea.fn-field{ resize:none; line-height:1.5;}
+  /* Pill-shaped single-line inputs (email, character name, write-ins) per
+     the mock; textareas stay soft-rectangles (22px — a 999px radius on a
+     multi-line box clips its own first line). */
+  textarea.fn-field, input.fn-field{ background:var(--fn-card); border:1.5px solid var(--fn-line); border-radius:999px; padding:13px 18px; font-family:var(--fn-font-body); color:var(--fn-ink); font-size:16px; width:100%; box-sizing:border-box; margin-bottom:12px; display:block;}
+  textarea.fn-field{ resize:none; line-height:1.5; border-radius:22px; padding:16px 18px;}
   textarea.fn-field::placeholder, input.fn-field::placeholder{ color:var(--fn-ink-faint);}
   textarea.fn-field:focus, input.fn-field:focus{ outline:2px solid var(--fn-accent-solid); border-color:transparent;}
 
-  .fn-field-pw-wrap{ position:relative; margin-bottom:12px;}
-  .fn-field-pw-wrap .fn-field{ margin-bottom:0; padding-right:46px;}
-  .fn-field-pw-toggle{ position:absolute; right:4px; top:0; bottom:0; width:38px; background:none; border:none; color:var(--fn-ink-faint); display:flex; align-items:center; justify-content:center; cursor:pointer;}
-  .fn-field-pw-toggle svg, .fn-field-pw-toggle .icon{ width:18px; height:18px;}
-
   .fn-err-text{ font-size:12.5px; color:#C4485B; min-height:16px; margin:2px 0 8px;}
 
-  /* Flat white CTA instead of the pastel --fn-accent-grad -- reads as
-     intentional/high-contrast against this shell's near-black background,
-     same treatment start.html's own 'night' phase gives .fn-btn-primary
-     (~start.html:220), ported here as the permanent default since this
-     shell has no light phase to fall back to anymore. */
-  .fn-btn-primary{ background:#fff; color:#221d2c; font-weight:800; font-size:15.5px; border:none; border-radius:100px; padding:15px; text-align:center; width:100%; box-shadow:none; cursor:pointer; font-family:var(--fn-font-body); -webkit-tap-highlight-color:transparent;}
+  /* Pink→purple gradient CTA pill (the mock's .cta), replacing the old
+     night shell's flat white button. .lb-cta (the per-step Continue
+     buttons only — NOT the character sheet's Save, which must scroll
+     with its sheet) additionally sticks to the bottom of the scrolling
+     .fn-screen so it reads as the mock's fixed bottom pill; sticky
+     (not fixed) keeps each step's button inside its own render tree
+     with zero layout-engine changes. */
+  .fn-btn-primary{ background:linear-gradient(90deg,var(--lb-pink),var(--lb-purple)); color:#fff; font-weight:800; font-size:17px; border:none; border-radius:999px; padding:16px; text-align:center; width:100%; box-shadow:0 12px 30px -8px rgba(255,139,179,.45); cursor:pointer; font-family:var(--fn-font-body); -webkit-tap-highlight-color:transparent;}
   .fn-btn-primary:disabled{ opacity:.42; cursor:not-allowed; box-shadow:none;}
+  .fn-btn-primary.lb-cta{ position:sticky; bottom:0;}
   .fn-small-link{ background:none; border:none; color:var(--fn-ink-soft); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:10px 0 0; cursor:pointer;}
 
-  .fn-price-note{ font-size:12px; color:var(--fn-ink-soft); text-align:center; margin:2px 0 0;}
+  /* Pill the Facebook button on THIS wizard only (mock grammar — every
+     tappable is a pill). facebookButtonHtml (js/facebook-config.js) is
+     shared with start.html and carries its radius inline, so this is a
+     scoped override rather than an edit to the shared, Meta-brand-
+     compliant markup (radius is a shape tweak; color/copy/logo — the
+     parts Meta's guidelines actually pin — are untouched). */
+  #app.funnel-app #fn-fb-continue{ border-radius:999px !important;}
+
+  /* The wall's recap — restyled per the founder's mock recap screen
+     ("Here's your dream — make it yours"): the card chrome dissolves and
+     the story text itself becomes an EDITABLE rounded textarea (see
+     renderWallEmailStep for the editability wiring + why the mock's
+     "drives your video" sub-line was NOT carried over). */
+  #app.funnel-app .story-recap-card{ background:transparent; border:none; padding:0; margin-bottom:0;}
+  #app.funnel-app .story-recap-label{ font-size:14px; font-weight:800; letter-spacing:0; text-transform:none; color:#fff; text-align:center; margin-bottom:8px;}
+  #app.funnel-app .lb-recap-text{ min-height:96px; margin-bottom:6px;}
+  #app.funnel-app .lb-recap-sub{ font-size:12px; color:var(--fn-ink-faint); text-align:center;}
 
   /* "+ Something else" progressive-disclosure reveal (per the spec: a
      collapsed tap that reveals a small text input, not an always-visible
@@ -289,7 +362,7 @@
      the full original reasoning on each piece; values copied verbatim,
      these are self-contained colors with no theme tokens involved). */
   .fn-forming-frame{
-    position:relative; height:118px; border-radius:16px; overflow:hidden; margin-bottom:16px;
+    position:relative; height:118px; border-radius:22px; overflow:hidden; margin-bottom:16px;
     background:#171034; /* plain fallback fill, painted under .fn-form-nebula */
   }
   .fn-forming-frame.fnstyle-default{
@@ -373,6 +446,68 @@
   }
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
+
+  // ===================================================================
+  // Layout-B option-row furniture (tracker item
+  // for-product-founder-picked-layout-b-flo--lks7mj — see the shell
+  // <style> header above for the full redesign provenance).
+  //
+  // LB_EMOJI: the leading 38px chip's emoji per option. Where the
+  // founder's approved mock covered an option, its emoji is used
+  // verbatim; options the mock didn't have (the mock's Action list was
+  // shorter than the real ACTION_CHIPS, and it had no Day/Night pair)
+  // get a sensible match chosen here, marked (*). Keys mirror
+  // js/wizard-chips.js's own chip keys — an unknown key falls back to ✨
+  // rather than rendering an empty circle.
+  // ===================================================================
+  var LB_EMOJI = {
+    subject: { me: '🙋', someone: '👥', stranger: '🕶️', animal: '🐺', none: '🏞️', other: '✨' },
+    place: { urban: '🏙️', nature: '🌲', house: '🏠', water: '🌊', sky: '🌌', unreal: '🌀', other: '✨' },
+    action: { flying: '🕊️', running: '🏃', magical: '🪄', meeting: '🫂', exploring: '🗺️', calm: '🧘', other: '✨',
+      falling: '🪂', exam: '📝', late: '⏰', trying: '🔁', newroom: '🚪', child: '🧸' /* (*) mock's Action list was shorter */ },
+    mood: { peaceful: '🕊️', joyful: '😊', dreamy: '🌫️', mysterious: '🔮', tense: '😨', epic: '🏔️', other: '✨' /* (*) */ },
+    style: { Cartoon: '🎨', Cinematic: '🎬', Anime: '🌸', Realistic: '📷' },
+    time: { Day: '☀️', Night: '🌙' /* (*) no Day/Night in the mock */ }
+  };
+  function lbChip(group, key){
+    return '<span class="lb-chip">' + ((LB_EMOJI[group] && LB_EMOJI[group][key]) || '✨') + '</span>';
+  }
+
+  // ===================================================================
+  // Auto-advance (mock behavior, founder round 4 extended it to Style):
+  // on a SINGLE-select step (Setting's place pick, Action, Mood, Style),
+  // tapping an option row advances ~260ms later — long enough for the
+  // pink selected state to visibly register, short enough to feel
+  // instant. Explicitly NOT wired to: multi-select Subject rows (Continue
+  // advances, per founder round 3), any "+ Something else" row (the user
+  // is about to type — mock round 2), Day/Night (an auxiliary toggle, not
+  // the step's answer), the POV switch, or the "+N more" expander.
+  //
+  // The timer is single-flight and step-scoped: a second tap re-arms it
+  // (still exactly one advance), and BOTH manual navigation paths cancel
+  // it first — next() (so a Continue tap inside the window can't
+  // double-advance) and the Back handler (so an advance armed on a step
+  // the user just left can never fire into the wrong screen). The
+  // stepAtArm re-check inside the callback is belt-and-suspenders for
+  // any navigation path that bypassed those two cancels.
+  //
+  // Analytics-neutral by construction: it calls the SAME next() a
+  // Continue tap always called — wizard_step_viewed still fires once per
+  // render with the same step numbers.
+  // ===================================================================
+  var autoAdvanceTimer = null;
+  function cancelAutoAdvance(){
+    if(autoAdvanceTimer !== null){ clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
+  }
+  function scheduleAutoAdvance(){
+    cancelAutoAdvance();
+    var stepAtArm = cur;
+    autoAdvanceTimer = setTimeout(function(){
+      autoAdvanceTimer = null;
+      if(cur !== stepAtArm) return; // navigated away meanwhile — see doc comment
+      next();
+    }, 260);
+  }
 
   // ===== Facebook Login — return-leg markers (screen-13 parity, tracker
   // item for-product-wizard-signup-wall-is-the-ol-lt1l9j) =====
@@ -565,6 +700,18 @@
   function flushStagedCharactersToStore(){
     var idMap = {};
     staged.characters.forEach(function(c){
+      // A detail-less inline "Me" (the Layout-B subject row can stage a
+      // self character with no description and no photo — see
+      // ensureStagedSelfCharacter's doc comment) has nothing for the
+      // store to hold: DreamStore.saveCharacter would reject it anyway
+      // ("Add a description or a photo."), and nothing downstream needs
+      // it — its id never rides characterIdsForGeneration (only photo
+      // characters do) and its caption phrase ('me') was already baked
+      // in at assembly time. Skipped explicitly rather than fired-and-
+      // failed. Every sheet-created character always has a description
+      // or photo (the sheet's own validation), so this can only ever
+      // skip that one inline shape.
+      if(!(c.description || '').trim() && !c.photoDataUrl) return;
       var result = DreamStore.saveCharacter({ isSelf: c.isSelf, name: c.name, description: c.description, photoDataUrl: c.photoDataUrl || null });
       if(result.ok) idMap[c.id] = result.character.id;
     });
@@ -672,27 +819,99 @@
   // single-select semantics as the standalone chips.
   // ===================================================================
   function charChipDisplayName(c){ return c.name || (c.isSelf ? 'Me' : ''); }
+
+  /**
+   * The staged SELF character behind the "Me" row, created ON FIRST TAP
+   * of that row with NO details at all — deliberately bypassing
+   * localSaveCharacter's "add a description or a photo" validation.
+   * That validation is the character SHEET's contract (its Save button
+   * is an explicit "I'm done describing" act) and still guards every
+   * sheet path unchanged; this inline path implements the founder's
+   * 08-04 ruling (tracker items for-growth-founder-ruling-08-04-me-
+   * someo-w8k8xr / for-product-paired-with-growth-funnel-pr-22o77k,
+   * mock rounds 6-7): picking Me/Someone must never demand details —
+   * the per-row detail input below is OPTIONAL and never blocks
+   * Continue. A detail-less self character is handled everywhere
+   * downstream: caption phrase resolves to plain 'me'
+   * (subjectPhraseAndCharacterId), no id ever rides
+   * characterIdsForGeneration (only photo characters do), and
+   * flushStagedCharactersToStore skips it (see there).
+   */
+  function ensureStagedSelfCharacter(){
+    var existing = staged.characters.filter(function(c){ return c.isSelf; })[0];
+    if(existing) return existing;
+    var character = { id: 'local' + Math.random().toString(36).slice(2, 9), name: '', isSelf: true, description: '' };
+    staged.characters.push(character);
+    return character;
+  }
+
+  // Layout-B character row — same .char-chip/.chip-check/.chip-edit-area
+  // structure as always (see the shell <style>'s character-row comment),
+  // with the row's emoji living inside .chip-check (the leading circle).
+  // The hidden Icons.check stays in the DOM so nothing that addresses
+  // .chip-check's internals ever finds it emptied.
   function charChipHTML(c, selected){
     return '<div class="char-chip' + (selected ? ' selected' : '') + '" data-char-select="' + c.id + '">' +
-      '<span class="chip-check"><span class="icon">' + Icons.check + '</span></span>' +
+      '<span class="chip-check">' + (c.isSelf ? LB_EMOJI.subject.me : LB_EMOJI.subject.someone) + '<span class="icon">' + Icons.check + '</span></span>' +
       '<span class="chip-edit-area" data-char-edit="' + c.id + '">' +
         '<span>' + esc(charChipDisplayName(c)) + '</span>' +
         '<span class="chip-edit icon">' + Icons.pencil + '</span>' +
       '</span>' +
     '</div>';
   }
+
+  /**
+   * The OPTIONAL per-row detail input, rendered DIRECTLY below its own
+   * selected Me/"Someone I know" row (founder mock round 7 — one input
+   * per detail-worthy row, never pooled at the bottom of the list).
+   * Wired straight to the staged character's `description` — the exact
+   * field the character sheet edits and flushStagedCharactersToStore
+   * persists into the real DreamStore character at signup, so a detail
+   * typed here prefills Characters and is NEVER re-asked later (the
+   * 08-04 ruling's other half, tracker item for-product-paired-with-
+   * growth-funnel-pr-22o77k). The value is populated programmatically
+   * after innerHTML (renderSubjectChips below), not baked into a
+   * value="" attribute — esc() escapes markup, not attribute quotes.
+   */
+  function charDetailRowHTML(c){
+    return '<div class="lb-detail">' +
+      '<input data-char-detail="' + c.id + '" placeholder="Optional: a few words about how ' + (c.isSelf ? 'you' : 'they') + ' look — helps the video match" dir="auto">' +
+    '</div>';
+  }
+
   function renderSubjectChips(){
     var row = document.getElementById('subject-chip-row');
     if(!row) return;
     var hasSelf = staged.characters.some(function(c){ return c.isSelf; });
     var html = staged.characters.map(function(c){
-      return charChipHTML(c, staged.subjectCharacterIds.indexOf(c.id) !== -1);
+      var selected = staged.subjectCharacterIds.indexOf(c.id) !== -1;
+      // Selecting a Me/Someone row reveals its own detail input right
+      // under it; deselecting hides it again (the typed description
+      // itself survives on the staged character either way).
+      return charChipHTML(c, selected) + (selected ? charDetailRowHTML(c) : '');
     }).join('');
-    if(!hasSelf) html += '<div class="char-chip-add" id="subj-add-self"><span class="icon">' + Icons.userPlus + '</span> Me</div>';
-    html += '<div class="char-chip-add" id="subj-add-other"><span class="icon">' + Icons.plus + '</span> Someone I know</div>';
+    // The "Me" row, pre-staging: a NORMAL option row (not a dashed add
+    // tile) whose first tap stages + selects the self character inline —
+    // see ensureStagedSelfCharacter's doc comment. Adding a "Someone I
+    // know" still goes through the character sheet (dashed add row):
+    // unlike Me, a non-self character NEEDS a name (store validation,
+    // caption assembly, the never-ask-twice prefill all key on it), and
+    // the sheet is the machinery that collects one.
+    if(!hasSelf) html += '<div class="char-chip" id="subj-me-row"><span class="chip-check">' + LB_EMOJI.subject.me + '<span class="icon">' + Icons.check + '</span></span><span>Me</span></div>';
+    html += '<div class="char-chip-add" id="subj-add-other"><span class="lb-chip">' + LB_EMOJI.subject.someone + '</span> + Someone I know</div>';
     row.innerHTML = html;
-    var addSelfBtn = document.getElementById('subj-add-self');
-    if(addSelfBtn) addSelfBtn.addEventListener('click', function(){ openCharSheet('self', null); });
+    // Populate detail values quote-safely, post-innerHTML.
+    Array.prototype.forEach.call(row.querySelectorAll('input[data-char-detail]'), function(inp){
+      var c = staged.characters.filter(function(x){ return x.id === inp.dataset.charDetail; })[0];
+      if(c) inp.value = c.description || '';
+    });
+    var meRow = document.getElementById('subj-me-row');
+    if(meRow) meRow.addEventListener('click', function(){
+      var self = ensureStagedSelfCharacter();
+      if(staged.subjectCharacterIds.indexOf(self.id) === -1) staged.subjectCharacterIds.push(self.id);
+      renderSubjectChips();
+      focusCharDetailInput(self.id);
+    });
     document.getElementById('subj-add-other').addEventListener('click', function(){ openCharSheet('other', null); });
 
     Array.prototype.forEach.call(document.querySelectorAll('#subject-other-row .fn-chip'), function(chipEl){
@@ -700,6 +919,12 @@
     });
     var otherReveal = document.getElementById('subject-other-reveal');
     if(otherReveal) otherReveal.style.display = subjectOtherKind === 'other' ? 'block' : 'none';
+  }
+
+  /** Focuses the given character's just-revealed detail input, if present (mock round 6's "opens the more-info option" beat — focus is a courtesy, never load-bearing). */
+  function focusCharDetailInput(id){
+    var inp = document.querySelector('#subject-chip-row input[data-char-detail="' + id + '"]');
+    if(inp) inp.focus();
   }
 
   // Mounted ONCE, as a direct child of #app -- NOT rebuilt inside
@@ -833,21 +1058,25 @@
   }
 
   function renderSubject(el){
+    // Headline/sub: the founder's own mock copy for this step (round 3's
+    // multi-select ask made the "more than one is fine" sub load-bearing
+    // guidance, not decoration). Chip LABELS below stay WizardChips' real
+    // ones — shared data with create.html's Build-it, not page copy.
     el.innerHTML =
-      '<div class="fn-eyebrow">Step 1 of 5</div>' +
-      '<div class="fn-headline">Who’s the dream about?</div>' +
+      '<div class="fn-headline">Who was in the dream?</div>' +
+      '<div class="fn-body-copy">Pick everyone who was there — more than one is fine.</div>' +
       '<div class="char-chip-row" id="subject-chip-row"></div>' +
       '<div class="fn-chip-row" id="subject-other-row">' +
-        '<span class="fn-chip" data-subj-other="stranger">A stranger</span>' +
-        '<span class="fn-chip" data-subj-other="animal">An animal or creature</span>' +
-        '<span class="fn-chip" data-subj-other="none">No people — just a place/thing</span>' +
-        '<span class="fn-chip" data-subj-other="other">+ Something else</span>' +
+        '<span class="fn-chip" data-subj-other="stranger">' + lbChip('subject', 'stranger') + 'A stranger</span>' +
+        '<span class="fn-chip" data-subj-other="animal">' + lbChip('subject', 'animal') + 'An animal or creature</span>' +
+        '<span class="fn-chip" data-subj-other="none">' + lbChip('subject', 'none') + 'No people — just a place/thing</span>' +
+        '<span class="fn-chip lb-ghost" data-subj-other="other">' + lbChip('subject', 'other') + '+ Something else</span>' +
       '</div>' +
       '<div class="fn-other-reveal" id="subject-other-reveal" style="display:none;">' +
         '<input class="fn-field" id="subject-other-input" placeholder="Who (or what) is this dream about?" dir="auto">' +
       '</div>' +
       '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-subject-continue" type="button">Continue</button>' +
+      '<button class="fn-btn-primary lb-cta" id="fn-subject-continue" type="button">Continue</button>' +
       '<span class="fn-small-link" id="fn-subject-skip" style="cursor:pointer;">Skip</span>';
 
     ensureCharSheetMounted();
@@ -861,8 +1090,25 @@
       }
       var chip = e.target.closest('[data-char-select]');
       if(!chip) return;
-      toggleSubjectCharacter(chip.dataset.charSelect);
+      var id = chip.dataset.charSelect;
+      var wasSelected = staged.subjectCharacterIds.indexOf(id) !== -1;
+      toggleSubjectCharacter(id);
       renderSubjectChips();
+      // Freshly selecting a row reveals its detail input — hand it focus
+      // (mock round 6); a toggle-OFF re-render has nothing to focus.
+      if(!wasSelected) focusCharDetailInput(id);
+    });
+    // The per-row detail inputs live inside the re-rendered chip row, so
+    // their typing is captured via ONE delegated listener here (attached
+    // once per step render, surviving every renderSubjectChips rebuild)
+    // rather than per-input handlers. Writes go straight onto the staged
+    // character's description — no re-render on keystroke, or the input
+    // would lose focus mid-word.
+    document.getElementById('subject-chip-row').addEventListener('input', function(e){
+      var inp = e.target.closest('input[data-char-detail]');
+      if(!inp) return;
+      var c = staged.characters.filter(function(x){ return x.id === inp.dataset.charDetail; })[0];
+      if(c) c.description = inp.value;
     });
     document.getElementById('subject-other-row').addEventListener('click', function(e){
       var chip = e.target.closest('.fn-chip');
@@ -895,15 +1141,15 @@
 
   function renderSetting(el){
     var chips = WizardChips.SETTING_PLACE_CHIPS.map(function(c){
-      return '<span class="fn-chip" data-setting-place="' + c.key + '">' + esc(c.label) + '</span>';
+      return '<span class="fn-chip' + (c.key === 'other' ? ' lb-ghost' : '') + '" data-setting-place="' + c.key + '">' + lbChip('place', c.key) + esc(c.label) + '</span>';
     }).join('');
     el.innerHTML =
-      '<div class="fn-eyebrow">Step 2 of 5</div>' +
-      '<div class="fn-headline">Where does it take place?</div>' +
+      '<div class="fn-headline">Where did it happen?</div>' +
+      '<div class="fn-body-copy">The closest match sets the scene.</div>' +
       '<div class="fn-mini-label">Time of day</div>' +
-      '<div class="fn-chip-row" id="setting-time-row">' +
-        '<span class="fn-chip" data-scenery-time="Day">Day</span>' +
-        '<span class="fn-chip" data-scenery-time="Night">Night</span>' +
+      '<div class="fn-chip-row lb-half-row" id="setting-time-row">' +
+        '<span class="fn-chip" data-scenery-time="Day">' + lbChip('time', 'Day') + 'Day</span>' +
+        '<span class="fn-chip" data-scenery-time="Night">' + lbChip('time', 'Night') + 'Night</span>' +
       '</div>' +
       '<div class="fn-mini-label">Place</div>' +
       '<div class="fn-chip-row" id="setting-place-row">' + chips + '</div>' +
@@ -911,7 +1157,7 @@
         '<input class="fn-field" id="setting-other-input" placeholder="Describe the place" dir="auto">' +
       '</div>' +
       '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-setting-continue" type="button">Continue</button>' +
+      '<button class="fn-btn-primary lb-cta" id="fn-setting-continue" type="button">Continue</button>' +
       '<span class="fn-small-link" id="fn-setting-skip" style="cursor:pointer;">Skip</span>';
 
     function renderTimeChips(){
@@ -937,9 +1183,21 @@
     document.getElementById('setting-place-row').addEventListener('click', function(e){
       var chip = e.target.closest('.fn-chip');
       if(!chip) return;
-      settingPlaceKey = settingPlaceKey === chip.dataset.settingPlace ? null : chip.dataset.settingPlace;
+      // Layout-B: a place tap SELECTS and auto-advances (mock grammar) —
+      // the old tap-again-to-deselect toggle is gone on this row, since a
+      // tap now leaves the screen before a second tap could happen;
+      // "answered nothing" is still fully reachable via Skip, exactly as
+      // before. Day/Night above keeps its toggle (auxiliary, no advance).
+      settingPlaceKey = chip.dataset.settingPlace;
       renderPlaceChips();
-      if(settingPlaceKey === 'other') document.getElementById('setting-other-input').focus();
+      if(settingPlaceKey === 'other'){
+        // Mock round 2: "+ Something else" opens its write-in instead of
+        // advancing — Continue advances with whatever was typed.
+        cancelAutoAdvance();
+        document.getElementById('setting-other-input').focus();
+        return;
+      }
+      scheduleAutoAdvance();
     });
     document.getElementById('setting-other-input').addEventListener('input', function(e){ settingOtherText = e.target.value; });
     if(settingOtherText) document.getElementById('setting-other-input').value = settingOtherText;
@@ -972,7 +1230,7 @@
     var expanded = actionExpanded || moreChips.some(function(c){ return c.key === actionKey; });
 
     function chipHtml(c){
-      return '<span class="fn-chip" data-action="' + c.key + '">' + esc(c.label) + '</span>';
+      return '<span class="fn-chip' + (c.key === 'other' ? ' lb-ghost' : '') + '" data-action="' + c.key + '">' + lbChip('action', c.key) + esc(c.label) + '</span>';
     }
     var chipsHtml = defaultChips.map(chipHtml).join('');
     if(moreChips.length){
@@ -982,8 +1240,8 @@
         : '<span class="fn-chip-more" id="action-more-toggle" role="button" tabindex="0" aria-expanded="false">+' + moreChips.length + ' more</span>';
     }
     el.innerHTML =
-      '<div class="fn-eyebrow">Step 3 of 5 &middot; Required</div>' +
-      '<div class="fn-headline">What’s happening?</div>' +
+      '<div class="fn-headline">What was happening?</div>' +
+      '<div style="height:8px"></div>' +
       '<div class="fn-chip-row" id="action-row">' + chipsHtml + '</div>' +
       '<div class="fn-other-reveal" id="action-other-reveal" style="display:none;">' +
         '<input class="fn-field" id="action-other-input" placeholder="What happens?" dir="auto">' +
@@ -993,7 +1251,7 @@
         '<span class="fn-switch"><input type="checkbox" id="pov-toggle"><span class="fn-switch-track"></span></span>' +
       '</label>' +
       '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-action-continue" type="button">Continue</button>';
+      '<button class="fn-btn-primary lb-cta" id="fn-action-continue" type="button">Continue</button>';
 
     function renderChips(){
       Array.prototype.forEach.call(document.querySelectorAll('#action-row .fn-chip'), function(chipEl){
@@ -1006,7 +1264,13 @@
       if(!chip) return;
       actionKey = chip.dataset.action; // single-select, required -- no deselect-to-null
       renderChips();
-      if(actionKey === 'other') document.getElementById('action-other-input').focus();
+      if(actionKey === 'other'){
+        // Write-in — no auto-advance while typing (mock round 2).
+        cancelAutoAdvance();
+        document.getElementById('action-other-input').focus();
+        return;
+      }
+      scheduleAutoAdvance();
     });
     document.getElementById('action-other-input').addEventListener('input', function(e){ actionOtherText = e.target.value; });
     if(actionOtherText) document.getElementById('action-other-input').value = actionOtherText;
@@ -1014,6 +1278,10 @@
     var moreToggle = document.getElementById('action-more-toggle');
     if(moreToggle){
       moreToggle.addEventListener('click', function(){
+        // A disclosure tap right after an option tap means the visitor is
+        // still browsing — don't let the armed auto-advance yank the
+        // screen away mid-expand.
+        cancelAutoAdvance();
         actionExpanded = !expanded;
         renderAction(el);
       });
@@ -1024,7 +1292,10 @@
 
     var povInput = document.getElementById('pov-toggle');
     povInput.checked = povOn;
-    povInput.addEventListener('change', function(){ povOn = povInput.checked; });
+    povInput.addEventListener('change', function(){
+      povOn = povInput.checked;
+      cancelAutoAdvance(); // adjusting POV right after an option tap = still composing the answer
+    });
 
     renderChips();
     document.getElementById('fn-action-continue').addEventListener('click', next);
@@ -1063,17 +1334,17 @@
 
   function renderMood(el){
     var chips = WizardChips.MOOD_CHIPS.map(function(c){
-      return '<span class="fn-chip" data-mood="' + c.key + '">' + esc(c.label) + '</span>';
+      return '<span class="fn-chip' + (c.key === 'other' ? ' lb-ghost' : '') + '" data-mood="' + c.key + '">' + lbChip('mood', c.key) + esc(c.label) + '</span>';
     }).join('');
     el.innerHTML =
-      '<div class="fn-eyebrow">Step 4 of 5</div>' +
-      '<div class="fn-headline">What’s the mood?</div>' +
+      '<div class="fn-headline">How did the dream feel?</div>' +
+      '<div class="fn-body-copy">This shapes your video’s music and light.</div>' +
       '<div class="fn-chip-row" id="mood-row">' + chips + '</div>' +
       '<div class="fn-other-reveal" id="mood-other-reveal" style="display:none;">' +
         '<input class="fn-field" id="mood-other-input" placeholder="Describe the mood" dir="auto">' +
       '</div>' +
       '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-mood-continue" type="button">Continue</button>' +
+      '<button class="fn-btn-primary lb-cta" id="fn-mood-continue" type="button">Continue</button>' +
       '<span class="fn-small-link" id="fn-mood-skip" style="cursor:pointer;">Skip</span>';
 
     function renderChips(){
@@ -1088,7 +1359,15 @@
       moodKey = chip.dataset.mood;
       moodSkipped = false; // tapping a chip is a real answer -- clears a Skip from an earlier pass (Back is available)
       renderChips();
-      if(moodKey === 'other') document.getElementById('mood-other-input').focus();
+      if(moodKey === 'other'){
+        // Write-in — no auto-advance while typing (mock round 2). Note a
+        // free-text mood still persists as null (WizardChips.persistedMood),
+        // untouched by the redesign.
+        cancelAutoAdvance();
+        document.getElementById('mood-other-input').focus();
+        return;
+      }
+      scheduleAutoAdvance();
     });
     document.getElementById('mood-other-input').addEventListener('input', function(e){ moodOtherText = e.target.value; });
     if(moodOtherText) document.getElementById('mood-other-input').value = moodOtherText;
@@ -1101,39 +1380,44 @@
   }
 
   // ===================================================================
-  // Step 5 — Style ("Pick a look") — reuses style.html's exact
-  // .style-card/.sc-* markup+CSS (css/styles.css), embedded directly here
-  // rather than navigating to style.html (which requires a logged-in
-  // user — there isn't one yet at this point in the flow). Default
-  // pre-selected: Cinematic, per the spec.
+  // Step 5 — Style ("Pick your dream's style") — Layout-B pill rows,
+  // auto-advancing on pick like every other single-select step (founder
+  // mock round 4). This REPLACED the embedded style.html .style-card
+  // grid ON THIS WIZARD ONLY — style.html itself still uses its cards
+  // for the logged-in flow, untouched. The rows render in the mock's own
+  // order (Cartoon/Cinematic/Anime/Realistic) as pure presentation;
+  // WizardChips.STYLE_CHIPS (shared data, other consumers) is unchanged
+  // and chosenStyle still defaults to Cinematic exactly as before, so a
+  // Skip yields the same style it always did. #style-grid keeps its id
+  // and the rows keep data-style, so existing wiring/tests address the
+  // same elements.
   // ===================================================================
   var chosenStyle = WizardChips.DEFAULT_STYLE;
-  var STYLE_CLASS = { Cartoon: 'sc-cartoon', Cinematic: 'sc-cinematic', Anime: 'sc-anime', Realistic: 'sc-realistic' };
+  var LB_STYLE_ORDER = ['Cartoon', 'Cinematic', 'Anime', 'Realistic']; // mock presentation order — every entry must exist in STYLE_CHIPS
 
   function renderStyleStep(el){
-    var cards = WizardChips.STYLE_CHIPS.map(function(name){
-      return '<div class="style-card" data-style="' + name + '"><div class="sc-bg ' + STYLE_CLASS[name] + '"></div><div class="sc-overlay"></div><div class="sc-check"></div><div class="sc-content"><div class="sc-icon"></div><div class="sc-name">' + name + '</div></div></div>';
+    var rows = LB_STYLE_ORDER.map(function(name){
+      return '<span class="fn-chip" data-style="' + name + '">' + lbChip('style', name) + name + '</span>';
     }).join('');
     el.innerHTML =
-      '<div class="fn-eyebrow">Step 5 of 5</div>' +
-      '<div class="fn-headline">Pick a look.</div>' +
-      '<div class="style-grid" id="style-grid">' + cards + '</div>' +
+      '<div class="fn-headline">Pick your dream’s style</div>' +
+      '<div style="height:8px"></div>' +
+      '<div class="fn-chip-row" id="style-grid">' + rows + '</div>' +
       '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-style-continue" type="button">Continue</button>' +
+      '<button class="fn-btn-primary lb-cta" id="fn-style-continue" type="button">Continue</button>' +
       '<span class="fn-small-link" id="fn-style-skip" style="cursor:pointer;">Skip</span>';
 
-    Array.prototype.forEach.call(document.querySelectorAll('.sc-icon'), function(iconEl){ iconEl.innerHTML = Icons.palette; });
-    Array.prototype.forEach.call(document.querySelectorAll('.sc-check'), function(checkEl){ checkEl.innerHTML = Icons.check; });
     function renderSelection(){
-      Array.prototype.forEach.call(document.querySelectorAll('#style-grid .style-card'), function(card){
-        card.classList.toggle('selected', card.dataset.style === chosenStyle);
+      Array.prototype.forEach.call(document.querySelectorAll('#style-grid .fn-chip'), function(row){
+        row.classList.toggle('sel', row.dataset.style === chosenStyle);
       });
     }
     document.getElementById('style-grid').addEventListener('click', function(e){
-      var card = e.target.closest('.style-card');
-      if(!card) return;
-      chosenStyle = card.dataset.style;
+      var row = e.target.closest('.fn-chip');
+      if(!row) return;
+      chosenStyle = row.dataset.style;
       renderSelection();
+      scheduleAutoAdvance();
     });
     renderSelection();
     document.getElementById('fn-style-continue').addEventListener('click', next);
@@ -1146,12 +1430,11 @@
   var freeText = '';
   function renderFreeText(el){
     el.innerHTML =
-      '<div class="fn-eyebrow">Optional</div>' +
       '<div class="fn-headline">Anything to add?</div>' +
-      '<div class="fn-body-copy">A few extra words, if you want them — totally optional.</div>' +
+      '<div class="fn-body-copy">A few extra words — totally optional.</div>' +
       '<textarea class="fn-field" id="free-text-input" placeholder="Anything else about your dream..." dir="auto" style="min-height:110px;"></textarea>' +
       '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary" id="fn-freetext-continue" type="button">Looks good →</button>' +
+      '<button class="fn-btn-primary lb-cta" id="fn-freetext-continue" type="button">Looks good →</button>' +
       '<span class="fn-small-link" id="fn-freetext-skip" style="cursor:pointer;">Skip</span>';
     var input = document.getElementById('free-text-input');
     input.value = freeText;
@@ -1221,6 +1504,27 @@
   // ===================================================================
   var currentStoryText = '';
   var storyRewriteToken = 0; // bumped every recompute -- an in-flight fetch from a PRIOR chip-state (e.g. the user went back and changed something) must never clobber a newer one's result.
+  // Layout-B: the wall's recap became an EDITABLE textarea (founder mock
+  // round 2 — "Here's your dream — make it yours"). Once the visitor has
+  // typed into it, their words are authoritative: the opportunistic LLM
+  // rewrite must not clobber them when it lands, and a wall re-render
+  // must not recompute over them. Cleared on Back (the topbar handler
+  // below): leaving the wall to change chips means the next visit's
+  // recap must recompute fresh from the new chips — exactly the
+  // pre-redesign semantics, which never had an edit to preserve. What
+  // the edit CHANGES is storyText only — the dream's stored, displayed,
+  // emailed story (payload.storyText / draftPatch.storyText /
+  // adoptPendingGeneration already all read currentStoryText live, so
+  // the edited text rides every one of those paths with no further
+  // wiring) — never the generation prompt (assembled.caption), and it's
+  // deliberately excluded from the resubmission comparisonKey exactly
+  // like the LLM rewrite always was (see the payload comment in
+  // trySubmit). This is also why the mock's "This exact text drives
+  // your video." sub-line was NOT carried over: under the real
+  // promptText/storyText split (tracker item for-product-split-
+  // prompttext-storytext-f-yt5kc7) that claim would be false — the
+  // rendered sub-line uses the mock's other, accurate line instead.
+  var storyEditedByUser = false;
 
   /**
    * Recomputes currentStoryText for whatever's currently staged, fires the
@@ -1230,6 +1534,11 @@
    * earlier step is showing).
    */
   function computeStoryText(){
+    // A user-edited recap is authoritative — repaint it, never recompute
+    // over it (see storyEditedByUser's own comment; this covers the
+    // fb_error return leg's wall re-render too, where the edit was
+    // restored from the redirect snapshot).
+    if(storyEditedByUser){ renderStoryRecap(); return; }
     var myToken = ++storyRewriteToken;
     var hasFreeText = !!(freeText && freeText.trim());
     currentStoryText = hasFreeText ? freeText.trim() : WizardChips.buildDeterministicStory(currentChipFields());
@@ -1243,6 +1552,7 @@
       return res.json().then(function(data){ return { ok: res.ok, data: data }; });
     }).then(function(result){
       if(myToken !== storyRewriteToken) return; // stale -- a newer recompute has since superseded this
+      if(storyEditedByUser) return; // the visitor edited while this was in flight -- their words win
       if(!result.ok || !result.data || !result.data.storyText) return;
       currentStoryText = result.data.storyText;
       renderStoryRecap();
@@ -1253,7 +1563,11 @@
     var card = document.getElementById('fn-story-recap-card');
     var textEl = document.getElementById('fn-story-recap-text');
     if(!card || !textEl) return; // the wall isn't the current screen -- see computeStoryText's own comment
-    textEl.textContent = currentStoryText;
+    // The recap is a textarea now (Layout-B, editable) — .value, not
+    // textContent. Skipped while it's the active element: a repaint
+    // mid-typing (the LLM upgrade landing) would move the caret even
+    // when the text itself is protected above.
+    if(document.activeElement !== textEl) textEl.value = currentStoryText;
     card.style.display = currentStoryText ? 'block' : 'none';
   }
 
@@ -1594,7 +1908,11 @@
         actionKey: actionKey, actionOtherText: actionOtherText, povOn: povOn,
         moodKey: moodKey, moodOtherText: moodOtherText,
         chosenStyle: chosenStyle, freeText: freeText,
-        storyText: currentStoryText
+        storyText: currentStoryText,
+        // A hand-edited recap must survive the Facebook round trip AND
+        // still be protected from recomputation on the re-rendered wall
+        // (the fb_error leg) — the flag rides with the text it protects.
+        storyEdited: storyEditedByUser
       }));
       return true;
     }catch(e){
@@ -1639,6 +1957,7 @@
       chosenStyle = parsed.chosenStyle || WizardChips.DEFAULT_STYLE;
       freeText = parsed.freeText || '';
       currentStoryText = parsed.storyText || '';
+      storyEditedByUser = !!parsed.storyEdited; // pre-flag snapshots simply restore un-edited — falsy is the right default
       assembleFromState();
       return true;
     }catch(e){
@@ -1811,13 +2130,20 @@
     el.innerHTML = fnStageHtml([
       '<div class="fn-headline">Where should we send your first dream?</div>' +
         formingFrameHtml('Your dream is forming…', chosenStyle),
-      // Story recap card — the founder-required pre-generation preview
-      // (see this section's own header comment, beat 2). Same ids the
-      // former Contact step used, so computeStoryText/renderStoryRecap
-      // work here unchanged.
+      // Story recap — the founder-required pre-generation preview (see
+      // this section's own header comment, beat 2), Layout-B EDITABLE:
+      // the mock's recap screen folded onto this wall's existing recap
+      // card (same ids, same computeStoryText/renderStoryRecap plumbing)
+      // rather than becoming its own step — a new step would renumber
+      // wizard_step_viewed's step property for the wall, and analytics
+      // are frozen. ph-no-capture: same session-replay exclusion
+      // create.html's #dream-text carries — people edit genuinely
+      // personal dream content here (maskAllInputs already masks it;
+      // this is the explicit belt half of that).
       '<div class="story-recap-card" id="fn-story-recap-card" style="display:none;">' +
-        '<div class="story-recap-label">Your dream</div>' +
-        '<div class="story-recap-text" id="fn-story-recap-text" dir="auto"></div>' +
+        '<div class="story-recap-label">Here’s your dream — make it yours</div>' +
+        '<textarea class="fn-field lb-recap-text ph-no-capture" id="fn-story-recap-text" dir="auto" aria-label="Your dream, editable"></textarea>' +
+        '<div class="lb-recap-sub">Edit anything before we bring it to life.</div>' +
       '</div>',
       // Screen 13 passwordless's own reassurance copy, verbatim.
       '<div class="fn-microcopy" style="margin:0;">Free to start, no card needed — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.</div>',
@@ -1834,6 +2160,16 @@
     // this screen, so a Back-edited dream always recomputes fresh.
     computeStoryText();
     tryShowFormingPreview();
+
+    // Editable recap wiring (Layout-B): typing pins the visitor's own
+    // words as currentStoryText — every downstream reader (payload,
+    // draftPatch, adoptPendingGeneration) already reads that var live, so
+    // there is deliberately NO other write site. See storyEditedByUser's
+    // own comment for the full semantics.
+    document.getElementById('fn-story-recap-text').addEventListener('input', function(e){
+      currentStoryText = e.target.value;
+      storyEditedByUser = true;
+    });
 
     var emailInput = document.getElementById('contact-email');
     var errEl = document.getElementById('contact-error');
@@ -2176,8 +2512,22 @@
     cur = n;
     render();
   }
-  function next(){ goToStep(cur + 1); }
+  function next(){
+    // Manual and automatic advancement share this one path — cancelling
+    // here is what makes a Continue tap inside the auto-advance window
+    // advance exactly once (see scheduleAutoAdvance's own comment).
+    cancelAutoAdvance();
+    goToStep(cur + 1);
+  }
   backBtn.addEventListener('click', function(){
+    // An auto-advance armed on the step being left must never fire into
+    // the screen Back is about to show.
+    cancelAutoAdvance();
+    // Leaving the wall (the only screen with an editable recap) releases
+    // a pinned hand-edit: the visitor is going back to change the chips,
+    // so the next wall visit recomputes the recap fresh from them —
+    // exactly the pre-redesign behavior. See storyEditedByUser's comment.
+    storyEditedByUser = false;
     // Invalidates any in-flight (or not-yet-acted-on) wall attempt the
     // moment the user navigates away via Back -- see signupAttemptToken's
     // own comment above. Bumping only on the wall's own submit click

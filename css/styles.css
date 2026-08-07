@@ -431,6 +431,18 @@ body{
 .choice-title{ font-weight:700; font-size:16px;}
 .choice-sub{ font-size:12.5px; color:var(--text-muted); margin-top:4px;}
 .choice-chevron{ font-size:20px; color:var(--text-faint); flex:none;}
+/* Layout-B pill variant of .choice-card — currently create.html's
+   Build/Write/Record entry chooser only (tracker item
+   for-product-founder-picked-layout-b-flo--lks7mj: the founder-approved
+   wizard redesign's option-row grammar, applied to the chooser he asked
+   for on 08-05). True pill radius, a leading 38px circular emoji chip,
+   pink selected state — the same accent pair (#FF8BB3/#B783FF tint)
+   wizard.html's shell defines, self-contained here since this file has
+   no --lb-* tokens. Base .choice-card keeps serving admin.html/
+   result.html/style.html unchanged. */
+.choice-card.choice-pill{ border-radius:999px; border-width:1.5px; padding:12px 22px 12px 14px; gap:14px;}
+.choice-pill-chip{ width:38px; height:38px; border-radius:99px; background:rgba(255,139,179,0.16); display:flex; align-items:center; justify-content:center; font-size:19px; flex:none;}
+.choice-card.choice-pill.sel{ border-color:#FF8BB3; background:rgba(255,139,179,0.16);}
 textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(--font-body);}
 /* Reclaims vertical space while Advanced is expanded, so the Continue
    button stays reachable without needing to scroll in the common case —

@@ -121,7 +121,7 @@ test('wizard.html: works correctly as a completely fresh entry point -- no query
     // Step 1 (Subject) must render with no crash/blank screen -- this is
     // the same first screen a real visitor sees.
     var bodyText = await page.evaluate(function () { return document.body.innerText; });
-    assert.match(bodyText, /Who.s the dream about\?/, 'wizard.html must render its first (Subject) step with no query params or prior state');
+    assert.match(bodyText, /Who was in the dream\?/, 'wizard.html must render its first (Subject) step with no query params or prior state');
 
     // No console errors on a totally cold load.
     var consoleErrors = [];

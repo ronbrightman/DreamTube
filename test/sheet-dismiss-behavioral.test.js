@@ -643,9 +643,15 @@ test('wizard.html character sheet ("Me"): a rapid second tap at the same spot (~
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.waitForSelector('#subj-add-self');
+    // Layout-B: the Me row itself stages inline (no sheet on tap --
+    // founder 08-04 ruling); the Me SHEET now opens via the staged row's
+    // edit pencil, so that pencil tap is where the rapid-re-tap
+    // protection has to hold for "Me".
+    await page.waitForSelector('#subj-me-row');
+    await page.click('#subj-me-row');
+    await page.waitForSelector('.char-chip[data-char-select] .chip-edit-area');
 
-    await tapTwiceRapidly(page, '#subj-add-self', 30);
+    await tapTwiceRapidly(page, '.char-chip[data-char-select] .chip-edit-area', 30);
     await page.waitForTimeout(400);
     assert.equal(await page.locator('#sheet-character-overlay.open').count(), 1, 'the sheet must still be open after a rapid re-tap landing on its own just-opened backdrop -- this is the exact founder-reported "sheet never opens" failure mode');
   } finally {
@@ -677,10 +683,14 @@ test('wizard.html character sheet: a genuine tap-outside at a DIFFERENT position
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.waitForSelector('#subj-add-self');
-    await page.click('#subj-add-self');
+    // Layout-B: the Me row stages inline and no longer opens the sheet on
+    // tap (founder 08-04 ruling) -- "#subj-add-other" is the step's
+    // remaining direct tap-to-open-sheet affordance, which is all this
+    // dismissal test needs.
+    await page.waitForSelector('#subj-add-other');
+    await page.click('#subj-add-other');
     // No settle wait -- dismiss immediately (same instant the .open class
-    // lands), but at a screen position far from #subj-add-self's own
+    // lands), but at a screen position far from #subj-add-other's own
     // coordinates. A time-based grace period would have swallowed this;
     // the position-based guard must not, since this is a real, different
     // tap, not a duplicate of the one that opened the sheet.
@@ -699,8 +709,10 @@ test('wizard.html character sheet: a genuine tap-outside well after opening stil
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.waitForSelector('#subj-add-self');
-    await page.click('#subj-add-self');
+    // Layout-B: the sheet's direct tap-open lives on #subj-add-other now
+    // (the Me row stages inline) -- see the test above.
+    await page.waitForSelector('#subj-add-other');
+    await page.click('#subj-add-other');
     await waitForSheetSettled(page, '#sheet-character-overlay');
     var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
     await page.mouse.click(box.x + box.width / 2, Math.max(1, box.y - 10));
@@ -741,10 +753,13 @@ test('wizard.html character sheet: opened via a normal (non-adversarial) tap, sa
     await page.click('#subject-other-row [data-subj-other="stranger"]');
     assert.equal(await page.locator('#subject-other-row [data-subj-other="stranger"]').evaluate(function (el) { return el.classList.contains('sel'); }), true);
 
-    // Now open the "Me" character sheet with a single, ordinary tap (not
-    // the rapid-re-tap pattern the 75ob70 tests above exercise), fill in a
+    // Layout-B: tapping the Me row stages + selects it inline (no sheet,
+    // founder 08-04 ruling); the sheet is still reachable via the row's
+    // edit pencil -- open it there with a single, ordinary tap (not the
+    // rapid-re-tap pattern the 75ob70 tests above exercise), fill in a
     // description, and save.
-    await page.click('#subj-add-self');
+    await page.click('#subj-me-row');
+    await page.click('.char-chip[data-char-select] .chip-edit-area');
     await waitForSheetSettled(page, '#sheet-character-overlay');
     await page.fill('#char-desc-input', 'a woman in her 40s with short brown hair');
     await page.click('#char-save-btn');

@@ -86,33 +86,35 @@ test('wizard.html: every core step is completable purely by tapping chips (zero 
     await safeGoto(page, baseUrl + '/wizard.html');
 
     // Step 1 -- Subject: tap "A stranger" (no character sheet, no typing).
+    // Multi-select step -- Continue advances (Layout-B keeps its button).
     await page.waitForSelector('#subject-other-row [data-subj-other="stranger"]');
     await page.click('#subject-other-row [data-subj-other="stranger"]');
     await page.click('#fn-subject-continue');
 
-    // Step 2 -- Setting: tap Night + Sky/space.
+    // Step 2 -- Setting: tap Night (auxiliary toggle, never advances),
+    // then Sky/space -- a single-select place pick AUTO-advances ~260ms
+    // later under Layout-B, no Continue tap needed.
     await page.waitForSelector('#setting-time-row [data-scenery-time="Night"]');
     await page.click('#setting-time-row [data-scenery-time="Night"]');
     await page.click('#setting-place-row [data-setting-place="sky"]');
-    await page.click('#fn-setting-continue');
 
     // Step 3 -- Action: REQUIRED, no Skip link should exist at all.
+    // Tapping the chip auto-advances.
     await page.waitForSelector('#action-row [data-action="flying"]');
     assert.equal(await page.locator('#fn-action-skip').count(), 0, 'Action step must have no Skip control per the spec');
     await page.click('#action-row [data-action="flying"]');
-    await page.click('#fn-action-continue');
 
     // Step 4 -- Mood: tap Epic (drives camera inference -> sweeping crane,
     // overridden below since Flying was chosen -- Flying/Falling wins over
     // Epic per the documented priority order, see js/wizard-chips.js).
+    // Auto-advances.
     await page.waitForSelector('#mood-row [data-mood="epic"]');
     await page.click('#mood-row [data-mood="epic"]');
-    await page.click('#fn-mood-continue');
 
-    // Step 5 -- Style: tap Anime.
+    // Step 5 -- Style: tap Anime (a pill row now, not a style card --
+    // Layout-B) -- auto-advances like every other single-select step.
     await page.waitForSelector('#style-grid [data-style="Anime"]');
     await page.click('#style-grid [data-style="Anime"]');
-    await page.click('#fn-style-continue');
 
     // Step 6 (optional free text) -- skip entirely, no typing.
     await page.waitForSelector('#fn-freetext-skip');
@@ -155,9 +157,20 @@ test('wizard.html: every core step is completable purely by tapping chips (zero 
 // ============================================================================
 
 async function stageDescribedCharacter(page, mode, name, description) {
-  await page.click(mode === 'self' ? '#subj-add-self' : '#subj-add-other');
+  if (mode === 'self') {
+    // Layout-B: tapping the Me row stages + selects the self character
+    // instantly (no sheet, no required details -- the founder's 08-04
+    // ruling); the description goes into the row's own OPTIONAL detail
+    // input, revealed directly below it. The sheet still exists behind
+    // the row's pencil for photo mode -- see the photo test below.
+    await page.click('#subj-me-row');
+    await page.waitForSelector('#subject-chip-row input[data-char-detail]');
+    await page.fill('#subject-chip-row input[data-char-detail]', description);
+    return;
+  }
+  await page.click('#subj-add-other');
   await page.waitForSelector('#sheet-character-overlay.open');
-  if (mode !== 'self') await page.fill('#char-name-input', name);
+  await page.fill('#char-name-input', name);
   await page.fill('#char-desc-input', description);
   await page.click('#char-save-btn');
   await page.waitForSelector('#sheet-character-overlay:not(.open)');
@@ -272,8 +285,11 @@ test('wizard.html Subject step: ALL selections (Me with a photo, "Someone I know
 
     // "Me" via a real PHOTO (photo characters contribute their id to
     // characterIdsForGeneration but no text phrase in the caption -- see
-    // js/wizard-chips.js's own header comment on why).
-    await page.click('#subj-add-self');
+    // js/wizard-chips.js's own header comment on why). Layout-B: the Me
+    // row itself stages+selects inline; photo upload is still the
+    // character SHEET's job, reached via the row's edit pencil.
+    await page.click('#subj-me-row');
+    await page.click('.char-chip[data-char-select] .chip-edit-area');
     await page.waitForSelector('#sheet-character-overlay.open');
     await page.click('#char-mode-row [data-char-mode="photo"]');
     var path = require('node:path');
@@ -293,8 +309,7 @@ test('wizard.html Subject step: ALL selections (Me with a photo, "Someone I know
     await page.click('#fn-subject-continue');
     await page.waitForSelector('#setting-time-row [data-scenery-time="Night"]');
     await page.click('#fn-setting-skip');
-    await page.click('[data-action="flying"]');
-    await page.click('#fn-action-continue');
+    await page.click('[data-action="flying"]'); // auto-advances (Layout-B)
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
@@ -348,14 +363,13 @@ test('wizard.html Subject step: ALL selections (Me with a photo, "Someone I know
 // endpoint explicitly.
 // ===========================================================================
 
-/** Walks a fresh page through the core wizard steps up to the signup wall — shared by every wall test below. */
+/** Walks a fresh page through the core wizard steps up to the signup wall — shared by every wall test below. The Action tap auto-advances (Layout-B single-select); every skippable step still advances via its Skip link. */
 async function reachWall(page) {
   await safeGoto(page, baseUrl + '/wizard.html');
   await page.click('[data-subj-other="none"]');
   await page.click('#fn-subject-continue');
   await page.click('#fn-setting-skip');
   await page.click('[data-action="flying"]');
-  await page.click('#fn-action-continue');
   await page.click('#fn-mood-skip');
   await page.click('#fn-style-skip');
   await page.click('#fn-freetext-skip');
@@ -401,10 +415,13 @@ test('wizard.html signup wall: renders the forming veil on top, the Facebook but
     assert.ok((await page.$('#fn-username')) === null, 'the old username field must be gone');
     assert.ok((await page.$('#fn-password')) === null, 'the old password field must be gone — this wall is passwordless');
 
-    // The story recap card (the founder-required pre-generation preview,
+    // The story recap (the founder-required pre-generation preview,
     // tracker item for-product-split-prompttext-storytext-f-yt5kc7) still
-    // has its home on this wall.
+    // has its home on this wall — and under Layout-B it is an EDITABLE
+    // textarea ("Here's your dream — make it yours"), not a read-only div.
     assert.equal(await page.locator('#fn-story-recap-card').count(), 1, 'the story recap card must still render on the wall');
+    assert.equal(await page.locator('textarea#fn-story-recap-text').count(), 1, 'the recap must be an editable textarea (Layout-B, founder mock round 2)');
+    assert.match(await page.locator('#fn-story-recap-card .story-recap-label').textContent(), /make it yours/i, 'the recap must carry the founder\'s mock heading');
   } finally {
     await page.close();
   }
@@ -1306,6 +1323,226 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
     assert.ok(draft.caption.length > 0);
     assert.doesNotMatch(draft.caption, /Cinematic style/, 'the real style choice belongs to style.html, not baked in early');
     assert.match(draft.caption, /dreamlike\.$/);
+  } finally {
+    await page.close();
+  }
+});
+
+// ===========================================================================
+// Layout-B redesign coverage (tracker item
+// for-product-founder-picked-layout-b-flo--lks7mj — the founder-approved
+// pill-row wizard skin, seven mock rounds on the since-deleted
+// mock-wizard-b-x7q4.html). The redesign is skin + two founder-directed
+// interaction changes; these tests pin exactly those:
+//   - single-select steps AUTO-advance ~260ms after a tap (no Continue
+//     needed), and a Continue tap inside that window advances exactly ONCE
+//   - the Subject step's Me row stages+selects inline and reveals its
+//     OPTIONAL detail input DIRECTLY below its own row (founder 08-04
+//     ruling: the details ask lives at the chip pick or nowhere), typed
+//     details reach both the caption and the flushed real character
+//   - a detail-less Me never blocks Continue and never produces a
+//     half-empty store character
+//   - the wall's recap is EDITABLE and the edited text (storyText) rides
+//     the real submission, un-clobbered by the late LLM rewrite
+// NOTE (repo landmine): never assert.equal an ElementHandle against null —
+// boolean asserts only (assert.ok((await page.$(...)) === null, ...)).
+// ===========================================================================
+
+test('wizard.html Layout-B: a single-select tap (Action) auto-advances with NO Continue tap, and a Continue tap inside the auto-advance window advances exactly once, never two steps', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]');
+
+    // (a) Tap alone advances — nothing else is clicked.
+    await page.click('#action-row [data-action="flying"]');
+    await page.waitForSelector('#mood-row', { timeout: 3000 });
+
+    // (b) Back to Action, then chip-tap + Continue-tap in the SAME tick
+    // (guaranteed inside the 260ms window — a two-round-trip click pair
+    // could straddle it under load and flake): next() cancels the armed
+    // auto-advance, so this must land on Mood, not skip through to Style.
+    await page.click('#fnBack');
+    await page.waitForSelector('#action-row [data-action="running"]');
+    await page.evaluate(function () {
+      document.querySelector('#action-row [data-action="running"]').click();
+      document.getElementById('fn-action-continue').click();
+    });
+    await page.waitForSelector('#mood-row', { timeout: 3000 });
+    // Give the (cancelled) timer's original 260ms window ample time to
+    // have fired if the cancel were broken, then confirm no double-hop.
+    await page.waitForTimeout(500);
+    assert.equal(await page.locator('#mood-row').count(), 1, 'must still be sitting on Mood — a Continue tap inside the auto-advance window must advance exactly once');
+    assert.equal(await page.locator('#style-grid').count(), 0, 'must NOT have double-advanced through to Style');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html Layout-B Subject: tapping the Me row stages + selects it inline and reveals its OPTIONAL detail input DIRECTLY below its own row; the typed detail reaches the assembled caption AND prefills the real post-signup Me character (never re-asked)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-medetail-1', operationName: 'fal:fake-model:req-medetail-1' }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true, claimed: true }) });
+    });
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subj-me-row');
+    await page.click('#subj-me-row');
+
+    // The row is now a selected character row, with its detail input as
+    // the IMMEDIATE next sibling — founder mock round 7's "directly below
+    // its own row, one per selected row", not pooled at the list's end.
+    await page.waitForSelector('#subject-chip-row input[data-char-detail]');
+    var adjacency = await page.evaluate(function () {
+      var meChip = document.querySelector('#subject-chip-row .char-chip.selected');
+      var nextEl = meChip && meChip.nextElementSibling;
+      return {
+        meSelected: !!meChip,
+        nextIsDetail: !!(nextEl && nextEl.querySelector && nextEl.querySelector('input[data-char-detail]'))
+      };
+    });
+    assert.equal(adjacency.meSelected, true, 'tapping the Me row must select it immediately (no sheet, no required details)');
+    assert.equal(adjacency.nextIsDetail, true, 'the optional detail input must sit DIRECTLY below the Me row itself');
+
+    await page.fill('#subject-chip-row input[data-char-detail]', 'a tall man in a red coat');
+
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'me-detail-test@example.com');
+    await page.click('#fn-contact-continue');
+
+    await settle(function () { return startPendingCalls.length >= 1; });
+    assert.match(startPendingCalls[0].caption, /me, a tall man in a red coat/, 'the inline detail must be baked into the assembled caption exactly like a sheet-entered description');
+
+    // Post-signup: the detail must have been flushed onto the REAL Me
+    // character (the 08-04 ruling's never-ask-twice half — profile/create
+    // read this same record and must never need to ask again).
+    await page.waitForFunction(function () {
+      return window.location.pathname.indexOf('home.html') !== -1 && !!window.DreamStore;
+    }, null, { timeout: 15000 });
+    var selfChar = await page.evaluate(function () {
+      return (window.DreamStore.getCharacters() || []).filter(function (c) { return c.isSelf; })[0] || null;
+    });
+    assert.ok(selfChar, 'the inline-staged Me character must be flushed into the real store at signup');
+    assert.equal(selfChar.description, 'a tall man in a red coat', 'the flushed Me character must carry the inline-typed detail as its description');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html Layout-B Subject: a detail-less Me never blocks Continue — the caption still says "me" and NO empty half-character is flushed into the store at signup', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-menodetail-1', operationName: 'fal:fake-model:req-menodetail-1' }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true, claimed: true }) });
+    });
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
+    });
+
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForSelector('#subj-me-row');
+    await page.click('#subj-me-row');
+    await page.waitForSelector('#subject-chip-row .char-chip.selected');
+    // Type NOTHING — the detail is optional (founder 08-04 ruling).
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'me-no-detail-test@example.com');
+    await page.click('#fn-contact-continue');
+
+    await settle(function () { return startPendingCalls.length >= 1; });
+    assert.match(startPendingCalls[0].caption, /of me,/, 'a detail-less Me must still put "me" into the assembled caption');
+    assert.equal(startPendingCalls[0].characterIdsForGeneration.length, 0, 'a described-less, photo-less Me must never ride characterIdsForGeneration');
+
+    await page.waitForFunction(function () {
+      return window.location.pathname.indexOf('home.html') !== -1 && !!window.DreamStore;
+    }, null, { timeout: 15000 });
+    var charCount = await page.evaluate(function () {
+      return (window.DreamStore.getCharacters() || []).length;
+    });
+    assert.equal(charCount, 0, 'flushStagedCharactersToStore must skip the empty inline Me — no half-empty character record may be created');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html Layout-B wall: the recap textarea is genuinely editable — the edited text rides the submission as storyText, and a late-landing LLM rewrite must NOT clobber the visitor\'s own words', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var EDITED = 'I rode a paper boat down a river of stars.';
+    var startPendingCalls = [];
+    var slowRewrite = gate();
+    await page.route('**/.netlify/functions/rewrite-dream-story', async function (route) {
+      await slowRewrite.wait();
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ storyText: 'an LLM rewrite that must lose to the visitor' }) });
+    });
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: true }) });
+    });
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-editrecap-1', operationName: 'fal:fake-model:req-editrecap-1' }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true, claimed: true }) });
+    });
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
+    });
+
+    await reachWall(page);
+    await page.waitForSelector('#fn-story-recap-card[style*="block"]', { timeout: 3000 });
+    var deterministic = await page.inputValue('#fn-story-recap-text');
+    assert.ok(deterministic.length > 0, 'the deterministic recap must show immediately');
+
+    // Edit while the LLM rewrite is still held in flight...
+    await page.fill('#fn-story-recap-text', EDITED);
+    // ...then let the rewrite land late. The visitor's words must win.
+    slowRewrite.open();
+    await settle(function () { return slowRewrite.released; });
+    await page.waitForTimeout(300);
+    assert.equal(await page.inputValue('#fn-story-recap-text'), EDITED, 'a late LLM rewrite must never clobber a hand-edited recap');
+
+    await page.fill('#contact-email', 'recap-edit-test@example.com');
+    await page.click('#fn-contact-continue');
+    await settle(function () { return startPendingCalls.length >= 1; });
+    assert.equal(startPendingCalls[0].storyText, EDITED, 'the edited recap must ride the real submission as storyText');
+    assert.doesNotMatch(startPendingCalls[0].caption, /paper boat/, 'editing the recap edits storyText ONLY — the generation promptText (caption) is assembled from the chips, unchanged');
   } finally {
     await page.close();
   }

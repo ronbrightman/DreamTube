@@ -174,15 +174,27 @@ test('wizard.html Step 3: every default-visible chip is selectable by itself (si
   try {
     await reachActionStep(page);
 
+    // Layout-B: tapping a regular chip auto-advances to Mood ~260ms later
+    // (the advance itself is the proof the tap registered), so each
+    // iteration waits for Mood, Backs out, and asserts the selection
+    // stuck -- deterministic under load, no racing the 260ms window.
     for (var i = 0; i < DEFAULT_KEYS.length; i++) {
       var key = DEFAULT_KEYS[i];
+      if (key === 'other') continue; // the write-in row deliberately does NOT auto-advance -- covered right below
       await page.click('#action-row [data-action="' + key + '"]');
+      await page.waitForSelector('#mood-row', { timeout: 3000 });
+      await page.click('#fnBack');
+      await page.waitForSelector('#action-row');
       var selectedKeys = await page.$$eval('#action-row .fn-chip.sel', function (els) { return els.map(function (e) { return e.dataset.action; }); });
-      assert.deepEqual(selectedKeys, [key], 'selecting ' + key + ' must select it alone (single-select)');
+      assert.deepEqual(selectedKeys, [key], 'selecting ' + key + ' must select it alone (single-select), surviving the advance-and-Back round trip');
     }
-    // Last iteration above was 'other' -- confirm its free-text reveal is showing.
+    // "+ Something else": reveals its free-text input and stays PUT (mock
+    // round 2 -- the user is about to type; Continue advances).
+    await page.click('#action-row [data-action="other"]');
     assert.equal(await page.locator('#action-other-reveal').evaluate(function (el) { return el.style.display; }), 'block');
     assert.equal(await page.locator('#action-other-input').count(), 1);
+    await page.waitForTimeout(500); // well past the auto-advance window
+    assert.equal(await page.locator('#action-row').count(), 1, 'the write-in row must never auto-advance out from under the typing user');
   } finally {
     await page.close();
   }
@@ -196,9 +208,16 @@ test('wizard.html Step 3: every chip behind the "+N more" expander is fully sele
     await reachActionStep(page);
     await page.click('#action-more-toggle');
 
+    // Same advance-then-Back pattern as the default-visible test above
+    // (Layout-B auto-advance). After Back, the expander re-renders forced
+    // open whenever the active selection is itself hidden, so every next
+    // hidden chip stays reachable without re-expanding.
     for (var i = 0; i < HIDDEN_KEYS.length; i++) {
       var key = HIDDEN_KEYS[i];
       await page.click('#action-row [data-action="' + key + '"]');
+      await page.waitForSelector('#mood-row', { timeout: 3000 });
+      await page.click('#fnBack');
+      await page.waitForSelector('#action-row');
       var selectedKeys = await page.$$eval('#action-row .fn-chip.sel', function (els) { return els.map(function (e) { return e.dataset.action; }); });
       assert.deepEqual(selectedKeys, [key], 'selecting hidden chip ' + key + ' must select it alone (single-select), same as any default-visible chip');
     }
@@ -215,6 +234,13 @@ test('wizard.html Step 3: once a hidden chip is selected, the expander stays ope
     await reachActionStep(page);
     await page.click('#action-more-toggle');
     await page.click('#action-row [data-action="late"]'); // 'late' is a hidden chip
+    // Layout-B: the tap auto-advances -- ride it out and come Back; the
+    // re-rendered step must force the expander open (the active selection
+    // lives behind it and must never be hidden from view).
+    await page.waitForSelector('#mood-row', { timeout: 3000 });
+    await page.click('#fnBack');
+    await page.waitForSelector('#action-row');
+    assert.ok((await page.locator('[data-action="late"].sel').count()) === 1, '"late" must come back still selected after the advance-and-Back round trip');
 
     // Clicking "Show less" must be a no-op while the active selection is
     // itself hidden -- the visitor's own current choice must never
@@ -224,13 +250,18 @@ test('wizard.html Step 3: once a hidden chip is selected, the expander stays ope
     assert.deepEqual(keysStillShown, EXPANDED_KEYS_ORDER, 'must not collapse while the selected chip lives behind the expander');
     assert.ok((await page.locator('[data-action="late"].sel').count()) === 1, '"late" must still show as selected');
 
-    // Now pick a default-visible chip instead -- collapsing must work
-    // normally again, since the active selection no longer needs the
-    // expander to stay reachable.
+    // Now pick a default-visible chip instead (advance-and-Back again).
+    // The visitor's last explicit expander choice was "Show less" (step
+    // above -- honored-but-overridden while the selection was hidden), so
+    // the moment the selection moves back to a default-visible chip the
+    // re-render collapses on its own: the override lapses, no extra
+    // toggle tap needed.
     await page.click('#action-row [data-action="flying"]');
-    await page.click('#action-more-toggle');
+    await page.waitForSelector('#mood-row', { timeout: 3000 });
+    await page.click('#fnBack');
+    await page.waitForSelector('#action-row');
     var keysAfterRealCollapse = await page.$$eval('#action-row [data-action]', function (els) { return els.map(function (e) { return e.dataset.action; }); });
-    assert.deepEqual(keysAfterRealCollapse, DEFAULT_KEYS, 'once selection moves to a default-visible chip, "Show less" must actually collapse again');
+    assert.deepEqual(keysAfterRealCollapse, DEFAULT_KEYS, 'once selection moves to a default-visible chip, the earlier "Show less" choice must actually take effect again');
   } finally {
     await page.close();
   }
@@ -266,10 +297,11 @@ test('wizard.html: a default-visible chip AND a hidden chip both reach the Conta
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    // 'exam' -- default-visible, no expansion needed.
+    // 'exam' -- default-visible, no expansion needed. The chip tap itself
+    // advances (Layout-B); the recap is an editable textarea now, so its
+    // text reads via inputValue.
     await reachActionStep(page);
     await page.click('#action-row [data-action="exam"]');
-    await page.click('#fn-action-continue');
     await page.waitForSelector('#fn-mood-skip');
     await page.click('#fn-mood-skip');
     await page.waitForSelector('#fn-style-skip');
@@ -277,14 +309,13 @@ test('wizard.html: a default-visible chip AND a hidden chip both reach the Conta
     await page.waitForSelector('#fn-freetext-skip');
     await page.click('#fn-freetext-skip');
     await page.waitForSelector('#fn-story-recap-text');
-    var examRecap = await page.locator('#fn-story-recap-text').textContent();
+    var examRecap = await page.inputValue('#fn-story-recap-text');
     assert.equal(examRecap, WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'exam' }), 'default-visible chip must produce the exact same recap text the underlying mapping always produced');
 
     // 'late' -- hidden behind the expander.
     await reachActionStep(page);
     await page.click('#action-more-toggle');
     await page.click('#action-row [data-action="late"]');
-    await page.click('#fn-action-continue');
     await page.waitForSelector('#fn-mood-skip');
     await page.click('#fn-mood-skip');
     await page.waitForSelector('#fn-style-skip');
@@ -292,7 +323,7 @@ test('wizard.html: a default-visible chip AND a hidden chip both reach the Conta
     await page.waitForSelector('#fn-freetext-skip');
     await page.click('#fn-freetext-skip');
     await page.waitForSelector('#fn-story-recap-text');
-    var lateRecap = await page.locator('#fn-story-recap-text').textContent();
+    var lateRecap = await page.inputValue('#fn-story-recap-text');
     assert.equal(lateRecap, WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'late' }), 'a chip curated behind the expander must produce the EXACT SAME recap text as it always did -- byte-identical mapping, only its default visibility changed');
   } finally {
     await page.close();
@@ -359,17 +390,25 @@ test('wizard.html Step 3 on a real mobile viewport: chips and the expander are g
     var expandedKeys = await page.$$eval('#action-row [data-action]', function (els) { return els.map(function (e) { return e.dataset.action; }); });
     assert.deepEqual(expandedKeys, EXPANDED_KEYS_ORDER, 'a real touch tap on the expander must reveal every chip');
 
-    await page.tap('#action-row [data-action="calm"]');
-    assert.equal(await page.locator('[data-action="calm"].sel').count(), 1, 'a real touch tap must select a chip behind the expander');
-
-    // POV toggle is still tappable and readable at this viewport size too.
-    // #pov-toggle itself is a visually-hidden input -- tap the visible
-    // switch (delivered to the checkbox via the wrapping <label>), same
-    // as the click-based test above.
+    // POV toggle is still tappable and readable at this viewport size too
+    // -- exercised BEFORE the option tap below, since that tap
+    // auto-advances off this step (Layout-B). #pov-toggle itself is a
+    // visually-hidden input -- tap the visible switch (delivered to the
+    // checkbox via the wrapping <label>), same as the click-based test
+    // above.
     var povBox = await page.locator('.fn-toggle-row .fn-switch').boundingBox();
     assert.ok(povBox.width >= 30 && povBox.height >= 20, 'POV switch tap target looks too small on mobile');
     await page.tap('.fn-toggle-row .fn-switch-track');
     assert.equal(await page.locator('#pov-toggle').isChecked(), true);
+
+    // A real touch tap on a chip behind the expander selects it -- proven
+    // via the auto-advance it triggers plus the retained selection after
+    // Back (same deterministic pattern as the click-based tests above).
+    await page.tap('#action-row [data-action="calm"]');
+    await page.waitForSelector('#mood-row', { timeout: 3000 });
+    await page.tap('#fnBack');
+    await page.waitForSelector('#action-row');
+    assert.equal(await page.locator('[data-action="calm"].sel').count(), 1, 'a real touch tap must select a chip behind the expander');
   } finally {
     await page.close();
     await context.close();

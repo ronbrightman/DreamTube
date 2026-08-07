@@ -588,23 +588,22 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
     await page.click('[data-subj-other="stranger"]');
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
-    await page.click('[data-action="flying"]');
-    await page.click('#fn-action-continue');
-    await page.click('[data-mood="epic"]');
-    await page.click('#fn-mood-continue');
+    await page.click('[data-action="flying"]'); // auto-advances (Layout-B)
+    await page.click('[data-mood="epic"]');     // auto-advances too
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
 
     // The signup wall is wizard.html's own preview moment -- recap must
     // show a real human sentence immediately (deterministic template),
-    // then upgrade once the mocked LLM rewrite resolves.
+    // then upgrade once the mocked LLM rewrite resolves. (An editable
+    // textarea under Layout-B -- read via .value/inputValue.)
     await page.waitForSelector('#fn-story-recap-card[style*="block"]', { timeout: 3000 });
-    var recapBeforeRewrite = await page.textContent('#fn-story-recap-text');
+    var recapBeforeRewrite = await page.inputValue('#fn-story-recap-text');
     assert.ok(recapBeforeRewrite.length > 0, 'recap must never be blank');
     assert.doesNotMatch(recapBeforeRewrite, /tracking shot|aerial|crane shot|close-up shot|POV shot|dreamlike/i);
     await page.waitForFunction(function (expected) {
       var el = document.getElementById('fn-story-recap-text');
-      return el && el.textContent === expected;
+      return el && el.value === expected;
     }, MOCK_LLM_STORY, { timeout: 3000 });
     await settle(function () { return rewriteCalls.length >= 1; });
     assert.equal(rewriteCalls.length, 1);
@@ -661,15 +660,14 @@ test('wizard.html: chips WITH free text -- the pending-generation payload carrie
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
-    await page.click('[data-action="flying"]');
-    await page.click('#fn-action-continue');
+    await page.click('[data-action="flying"]'); // auto-advances (Layout-B)
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.fill('#free-text-input', FREE_TEXT);
     await page.click('#fn-freetext-continue');
 
     await page.waitForSelector('#fn-story-recap-card[style*="block"]', { timeout: 3000 });
-    assert.equal(await page.textContent('#fn-story-recap-text'), FREE_TEXT);
+    assert.equal(await page.inputValue('#fn-story-recap-text'), FREE_TEXT);
     assert.equal(rewriteCalls.length, 0, 'the LLM rewrite must never be called when the user typed their own free text');
 
     await page.fill('#contact-email', 'wizard-freetext@example.com');

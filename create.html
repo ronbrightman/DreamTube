@@ -85,21 +85,28 @@
          ("replaces the intimidating free-text box"); "Write it" and
          "Record it" are deliberately left untouched alongside it rather
          than removed, so this is purely additive — a new, lower-risk
-         option next to two already-shipped, already-tested ones. -->
-    <div class="choice-card" id="choice-build">
-      <div class="choice-icon choice-icon-build"></div>
+         option next to two already-shipped, already-tested ones.
+
+         Layout-B restyle (tracker item for-product-founder-picked-
+         layout-b-flo--lks7mj, 2026-08-07): these three cards wear the
+         same founder-approved pill-row grammar as wizard.html's redesign
+         — .choice-pill + a leading emoji chip (the mock's own 🪄/✍️/🎙️),
+         chevrons dropped per the mock. Ids, routing, and every handler
+         are unchanged; see the click handlers below for the one
+         interaction addition (a ~260ms selected-state beat on real
+         Build/Write taps). css/styles.css's base .choice-card serves
+         every OTHER page's cards untouched. -->
+    <div class="choice-card choice-pill" id="choice-build">
+      <span class="choice-pill-chip">🪄</span>
       <div class="choice-text"><div class="choice-title">Build it</div><div class="choice-sub">Tap a few chips — no typing needed</div></div>
-      <div class="choice-chevron">›</div>
     </div>
-    <div class="choice-card" id="choice-write">
-      <div class="choice-icon choice-icon-write"></div>
+    <div class="choice-card choice-pill" id="choice-write">
+      <span class="choice-pill-chip">✍️</span>
       <div class="choice-text"><div class="choice-title">Write it</div><div class="choice-sub">Type out your dream</div></div>
-      <div class="choice-chevron">›</div>
     </div>
-    <div class="choice-card" id="choice-record">
-      <div class="choice-icon choice-icon-record"></div>
+    <div class="choice-card choice-pill" id="choice-record">
+      <span class="choice-pill-chip">🎙️</span>
       <div class="choice-text"><div class="choice-title">Record it</div><div class="choice-sub">Speak your dream out loud</div></div>
-      <div class="choice-chevron">›</div>
     </div>
     <div class="rec-error" id="select-error" style="display:none;"></div>
   </div>
@@ -361,9 +368,8 @@
   }).catch(function(){ /* ambient only — never block the rest of the page on this */ });
 
   document.getElementById('create-back').innerHTML = Icons.back;
-  document.querySelector('.choice-icon-build').innerHTML = Icons.plus;
-  document.querySelector('.choice-icon-write').innerHTML = Icons.pencil;
-  document.querySelector('.choice-icon-record').innerHTML = Icons.mic;
+  // (The choice cards' leading chips are emoji baked into the markup now
+  // — Layout-B restyle, see #create-select — so nothing to inject there.)
   document.querySelector('.rec-dot').innerHTML = Icons.mic;
   document.getElementById('re-record').innerHTML = '<span class="icon" style="width:14px;height:14px;">' + Icons.redo + '</span> Re-record';
   document.getElementById('transcript-re-record').innerHTML = '<span class="icon" style="width:14px;height:14px;">' + Icons.redo + '</span> Re-record';
@@ -940,12 +946,38 @@
     autoSelectSelfIfMentioned(textArea.value);
   });
 
-  document.getElementById('choice-write').addEventListener('click', function(){
-    moveAdvSectionTo('create-write', 'write-spacer');
-    selectEl.style.display = 'none';
-    writeEl.style.display = 'flex';
-    heading.textContent = 'Write your dream';
-    textArea.focus();
+  /**
+   * Layout-B (the founder-approved wizard redesign's entry-chooser
+   * grammar, tracker item for-product-founder-picked-layout-b-flo--
+   * lks7mj): a REAL tap on a chooser pill paints it selected for ~260ms
+   * before advancing — the same beat as wizard.html's auto-advancing
+   * single-select steps, so the pink selection visibly registers.
+   * PROGRAMMATIC .click() calls (the ?mode=/?write= deep-links and the
+   * record-blocked panel's "Write it instead" fallback all reuse these
+   * handlers) skip the flash entirely via e.isTrusted — there's no tap
+   * to acknowledge, and the chooser may not even be on screen.
+   * "Record it" deliberately does NOT use this (see its own handler):
+   * startRecordingUI's getUserMedia must stay inside the user gesture —
+   * Safari can refuse a mic request whose gesture context expired in a
+   * setTimeout.
+   */
+  function choicePillFlashThen(e, advance){
+    if(e && e.isTrusted){
+      e.currentTarget.classList.add('sel');
+      setTimeout(advance, 260);
+    } else {
+      advance();
+    }
+  }
+
+  document.getElementById('choice-write').addEventListener('click', function(e){
+    choicePillFlashThen(e, function(){
+      moveAdvSectionTo('create-write', 'write-spacer');
+      selectEl.style.display = 'none';
+      writeEl.style.display = 'flex';
+      heading.textContent = 'Write your dream';
+      textArea.focus();
+    });
   });
 
   // ===== In-app webview detection (record-flow guard) =====
@@ -1124,13 +1156,25 @@
       showError('select-error', 'Microphone access was denied — allow it in your browser settings, or use Write instead.');
     });
   }
-  document.getElementById('choice-record').addEventListener('click', startRecordingUI);
+  document.getElementById('choice-record').addEventListener('click', function(e){
+    // Selected-state paint only — NO 260ms delay, unlike Build/Write
+    // above: startRecordingUI calls getUserMedia, which must run inside
+    // the original user gesture (see choicePillFlashThen's doc comment).
+    if(e && e.isTrusted) e.currentTarget.classList.add('sel');
+    startRecordingUI();
+  });
+
+  /** Returning to the chooser must not show a stale pink pill from the tap that left it — see choicePillFlashThen. */
+  function clearChoicePillSelection(){
+    Array.prototype.forEach.call(document.querySelectorAll('#create-select .choice-pill.sel'), function(el){ el.classList.remove('sel'); });
+  }
 
   document.getElementById('create-back').addEventListener('click', function(){
     if(buildEl.style.display === 'flex'){
       if(buildPrev()) return;
       buildEl.style.display = 'none';
       selectEl.style.display = 'block';
+      clearChoicePillSelection();
       heading.textContent = 'New Dream';
       return;
     }
@@ -1146,6 +1190,7 @@
       // whatever flow they've since navigated to.
       transcribeAttemptToken++;
       selectEl.style.display = 'block';
+      clearChoicePillSelection();
       writeEl.style.display = 'none';
       recordEl.style.display = 'none';
       reviewEl.style.display = 'none';
@@ -1664,12 +1709,14 @@
     return false;
   }
 
-  document.getElementById('choice-build').addEventListener('click', function(){
-    selectEl.style.display = 'none';
-    buildEl.style.display = 'flex';
-    heading.textContent = 'Build your dream';
-    buildCur = 0;
-    renderBuild();
+  document.getElementById('choice-build').addEventListener('click', function(e){
+    choicePillFlashThen(e, function(){
+      selectEl.style.display = 'none';
+      buildEl.style.display = 'flex';
+      heading.textContent = 'Build your dream';
+      buildCur = 0;
+      renderBuild();
+    });
   });
 
   writeContinue.addEventListener('click', function(){
