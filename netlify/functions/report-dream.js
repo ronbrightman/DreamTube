@@ -131,5 +131,46 @@ exports.handler = async function (event) {
 
   await moderationStore.appendReport(event, entry);
 
+  // Owner notification (founder gap-report 2026-08-07: he filed a test
+  // report and "never got an email" — v1 stored reports silently, and a
+  // queue nobody is told about is a queue nobody reads). Fire-and-forget
+  // through the same Resend infra every other sender uses: a failure
+  // must never turn a successfully-stored report into a failed response
+  // (the report IS stored either way — the email is a courtesy ping).
+  // OWNER_EMAIL is the same env owner-topup-tokens.js already trusts.
+  try {
+    var resendKey = process.env.RESEND_API_KEY;
+    var ownerEmail = process.env.OWNER_EMAIL;
+    if (resendKey && ownerEmail) {
+      var subjectKind = targetType === 'comment' ? 'comment' : 'dream';
+      var lines = [
+        'A ' + subjectKind + ' was reported on the public feed.',
+        '',
+        'Dream: ' + (entry.dreamCaption || entry.dreamId),
+        'Owner: ' + (entry.dreamOwnerHandle || 'unknown'),
+        'Reported by: ' + (entry.reporterHandle || 'anonymous'),
+        'Reason: ' + (entry.reason || '(none given)'),
+        targetType === 'comment' ? ('Comment: "' + (entry.commentText || '') + '" — by ' + (entry.commentAuthorHandle || 'unknown')) : '',
+        '',
+        'This email carries the full report — there is no review page yet',
+        '(get-moderation-reports.js has the queue; page tracked on the tracker).'
+      ].filter(Boolean);
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + resendKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'DreamTube <dreams@dreamtube.life>',
+          to: [ownerEmail],
+          subject: 'DreamTube report: ' + subjectKind + ' flagged (' + (entry.reason || 'no reason') + ')',
+          text: lines.join('\n')
+        })
+      });
+    } else {
+      console.log('report-dream: owner notification skipped (RESEND_API_KEY or OWNER_EMAIL not configured)');
+    }
+  } catch (e) {
+    console.log('report-dream: owner notification failed (report itself stored fine): ' + (e && e.message));
+  }
+
   return { statusCode: 200, body: JSON.stringify({ ok: true }) };
 };
