@@ -155,3 +155,198 @@ test('a plain (non-@-prefixed) handle is used as-is for distinct_id (stripHandle
   assert.equal(givenCall.body.distinct_id, 'liker7');
   assert.equal(receivedCall.body.distinct_id, 'owner7');
 });
+
+// ============================================================================
+// CONCURRENCY — the founder-confirmed stale-read clobber (tracker item
+// for-product-likes-vanish-from-feed-video-fyqks0)
+// ----------------------------------------------------------------------------
+// like-dream.js used to do a plain whole-array read -> mutate one dream's
+// `likes` IN PLACE -> write-back with NO retry/verify at all. Two genuinely
+// concurrent likes on the SAME dream let both calls read the same
+// pre-increment `likes` value before either writes, so the second call's
+// write silently clobbers the first's increment — confirmed live via
+// PostHog like_given vs. the actual feed count (three documented cases, see
+// the tracker item).
+//
+// A PLAIN Promise.all race (the technique test/tracker.test.js's own "two
+// concurrent updateItem calls" CONCURRENCY block uses successfully for an
+// analogous whole-array RMW) does NOT reliably reproduce this specific bug
+// against test/helpers/mock-blobs.js's fake store, for a subtle reason
+// worth documenting rather than silently working around: the fake store's
+// get()/setJSON() never clone -- store.get() hands back the exact SAME
+// in-memory array/object reference on every call until the next setJSON()
+// replaces it. The OLD like-dream.js mutated that shared reference directly
+// (`feed[idx].likes = ...`) rather than building a fresh array/object (the
+// copy-on-write discipline tracker-store.js's updateItem, entitlements.js's
+// creditTokenPackAmountOnce, and pending-dreams.js's tryTransition all
+// already follow, and this fix now adopts too). Under this specific mock,
+// mutating the shared reference in place means a second concurrent caller's
+// later read of "the same key" incidentally already reflects the first
+// caller's in-place mutation, even though its own local variable was
+// assigned before that mutation happened — so the bug perversely
+// self-corrects under this mock's aliasing, even though it demonstrably
+// does NOT self-correct against real Netlify Blobs (which always
+// deserializes a fresh, independent object on every get()). The three plain
+// Promise.all tests below are still valid, honest regression coverage for
+// the FIX (which never mutates in place, so they pass for the right
+// reason) — but see the "FORCED, deterministic race" test further down for
+// the one that actually distinguishes old vs. new: it breaks the mock's
+// reference-sharing explicitly, mirroring the real Netlify Blobs semantics
+// every read/write actually has, using the same setReadOverride/
+// setWriteOverride technique test/entitlements-token-purchases.test.js and
+// test/automatic-first-dream-email.test.js already use for hazards a plain
+// synchronous Map can't otherwise reproduce.
+// ============================================================================
+
+test('CONCURRENCY: two concurrent delta:1 likes on the SAME dream both land -- the count reflects both, neither clobbers the other', async function () {
+  await seedFeedDream({ id: 'dream-race-1', ownerHandle: '@owner-race1', likes: 10 });
+  installPostHogSpy();
+
+  var results = await Promise.all([
+    handler(postEvent({ id: 'dream-race-1', delta: 1, likerHandle: '@likerA' })),
+    handler(postEvent({ id: 'dream-race-1', delta: 1, likerHandle: '@likerB' }))
+  ]);
+
+  results.forEach(function (res) { assert.equal(res.statusCode, 200); });
+
+  var store = getStore('dreamtube-feed');
+  var finalFeed = await store.get('feed-index', { type: 'json' });
+  var finalDream = finalFeed.filter(function (d) { return d.id === 'dream-race-1'; })[0];
+  assert.equal(finalDream.likes, 12, 'both concurrent likes must be reflected (10 + 1 + 1) -- a clobbered write would leave this at 11');
+});
+
+test('CONCURRENCY: repeated trials stay consistent (rules out a lucky single pass)', async function () {
+  installPostHogSpy();
+  for (var i = 0; i < 10; i++) {
+    var id = 'dream-race-loop-' + i;
+    await seedFeedDream({ id: id, ownerHandle: '@owner-loop', likes: 0 });
+    var results = await Promise.all([
+      handler(postEvent({ id: id, delta: 1, likerHandle: '@likerA' })),
+      handler(postEvent({ id: id, delta: 1, likerHandle: '@likerB' }))
+    ]);
+    results.forEach(function (res) { assert.equal(res.statusCode, 200); });
+
+    var store = getStore('dreamtube-feed');
+    var finalFeed = await store.get('feed-index', { type: 'json' });
+    var finalDream = finalFeed.filter(function (d) { return d.id === id; })[0];
+    assert.equal(finalDream.likes, 2, 'trial ' + i + ': both concurrent likes must land');
+  }
+});
+
+test('CONCURRENCY: three concurrent delta:1 likes on the same dream all land', async function () {
+  await seedFeedDream({ id: 'dream-race-3', ownerHandle: '@owner-race3', likes: 0 });
+  installPostHogSpy();
+
+  var results = await Promise.all([
+    handler(postEvent({ id: 'dream-race-3', delta: 1, likerHandle: '@likerA' })),
+    handler(postEvent({ id: 'dream-race-3', delta: 1, likerHandle: '@likerB' })),
+    handler(postEvent({ id: 'dream-race-3', delta: 1, likerHandle: '@likerC' }))
+  ]);
+  results.forEach(function (res) { assert.equal(res.statusCode, 200); });
+
+  var store = getStore('dreamtube-feed');
+  var finalFeed = await store.get('feed-index', { type: 'json' });
+  var finalDream = finalFeed.filter(function (d) { return d.id === 'dream-race-3'; })[0];
+  assert.equal(finalDream.likes, 3, 'all three concurrent likes must land');
+});
+
+/**
+ * Installs the real-Blobs-fidelity fix described in the CONCURRENCY block's
+ * header comment above: every get() against `storeName` returns a fresh,
+ * independent deep clone of whatever was actually most recently written
+ * (or the value present at install time, for reads before any write),
+ * instead of the mock's default shared-reference behavior. Tracks "what
+ * was actually written" via setWriteOverride (which still lets the real
+ * write happen -- it only OBSERVES the value, via a falsy return) rather
+ * than needing raw access to the mock's private store map. This is what
+ * makes two concurrent handler() calls behave like two genuinely separate
+ * Netlify Function invocations reading a real, physically deserialized
+ * Blobs value, instead of accidentally sharing one in-process object.
+ * Callers MUST call the returned `uninstall()` when done (mirrors every
+ * other override's clear pattern).
+ */
+function installIndependentReadsForStore(storeName) {
+  var groundTruth = null;
+  mockBlobs.setWriteOverride(storeName, function (key, value) {
+    groundTruth = value;
+    return false; // let the real write proceed
+  });
+  mockBlobs.setReadOverride(storeName, function () {
+    return { value: JSON.parse(JSON.stringify(groundTruth)) };
+  });
+  return {
+    seedGroundTruth: function (value) { groundTruth = value; },
+    uninstall: function () {
+      mockBlobs.clearReadOverride(storeName);
+      mockBlobs.clearWriteOverride(storeName);
+    }
+  };
+}
+
+test('CONCURRENCY (FORCED, deterministic race -- the actual negative-proof test): two concurrent delta:1 likes, with reads forced to behave like real independently-deserialized Blobs reads, both land -- neither clobbers the other', async function () {
+  await seedFeedDream({ id: 'dream-race-forced', ownerHandle: '@owner-forced', likes: 10 });
+  installPostHogSpy();
+
+  var override = installIndependentReadsForStore('dreamtube-feed');
+  override.seedGroundTruth([{ id: 'dream-race-forced', ownerHandle: '@owner-forced', likes: 10 }]);
+
+  try {
+    var results = await Promise.all([
+      handler(postEvent({ id: 'dream-race-forced', delta: 1, likerHandle: '@likerA' })),
+      handler(postEvent({ id: 'dream-race-forced', delta: 1, likerHandle: '@likerB' }))
+    ]);
+    results.forEach(function (res) { assert.equal(res.statusCode, 200); });
+  } finally {
+    override.uninstall();
+  }
+
+  var store = getStore('dreamtube-feed');
+  var finalFeed = await store.get('feed-index', { type: 'json' });
+  var finalDream = finalFeed.filter(function (d) { return d.id === 'dream-race-forced'; })[0];
+  assert.equal(finalDream.likes, 12, 'both concurrent likes must be reflected (10 + 1 + 1) against a store whose reads behave like real, independently-deserialized Netlify Blobs reads -- this is the test that actually fails against the pre-fix whole-array-RMW-with-no-retry implementation (final lands at 11, one like clobbered) and passes once like-dream.js retries+verifies via lib/blobs-retry.js');
+});
+
+// A false-negative verify (our own just-written likes count not yet
+// visible to the verify-read) must NOT double-apply the delta on retry --
+// see lib/blobs-retry.js's own header comment on why a naive "read
+// current, add delta" mutate is unsafe under its retry contract. This
+// mirrors test/entitlements-token-purchases.test.js's own stale-read
+// regression test for creditTokenPackAmountOnce.
+test('a verify-read that falsely reports our own just-applied write as invisible does not double-apply the delta on retry', async function () {
+  await seedFeedDream({ id: 'dream-false-negative', ownerHandle: '@owner-fn', likes: 5 });
+  installPostHogSpy();
+
+  // Force the FIRST verify-read (the read right after the write) to look
+  // stale (still showing the pre-write feed), so the loop retries. The
+  // retry's own fresh read then sees the real, already-incremented state.
+  // A mutate that blindly recomputed "current + delta" from that fresh
+  // read would double-apply here (5 -> 6 -> 7); the fix must recognize its
+  // own already-applied write and not add the delta twice.
+  var callCount = 0;
+  mockBlobs.setReadOverride('dreamtube-feed', function (key, callIndex) {
+    callCount++;
+    // Only intercept the SECOND get() call against this store for this
+    // request (the first is the loop's own initial `read`, which must see
+    // the real seeded state; the second is the write's immediate
+    // verify-read) -- fall through to the real value everywhere else,
+    // including every subsequent attempt's read/verify.
+    if (callIndex === 2) {
+      return { value: [{ id: 'dream-false-negative', ownerHandle: '@owner-fn', likes: 5 }] };
+    }
+    return null;
+  });
+
+  try {
+    var res = await handler(postEvent({ id: 'dream-false-negative', delta: 1, likerHandle: '@liker-fn' }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.likes, 6, 'a false-negative verify must not cause the delta to be applied twice');
+  } finally {
+    mockBlobs.clearReadOverride('dreamtube-feed');
+  }
+
+  var store = getStore('dreamtube-feed');
+  var finalFeed = await store.get('feed-index', { type: 'json' });
+  var finalDream = finalFeed.filter(function (d) { return d.id === 'dream-false-negative'; })[0];
+  assert.equal(finalDream.likes, 6, 'the persisted count must also be 6, not 7');
+});

@@ -813,3 +813,37 @@ test('first-claim bonus: a failed claim restores the button label to "Claim 100 
     await context.close();
   }
 });
+
+// 2026-08-05 (tracker item for-product-p1-urgent-fresh-signup-can-d-qhrrqy
+// round 2, ask #3): E4 (rate-limited) and E5 (transient write failure)
+// must show DIFFERENT, honest copy -- not the identical generic message
+// the sheet used to show for both. See js/purchase-sheet.js's
+// claimErrorCopy for the actual logic; this proves it's really wired into
+// the visible DOM, for both the dedicated claim sheet AND the inline
+// out-of-tokens sheet claim button.
+test('claim sheet: an E4 rate-limited response shows honest "try again tomorrow" copy, distinct from E5\'s generic retry copy', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 320, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 100, streak: 0 });
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: 'E4: rate_limited: too many claim attempts from this network today, try again tomorrow' }) });
+    });
+
+    await seedLoggedInUserAt(page, 'claimratelimited', '/create.html');
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-btn');
+
+    await page.waitForFunction(function () {
+      var el = document.getElementById('claim-sheet-error');
+      return el && el.style.display !== 'none' && el.textContent.length > 0;
+    }, { timeout: 3000 });
+    var errorText = await page.textContent('#claim-sheet-error');
+    assert.match(errorText, /tomorrow/i, 'a genuine rate-limit must not show the generic "try again in a moment" copy -- it is misleading (retrying in a moment will not help)');
+    assert.doesNotMatch(errorText, /try again in a moment/i);
+  } finally {
+    await context.close();
+  }
+});

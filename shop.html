@@ -245,6 +245,49 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 .freecard .claim-inline-btn{ margin-top:14px; }
 .freecard-countdown{ font-size:13px; color:var(--home-soft); margin-top:8px; }
 .footnote{ margin-top:24px; text-align:center; font-size:15px; font-weight:500; line-height:1.5; color:#8f88b3; }
+
+/* ===== post-checkout confirmation banner =====
+   The persistent, state-carrying replacement for the 2.2s "payment
+   received" toast this page used to be the whole confirmation for (see
+   handleCheckoutReturn below for the full why). Three visual states,
+   driven by a class on the section: .is-pending (still confirming),
+   .is-confirmed (the webhook credit has genuinely landed), .is-unconfirmed
+   (the poll window elapsed without seeing it — an explicit, retryable
+   state, never a silent disappearance). */
+.checkout-banner{
+  margin:0 0 20px; padding:16px 16px 16px 18px; border-radius:20px;
+  background:linear-gradient(180deg, rgba(36,29,71,.72), rgba(24,19,46,.82));
+  border:1px solid var(--home-line);
+}
+.checkout-banner.is-confirmed{ border-color:rgba(75,211,155,.6); box-shadow:0 0 22px -6px rgba(75,211,155,.35); }
+.checkout-banner.is-unconfirmed{ border-color:rgba(224,170,90,.55); }
+.checkout-banner-row{ display:flex; align-items:flex-start; gap:12px; }
+.checkout-banner-copy{ flex:1; min-width:0; }
+.checkout-banner-title{ font-size:17px; font-weight:800; letter-spacing:-.01em; color:var(--home-ink); }
+.checkout-banner-sub{ margin-top:4px; font-size:15px; font-weight:500; line-height:1.45; color:var(--home-soft); }
+.checkout-banner.is-confirmed .checkout-banner-title{ color:#bff3dd; }
+.checkout-banner-mark{
+  flex:0 0 auto; width:26px; height:26px; margin-top:1px; border-radius:99px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:15px; font-weight:800; line-height:1;
+}
+.checkout-banner.is-pending .checkout-banner-mark{
+  border:2px solid rgba(157,144,255,.28); border-top-color:var(--home-acc);
+  animation:checkoutSpin .9s linear infinite;
+}
+.checkout-banner.is-confirmed .checkout-banner-mark{ background:rgba(75,211,155,.18); color:var(--home-ok); }
+.checkout-banner.is-unconfirmed .checkout-banner-mark{ background:rgba(224,170,90,.16); color:var(--home-warn); }
+@keyframes checkoutSpin{ to{ transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce){
+  .checkout-banner.is-pending .checkout-banner-mark{ animation:none; }
+}
+.checkout-banner-close{
+  flex:0 0 auto; width:44px; height:44px; margin:-10px -10px 0 0;
+  background:none; border:none; cursor:pointer;
+  color:var(--home-soft); font:400 24px/1 var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.checkout-banner-action{ min-height:48px; margin-top:14px; font-size:16px; }
 </style>
 </head>
 <body>
@@ -262,6 +305,24 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     </div>
 
     <div class="shop-scroll" id="shop-scroll">
+
+      <!-- Post-checkout confirmation banner — hidden except on a
+           ?checkout=success return trip. First thing in the scroll area
+           deliberately: it is the ONE thing a buyer coming back from Dodo
+           is looking for, and (unlike the toast it replaces) it stays put
+           until the credit is genuinely confirmed. See
+           handleCheckoutReturn below. -->
+      <section class="checkout-banner" id="shop-checkout-banner" style="display:none;" role="status" aria-live="polite">
+        <div class="checkout-banner-row">
+          <span class="checkout-banner-mark" id="shop-checkout-banner-mark" aria-hidden="true"></span>
+          <div class="checkout-banner-copy">
+            <div class="checkout-banner-title" id="shop-checkout-banner-title"></div>
+            <div class="checkout-banner-sub" id="shop-checkout-banner-sub"></div>
+          </div>
+          <button type="button" class="checkout-banner-close" id="shop-checkout-banner-close" aria-label="Dismiss">×</button>
+        </div>
+        <button type="button" class="pill pill-quiet checkout-banner-action" id="shop-checkout-banner-action" style="display:none;">Check again</button>
+      </section>
 
       <div class="shop-head">
         <div class="shop-eyebrow">Token shop</div>
@@ -410,6 +471,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   var shopEntrySource = new URLSearchParams(location.search).get('source');
   track('store_viewed', { source: shopEntrySource });
 
+  // Read BEFORE handleCheckoutReturn's history.replaceState strips the
+  // param further down — loadBalance(autoOpen) runs earlier than that
+  // handler does, and a buyer landing back from Dodo must not get the
+  // daily-claim sheet auto-opened on top of the confirmation banner
+  // they came back specifically to read.
+  var isCheckoutSuccessReturn = new URLSearchParams(location.search).get('checkout') === 'success';
+
   // ============================================================================
   // Token packs — "The Vault" (founder-approved 2026-08-02, tracker item
   // for-product-build-ship-today-founder-app-zn9zyy) — wired to the live
@@ -543,7 +611,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
           // (tracker item for-product-build-ship-today-founder-app-zn9zyy,
           // item 5) so growth can measure starter-pack conversion
           // specifically from this client-side fire too.
-          if(info) sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify({ pack: pack, tokens: info.tokens, price: info.price, starter: pack === STARTER_PACK_ID, eventId: data.eventId || null }));
+          // balanceBefore: this account's token balance as this page last
+          // saw it, captured at the moment we hand the browser to Dodo.
+          // handleCheckoutReturn's confirmation poll needs a pre-purchase
+          // reference point to be able to say "the pack's tokens have
+          // ACTUALLY landed" rather than "some number is on screen" — see
+          // startCreditConfirmation below for exactly how it's used (and
+          // why an arrival-time read alone can't answer it, in the case
+          // where the webhook wins the race back). Null when tokenStatus
+          // hasn't loaded yet; that path still confirms, just off the
+          // arrival read alone.
+          if(info) sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify({ pack: pack, tokens: info.tokens, price: info.price, starter: pack === STARTER_PACK_ID, eventId: data.eventId || null, balanceBefore: (tokenStatus && typeof tokenStatus.balance === 'number') ? tokenStatus.balance : null }));
         } catch(e) { /* sessionStorage unavailable (e.g. private mode) — worst case the return trip just won't fire the conversion events */ }
         location.href = data.url;
       })
@@ -649,7 +727,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
       }
     }).catch(function(){ balanceEl.textContent = '–'; topbarBalanceEl.textContent = '–'; countdownEl.textContent = ''; });
   }
-  loadBalance(true);
+  loadBalance(!isCheckoutSuccessReturn);
 
   /**
    * The free-claim card's own inline "Claim N free tokens" button —
@@ -697,18 +775,346 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   // ----------------------------------------------------------------------------
   // create-checkout-session-dodo.js's default return_url/cancel_url both
   // point back here with this query param. On success, the webhook that
-  // actually credits tokens is asynchronous and Blobs is only eventually
-  // consistent (up to ~60s — see lib/entitlements.js's own doc comment on
-  // this), so the balance card may not reflect the purchase for a few
-  // seconds after landing back here even though the payment already
-  // succeeded. Rather than claim an exact balance that might still be
-  // stale, show a plain "received" toast and re-poll the balance a few
-  // times over the window where the webhook is most likely to have landed
-  // — renderBalance() above already re-renders whatever loadBalance() last
-  // fetched, so this just fetches a few extra times without any new UI
-  // path. history.replaceState clears the query param so a manual refresh
-  // of this page doesn't re-show the toast.
+  // actually credits tokens (dodo-webhook.js) is asynchronous and Netlify
+  // Blobs is only eventually consistent (up to ~60s — see
+  // lib/entitlements.js's own doc comment), so the credit routinely lands
+  // AFTER this page has already rendered.
+  //
+  // ── Why this was rebuilt (tracker item for-product-webhook-p0-reframed-
+  //    by-found-peytt8) ──
+  // The founder made a real $1.99/500-token purchase, and reported "no
+  // completion". His own diagnostic run then proved the webhook pipeline
+  // worked perfectly: payment pay_0NkXX was credited 500 tokens 36 seconds
+  // after payment. So the bug was never in payment processing — it was
+  // here, in what this page told him. The previous version of this handler:
+  //
+  //   1. showed a 2.2-second toast ("your tokens will appear shortly") and
+  //      nothing else — gone long before any credit could land;
+  //   2. re-polled the balance 5 times at 3s intervals, i.e. it stopped
+  //      looking after 15 SECONDS — less than half the 36s his real credit
+  //      actually took, so it had already given up before the tokens
+  //      arrived;
+  //   3. had no reference point for what a credited balance would even
+  //      look like (no pre-purchase baseline, no expected pack amount), so
+  //      even a credit landing inside that 15s window produced no
+  //      confirmation at all — the balance number just quietly changed.
+  //
+  // Net effect: pay, come back, watch a toast vanish, and never be told
+  // anything again. Exactly "no completion".
+  //
+  // What replaces it: a persistent banner (#shop-checkout-banner) that
+  // starts in an honest "Payment received — confirming your tokens…"
+  // state (which deliberately does NOT claim the tokens are credited yet),
+  // and only ever resolves into "N tokens added" once a real
+  // get-token-status read proves the credit actually landed. The poll is
+  // js/purchase-sheet.js's own PurchaseSheet.pollForCredit — the same
+  // helper home.html's checkout return already uses, with the same
+  // deliberately-chosen 3s/75s window (75s clears Blobs' ~60s worst case,
+  // and comfortably clears the founder's real 36s) — rather than a second,
+  // shorter, ad-hoc setInterval that had drifted out of agreement with it.
+  // If that window still elapses, the banner resolves into an explicit,
+  // retryable "still confirming" state with a Check again button; it never
+  // silently disappears or silently stops looking.
+  //
+  // history.replaceState clears the query param so a manual refresh of
+  // this page doesn't re-run any of this.
   // ============================================================================
+
+  var checkoutBannerEl = document.getElementById('shop-checkout-banner');
+  var checkoutBannerMarkEl = document.getElementById('shop-checkout-banner-mark');
+  var checkoutBannerTitleEl = document.getElementById('shop-checkout-banner-title');
+  var checkoutBannerSubEl = document.getElementById('shop-checkout-banner-sub');
+  var checkoutBannerActionEl = document.getElementById('shop-checkout-banner-action');
+  var checkoutBannerCloseEl = document.getElementById('shop-checkout-banner-close');
+
+  /** Renders the confirmation banner in one of its three states. `action` (optional) is { label, onTap } for the state's own recovery affordance; omitted states hide the button entirely rather than leaving a stale one from a previous state. */
+  function renderCheckoutBanner(state, title, sub, action){
+    checkoutBannerEl.className = 'checkout-banner is-' + state;
+    checkoutBannerMarkEl.textContent = state === 'confirmed' ? '✓' : (state === 'unconfirmed' ? '!' : '');
+    checkoutBannerTitleEl.textContent = title;
+    checkoutBannerSubEl.textContent = sub;
+    if(action){
+      checkoutBannerActionEl.textContent = action.label;
+      checkoutBannerActionEl.disabled = false;
+      checkoutBannerActionEl.style.display = '';
+      checkoutBannerActionEl.onclick = action.onTap;
+    } else {
+      checkoutBannerActionEl.style.display = 'none';
+      checkoutBannerActionEl.onclick = null;
+    }
+    checkoutBannerEl.style.display = '';
+  }
+  checkoutBannerCloseEl.addEventListener('click', function(){
+    checkoutBannerEl.style.display = 'none';
+    // Dismissing the banner also stops the confirmation behind it —
+    // otherwise a closed-looking UI would keep fetching in the background
+    // and could still repaint a banner the user just closed. Same "an
+    // async callback's side effects must stay scoped to the thing that
+    // started it" discipline home.html's own checkout-return poll follows.
+    abandonCreditConfirmation();
+  });
+
+  // Holds pollForCredit's returned cancel() while a confirmation poll is
+  // genuinely in flight, null otherwise — mirrors home.html's identical
+  // guard (tracker item purchase-sheet-checkout-auto-resume-two--ltinmn):
+  // without it, a poll left running after the user navigates away could
+  // still repaint this page's banner if the browser bfcache-restores it
+  // with the setTimeout chain alive.
+  var activeCreditPollCancel = null;
+
+  // Monotonic id of the CURRENT confirmation attempt. Every async step
+  // below (the arrival read's continuation, and pollForCredit's own two
+  // callbacks) checks it before touching shared state, so a superseded
+  // attempt — a "Check again" tap, a dismiss, a navigation — can never
+  // repaint the banner, restart a poll, or fire an event on behalf of an
+  // attempt that no longer exists. Cancelling the in-flight poll alone
+  // isn't sufficient: an arrival read that's still in flight has no poll
+  // to cancel yet, and would otherwise go on to start one afterwards.
+  // This is the recurring bug class this codebase has been bitten by
+  // repeatedly (async side effects not scoped to the instance that
+  // started them) — guarded here by construction rather than by argument.
+  var creditConfirmAttempt = 0;
+
+  // The one confirmation window, read off js/purchase-sheet.js so this page
+  // can never drift out of agreement with the poll it drives (the original
+  // bug here was exactly that: an ad-hoc 15s loop sitting next to a shared
+  // 75s helper). The literal fallbacks cover one real case — a service
+  // worker serving a cached js/purchase-sheet.js from before these were
+  // exported — where an undefined window would otherwise turn into a NaN
+  // deadline and a retry loop with no end.
+  var CREDIT_POLL_INTERVAL_MS = (window.PurchaseSheet && typeof PurchaseSheet.POLL_INTERVAL_MS === 'number') ? PurchaseSheet.POLL_INTERVAL_MS : 3000;
+  var CREDIT_POLL_MAX_MS = (window.PurchaseSheet && typeof PurchaseSheet.POLL_MAX_MS === 'number') ? PurchaseSheet.POLL_MAX_MS : 75000;
+
+  function abandonCreditConfirmation(){
+    creditConfirmAttempt++;
+    if(activeCreditPollCancel){ activeCreditPollCancel(); activeCreditPollCancel = null; }
+  }
+  window.addEventListener('pagehide', abandonCreditConfirmation);
+
+  /**
+   * Polls get-token-status until this purchase's tokens have PROVABLY
+   * landed on the balance, then resolves the banner into a real
+   * confirmation carrying the actual credited amount.
+   *
+   * The threshold (`neededBalance`) is deliberately built from two
+   * independent pre-credit reference points, because the webhook can land
+   * on either side of this page load and each reference is blind to one of
+   * those cases:
+   *
+   *   - `balanceBefore` (stashed in the pending marker at redirect time)
+   *     is the only thing that can prove a credit that landed BEFORE the
+   *     browser got back here — in that case the arrival read already
+   *     includes the tokens, and waiting for a further increase would hang
+   *     forever on a purchase that was already fine.
+   *   - `arrivalBalance` (read once, now) is the only thing that stays
+   *     correct if `balanceBefore` was stale-high — e.g. tokens were spent
+   *     from another device after this page last refreshed — where
+   *     balanceBefore + packTokens would be a target the real credit never
+   *     reaches.
+   *
+   * Taking the MINIMUM of the two means "confirmed" requires a genuine,
+   * full pack-sized jump above at least one honest baseline. It cannot be
+   * satisfied by an unrelated balance change: the smallest pack is 300
+   * tokens and the largest possible daily claim is 100 (see
+   * lib/entitlements.js's FIRST_CLAIM_BONUS_AMOUNT), so no claim landing
+   * mid-checkout can fake a purchase confirmation on its own.
+   *
+   * With no marker at all (private-mode sessionStorage, or a cross-device
+   * return) neither the pack amount nor a pre-purchase balance is
+   * knowable, so this falls back to "any increase over the arrival read"
+   * and reports the observed delta — an honest, weaker signal, with its
+   * own honest copy on the timeout path rather than a confident claim
+   * either way.
+   *
+   * ---------------------------------------------------------------------
+   * WHY A BASELINE IS NEVER FABRICATED (round-2 review fix)
+   * ---------------------------------------------------------------------
+   * An earlier version of this function treated "no baseline available"
+   * as "baseline = 0", i.e. `Math.min(...[]) || 0` collapsing the
+   * threshold to a bare `packTokens`. That is not a weaker proof, it is
+   * NO proof: it asks "is the balance at least one pack big?", which any
+   * repeat buyer already sitting on 300+ tokens answers on the very first
+   * poll tick — producing an immediate, unearned "✦ 500 tokens added"
+   * for a purchase nothing had credited yet. Exactly the false positive
+   * this whole feature exists to prevent, and reachable for real: the buy
+   * buttons are wired at load and never gated on the first `loadBalance()`
+   * resolving (so a fast click stashes `balanceBefore: null`), and the
+   * return-trip arrival read can fail on a transient network blip.
+   *
+   * So: `beginPoll` refuses to run without at least one REAL baseline.
+   * When the marker carried no `balanceBefore`, the arrival read is the
+   * only possible source of one, and a failed arrival read is usually
+   * transient — so it is retried on the same cadence and inside the same
+   * total budget as the poll it would otherwise have started, and the
+   * first read that actually succeeds becomes the baseline. If the whole
+   * window elapses without one ever landing, this resolves into the same
+   * explicit, retryable "still confirming" state a real timeout produces
+   * (distinguished only in analytics, by `reason`). Never a confirmation.
+   *
+   * The cost of that conservatism is a real credit that landed before our
+   * first successful read being reported as "still confirming" rather than
+   * confirmed — an understatement the buyer can act on, instead of a
+   * claim the page cannot support.
+   */
+  var creditConfirmFired = false;
+  function startCreditConfirmation(pending, startedAt){
+    var packTokens = (pending && typeof pending.tokens === 'number' && pending.tokens > 0) ? pending.tokens : null;
+    var balanceBefore = (pending && typeof pending.balanceBefore === 'number') ? pending.balanceBefore : null;
+
+    // Supersedes (and cancels) whatever attempt came before, then claims
+    // the new id — every async continuation below bails if this moves on
+    // without it. `attempt` doubles as the number reported to analytics.
+    abandonCreditConfirmation();
+    var attempt = creditConfirmAttempt;
+    function isCurrent(){ return creditConfirmAttempt === attempt; }
+
+    // window.__TEST_POLL_OVERRIDES__ (intervalMs/maxMs) lets
+    // test/shop-checkout-confirmation-behavioral.test.js shrink the real
+    // ~75s window to something a browser test can run in; absent in every
+    // real page load, exactly as home.html uses it. Read once here (rather
+    // than at poll time) because the baseline retry below shares the SAME
+    // cadence and the SAME total budget as the poll — one window for the
+    // whole confirmation, not one per phase.
+    var pollOverrides = window.__TEST_POLL_OVERRIDES__ || {};
+    var intervalMs = typeof pollOverrides.intervalMs === 'number' ? pollOverrides.intervalMs : CREDIT_POLL_INTERVAL_MS;
+    var maxMs = typeof pollOverrides.maxMs === 'number' ? pollOverrides.maxMs : CREDIT_POLL_MAX_MS;
+    var deadline = Date.now() + maxMs;
+
+    // Copy differs by whether a real pending-purchase marker backs this
+    // return. With one, "Payment received" is a statement of fact (this
+    // browser genuinely started a checkout and Dodo redirected it back).
+    // Without one — a private-mode/cross-device return, or someone
+    // hand-typing the URL — asserting a payment happened would be a claim
+    // this page cannot support, so it only says what it's actually doing.
+    renderCheckoutBanner('pending',
+      packTokens ? 'Payment received' : 'Checking for your tokens',
+      packTokens
+        ? ('Confirming your ' + packTokens + ' tokens — this usually takes a few seconds.')
+        : 'Checking whether new tokens have landed on your balance.');
+
+    readArrivalBalance();
+
+    /**
+     * Reads the balance as it stands right now. On success that read is
+     * both the page's fresh balance AND (usually) the arrival baseline.
+     * On failure — or on a malformed response with no numeric balance —
+     * it either leans on `balanceBefore` if the marker carried one, or
+     * retries, because with neither there is nothing honest to poll for.
+     */
+    function readArrivalBalance(){
+      DreamStore.getTokenStatus().then(function(arrival){
+        if(!isCurrent()) return;
+        var arrivalBalance = (arrival && typeof arrival.balance === 'number') ? arrival.balance : null;
+        if(arrivalBalance != null){
+          tokenStatus = arrival;
+          renderBalance();
+        }
+        if(arrivalBalance != null || balanceBefore != null){ beginPoll(arrivalBalance); return; }
+        retryArrivalBalance();
+      }).catch(function(){
+        if(!isCurrent()) return;
+        // The arrival read failing is not itself a purchase problem. With
+        // a `balanceBefore` in hand there is still a real baseline to
+        // poll against (pollForCredit tolerates its own failed reads
+        // too), so proceed without an arrival baseline to lean on.
+        if(balanceBefore != null){ beginPoll(null); return; }
+        retryArrivalBalance();
+      });
+    }
+
+    function retryArrivalBalance(){
+      if(Date.now() >= deadline){ resolveUnconfirmed('no_baseline'); return; }
+      var timer = setTimeout(function(){
+        if(!isCurrent()) return;
+        activeCreditPollCancel = null;
+        readArrivalBalance();
+      }, intervalMs);
+      // Parked in the same slot the poll's own cancel() uses, so a
+      // dismiss / navigation / "Check again" tears this phase down through
+      // exactly one path — the attempt-id guard above already makes the
+      // callback inert, this just stops the timer from lingering too.
+      activeCreditPollCancel = function(){ clearTimeout(timer); };
+    }
+
+    function beginPoll(arrivalBalance){
+      var baselines = [];
+      if(balanceBefore != null) baselines.push(balanceBefore);
+      if(arrivalBalance != null) baselines.push(arrivalBalance);
+      // Invariant, asserted where the arithmetic that depends on it lives:
+      // readArrivalBalance never calls this without a real baseline. If
+      // that ever stops being true, the honest non-confirming state is the
+      // safe direction to fail in — never a fabricated zero baseline.
+      if(!baselines.length){ resolveUnconfirmed('no_baseline'); return; }
+      var baseline = Math.min.apply(Math, baselines);
+      // A known pack means a full pack-sized jump is required. Without one
+      // (marker-less return) the honest question is only "did anything
+      // land at all", answered against the same real baseline.
+      var neededBalance = baseline + (packTokens != null ? packTokens : 1);
+      activeCreditPollCancel = PurchaseSheet.pollForCredit({
+        neededBalance: neededBalance,
+        intervalMs: intervalMs,
+        // Whatever is left of the one shared window, so a slow baseline
+        // phase can't quietly buy the confirmation a second full 75s.
+        maxMs: Math.max(0, deadline - Date.now()),
+        onCredited: function(status){
+          if(!isCurrent()) return;
+          activeCreditPollCancel = null;
+          tokenStatus = status;
+          renderBalance();
+          // The credited amount reported to the user is the pack's own
+          // token count when we know it (that IS what dodo-webhook.js
+          // credits — see its resolvePackTokens), and the observed delta
+          // otherwise. Never a guess: this callback only runs once the
+          // balance has actually cleared the threshold above.
+          var credited = packTokens != null
+            ? packTokens
+            : (arrivalBalance != null ? (status.balance - arrivalBalance) : null);
+          renderCheckoutBanner('confirmed',
+            credited != null ? ('✦ ' + credited + ' tokens added') : '✦ Your tokens have landed',
+            'Your balance is now ' + status.balance + '. Ready when you are.');
+          if(!creditConfirmFired){
+            creditConfirmFired = true;
+            track('purchase_credit_confirmed', {
+              pack: (pending && pending.pack) || null,
+              tokens: credited,
+              balance: status.balance,
+              waited_ms: Date.now() - startedAt,
+              attempt: attempt
+            });
+          }
+        },
+        onTimeout: function(){ resolveUnconfirmed('timeout'); }
+      });
+    }
+
+    /**
+     * The one honest, non-confirming resolution — reached either because
+     * the window genuinely elapsed with the credit unobserved
+     * (`reason: 'timeout'`) or because no real baseline could ever be
+     * established to measure against (`reason: 'no_baseline'`). Identical
+     * on screen in both cases: the buyer's situation is the same ("we
+     * can't yet show you it landed, here's how to look again") and the
+     * distinction is a diagnostic one, so it lives in analytics only.
+     */
+    function resolveUnconfirmed(reason){
+      if(!isCurrent()) return;
+      activeCreditPollCancel = null;
+      renderCheckoutBanner('unconfirmed',
+        packTokens ? 'Still confirming your tokens' : 'No new tokens yet',
+        packTokens
+          ? ('Your payment went through and nothing more is owed — the ' + packTokens + ' tokens just haven’t reached your balance yet. This can take a minute.')
+          : 'Nothing new has landed on this balance yet. If you just paid, it can take a minute to arrive.',
+        { label: 'Check again', onTap: function(){ startCreditConfirmation(pending, Date.now()); } });
+      track('purchase_credit_unconfirmed', {
+        pack: (pending && pending.pack) || null,
+        tokens: packTokens,
+        waited_ms: Date.now() - startedAt,
+        attempt: attempt,
+        reason: reason
+      });
+    }
+  }
+
   (function handleCheckoutReturn(){
     var params = new URLSearchParams(location.search);
     var checkout = params.get('checkout');
@@ -717,14 +1123,6 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     history.replaceState(null, '', location.pathname);
 
     if(checkout === 'success'){
-      showToast('Payment received — your tokens will appear shortly');
-      var attempts = 0;
-      var poll = setInterval(function(){
-        attempts++;
-        loadBalance();
-        if(attempts >= 5) clearInterval(poll);
-      }, 3000);
-
       // ===== Purchase conversion event =====
       // Fires the Purchase conversion (PostHog + Meta) exactly once, only
       // when this ?checkout=success load is paired with the
@@ -741,11 +1139,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
       // crediting itself is untouched by any of this: it happens
       // server-side, independently, off Dodo's own signed webhook (see the
       // header comment above) — these events are analytics-only.
+      // Declared outside the analytics try/catch below because the credit
+      // confirmation started after it needs the same parsed marker (for
+      // the expected pack amount + pre-purchase balance baseline), and
+      // must still run — in its weaker, marker-less form — if anything in
+      // the analytics block throws.
+      var pending = null;
       try {
         var pendingRaw = sessionStorage.getItem(PENDING_PURCHASE_KEY);
         sessionStorage.removeItem(PENDING_PURCHASE_KEY); // consume once regardless of outcome below
         if(pendingRaw){
-          var pending = JSON.parse(pendingRaw);
+          pending = JSON.parse(pendingRaw);
           // $insert_id/explicit eventId below: dodo-webhook.js's own
           // server-side Purchase fire (the durable source of truth — see
           // that file's comment) shares this SAME event_id when Dodo's
@@ -774,6 +1178,19 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
           fireMetaConversion('Purchase', { custom_data: { value: pending.price, currency: 'USD' } }, false, pending.eventId || undefined);
         }
       } catch(e) { /* analytics must never break the app */ }
+
+      // ===== The actual completion feedback (see this section's header) =====
+      // Runs for EVERY ?checkout=success load, marker or not. The marker is
+      // what makes a Purchase *conversion* trustworthy (it must not be
+      // spoofable — see the comment above), but confirming to a real buyer
+      // that their tokens landed is a different question with a different
+      // failure cost: the analytics side must never over-report, this side
+      // must never leave a paying customer with no answer. A hand-typed
+      // ?checkout=success with no purchase behind it simply never sees a
+      // balance increase and resolves into the honest "still confirming"
+      // state — it can't manufacture tokens, since only the webhook ever
+      // credits anything.
+      startCreditConfirmation(pending, Date.now());
     } else if(checkout === 'cancelled'){
       // A cancelled attempt went through the exact same "set marker, then
       // redirect to Dodo" step in purchasePack() as a successful one — if

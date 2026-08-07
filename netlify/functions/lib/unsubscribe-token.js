@@ -48,6 +48,7 @@
 // this is about not having a SEPARATE deployment step block a compliance-
 // required feature from working at all, not a weaker security posture.
 var crypto = require('crypto');
+var siteOrigin = require('./site-origin');
 
 var DEV_FALLBACK_SECRET = 'dreamtube-unsubscribe-dev-fallback-secret-change-me';
 
@@ -80,14 +81,22 @@ function verifyToken(email, token) {
   return crypto.timingSafeEqual(candidateBuf, expectedBuf);
 }
 
-/** `x-forwarded-host || host`, this codebase's existing convention (see lib/verification-email-sender.js's selfOrigin, request-password-reset.js). */
+/**
+ * This app's own public origin -- lib/site-origin.js's emailOrigin, the
+ * one shared resolver (see that file's header comment). This used to be a
+ * local `'https://' + (x-forwarded-host || host || '')`, which under a
+ * SCHEDULED invocation (no inbound request, so no Host to reconstruct)
+ * built the unsubscribe url
+ * `https:///.netlify/functions/unsubscribe-email?...` -- resolving to the
+ * nonexistent host `.netlify`, i.e. a DEAD CAN-SPAM-required unsubscribe
+ * link on every automatic first-dream send (tracker item
+ * for-product-bug-two-blank-square-emails--3fvxvc).
+ */
 function selfOrigin(event) {
-  var headers = (event && event.headers) || {};
-  var host = headers['x-forwarded-host'] || headers.host || '';
-  return 'https://' + host;
+  return siteOrigin.emailOrigin(event);
 }
 
-/** Builds the one-click unsubscribe link for `email`, from the request's own Host header. */
+/** Builds the one-click unsubscribe link for `email`, on this app's own public origin (the request's own Host when there is a real request behind this -- see selfOrigin above). */
 function buildUnsubscribeUrl(event, email) {
   var normalized = normalizeEmail(email);
   return selfOrigin(event) + '/.netlify/functions/unsubscribe-email?email=' + encodeURIComponent(normalized) + '&token=' + signToken(normalized);

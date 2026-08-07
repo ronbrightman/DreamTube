@@ -210,6 +210,43 @@
     }
   }
 
+  /**
+   * Turns a REJECTED DreamStore.claimDailyTokens() promise's error into
+   * honest, outcome-specific copy — shared by runClaim() (the dedicated
+   * claim sheet) and claimInline() (the out-of-tokens sheet's inline claim
+   * button), the two catch() handlers below this point.
+   *
+   * 2026-08-05 (tracker item for-product-p1-urgent-fresh-signup-can-d-
+   * qhrrqy, round 2, ask #3): both catch() blocks used to show the exact
+   * same generic "Couldn't claim right now — try again in a moment" for
+   * EVERY rejection — a genuine E4 rate-limit (429, "too many attempts
+   * from this network/account today") and a genuine E5 write-failure (500,
+   * a real but rare Blobs-propagation race, see lib/entitlements.js's
+   * claimDailyTokens doc comment) read to the user as the identical
+   * message, even though one means "come back tomorrow" and the other
+   * means "try again in a few seconds, this is likely to work". Note this
+   * is DIFFERENT from the honest-but-unqualified "Looks like you already
+   * claimed today" copy in the .then() branch below (a genuine, non-error
+   * `{claimed:false}` 200 response) — that branch was already accurate
+   * and is untouched here.
+   *
+   * `err.message` is whatever DreamStore.claimDailyTokens threw — the
+   * server's own `error` string verbatim (e.g. "E4: rate_limited: too
+   * many claim attempts..." or "E5: claim_write_failed: ..."), per that
+   * function's own doc comment. A plain network failure (fetch itself
+   * rejecting, before any server response) carries neither prefix and
+   * falls through to the same generic retry copy as E5 — both are
+   * genuinely transient, worth an immediate retry, and correctly
+   * indistinguishable to the user either way.
+   */
+  function claimErrorCopy(err) {
+    var message = (err && err.message) || '';
+    if (/^E4:/.test(message)) {
+      return 'Too many attempts from this network today — try again tomorrow.';
+    }
+    return 'Couldn’t claim right now — try again in a moment';
+  }
+
   function ensureMounted() {
     if (document.getElementById(SHEET_ID)) return;
     var host = document.getElementById('app') || document.body;
@@ -423,11 +460,11 @@
       claimTarget.tokenStatus = Object.assign({}, claimTarget.tokenStatus || {}, { claimable: false, balance: data.balance, streak: data.streak });
       renderClaimOption();
       renderPurchaseAmounts();
-    }).catch(function () {
+    }).catch(function (err) {
       if (myGen !== currentGen) return;
       btn.disabled = false;
       label.textContent = CLAIM_INLINE_IDLE_LABEL_PREFIX + ((claimTarget.tokenStatus && claimTarget.tokenStatus.dailyClaimAmount) || 20) + ' free tokens';
-      showError('Couldn’t claim right now — try again in a moment');
+      showError(claimErrorCopy(err));
     });
   }
 
@@ -1053,11 +1090,11 @@
         if (myGen !== claimGen) return;
         hideClaimSheet(true);
       }, 1100);
-    }).catch(function () {
+    }).catch(function (err) {
       if (myGen !== claimGen) return;
       btn.disabled = false;
       label.textContent = 'Claim ' + ((claimOpts.tokenStatus && claimOpts.tokenStatus.dailyClaimAmount) || 20) + ' tokens';
-      errEl.textContent = 'Couldn’t claim right now — try again in a moment';
+      errEl.textContent = claimErrorCopy(err);
       errEl.style.display = 'block';
     });
   }
@@ -1231,6 +1268,15 @@
     STARTER_PACK_ID: STARTER_PACK_ID,
     PENDING_PURCHASE_KEY: PENDING_PURCHASE_KEY,
     LOW_BALANCE_THRESHOLD: LOW_BALANCE_THRESHOLD,
+    // Exported so a caller that has to reason about the confirmation
+    // window itself reads the same numbers pollForCredit already defaults
+    // to, instead of restating them. shop.html's checkout-return banner
+    // budgets its baseline-establishment retries and its poll out of ONE
+    // shared window and needs them for that. A second, drifted copy of
+    // exactly these two values is what produced the 15s-vs-75s bug this
+    // whole confirmation path exists to fix.
+    POLL_INTERVAL_MS: POLL_INTERVAL_MS,
+    POLL_MAX_MS: POLL_MAX_MS,
     pickContextualPack: pickContextualPack,
     neededTokens: neededTokens,
     formatTokenCountdown: formatTokenCountdown,
@@ -1249,7 +1295,8 @@
     fireCheckoutCancelled: fireCheckoutCancelled,
     fireBlockedActionResumed: fireBlockedActionResumed,
     fireStoreViewed: fireStoreViewed,
-    pollForCredit: pollForCredit
+    pollForCredit: pollForCredit,
+    claimErrorCopy: claimErrorCopy
   };
 
   // Browser: attach to window, same as every other js/*.js file in this

@@ -1906,12 +1906,21 @@
     updateCharCount();
     DreamStore.setDraft({ restore: false });
   } else if(new URLSearchParams(location.search).get('build') === '1'){
-    // home.html's Today-card "Wizard" entry point (tracker item
-    // for-product-home-screen-spec-drift-from--575djz) — jumps straight
-    // into the chip-first "Build it" wizard instead of the Build/Write/
-    // Record choice screen, same deep-link convention as ?write=1/
-    // ?record=1 below. Reuses the EXISTING #choice-build card's own click
-    // handler rather than duplicating what it does.
+    // Deep-link straight into the chip-first "Build it" wizard, skipping
+    // the Build/Write/Record choice screen, same convention as ?write=1/
+    // ?record=1 below. NOT currently linked from anywhere in this app —
+    // home.html's Tonight-hero pill used to send visitors here (tracker
+    // item for-product-home-screen-spec-drift-from--575djz) but was
+    // changed to land on the plain, unparameterized `create.html` choice
+    // screen instead (tracker item
+    // for-product-founder-ask-08-05-tell-your--vmfvsk, a founder preview
+    // catch: the pill was skipping the Write/Record choice entirely).
+    // Left in place, unremoved, as an established, already-tested
+    // deep-link convention available to any future entry point that
+    // deliberately wants to skip straight to the wizard (mirrors ?write=1/
+    // ?record=1's own still-active equivalents) — reuses the EXISTING
+    // #choice-build card's own click handler rather than duplicating what
+    // it does.
     document.getElementById('choice-build').click();
   } else if(new URLSearchParams(location.search).get('write') === '1'){
     // home.html's Today-card "Write it" entry point (tracker item

@@ -255,5 +255,10 @@ of real endpoints this suite calls, built for this one verification pass
 and not shipped as part of this suite — see this task's own build report
 for what that caught and fixed (a video-status polling model mismatch,
 and a real, previously-uncaught discrepancy where `wizard.html`'s
-`#fn-username` field is validated client-side but the real account name
-is always server-derived from the email instead).
+then-current `#fn-username` field was validated client-side but the real
+account name was always server-derived from the email instead — that
+field no longer exists at all as of the merged passwordless signup wall,
+tracker item `for-product-wizard-signup-wall-is-the-ol-lt1l9j`, which
+also made the probe account passwordless; see `cleanupProbeAccount`'s
+KNOWN GAP comment in `session.test.js` for what that means for the
+suite's self-cleanup step).

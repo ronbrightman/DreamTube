@@ -69,13 +69,18 @@ test('JOURNEY_MANIFEST.md: start.html\'s actual SCREEN_RENDERERS sequence matche
 // Journey 2 -- organic/direct entry (index.html -> wizard.html -> first
 // video). wizard.html is a deliberately separate, lighter pre-signup
 // implementation from start.html (founder decision 2026-07-24,
-// for-product-funnel-is-getting-its-own-co-pihldm) -- its own 8-screen
-// chip-first flow, not start.html's.
+// for-product-funnel-is-getting-its-own-co-pihldm) -- its own chip-first
+// flow, not start.html's. The former separate Contact-capture + username/
+// password Signup pair is now ONE merged signup wall (renderSignupWall)
+// at parity with start.html's screen 13 -- a deliberate, founder-ordered
+// journey change (tracker item for-product-wizard-signup-wall-is-the-ol-
+// lt1l9j), updated here + in docs/JOURNEY_MANIFEST.md in the same commit
+// per this test's own contract.
 // ===========================================================================
 
 var EXPECTED_ORGANIC_SCREENS = [
   'renderSubject', 'renderSetting', 'renderAction', 'renderMood',
-  'renderStyleStep', 'renderFreeText', 'renderContact', 'renderSignup'
+  'renderStyleStep', 'renderFreeText', 'renderSignupWall'
 ];
 
 test('JOURNEY_MANIFEST.md: wizard.html\'s actual SCREEN_RENDERERS sequence matches the organic journey documented there', function () {

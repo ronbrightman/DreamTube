@@ -71,6 +71,25 @@
 // small set of canned word-level captions (unrelated to the actual
 // reading text, same as the mock video's content being unrelated to the
 // prompt — a test fixture, never shown to a real user) — see docs/TESTING.md.
+//
+// WHISPER SUBMISSION IS IDEMPOTENT, KEYED ON THE TTS REQUEST (tracker.html's
+// for-product-whisper-runaway-5-000-whispe-szk33s item — a real production
+// cost leak: ~4,200-5,200 fal-ai/whisper units/day against ~1-2 actual
+// readings/day, confirmed by reading this exact code path). Stage 1 used to
+// call submitWhisperAlignment() UNCONDITIONALLY every time it found the TTS
+// job COMPLETED — and since checkFalStatus reports COMPLETED forever once
+// true, ANY poll re-hitting Stage 1 after completion (client latency
+// swapping to the new "falw:" operationName, overlapping poll requests, a
+// retry, two tabs on the same reading) submitted ANOTHER real whisper job.
+// This file is fully stateless across polls by design (see the two-stage
+// comment above) — the fix adds the one piece of real server-side state
+// this specific step needs: lib/whisper-alignment-store.js, a Blobs-backed
+// CAS claim keyed on `ttsModel:ttsRequestId`. See that file's own header
+// comment for the full mechanism and why the residual concurrent-claim race
+// this codebase usually just documents-and-accepts (lib/blobs-retry.js's
+// posture) is instead fully CLOSED here via a real compare-and-swap write.
+
+var whisperAlignmentStore = require('./lib/whisper-alignment-store');
 
 var FAL_API_BASE = 'https://queue.fal.run';
 var FAL_MODEL_WHISPER = 'fal-ai/whisper';
@@ -256,14 +275,74 @@ exports.handler = async function (event) {
       return { statusCode: 200, body: JSON.stringify({ status: 'failed', error: 'E506: tts_request_failed: no_audio_in_response' }) };
     }
 
-    // Chain straight into the whisper alignment submission — non-fatal if
-    // this fails to even submit: the reading still has real audio, it
-    // just degrades to sentence-level captions (spec §4) rather than
-    // failing the whole reading over a caption-only problem.
+    // IDEMPOTENT whisper submission (tracker.html's
+    // for-product-whisper-runaway-5-000-whispe-szk33s item — see this
+    // file's own header comment for the full mechanism). Check FIRST
+    // whether a whisper submission already exists for this exact TTS
+    // request, before ever attempting a new one — this is the hot path for
+    // every stale/overlapping/retried poll that reaches Stage 1 after the
+    // TTS job has already completed once.
+    var existingWhisper = await whisperAlignmentStore.get(event, ttsModel, ttsRequestId);
+    if (existingWhisper && existingWhisper.whisperRequestId) {
+      // Already submitted (by this poll or a concurrent one) — reuse it,
+      // no new fal-ai/whisper job.
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          status: 'processing',
+          operationName: 'falw:' + encodeURIComponent(existingWhisper.audioUrl) + ':' + existingWhisper.whisperRequestId
+        })
+      };
+    }
+    if (existingWhisper && !existingWhisper.whisperRequestId) {
+      // Someone else (a concurrent poll) is mid-submission right now —
+      // don't submit, don't even attempt the claim (it would lose anyway).
+      // Keep the client on the OLD "fal:" operationName; the next poll
+      // will see either the finished submission above or a released claim
+      // to retry, at zero additional whisper cost either way.
+      return { statusCode: 200, body: JSON.stringify({ status: 'processing', operationName: name }) };
+    }
+
+    // No record at all — attempt to atomically claim the right to submit.
+    var claimResult = await whisperAlignmentStore.claim(event, ttsModel, ttsRequestId, audioUrl);
+    if (!claimResult.claimed) {
+      // Lost the race (a genuinely concurrent poll claimed it a moment
+      // ago) or the claim write itself failed closed — either way, do NOT
+      // submit. If the loser already has a finished record, reuse it;
+      // otherwise fall back to re-polling Stage 1 with the old name.
+      if (claimResult.record && claimResult.record.whisperRequestId) {
+        return {
+          statusCode: 200,
+          body: JSON.stringify({
+            status: 'processing',
+            operationName: 'falw:' + encodeURIComponent(claimResult.record.audioUrl) + ':' + claimResult.record.whisperRequestId
+          })
+        };
+      }
+      return { statusCode: 200, body: JSON.stringify({ status: 'processing', operationName: name }) };
+    }
+
+    // Won the claim — we are the ONLY caller allowed to submit for this
+    // TTS request. Non-fatal if this fails to even submit: the reading
+    // still has real audio, it just degrades to sentence-level captions
+    // (spec §4) rather than failing the whole reading over a caption-only
+    // problem — but release the claim first, so a genuinely fresh future
+    // attempt (a retry from a NEW poll) isn't permanently blocked by this
+    // one failed attempt.
     var submitted = await submitWhisperAlignment(audioUrl, falKey);
     if (!submitted.ok) {
+      await whisperAlignmentStore.releaseClaim(event, ttsModel, ttsRequestId);
       return { statusCode: 200, body: JSON.stringify({ status: 'done', audioUrl: audioUrl, audioDurationMs: null, captions: [], captionsLevel: 'sentence', degradedReason: 'E508: caption_alignment_failed' }) };
     }
+
+    // recordSubmitted() is itself best-effort (never throws -- see its own
+    // doc comment in whisper-alignment-store.js): the whisper submission
+    // above already succeeded and real money is already spent, so a
+    // transient Blobs write failure in the durable dedup record must never
+    // discard `submitted.requestId` or turn into a 500 here. The falw:
+    // operationName below is returned to the client regardless of whether
+    // this durable write actually landed.
+    await whisperAlignmentStore.recordSubmitted(event, ttsModel, ttsRequestId, audioUrl, submitted.requestId);
 
     return {
       statusCode: 200,

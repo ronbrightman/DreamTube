@@ -151,12 +151,12 @@ async function wireRealGetHandler(page, urlGlob, handler, transformBody) {
   });
 }
 
-test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture -> signup -> home.html\'s real resume/poll) drives the REAL server handlers (start-pending-generation -> register-account -> claim-pending-generation -> video-status -> mark-generation-completed) and the automatic retention email genuinely sends', async function (t) {
+test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged signup wall -> home.html\'s real resume/poll) drives the REAL server handlers (start-pending-generation -> register-account-passwordless -> claim-pending-generation -> video-status -> mark-generation-completed) and the automatic retention email genuinely sends', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   mockBlobs.reset();
   process.env.GENERATION_MOCK_MODE = 'true';
   process.env.RESEND_API_KEY = 'test-resend-key';
-  ['start-pending-generation', 'register-account', 'claim-pending-generation', 'video-status', 'mark-generation-completed',
+  ['start-pending-generation', 'register-account-passwordless', 'claim-pending-generation', 'video-status', 'mark-generation-completed',
     'check-email', 'lib/job-owners', 'lib/pending-dreams', 'lib/account-store', 'lib/first-dream-email-store',
     'lib/first-dream-email-sender', 'lib/generation-completion-store', 'lib/rate-limit', 'lib/email-domain-check'
   ].forEach(function (mod) {
@@ -165,7 +165,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
   });
 
   var startHandler = require('../netlify/functions/start-pending-generation').handler;
-  var registerHandler = require('../netlify/functions/register-account').handler;
+  var registerHandler = require('../netlify/functions/register-account-passwordless').handler;
   var claimHandler = require('../netlify/functions/claim-pending-generation').handler;
   var videoStatusHandler = require('../netlify/functions/video-status').handler;
   var markHandler = require('../netlify/functions/mark-generation-completed').handler;
@@ -199,6 +199,12 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     var FUNNEL_EMAIL = 'real-chain-funnel@example.com';
     var claimCalls = [];
     var markCalls = [];
+    // markCalls records a mark-generation-completed REQUEST the instant the
+    // route is intercepted; markCompletions records the real handler
+    // actually RESOLVING. They are not the same event, and the assertions
+    // below depend on which one they are sequenced behind -- see the
+    // markCompletions settle further down for the full reasoning.
+    var markCompletions = [];
 
     await wireRealPostHandler(page, '**/.netlify/functions/check-email', checkEmailHandler);
     // The submission itself is the one call in this chain that needs its
@@ -208,7 +214,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     await wireRealPostHandler(page, '**/.netlify/functions/start-pending-generation', startHandler, {
       wrap: function (handler, event) { return withPastClock(60000, function () { return handler(event); }); }
     });
-    await wireRealPostHandler(page, '**/.netlify/functions/register-account', registerHandler);
+    await wireRealPostHandler(page, '**/.netlify/functions/register-account-passwordless', registerHandler);
     await wireRealPostHandler(page, '**/.netlify/functions/claim-pending-generation', claimHandler, {
       wrap: function (handler, event) {
         claimCalls.push(JSON.parse(event.body));
@@ -230,7 +236,10 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     await wireRealPostHandler(page, '**/.netlify/functions/mark-generation-completed', markHandler, {
       wrap: function (handler, event) {
         markCalls.push(JSON.parse(event.body));
-        return handler(event);
+        return Promise.resolve(handler(event)).then(function (res) {
+          markCompletions.push(res);
+          return res;
+        });
       }
     });
 
@@ -247,19 +256,16 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
 
-    // Contact capture -- this is the exact moment start-pending-
-    // generation.js fires for real, pre-signup.
+    // The merged signup wall (tracker item for-product-wizard-signup-
+    // wall-is-the-ol-lt1l9j) -- this one submit is the exact moment
+    // start-pending-generation.js fires for real (pre-account) AND the
+    // real register-account-passwordless.js signup runs in parallel;
+    // adoptPendingGeneration + claim-pending-generation.js fire the
+    // instant both settle, exactly as wizard.html's real
+    // renderSignupWall/completeSignupAndAdvance do.
     await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', FUNNEL_EMAIL);
     await page.click('#fn-contact-continue');
-
-    // Signup -- adoptPendingGeneration + claim-pending-generation.js fire
-    // the instant this succeeds, exactly as wizard.html's real renderSignup
-    // does.
-    await page.waitForSelector('#fn-username', { timeout: 5000 });
-    await page.fill('#fn-username', 'realchaintester');
-    await page.fill('#fn-password', 'longenoughpassword1');
-    await page.click('#fn-signup-continue');
 
     // home.html's own real resume/poll/completion sequence takes it from
     // here (tracker item for-product-funnel-ending-v2-founder-ins-tfuu0q --
@@ -272,6 +278,15 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must have fired exactly once, for the real funnel pendingId');
     assert.equal(claimCalls[0].email, FUNNEL_EMAIL);
+    // Same DOM-gate-vs-node-side-observation race this file's own markCompletions
+    // fix below addresses (review finding on this same branch, tracker item
+    // test-funnel-real-chain-behavioral-test-j-nmhqx0): the #d0-video.ready gate
+    // above settles off onGenerationSettled's synchronous refreshHomeState() call,
+    // several statements before DreamStore.markGenerationJustCompleted() actually
+    // fires the mark-generation-completed.js request markCalls observes. Settle on
+    // markCalls itself rather than relying on the unrelated claimCalls settle above
+    // (already satisfied minutes earlier in test-time) to happen to cover it too.
+    await settle(function () { return markCalls.length >= 1; });
     assert.ok(markCalls.length >= 1, 'home.html must have called the REAL mark-generation-completed.js at least once');
     assert.equal(markCalls[0].operationName.indexOf('mock:'), 0, 'the operationName reaching mark-generation-completed must be the SAME funnel operationName minted by start-pending-generation.js');
 
@@ -289,20 +304,61 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (contact capture
     // mocked stand-in.
     var pendingStore = require('../netlify/functions/lib/first-dream-email-pending-store');
     var sendPending = require('../netlify/functions/send-pending-first-dream-emails');
+    // Wait for the real mark-generation-completed.js invocation to actually
+    // RESOLVE before reading the record it is supposed to have enqueued.
+    //
+    // Why this line exists (root-caused for tracker item test-funnel-real-
+    // chain-behavioral-test-j-nmhqx0 -- this test was deterministically red
+    // on main, ~3/3, not a flake): `markCalls` is pushed by
+    // wireRealPostHandler's own wrap the instant the route is intercepted,
+    // BEFORE the awaited handler runs. So `markCalls.length >= 1` above is
+    // evidence the request was made, never evidence the handler finished --
+    // and the enqueue asserted below is the LAST thing that handler does
+    // (verifyOperationCompleted -> markCompleted -> job-owners read ->
+    // pending-dreams getWithReadyRetry, which spends a real
+    // blobs-retry.DEFAULT_RETRY_DELAY_MS on this funnel path since the
+    // record legitimately has no readyAt -> account-store read ->
+    // markPending). Measured here: the route was intercepted at ~1788ms and
+    // markPending did not land until ~1990ms, while this read ran at
+    // ~1881ms, i.e. ~110ms too early, every time.
+    //
+    // Nothing before this point is causally downstream of the handler
+    // resolving: the DOM gate above (#dreams-row/#d0-video) is client-side
+    // and settles as soon as the poll loop paints, which happens off the
+    // video-status response, not off the mark-generation-completed one.
+    // This is exactly the unsound-ordering shape test/helpers/settle.js was
+    // written for (see its header comment) -- the pre-existing
+    // `settle(resendCalls...)` at the bottom used to absorb this window
+    // incidentally back when mark-generation-completed.js sent the email
+    // inline; commit de124a5 (thumbnail-gated send) moved the send off this
+    // request and inserted this synchronous store read ahead of that
+    // settle, leaving the new assertion racing an in-flight handler with
+    // nothing sequencing it. The production code is not at fault: a real
+    // caller gets its 200 only after markPending has already returned.
+    await settle(function () { return markCompletions.length >= 1; });
+    assert.ok(markCompletions.length >= 1, 'the real mark-generation-completed.js handler must have actually resolved before its enqueue is asserted on');
     var pendingRecord = await pendingStore.getPending(fakeEvent({}), markCalls[0].operationName);
     assert.ok(pendingRecord, 'the real mark-generation-completed.js call must have enqueued a pending record for this exact operationName');
     mockBlobs.seed(pendingStore.STORE_NAME, markCalls[0].operationName, Object.assign({}, pendingRecord, {
       triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
     }));
+    // register-account-passwordless.js's new-account branch fires its own
+    // fire-and-forget VERIFICATION email through the same Resend spy (see
+    // that file's FIRE-AND-FORGET note) -- count only what the retention
+    // scan itself adds, so this assertion stays about the retention email
+    // and can't be satisfied (or double-counted) by the signup path's own
+    // unrelated send.
+    var resendCountBeforeScan = resendCalls.length;
     await sendPending.scanAndSend(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }));
 
     // THE ACTUAL ASSERTION THIS BUG IS ABOUT: the automatic retention email
     // must have genuinely been attempted, through the real job-owners
     // lookup, the real account-store lookup, and the real
     // first-dream-email-sender send -- not a mocked stand-in.
-    await settle(function () { return resendCalls.length >= 1; });
-    assert.equal(resendCalls.length, 1, 'THE BUG: the real chain (wizard.html\'s actual client flow driving the real server handlers) must result in exactly one real Resend send attempt for the funnel user');
-    assert.deepEqual(resendCalls[0].body.to, [FUNNEL_EMAIL], 'the email must go to the funnel user\'s own real email');
+    await settle(function () { return resendCalls.length >= resendCountBeforeScan + 1; });
+    var retentionSends = resendCalls.slice(resendCountBeforeScan);
+    assert.equal(retentionSends.length, 1, 'THE BUG: the real chain (wizard.html\'s actual client flow driving the real server handlers) must result in exactly one real Resend retention-send attempt for the funnel user');
+    assert.deepEqual(retentionSends[0].body.to, [FUNNEL_EMAIL], 'the email must go to the funnel user\'s own real email');
   } finally {
     global.fetch = realFetch;
     await page.close();

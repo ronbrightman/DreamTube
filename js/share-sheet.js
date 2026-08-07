@@ -125,6 +125,18 @@
    *   onToast   — optional function(msg) — the caller's own showToast,
    *               used for the clipboard-copy-fallback/unsupported
    *               messages the old inline doShare() already showed.
+   *   shareUrl  — optional explicit URL for the "Share link" option,
+   *               overriding the default shareEndpointUrl(dream.id)
+   *               (share-dream.js) construction. Added for u.html's
+   *               "Share this profile" button (Social Layer v2 slice 1),
+   *               which shares a PROFILE (share-profile.js) rather than a
+   *               single dream — there is no real dream.id to build a
+   *               link from in that case.
+   *   hideSave  — optional boolean; when true, the "Save to device"
+   *               option is hidden entirely (only "Share link" shows).
+   *               Added for the same profile-share call site above: a
+   *               profile has no single media file to save, so that
+   *               option doesn't apply.
    */
   function show(opts) {
     opts = opts || {};
@@ -133,6 +145,7 @@
     currentGen++;
     document.getElementById('share-sheet-error').style.display = 'none';
     resetSaveOption();
+    document.getElementById('share-opt-save').style.display = opts.hideSave ? 'none' : '';
     document.getElementById(SHEET_ID).classList.add('open');
   }
 
@@ -154,10 +167,10 @@
     var dream = current.dream;
     var onToast = current.onToast;
     var shareText = current.shareText || ('Check out this dream on DreamTube!');
+    var shareUrl = current.shareUrl || shareEndpointUrl(dream.id);
     trackLocal('share_option_chosen', { option: 'link' });
     hide();
 
-    var shareUrl = shareEndpointUrl(dream.id);
     if (navigator.share) {
       navigator.share({ title: 'DreamTube', text: shareText, url: shareUrl }).catch(function () { /* user cancelled the share sheet */ });
     } else if (navigator.clipboard && navigator.clipboard.writeText) {

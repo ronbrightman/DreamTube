@@ -186,10 +186,25 @@ function redirect(event, resume, extraParams) {
   Object.keys(extraParams || {}).forEach(function (key) {
     if (extraParams[key] !== null && extraParams[key] !== undefined) params.set(key, extraParams[key]);
   });
+  // Return-page selector (wizard signup-wall parity, tracker item
+  // for-product-wizard-signup-wall-is-the-ol-lt1l9j): the organic
+  // wizard's own signup wall (wizard.html) now offers the same Facebook
+  // Login as start.html's screen 13, and its return leg — every outcome,
+  // success and failure alike — must land back on wizard.html, not the
+  // ad-funnel tail (which would pollute the funnel's own analytics with
+  // organic traffic, on top of being the wrong flow). `rp` rides inside
+  // the state's own resume params (wizard.html's startFacebookLogin packs
+  // it; js/facebook-config.js's FACEBOOK_RESUME_PARAMS_NEVER_DROPPED
+  // keeps it through trimming), and is STRICTLY allowlisted here — any
+  // value other than the exact string 'wizard' falls through to
+  // start.html, so this can never become an open-redirect vector: both
+  // targets are fixed, same-origin paths, chosen by equality, never
+  // interpolated from the value.
+  var returnPage = params.get('rp') === 'wizard' ? '/wizard.html' : '/start.html';
   return {
     statusCode: 302,
     headers: {
-      Location: selfOrigin(event) + '/start.html?' + params.toString(),
+      Location: selfOrigin(event) + returnPage + '?' + params.toString(),
       'Cache-Control': 'no-store',
       'Set-Cookie': STATE_COOKIE + '=; path=/; max-age=0; SameSite=Lax; Secure'
     },

@@ -31,5 +31,29 @@ exports.handler = async function (event) {
   }
 
   var items = await trackerStore.getItems(event);
-  return { statusCode: 200, body: JSON.stringify({ items: items }) };
+
+  // Comment-timestamp ALIASES (Manager root-fix, 2026-08-07, tracker
+  // protocol v1): comments store their time in `timestamp`, but two
+  // different agent sessions independently wrote freshness scans against
+  // `at`/`createdAt`, silently got null for every comment, and concluded
+  // "no activity for days" while the other side was posting on schedule —
+  // a founder-visible communication breakdown, twice. Rather than hoping
+  // every future reader guesses the right field, the READ endpoint now
+  // serves all three names with the same value. Response-shaping only —
+  // nothing extra is ever persisted (tracker-store's own writers still
+  // write exactly `timestamp`). See docs/TRACKER_PROTOCOL.md.
+  var shaped = items.map(function (item) {
+    if (!Array.isArray(item.comments) || !item.comments.length) return item;
+    var comments = item.comments.map(function (c) {
+      if (!c || typeof c !== 'object') return c;
+      var out = Object.assign({}, c);
+      if (out.timestamp !== undefined) {
+        if (out.at === undefined) out.at = out.timestamp;
+        if (out.createdAt === undefined) out.createdAt = out.timestamp;
+      }
+      return out;
+    });
+    return Object.assign({}, item, { comments: comments });
+  });
+  return { statusCode: 200, body: JSON.stringify({ items: shaped }) };
 };

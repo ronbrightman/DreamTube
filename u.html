@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Profile — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="DreamTube">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon-v4.png">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v4.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+
+<!-- Analytics: PostHog (product analytics + funnels + A/B experiments) and Meta Pixel
+     (ad conversion tracking for Meta ads). Both blocks below no-op safely — no script
+     load, no network call, no console error — until real keys are set in
+     js/analytics-config.js. See docs/ANALYTICS_SETUP.md for the full setup story,
+     including why GA4 is deliberately not installed yet (no Google Ads channel yet). -->
+<script src="js/analytics-config.js"></script>
+<script>
+  // PostHog web snippet — https://posthog.com/docs/getting-started/install
+  if (typeof POSTHOG_KEY !== 'undefined' && POSTHOG_KEY !== 'REPLACE_WITH_REAL_POSTHOG_KEY') {
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagResult isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init(POSTHOG_KEY, {
+      api_host: POSTHOG_HOST,
+      defaults: '2026-05-30',
+      session_recording: {
+        // See create.html/explore.html's identical comment — session
+        // replay already masks every input/textarea's typed value by
+        // default; pinned explicitly so a future config edit can't
+        // silently start capturing plaintext keystrokes.
+        maskAllInputs: true
+      }
+    });
+  }
+</script>
+<script>
+  // Meta Pixel base code — https://developers.facebook.com/docs/meta-pixel/get-started
+  if (typeof META_PIXEL_ID !== 'undefined' && META_PIXEL_ID !== 'REPLACE_WITH_REAL_PIXEL_ID') {
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)}(window, document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', META_PIXEL_ID);
+    fbq('track', 'PageView');
+  }
+</script>
+
+<!--
+  Public profile page — "Dream Journal Feed" (Direction B, founder-picked
+  2026-08-04) — Social Layer v2 slice 1 (docs/SOCIAL_LAYER_V2_DESIGN.md,
+  tracker item for-product-build-social-layer-v2-direct-34047c). No login
+  gate, same posture as explore.html: URL-addressable at u.html?handle=X
+  for a signed-out visitor, a signed-in visitor, OR the owner previewing
+  their own public page (viewer===handle — see "state C" in the design
+  doc, wired from profile.html's own PUBLIC toggle).
+
+  Page-scoped styles below define the full-width 9:14 "dream journal"
+  card (.dj-*) this feature introduces — everything else (.profile-head,
+  .char-mode-row/.char-mode-btn, .sheet-overlay, .night-dock, .toast) is
+  the shared, unstyled-dark-theme version already in css/styles.css
+  (profile.html's own night reskin is explicitly page-scoped to THAT page
+  only — see its own header comment — so this page intentionally looks
+  like explore.html/create.html/result.html's shared dark theme, not
+  profile.html's night sky).
+-->
+<style>
+.skel{ background:var(--surface-alt); border-radius:10px; animation:pulse-text 1.4s ease-in-out infinite; }
+.skel-avatar{ width:76px; height:76px; border-radius:50%; margin:0 auto 12px; }
+.skel-line{ height:12px; border-radius:6px; margin:6px auto; }
+
+/* Bio row — profile-head (css/styles.css) has no bio slot of its own (it
+   was built avatar+name+stats-only), so this is a small addition local to
+   this page. */
+.dj-bio{ font-size:13.5px; color:var(--text-primary); line-height:1.5; text-align:center; margin:6px 24px 0; }
+
+/* PUBLIC/PRIVATE toggle + Share button — only ever shown when
+   viewer===handle (the owner previewing their own public page — "state
+   C" in the design doc) / when there's something to share, respectively.
+   Reuses .char-mode-row/.char-mode-btn per the design doc. */
+.u-visibility-row{ width:100%; max-width:220px; margin:14px auto 0; }
+.u-visibility-row .char-mode-btn{ min-height:44px; display:flex; align-items:center; justify-content:center; }
+.u-share-btn{ margin:14px 20px 0; display:flex; align-items:center; justify-content:center; gap:8px; min-height:48px; }
+.u-share-btn .icon{ width:18px; height:18px; }
+.u-priv-note{ font-size:11.5px; color:var(--text-faint); text-align:center; margin:10px 24px 0; line-height:1.5; }
+
+.dj-list{ padding:18px 0 24px; }
+.dj-card{ margin:0 0 26px; padding:0 16px; }
+.dj-media{ position:relative; width:100%; aspect-ratio:9/14; border-radius:16px; overflow:hidden; background:var(--surface); }
+.dj-media video, .dj-media img{ width:100%; height:100%; object-fit:cover; display:block; }
+.dj-media-fallback{ width:100%; height:100%; }
+.dj-mute-btn{ position:absolute; right:10px; top:10px; z-index:2; background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.16); }
+.dj-play-badge{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+.dj-play-badge.hidden{ display:none; }
+.dj-play-badge .badge-circle{ width:56px; height:56px; border-radius:50%; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; color:#fff; font-size:22px; pointer-events:auto; cursor:pointer; }
+.dj-actions{ display:flex; align-items:center; gap:22px; padding:12px 2px 4px; }
+.dj-action{ display:flex; align-items:center; gap:6px; min-height:44px; cursor:pointer; color:var(--text-primary); }
+.dj-action .icon{ width:24px; height:24px; }
+.dj-action span{ font-size:13px; font-weight:600; color:var(--text-muted); }
+.dj-action.liked .icon{ color:var(--danger); }
+.dj-action.liked span{ color:var(--text-primary); }
+.dj-caption{ font-size:14px; line-height:1.5; color:var(--text-primary); margin-top:2px; }
+.dj-caption.clamped{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+/* Reserved interpretation seam (design doc's "state G") — an empty,
+   inert slot under each caption for the LATER per-dream interpretation
+   opt-in ("Shared by @handle" label) — layout reservation only, no code
+   behind it yet. Deliberately renders nothing (zero height when empty)
+   rather than a visible placeholder box, so this slice ships with no
+   visual trace of an unbuilt feature. */
+.dj-interp-seam{ min-height:0; }
+
+/* Comment preview + teaser (Social Layer v2 slice 2 — design doc's own
+   Direction B card spec: "top-2 comment preview lines, 'View all N',
+   'Add a thought…' teaser -> same sheet"). Preview lines are fetched
+   best-effort per card once it's rendered (see loadCommentPreviewFor in
+   the script below) — a fast, low-stakes read; a failure just leaves the
+   preview area empty, the teaser link still opens the full js/comment-sheet.js
+   sheet regardless. */
+.dj-comments-preview{ margin-top:4px; }
+.dj-comment-preview-line{ font-size:13px; line-height:1.5; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dj-comment-preview-line b{ color:var(--text-primary); font-weight:700; }
+.dj-comments-teaser{ margin-top:4px; font-size:13px; color:var(--text-faint); cursor:pointer; min-height:22px; display:flex; align-items:center; }
+
+.u-empty{ padding:34px 24px; text-align:center; color:var(--text-muted); font-size:13.5px; line-height:1.6; }
+.u-empty .btn{ margin-top:16px; display:inline-flex; }
+.u-retry-link{ display:block; margin-top:10px; }
+</style>
+</head>
+<body>
+<div id="app" class="scroll-shell">
+  <div class="topbar">
+    <div class="icon-btn" id="u-back-btn" title="Back"></div>
+    <div class="topbar-logo" style="font-size:16px;" id="u-topbar-title">Profile</div>
+    <div style="width:36px;"></div>
+  </div>
+  <div class="scroll-area" id="u-scroll-area">
+    <!-- Skeleton header (design doc §D) — swapped for the real identity
+         block the instant get-profile.js resolves (or for the not-found/
+         error state). -->
+    <div id="u-skeleton" class="profile-head">
+      <div class="skel skel-avatar"></div>
+      <div class="skel skel-line" style="width:120px;"></div>
+      <div class="skel skel-line" style="width:170px;"></div>
+    </div>
+
+    <div id="u-identity" class="profile-head" style="display:none;">
+      <div class="profile-avatar-ring" style="cursor:default;">
+        <div class="profile-avatar" id="u-avatar">🌙</div>
+      </div>
+      <div class="profile-name" id="u-name" style="cursor:default;">@handle</div>
+      <div class="dj-bio" id="u-bio" dir="auto" style="display:none;"></div>
+      <div class="profile-stats" id="u-stats"></div>
+    </div>
+
+    <!-- PUBLIC/PRIVATE toggle — only rendered when viewer===handle (see
+         renderOwnerControls in the script below). PUBLIC starts active
+         (this page IS the public one); tapping PRIVATE returns to
+         profile.html. -->
+    <div class="char-mode-row u-visibility-row" id="u-visibility-row" style="display:none;">
+      <div class="char-mode-btn" data-visibility="private">Private</div>
+      <div class="char-mode-btn active" data-visibility="public">Public</div>
+    </div>
+
+    <!-- Share this profile — OWNER-ONLY (founder call, 2026-08-05, on
+         slice-1 review: "no need for the Share this Profile button for
+         non user visitors who get the shared profile link to view").
+         The original design showed it to every viewer as a growth loop
+         (design doc §F) — overridden by that founder decision; visitors
+         who received a link can reshare the URL itself. Reuses
+         js/share-sheet.js's chooseLink ladder via a synthetic
+         "dream-shaped" payload pointed at share-profile.js instead of
+         share-dream.js — see the script block below for why. -->
+    <button type="button" class="btn btn-secondary btn-block u-share-btn" id="u-share-btn" style="display:none;">
+      <span class="icon" id="u-share-icon"></span>
+      <span>Share this profile</span>
+    </button>
+    <div class="u-priv-note" id="u-priv-note" style="display:none;">Your interpretations stay private to you. They're never shown here.</div>
+
+    <div id="u-dreams-empty" class="u-empty" style="display:none;"></div>
+    <div id="u-notfound" class="u-empty" style="display:none;">This dreamer hasn't set up their profile yet.</div>
+    <div id="u-error" class="u-empty" style="display:none;">
+      Couldn't load this profile — check your connection and try again.
+      <span class="link-text u-retry-link" id="u-retry-link">Try again</span>
+    </div>
+
+    <div class="dj-list" id="u-dj-list"></div>
+  </div>
+
+  <nav class="night-dock" id="bottom-nav-slot" aria-label="Main"></nav>
+
+  <!-- Same signup-nudge pattern explore.html already uses for its own
+       login-gated actions (Follow/Like/nav taps while signed out) — see
+       that page's own gateNavLink/like-handler comments. -->
+  <div class="modal-overlay" id="modal-signup-nudge">
+    <div class="modal-card">
+      <div class="modal-title">Your dreams come alive</div>
+      <div class="modal-body">Sign up free and describe (or record) a dream — DreamTube turns it into a video in minutes. Takes less than a minute to get started.</div>
+      <div class="modal-row">
+        <a class="btn btn-ghost" style="flex:1;" href="login.html" id="login-nudge-cta">Log in</a>
+        <a class="btn btn-primary" style="flex:1;" href="login.html?mode=signup" id="signup-nudge-cta">Sign up</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script src="js/icons.js"></script>
+<script src="js/store.js"></script>
+<script src="js/dream-cards.js"></script>
+<script src="js/bottom-nav.js"></script>
+<script src="js/pwa.js"></script>
+<script src="js/sheet-dismiss.js"></script>
+<script src="js/share-sheet.js"></script>
+<script src="js/comment-sheet.js"></script>
+<script>
+  var esc = DreamCards.esc;
+  function showToast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+  function formatCount(n){ if(n>=1000) return (n/1000).toFixed(n%1000===0?0:1)+'k'; return String(n); }
+  function getParam(name){ return new URLSearchParams(location.search).get(name); }
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the app */ }
+    }
+  }
+
+  var handleParam = DreamStore.displayHandle((getParam('handle') || '').trim());
+  var currentUser = DreamStore.getCurrentUser();
+  var isOwner = !!currentUser && DreamStore.displayHandle(currentUser.handle).toLowerCase() === handleParam.toLowerCase();
+
+  // Bar A dock — mounted with the Profile tab active only when this IS the
+  // signed-in viewer's own public preview (isOwner); a visitor viewing
+  // someone else's profile gets no tab highlighted, same as explore.html
+  // viewing another user's dream carries no special nav state.
+  BottomNav.mount(document.getElementById('bottom-nav-slot'), { active: isOwner ? 'profile' : 'explore' });
+
+  document.getElementById('u-back-btn').innerHTML = Icons.back;
+  document.getElementById('u-back-btn').addEventListener('click', function(){
+    if(history.length > 1) history.back(); else location.href = 'explore.html';
+  });
+  document.getElementById('u-share-icon').innerHTML = Icons.shareIos;
+
+  var signupNudge = document.getElementById('modal-signup-nudge');
+  var signupCta = document.getElementById('signup-nudge-cta');
+  function requireLogin(){
+    if(DreamStore.getCurrentUser()) return true;
+    signupCta.href = 'login.html?mode=signup&next=' + encodeURIComponent(location.pathname + location.search);
+    signupNudge.classList.add('open');
+    return false;
+  }
+  signupNudge.addEventListener('click', function(e){
+    if(e.target.id === 'modal-signup-nudge') signupNudge.classList.remove('open');
+  });
+
+  // ===== Card markup + per-video mute (mirrors explore.html's cardHTML,
+  // scoped to this page's own .dj-* full-width-card layout rather than
+  // explore's full-screen scroll-snap .feed-card) =====
+  //
+  // SCOPE NOTE: unlike explore.html's feed-card, there is deliberately no
+  // Report/Block ("More") action on the DREAM itself here — Social Layer v2
+  // slice 1 is "profile shell + share" only (see docs/
+  // SOCIAL_LAYER_V2_DESIGN.md's own build-order section). Every dream
+  // rendered here is also reachable via explore.html (same shared feed,
+  // same dream ids), where reporting/blocking the DREAM already fully works
+  // today — this is a narrower surface for the same content, not a new
+  // unmoderatable one. Worth reconsidering if/when u.html becomes a
+  // primary discovery surface rather than a profile/share destination.
+  // (Comments themselves — added in slice 2 — DO carry their own
+  // per-comment Report/Block, inside js/comment-sheet.js's own overflow
+  // menu; that's a different, additive surface from this scope note.)
+  function cardHTML(d, isFirst){
+    var soundOn = DreamStore.getSoundPref();
+    var media = d.videoUrl
+      ? '<video class="dj-video" src="'+esc(d.videoUrl)+'"'+(soundOn?'':' muted')+' loop playsinline preload="'+(isFirst?'metadata':'none')+'"></video>'
+      : d.imageUrl
+        ? '<img src="'+esc(d.imageUrl)+'" alt="">'
+        : '<div class="dj-media-fallback" style="background:'+DreamStore.gradientFor(d)+'"></div>';
+    var muteBtn = d.videoUrl
+      ? '<button class="icon-btn dj-mute-btn" data-mute="'+esc(d.id)+'" title="'+(soundOn?'Mute':'Unmute')+'">'+(soundOn?Icons.volumeOn:Icons.volumeMuted)+'</button>'
+      : '';
+    var playBadge = d.videoUrl
+      ? '<div class="dj-play-badge hidden" data-play="'+esc(d.id)+'"><div class="badge-circle">'+Icons.play+'</div></div>'
+      : '';
+    var commentCount = d.commentCount || 0;
+    var teaserLabel = commentCount > 0
+      ? ('View all ' + commentCount + (commentCount === 1 ? ' comment' : ' comments'))
+      : 'Add a thought…';
+    return '<div class="dj-card" data-id="'+esc(d.id)+'">' +
+      '<div class="dj-media">' + media + muteBtn + playBadge + '</div>' +
+      '<div class="dj-actions">' +
+        '<div class="dj-action'+(d.likedByMe?' liked':'')+'" data-like="'+esc(d.id)+'"><span class="icon">'+(d.likedByMe?Icons.heartFilled:Icons.heartOutline)+'</span><span data-count="'+esc(d.id)+'">'+formatCount(d.likes||0)+'</span></div>' +
+        // Comment count — real and interactive as of Social Layer v2
+        // slice 2 (js/comment-sheet.js). d.commentCount is denormalized
+        // onto the shared feed record server-side (see
+        // lib/feed-comment-count.js) and comes straight off the raw dream
+        // record get-profile.js already returns.
+        '<div class="dj-action" data-comments="'+esc(d.id)+'"><span class="icon">'+Icons.messageCircle+'</span><span data-comment-count="'+esc(d.id)+'">'+formatCount(commentCount)+'</span></div>' +
+        '<div class="dj-action" data-share="'+esc(d.id)+'"><span class="icon">'+Icons.share+'</span><span>Share</span></div>' +
+      '</div>' +
+      '<div class="dj-caption clamped" dir="auto">'+esc(d.caption)+'</div>' +
+      '<div class="dj-interp-seam"></div>' +
+      '<div class="dj-comments-preview" id="dj-comments-preview-'+esc(d.id)+'"></div>' +
+      '<div class="dj-comments-teaser" data-comments-teaser="'+esc(d.id)+'">'+esc(teaserLabel)+'</div>' +
+    '</div>';
+  }
+
+  /** Best-effort top-2 newest-first comment preview lines for a card, fetched once it's rendered — design doc's own Direction B card spec. A failure just leaves the preview area empty; the teaser link still opens the full sheet regardless. */
+  function loadCommentPreviewFor(d){
+    if(!d.commentCount) return; // nothing to preview -- skip the network call entirely
+    fetch('/.netlify/functions/get-comments?dreamId=' + encodeURIComponent(d.id))
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        var el = document.getElementById('dj-comments-preview-' + d.id);
+        if(!el) return; // card no longer in the DOM (dehydrated/re-rendered) -- no-op
+        var blocked = DreamStore.getBlockedHandles();
+        var top2 = (data.comments || []).filter(function(c){ return blocked.indexOf(c.handle) === -1; }).slice(0, 2);
+        el.innerHTML = top2.map(function(c){
+          return '<div class="dj-comment-preview-line" dir="auto"><b>' + esc(DreamStore.displayHandle(c.handle)) + '</b> ' + esc(c.text) + '</div>';
+        }).join('');
+      }).catch(function(){ /* best-effort preview -- see this function's own doc comment */ });
+  }
+
+  // ===== Windowing (design doc's explicit QA note: "reuse vcardVideoObserver-
+  // style windowing from day one") — a lighter version of explore.html's own
+  // batching+virtualization (see that file's own header comment for the full
+  // mechanism this mirrors): only the first card is preload="metadata" and
+  // eagerly hydrated; the rest render in batches, and every video plays/
+  // pauses purely off IntersectionObserver visibility rather than all
+  // autoplaying at once on load. =====
+  var BATCH_SIZE = 6;
+  var currentDreams = [];
+  var renderedCount = 0;
+  var listEl = document.getElementById('u-dj-list');
+  var scrollArea = document.getElementById('u-scroll-area');
+  var scrollSentinel = null;
+  var scrollObserver = null;
+
+  var videoObserver = new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      var video = entry.target;
+      if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
+        if(video.paused){
+          video.currentTime = 0;
+          video.play().catch(function(){ /* autoplay can be blocked before any user gesture -- muted should normally allow it regardless */ });
+        }
+      } else {
+        video.pause();
+      }
+    });
+  }, { root: scrollArea, threshold: [0, 0.6, 1] });
+
+  function wireVideoRecovery(v){
+    if(v.dataset.recoveryWired) return;
+    v.dataset.recoveryWired = '1';
+    var badge = v.closest('.dj-media').querySelector('.dj-play-badge');
+    if(badge){
+      v.addEventListener('playing', function(){ badge.classList.add('hidden'); });
+      v.addEventListener('pause', function(){ badge.classList.remove('hidden'); });
+      v.addEventListener('error', function(){ badge.classList.remove('hidden'); });
+    }
+    v.addEventListener('error', function(){
+      if(v.dataset.retried) return;
+      v.dataset.retried = '1';
+      v.load();
+      v.play().catch(function(){});
+    });
+  }
+  function observeVideos(){
+    videoObserver.disconnect();
+    Array.prototype.forEach.call(listEl.querySelectorAll('.dj-video'), function(v){
+      videoObserver.observe(v);
+      wireVideoRecovery(v);
+    });
+  }
+
+  function ensureScrollObserver(){
+    if(scrollObserver) return;
+    scrollObserver = new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){ if(entry.isIntersecting) appendNextBatch(); });
+    }, { root: scrollArea, rootMargin: '0px 0px 600px 0px', threshold: 0 });
+  }
+
+  function appendNextBatch(){
+    if(renderedCount >= currentDreams.length) return;
+    var slice = currentDreams.slice(renderedCount, renderedCount + BATCH_SIZE);
+    var startIndex = renderedCount;
+    var html = slice.map(function(d, i){ return cardHTML(d, startIndex + i === 0); }).join('');
+    renderedCount += slice.length;
+
+    if(scrollSentinel){ scrollSentinel.insertAdjacentHTML('beforebegin', html); }
+    else { listEl.insertAdjacentHTML('beforeend', html); }
+
+    if(renderedCount < currentDreams.length){
+      if(!scrollSentinel){
+        scrollSentinel = document.createElement('div');
+        scrollSentinel.style.cssText = 'height:1px;';
+        listEl.appendChild(scrollSentinel);
+        ensureScrollObserver();
+        scrollObserver.observe(scrollSentinel);
+      }
+    } else if(scrollSentinel){
+      scrollObserver.unobserve(scrollSentinel);
+      scrollSentinel.remove();
+      scrollSentinel = null;
+    }
+    observeVideos();
+    slice.forEach(loadCommentPreviewFor);
+  }
+
+  function renderDreams(dreams){
+    if(scrollSentinel){ scrollObserver.unobserve(scrollSentinel); scrollSentinel = null; }
+    currentDreams = dreams;
+    renderedCount = 0;
+    listEl.innerHTML = '';
+
+    if(!dreams.length){
+      var emptyEl = document.getElementById('u-dreams-empty');
+      emptyEl.innerHTML = isOwner
+        ? "You haven't published any dreams yet."
+        : esc(displayNameForCopy) + " hasn't published any dreams yet.";
+      emptyEl.style.display = 'block';
+      return;
+    }
+    document.getElementById('u-dreams-empty').style.display = 'none';
+    appendNextBatch();
+  }
+
+  // ===== Load =====
+  var displayNameForCopy = handleParam; // updated once the real profile record resolves, for copy that reads "@handle"
+  var lastLoadedDreams = [];
+
+  function findLoadedDream(id){
+    for(var i=0; i<lastLoadedDreams.length; i++) if(lastLoadedDreams[i].id === id) return lastLoadedDreams[i];
+    return null;
+  }
+
+  function renderOwnerControls(){
+    if(!isOwner) return;
+    document.getElementById('u-visibility-row').style.display = 'flex';
+  }
+
+  function loadProfile(){
+    document.getElementById('u-skeleton').style.display = 'block';
+    document.getElementById('u-identity').style.display = 'none';
+    document.getElementById('u-notfound').style.display = 'none';
+    document.getElementById('u-error').style.display = 'none';
+    document.getElementById('u-dreams-empty').style.display = 'none';
+    document.getElementById('u-share-btn').style.display = 'none';
+    document.getElementById('u-priv-note').style.display = 'none';
+    listEl.innerHTML = '';
+
+    fetch('/.netlify/functions/get-profile?handle=' + encodeURIComponent(handleParam))
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if(!data || data.error) throw new Error((data && data.error) || 'unknown_error');
+        document.getElementById('u-skeleton').style.display = 'none';
+
+        if(!data.exists){
+          document.getElementById('u-notfound').style.display = 'block';
+          return;
+        }
+
+        var profile = data.profile;
+        var realHandle = (profile && profile.handle) || (data.dreams[0] && data.dreams[0].ownerHandle) || ('@' + handleParam);
+        displayNameForCopy = DreamStore.displayHandle(realHandle);
+        var displayName = (profile && profile.displayName) || displayNameForCopy;
+
+        document.getElementById('u-topbar-title').textContent = '@' + displayNameForCopy;
+        document.title = '@' + displayNameForCopy + ' — DreamTube';
+
+        var avatarEl = document.getElementById('u-avatar');
+        var avatarUrl = profile && profile.avatarDataUrl;
+        if(avatarUrl){
+          avatarEl.innerHTML = '<img src="'+esc(avatarUrl)+'" alt="">';
+        } else {
+          var fb = DreamStore.avatarFallback(realHandle);
+          avatarEl.style.background = fb.gradient;
+          avatarEl.textContent = fb.initial;
+        }
+
+        document.getElementById('u-name').textContent = displayName;
+
+        var bioEl = document.getElementById('u-bio');
+        if(profile && profile.bio){
+          bioEl.textContent = profile.bio;
+          bioEl.style.display = 'block';
+        } else {
+          bioEl.style.display = 'none';
+        }
+
+        // Counts line — server truth "published" always; owner ALSO sees
+        // "created on this device" (device-local, honest label — see
+        // profile.html's own identical-purpose stat) right alongside it,
+        // per design doc's own "state C" spec. A visitor never sees the
+        // device-local number at all — it's meaningless for anyone but
+        // the owner's own current device.
+        var publishedLabel = data.publishedCount + (data.publishedCount === 1 ? ' dream published' : ' dreams published');
+        var statsEl = document.getElementById('u-stats');
+        if(isOwner){
+          var createdOnDevice = DreamStore.getMyDreams().length;
+          statsEl.innerHTML = '<b>' + data.publishedCount + '</b> published · <b>' + createdOnDevice + '</b> created on this device';
+        } else {
+          statsEl.textContent = publishedLabel;
+        }
+
+        document.getElementById('u-identity').style.display = 'flex';
+        renderOwnerControls();
+        // Owner-only per the founder's slice-1 review call — see the
+        // button's own comment above.
+        document.getElementById('u-share-btn').style.display = isOwner ? 'flex' : 'none';
+        document.getElementById('u-priv-note').style.display = 'block';
+
+        lastLoadedDreams = DreamStore.decorateFeedDreams(data.dreams);
+        renderDreams(lastLoadedDreams);
+      })
+      .catch(function(){
+        document.getElementById('u-skeleton').style.display = 'none';
+        document.getElementById('u-error').style.display = 'block';
+      });
+  }
+  document.getElementById('u-retry-link').addEventListener('click', loadProfile);
+
+  document.getElementById('u-visibility-row').addEventListener('click', function(e){
+    var btn = e.target.closest('[data-visibility]');
+    if(!btn || btn.dataset.visibility !== 'private') return;
+    location.href = 'profile.html';
+  });
+
+  document.getElementById('u-share-btn').addEventListener('click', function(){
+    // Reuses js/share-sheet.js's chooseLink navigator.share -> clipboard ->
+    // unsupported-toast ladder via its shareUrl override (added alongside
+    // this feature — see that file's own show() doc comment) rather than
+    // share-dream.js's per-dream default, since a profile share points at
+    // share-profile.js instead. hideSave:true drops the "Save to device"
+    // option, which has no meaning for a profile (no single media file).
+    ShareSheet.show({
+      dream: { id: displayNameForCopy },
+      shareUrl: location.origin + '/.netlify/functions/share-profile?handle=' + encodeURIComponent(displayNameForCopy),
+      shareText: 'Check out @' + displayNameForCopy + "'s dreams on DreamTube!",
+      hideSave: true,
+      onToast: showToast
+    });
+    track('share_profile_opened', { handle: displayNameForCopy, viewerIsOwner: isOwner });
+  });
+
+  listEl.addEventListener('click', function(e){
+    var captionEl = e.target.closest('.dj-caption');
+    if(captionEl){ captionEl.classList.toggle('clamped'); return; }
+
+    var muteEl = e.target.closest('[data-mute]');
+    if(muteEl){
+      var soundOn = !DreamStore.getSoundPref();
+      DreamStore.setSoundPref(soundOn);
+      Array.prototype.forEach.call(listEl.querySelectorAll('.dj-video'), function(v){ v.muted = !soundOn; });
+      Array.prototype.forEach.call(listEl.querySelectorAll('[data-mute]'), function(btn){
+        btn.innerHTML = soundOn ? Icons.volumeOn : Icons.volumeMuted;
+        btn.title = soundOn ? 'Mute' : 'Unmute';
+      });
+      return;
+    }
+
+    var videoEl = e.target.closest('.dj-video');
+    var playEl = e.target.closest('[data-play]');
+    if(videoEl || playEl){
+      var vid = videoEl || playEl.closest('.dj-media').querySelector('.dj-video');
+      if(vid){
+        if(vid.paused) vid.play().catch(function(){}); else vid.pause();
+      }
+      return;
+    }
+
+    var likeEl = e.target.closest('[data-like]');
+    if(likeEl){
+      if(!requireLogin()) return;
+      var id = likeEl.dataset.like;
+      var d = findLoadedDream(id);
+      // Per-instance token guard against a stale async settlement mutating
+      // a card that's since been re-rendered — this codebase's own
+      // documented recurring bug class (tracker.html's
+      // recurring-stale-async-callback-bug-shape-xp61pn). `dataset.pending`
+      // on the tapped element IS this instance's guard: a second tap on
+      // the SAME element is ignored while its own request is in flight
+      // (mirrors explore.html's identical-purpose like handler exactly),
+      // and the element itself is only ever mutated by the promise chain
+      // that set the flag, so a stale response can never write into a
+      // DIFFERENT card's DOM.
+      if(!d || likeEl.dataset.pending) return;
+      var wasLiked = d.likedByMe;
+      likeEl.dataset.pending = '1';
+      d.likedByMe = !wasLiked;
+      d.likes = (d.likes || 0) + (wasLiked ? -1 : 1);
+      likeEl.classList.toggle('liked', d.likedByMe);
+      likeEl.querySelector('.icon').innerHTML = d.likedByMe ? Icons.heartFilled : Icons.heartOutline;
+      likeEl.querySelector('[data-count]').textContent = formatCount(d.likes);
+      DreamStore.toggleSharedLike(id, wasLiked).then(function(result){
+        d.likes = result.likes;
+        d.likedByMe = result.likedByMe;
+        delete likeEl.dataset.pending;
+        likeEl.classList.toggle('liked', d.likedByMe);
+        likeEl.querySelector('.icon').innerHTML = d.likedByMe ? Icons.heartFilled : Icons.heartOutline;
+        likeEl.querySelector('[data-count]').textContent = formatCount(d.likes);
+      }).catch(function(){
+        d.likedByMe = wasLiked;
+        d.likes = (d.likes || 0) + (wasLiked ? 1 : -1);
+        delete likeEl.dataset.pending;
+        likeEl.classList.toggle('liked', d.likedByMe);
+        likeEl.querySelector('.icon').innerHTML = d.likedByMe ? Icons.heartFilled : Icons.heartOutline;
+        likeEl.querySelector('[data-count]').textContent = formatCount(d.likes);
+        showToast("Couldn't update like — try again.");
+      });
+      return;
+    }
+
+    var shareEl = e.target.closest('[data-share]');
+    if(shareEl){
+      var dream = findLoadedDream(shareEl.dataset.share);
+      if(!dream) return;
+      ShareSheet.show({
+        dream: dream,
+        shareText: 'Check out this dream: "' + dream.caption + '" — create your own on DreamTube!',
+        onToast: showToast
+      });
+      return;
+    }
+
+    var commentsEl = e.target.closest('[data-comments]') || e.target.closest('[data-comments-teaser]');
+    if(commentsEl){
+      var commentsDreamId = commentsEl.dataset.comments || commentsEl.dataset.commentsTeaser;
+      openCommentSheetFor(commentsDreamId);
+    }
+  });
+
+  // Social Layer v2 slice 2 — opens js/comment-sheet.js against a specific
+  // dream. Shared by the action-row comment icon and the below-caption
+  // "View all N"/"Add a thought…" teaser (design doc's own Direction B
+  // card spec — both open the SAME sheet).
+  function openCommentSheetFor(dreamId){
+    var dream = findLoadedDream(dreamId);
+    if(!dream) return;
+    CommentSheet.show({
+      dream: dream,
+      currentUser: DreamStore.getCurrentUser(),
+      onRequireLogin: function(){ requireLogin(); },
+      onToast: showToast,
+      onCountChange: function(id, newCount){
+        var d = findLoadedDream(id);
+        if(d) d.commentCount = newCount;
+        var countEl = document.querySelector('[data-comment-count="' + id + '"]');
+        if(countEl) countEl.textContent = formatCount(newCount);
+        var teaserEl = document.querySelector('[data-comments-teaser="' + id + '"]');
+        if(teaserEl){
+          teaserEl.textContent = newCount > 0
+            ? ('View all ' + newCount + (newCount === 1 ? ' comment' : ' comments'))
+            : 'Add a thought…';
+        }
+        if(d) loadCommentPreviewFor(d);
+      }
+    });
+  }
+
+  // ===== Kick off the actual load — deliberately the LAST thing this
+  // script does, after every function/variable loadProfile (and the
+  // retry-link listener above it) depends on has already been declared. =====
+  if(!handleParam){
+    document.getElementById('u-skeleton').style.display = 'none';
+    document.getElementById('u-notfound').style.display = 'block';
+  } else {
+    loadProfile();
+  }
+</script>
+</body>
+</html>

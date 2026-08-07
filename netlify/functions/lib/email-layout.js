@@ -68,6 +68,8 @@
 // treatment this app actually uses, reused here rather than inventing a
 // new email-only button style.
 
+var siteOrigin = require('./site-origin');
+
 var COLORS = {
   void: '#000000',
   card: '#151027',
@@ -95,11 +97,19 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** `x-forwarded-host || host`, this codebase's existing convention. */
+/**
+ * This app's own public origin. Delegates to lib/site-origin.js's
+ * emailOrigin -- see that file's header comment. This used to be a local
+ * `'https://' + (x-forwarded-host || host || '')`, which produced the bare
+ * string `'https://'` under a SCHEDULED invocation (no inbound request, so
+ * no Host to reconstruct) and made logoUrl below emit
+ * `https:///assets/logo-v4.png` -- a url that resolves to the nonexistent
+ * host `assets`, so the 40x40 logo <img> rendered as a 40x40 BLANK SQUARE
+ * in real founder-received emails (tracker item
+ * for-product-bug-two-blank-square-emails--3fvxvc).
+ */
 function selfOrigin(event) {
-  var headers = (event && event.headers) || {};
-  var host = headers['x-forwarded-host'] || headers.host || '';
-  return 'https://' + host;
+  return siteOrigin.emailOrigin(event);
 }
 
 function logoUrl(event) {

@@ -71,8 +71,8 @@ var FACEBOOK_STATE_RESUME_MAX_CHARS = 1800;
 // first of any — by definition they're outside the funnel's known handoff
 // contract.
 var FACEBOOK_RESUME_PARAM_PRIORITY = ['resume', 'caption', 'mode', 'style', 'recall', 'types', 'motivations', 'distinct_id', 'fbc', 'fbp', 'fbclid'];
-// ...and these two are never dropped at all, budget or no budget. A
-// slightly over-long URL is a risk; losing either of these is a
+// ...and these are never dropped at all, budget or no budget. A
+// slightly over-long URL is a risk; losing any of these is a
 // certainty of breaking the visitor's funnel outright:
 //   resume  — start.html's entry guard bounces any visit without it
 //             straight back to the marketing funnel, so dropping it would
@@ -81,7 +81,15 @@ var FACEBOOK_RESUME_PARAM_PRIORITY = ['resume', 'caption', 'mode', 'style', 'rec
 //             the budget is ever reached in practice) would otherwise be
 //             silently discarded, landing the visitor back in the funnel
 //             with an empty dream and no idea why.
-var FACEBOOK_RESUME_PARAMS_NEVER_DROPPED = ['resume', 'caption'];
+//   rp      — the allowlisted return-page selector (currently only
+//             'wizard' — see facebook-oauth-callback.js's redirect()).
+//             wizard.html's own Facebook flow packs a tiny synthetic
+//             'rp=wizard' resume string, so this can never contribute to
+//             a budget overrun anyway — but dropping it would strand the
+//             wizard's return leg on start.html, whose ad-funnel flow
+//             (and funnel-specific analytics) the organic path must
+//             never fall into.
+var FACEBOOK_RESUME_PARAMS_NEVER_DROPPED = ['resume', 'caption', 'rp'];
 
 /**
  * The single feature flag every render/click site must check first.

@@ -295,3 +295,110 @@ test('addTokens is a safe no-op for an empty/missing email, same as spendTokens'
   assert.equal(result2, null);
   assert.equal(result3, null);
 });
+
+// ----- 2026-08-05 signup-dead-end fix (replay guard + non-persisted cap) -----
+// See syncTokens' REPLAY GUARD comment block for the production incident
+// these lock in: one signup's burst of first reads burned the whole per-IP
+// init cap and then clobbered its own 320 grant with a capped 0.
+
+test('a replayed init (grant marker present, entitlement write not yet visible) echoes the grant and burns no IP slot', async function () {
+  process.env.MAX_TOKEN_GRANTS_PER_IP_PER_DAY = '1';
+  var ip = nextIp();
+  var ev = fakeEvent({ ip: ip });
+  // Exhaust the IP's only slot with a different email.
+  await entitlements.getTokenStatus(ev, 'slot-eater@example.com');
+  // Simulate the incident's replay window: the marker write landed, the
+  // entitlement write is not visible yet (no record exists at all).
+  mockBlobs.seed('dreamtube-rate-limits', 'token-init-grant:replayed@example.com', { balance: 320, at: 1 });
+  var status = await entitlements.getTokenStatus(fakeEvent({ ip: ip }), 'replayed@example.com');
+  // Echo, not a capped 0 — even though this IP's cap is exhausted.
+  assert.equal(status.balance, 320);
+});
+
+test('a capped init persists NOTHING - the same email gets its full grant once the cap clears', async function () {
+  process.env.MAX_TOKEN_GRANTS_PER_IP_PER_DAY = '1';
+  var ip = nextIp();
+  await entitlements.getTokenStatus(fakeEvent({ ip: ip }), 'first@example.com');
+  var capped = await entitlements.getTokenStatus(fakeEvent({ ip: ip }), 'second@example.com');
+  assert.equal(capped.balance, 0);
+  // Cap "clears" (tomorrow's reset, modeled by raising the limit): the
+  // capped email must now get the REAL grant - the old code had persisted
+  // {balance:0}, making the cap silently permanent for that email.
+  process.env.MAX_TOKEN_GRANTS_PER_IP_PER_DAY = '5';
+  var recovered = await entitlements.getTokenStatus(fakeEvent({ ip: ip }), 'second@example.com');
+  assert.equal(recovered.balance, 320);
+});
+
+test('a capped account that claims still ends at exactly the claim amount, and later reads keep it (no 0-clobber)', async function () {
+  process.env.MAX_TOKEN_GRANTS_PER_IP_PER_DAY = '1';
+  var ip = nextIp();
+  await entitlements.getTokenStatus(fakeEvent({ ip: ip }), 'eats-the-slot@example.com');
+  var email = 'capped-claimer@example.com';
+  var capped = await entitlements.getTokenStatus(fakeEvent({ ip: ip }), email);
+  assert.equal(capped.balance, 0);
+  var claim = await entitlements.claimDailyTokens(fakeEvent({ ip: ip }), email);
+  assert.equal(claim.claimed, true);
+  assert.equal(claim.balance, 100); // first-claim bonus on a genuinely-capped 0 base
+  var after = await entitlements.getTokenStatus(fakeEvent({ ip: ip }), email);
+  assert.equal(after.balance, 100);
+});
+
+// ----- 2026-08-05 signup-dead-end fix, round 3 (review finding on round 2's
+// REPLAY GUARD) -- the marker-echo staleness narrowing. The test above at
+// line 304 ("a replayed init... echoes the grant") deliberately covers the
+// case where the entitlement write is NOT visible to the straggler at all
+// (no record exists yet) -- the marker's frozen value is the only thing
+// available, so echoing it is correct there. This test covers the DIFFERENT
+// case review flagged: the straggler's marker read has propagated, but
+// SEPARATELY a claim's own credit step already landed on TOP of the init in
+// the meantime, so the real balance is now higher than the marker's frozen
+// snapshot -- and the fix must not hand back that stale, understated number
+// once it has the chance to see the real one.
+test('a straggling reader whose init marker HAS propagated but whose OWN entitlement read is still stale must not echo the marker\'s frozen balance once a claim already landed on top of it', async function () {
+  var ip = nextIp();
+  var email = 'marker-echo-stale@example.com';
+  var ev = fakeEvent({ ip: ip });
+
+  // Real, already-committed state: the 320-token init grant landed, and a
+  // claim's own separate credit step already bumped it to 420 -- e.g. the
+  // exact incident this branch targets, where a claim's own internal
+  // syncTokens call writes the init marker (320, frozen) synchronously
+  // BEFORE the claim's separate credit step bumps the real balance to 420.
+  await entitlements.setEntitlement(ev, email, {
+    tokens: { balance: 420, lastClaimAt: Date.now(), streak: 1 }
+  });
+  mockBlobs.seed('dreamtube-rate-limits', 'token-init-grant:' + email, { balance: 320, at: Date.now() });
+
+  // The straggler: its OWN first entitlement read (syncTokens' very first
+  // read, callIndex 1) is still stale and sees no record/tokens at all --
+  // exactly what routes it into the `!record.tokens` branch and its
+  // marker-echo check. Every LATER entitlement read (callIndex 2+ -- this
+  // fix's own re-derive read) sees the real, already-committed 420:
+  // propagation caught up in the beat of wall-clock time between the two
+  // reads (the marker-store round trip in between).
+  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 1) return { value: undefined };
+    return null; // fall through to the real stored value from here on
+  });
+
+  var status;
+  try {
+    status = await entitlements.getTokenStatus(fakeEvent({ ip: ip }), email);
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+  }
+
+  assert.equal(status.balance, 420, 'must re-derive the real, already-credited balance from a fresh read -- not echo the marker\'s frozen 320 and understate a claim that already landed on top of it');
+});
+
+test('the marker-echo path still falls back to the marker\'s frozen value when a re-derive read ALSO still shows no tokens (propagation still lagging both reads)', async function () {
+  var ip = nextIp();
+  var email = 'marker-echo-still-stale@example.com';
+
+  mockBlobs.seed('dreamtube-rate-limits', 'token-init-grant:' + email, { balance: 320, at: Date.now() });
+  // No entitlement record written at all -- both the straggler's own first
+  // read AND this fix's re-derive read genuinely see nothing yet, same as
+  // the pre-existing "replayed init" test above.
+  var status = await entitlements.getTokenStatus(fakeEvent({ ip: ip }), email);
+  assert.equal(status.balance, 320, 'falls back to the marker\'s frozen value when a fresh re-derive read still shows no tokens either -- the narrowing reduces the stale window, it does not require the real value to always be available');
+});

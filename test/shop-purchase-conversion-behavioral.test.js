@@ -240,12 +240,17 @@ test('landing on ?checkout=success WITHOUT the marker (stale bookmark / manual v
     var phCalls = await readPostHogCalls(page);
     assert.equal(phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; }).length, 0, 'no marker must mean no posthog purchase_completed capture');
 
-    // The existing toast + query-param-clearing behavior must be
-    // unaffected either way -- this feature is additive only.
-    await page.waitForFunction(function () {
-      var t = document.getElementById('toast');
-      return t && t.classList.contains('show') && /payment received/i.test(t.textContent);
-    }, null, { timeout: 5000 });
+    // The visible return-trip feedback + query-param-clearing behavior
+    // must be unaffected either way -- this feature is additive only.
+    // (The feedback itself changed shape in tracker item
+    // for-product-webhook-p0-reframed-by-found-peytt8: a 2.2s toast became
+    // the persistent #shop-checkout-banner. With no marker present the
+    // banner deliberately does NOT assert a payment happened -- it can't
+    // support that claim -- so it opens on the neutral "Checking for your
+    // tokens" copy instead.)
+    await page.waitForSelector('#shop-checkout-banner.is-pending', { state: 'visible', timeout: 5000 });
+    var bannerTitle = await page.textContent('#shop-checkout-banner-title');
+    assert.match(bannerTitle, /checking for your tokens/i, 'a marker-less return must not claim "Payment received" -- nothing here can prove a payment happened');
     assert.doesNotMatch(page.url(), /checkout=success/);
   } finally {
     await context.close();

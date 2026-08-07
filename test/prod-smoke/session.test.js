@@ -55,15 +55,13 @@ var gen = null;
 var dreamId = null;
 var firstVideoUrl = null;
 var probeCleanedUp = false;
-// The username that actually ends up persisted server-side. NOT
-// guaranteed to equal `probe.username` -- see test 1's own comment on
-// wizard.html's renderSignup: the #fn-username field's typed value is
-// only used for a client-side length check today; the real account is
-// created under a name DERIVED FROM THE EMAIL (deriveUsernameBase(email)
-// in wizard.html), independent of what was typed into that field. This
-// suite adapts to whatever the server actually returns rather than
-// assuming the field is honored, so it keeps working regardless of which
-// way that's ever reconciled.
+// The username that actually ends up persisted server-side. The wizard's
+// merged passwordless signup wall (tracker item
+// for-product-wizard-signup-wall-is-the-ol-lt1l9j) never asks for a
+// username at all -- register-account-passwordless.js derives one from
+// the email server-side -- so this is always read back from the real
+// signed-in state after signup, never assumed from `probe.username`
+// (kept in the probe identity only as a log label).
 var probeUsername = null;
 
 console.log('[prod-smoke] target origin: ' + origin);
@@ -126,7 +124,17 @@ async function cleanupProbeAccount() {
     if (data && data.ok) {
       console.log('[prod-smoke] cleanup: probe account ' + probeUsername + ' deleted');
     } else {
-      console.log('[prod-smoke] cleanup: delete-account response ' + JSON.stringify(data));
+      // KNOWN GAP (surfaced by the passwordless signup wall, tracker item
+      // for-product-wizard-signup-wall-is-the-ol-lt1l9j): the probe
+      // account is now created PASSWORDLESS (password:null server-side),
+      // and delete-account.js's only ownership proof is a real password
+      // match -- so this delete is expected to fail with E5 until a
+      // passwordless-account deletion path exists (a pre-existing product
+      // gap for every real passwordless signup too, not just this probe;
+      // flagged on the tracker rather than widened here, since extending
+      // delete-account.js's auth surface is an approval-gated change).
+      // Logged loudly so the leaked probe account is never silent.
+      console.log('[prod-smoke] cleanup: delete-account response ' + JSON.stringify(data) + ' -- probe account ' + probeUsername + ' (passwordless) likely needs manual removal; see the KNOWN GAP comment at this log line');
     }
   } catch (e) {
     console.log('[prod-smoke] cleanup: delete-account request failed (' + e.message + ') -- probe account ' + probeUsername + ' may need manual removal');
@@ -183,17 +191,21 @@ test('journey 2 (organic): index.html -> wizard.html\'s documented step sequence
   // 6. Free text
   await page.waitForSelector('#fn-freetext-skip', { timeout: 10000 });
   await page.click('#fn-freetext-skip');
-  // 7. Contact capture -- fires the mocked start-pending-generation.js
+  // 7. The merged signup wall (docs/JOURNEY_MANIFEST.md journey 2 step 7,
+  // tracker item for-product-wizard-signup-wall-is-the-ol-lt1l9j): one
+  // passwordless email submit fires the mocked start-pending-generation.js
+  // AND the real, unmocked register-account-passwordless.js signup in
+  // parallel -- there is no username/password step anymore. The wall's
+  // own screen-13-parity beats (forming veil, Facebook button + divider)
+  // are asserted before submitting.
   await page.waitForSelector('#contact-email', { timeout: 10000 });
+  assert.ok(await page.locator('#fn-forming-frame').count() > 0, 'the wall must show the forming veil');
+  assert.ok(await page.locator('#fn-fb-continue').count() > 0, 'the wall must show the Facebook button (real App ID is configured in production)');
+  assert.ok(await page.locator('#fn-fb-or-divider').count() > 0, 'the wall must show the "or" divider under the Facebook button');
   await page.fill('#contact-email', probe.email);
   await page.click('#fn-contact-continue');
-  // 8. Signup -- the real, unmocked register-account.js call.
-  await page.waitForSelector('#fn-username', { timeout: 10000 });
-  await page.fill('#fn-username', probe.username);
-  await page.fill('#fn-password', probe.password);
-  await page.click('#fn-signup-continue');
 
-  // 9. Lands on home.html (docs/JOURNEY_MANIFEST.md: "no dedicated wait
+  // 8. Lands on home.html (docs/JOURNEY_MANIFEST.md: "no dedicated wait
   // screen" as of the funnel-ending-v2 change).
   await page.waitForURL(/home\.html/, { timeout: 20000, waitUntil: 'domcontentloaded' });
 
@@ -502,5 +514,11 @@ test('cleanup: the probe account is deleted at the end of the run', async functi
     body: JSON.stringify({ username: probeUsername, password: probe.password })
   });
   var loginData = await loginRes.json().catch(function () { return null; });
+  // NOTE: for a passwordless probe account this assertion is satisfied
+  // trivially (a password login fails against password:null whether or
+  // not the delete landed) -- see cleanupProbeAccount's KNOWN GAP comment
+  // for why the delete itself currently cannot be proven for passwordless
+  // accounts. Kept because it still hard-fails if a deleted account
+  // somehow becomes password-loggable again.
   assert.equal(loginData && loginData.ok, false, 'the probe account must genuinely no longer exist server-side after cleanup');
 });

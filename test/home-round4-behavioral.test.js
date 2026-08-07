@@ -145,6 +145,31 @@ function makeDream(id, extra) {
   }, extra || {});
 }
 
+/**
+ * A pair of createdAt timestamps that are BOTH guaranteed to land on today's
+ * local calendar day, ordered oldest-first — for any fixture that needs "two
+ * dreams tonight".
+ *
+ * Why this exists: home.html's todaysDreamCount() (and js/store.js's
+ * getDreamLogStatus() before it) define "today" as the LOCAL CALENDAR DAY
+ * (`new Date(createdAt).toDateString() === new Date().toDateString()`), not a
+ * rolling 24h window. A naive fixture like `Date.now() - 3600000` therefore
+ * silently lands on YESTERDAY whenever the suite happens to run within an hour
+ * of local midnight — which made the "2 dreams tonight" test below
+ * deterministically red for that one hour out of every 24, and green the other
+ * 23. Clamping to today's local midnight makes the fixture mean what it says
+ * regardless of what time the suite runs.
+ */
+function twoTimestampsToday() {
+  var now = Date.now();
+  var midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  var floor = midnight.getTime();
+  var older = Math.max(floor + 1, now - 3600000);
+  var newer = Math.max(older + 1, now - 1000);
+  return { older: older, newer: newer };
+}
+
 // ============================================================================
 // 1. TIP OF THE DAY
 // ============================================================================
@@ -548,8 +573,11 @@ test('home.html: the "2 dreams tonight" chip shows on the embedded room card onc
 
     // Two dreams tonight -- chip shows, on the newest (the embedded card
     // already always shows the newest per shouldShowRoomCard/renderDay0Card).
-    var older = makeDream('today-older', { ownerHandle: '@twodreamstester', createdAt: Date.now() - 3600000 });
-    var newer = makeDream('today-newer', { ownerHandle: '@twodreamstester', createdAt: Date.now() - 1000 });
+    // Both timestamps come from twoTimestampsToday() so they can never
+    // straddle local midnight -- see that helper's own doc comment.
+    var todayPair = twoTimestampsToday();
+    var older = makeDream('today-older', { ownerHandle: '@twodreamstester', createdAt: todayPair.older });
+    var newer = makeDream('today-newer', { ownerHandle: '@twodreamstester', createdAt: todayPair.newer });
     await seedHomeUser(page, { username: 'twodreamstester', dreams: [newer, older] });
     await page.waitForSelector('#d0-video.ready', { timeout: 5000 });
     assert.equal(await page.locator('#d0-chip').isHidden(), false);

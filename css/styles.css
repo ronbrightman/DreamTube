@@ -1162,6 +1162,47 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .share-sheet-option-label{ font-size:15px; font-weight:700; color:var(--text-primary);}
 .share-sheet-error{ text-align:center; font-size:12px; color:var(--danger); margin-top:10px;}
 
+/* ===== Comment sheet (js/comment-sheet.js) =====
+   Social Layer v2 slice 2 (docs/SOCIAL_LAYER_V2_DESIGN.md, tracker item
+   for-product-build-social-layer-v2-direct-34047c, design doc's own state
+   E). Mounted on both u.html and explore.html — one shared component.
+
+   DELIBERATELY no `overflow`/`max-height` override here on `.comment-sheet`
+   itself — it stays the exact same single scrolling container as every
+   other `.sheet` in this app (see js/comment-sheet.js's own SCROLL SHAPE
+   header comment for why introducing a second, nested scrollable region
+   here would silently break js/sheet-dismiss.js's drag-vs-scroll check).
+   The composer instead pins itself to the bottom of that SAME scroll flow
+   via `position:sticky`. */
+.cs-empty{ padding:28px 4px; text-align:center; color:var(--text-muted); font-size:13.5px; line-height:1.6;}
+.cs-comment{ display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--border);}
+.cs-comment:last-child{ border-bottom:none;}
+.cs-avatar{ width:28px; height:28px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:800; text-transform:uppercase; margin-top:1px;}
+.cs-body{ flex:1; min-width:0;}
+.cs-meta{ display:flex; align-items:baseline; gap:8px; margin-bottom:2px;}
+.cs-handle{ font-weight:700; font-size:13px; color:var(--text-primary); cursor:pointer;}
+.cs-time{ font-size:11.5px; color:var(--text-faint); flex:none;}
+.cs-text{ font-size:13.5px; line-height:1.45; color:var(--text-primary); word-break:break-word; white-space:pre-wrap;}
+/* Kebab button — >=44px tap target via padding/negative-margin (design doc
+   QA checklist explicitly calls this out), not a visually-44px icon. */
+.cs-overflow-wrap{ position:relative; flex:none;}
+.cs-overflow-btn{ width:44px; height:44px; margin:-10px -8px -10px 0; display:flex; align-items:center; justify-content:center; background:none; border:none; color:var(--text-muted); cursor:pointer;}
+.cs-overflow-btn .icon, .cs-overflow-btn svg{ width:18px; height:18px;}
+.cs-overflow-menu{ display:none; position:absolute; right:6px; top:36px; background:var(--surface); border:1px solid var(--border-strong); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.4); overflow:hidden; z-index:5; min-width:140px;}
+.cs-overflow-menu.open{ display:block;}
+.cs-overflow-item{ display:block; width:100%; min-height:44px; padding:0 16px; background:none; border:none; text-align:left; font-family:var(--font-body); font-size:13.5px; font-weight:600; color:var(--text-primary); cursor:pointer;}
+.cs-overflow-item:hover{ background:var(--surface-alt);}
+.cs-overflow-item[data-action="delete"]{ color:var(--danger);}
+
+.cs-composer-wrap{ position:sticky; bottom:0; background:var(--bg-app); padding-top:10px; margin-top:6px; border-top:1px solid var(--border);}
+.cs-composer-row{ display:flex; align-items:flex-end; gap:8px;}
+.cs-composer-textarea{ flex:1; resize:none; border:1px solid var(--border); background:var(--surface); border-radius:16px; padding:10px 14px; font-family:var(--font-body); font-size:13.5px; line-height:1.4; color:var(--text-primary); max-height:72px; overflow-y:hidden;}
+.cs-composer-post{ flex:none; min-width:44px; min-height:44px; border-radius:100px; background:#fff; color:#000; font-weight:800; font-size:13px; border:none; padding:0 18px; cursor:pointer; font-family:var(--font-body);}
+.cs-composer-post:disabled{ opacity:.4; cursor:not-allowed;}
+.cs-composer-counter{ text-align:right; font-size:11px; color:var(--text-faint); margin-top:4px;}
+.cs-composer-counter.warn{ color:var(--danger);}
+.cs-login-row{ display:flex; align-items:center; justify-content:center; min-height:44px; padding:10px 0; font-size:13.5px; font-weight:700; color:var(--accent-trust); cursor:pointer;}
+
 /* ===== "Payment received" resume state (processing.html) =====
    Shown after a successful checkout return, while polling for the
    webhook's token credit (js/purchase-sheet.js's pollForCredit) — the
@@ -1547,24 +1588,42 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 #itp-dream-strip .dream-row-tile.is-selected{ border-color:#fff; box-shadow:0 0 0 2px rgba(255,255,255,.55);}
 #itp-dream-strip .dream-row-tile:active{ transform:scale(.96);}
 
-/* ----- Picker phase ----- */
+/* ----- Picker phase — ALL-VISIBLE TILE GRID (tracker item
+   for-product-founder-spec-08-04-chamber-m-zf5ufo, part 2, 2026-08-04) -----
+   Replaces the original horizontal swipeable `.itp-carousel`/
+   `.itp-carousel-dots` (removed entirely below, no dead rules left behind
+   per this codebase's own "no dead code" standing rule — nothing else in
+   the repo still references either class, confirmed by grep before
+   deleting). Founder's own ask: every persona visible AT ONCE, no swipe
+   needed to discover the rest of the roster, styled like this app's
+   already-established video-style picker (style.html's own
+   `#style-grid{display:grid; grid-template-columns:1fr 1fr}` — same
+   2-column grid convention reused verbatim here, not invented fresh). */
 .itp-picker-title{ font-size:19px; font-weight:800; margin:6px 0 4px;}
 .itp-picker-sub{ font-size:12.5px; color:var(--text-muted); margin-bottom:16px; line-height:1.4;}
-.itp-carousel{
-  display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch;
+.itp-persona-grid{
+  display:grid; grid-template-columns:1fr 1fr; gap:10px;
   padding:2px 2px 10px; margin:0 -2px;
 }
-.itp-carousel::-webkit-scrollbar{ display:none;}
-/* Same portrait-fills-card/bottom-gradient-scrim grammar as .style-card,
-   just wider (this is the picker's own showcase, not a small style
-   swatch) and with an accent-tinted border ring instead of .style-card's
-   plain white selected-ring (nothing here is ever "selected" mid-scroll —
-   tapping a card advances immediately, spec §3.1). */
+/* Same portrait-fills-card/bottom-gradient-scrim grammar as .style-card
+   (this app's other picker-grid precedent, style.html's `.style-card`) —
+   fixed tile height rather than the old carousel's vw-based width, sized
+   to comfortably fit all 5 tiles (a 3-row 2-2-1 layout at this height)
+   on a real mobile-webview viewport with no page scroll needed to reach
+   the last row — verified in this build's own behavioral test at a real
+   390×844 mobile viewport. Accent-tinted border ring kept from the
+   carousel version (nothing here is ever "selected" — tapping a tile
+   advances immediately, spec §3.1). */
 .itp-persona-card{
-  position:relative; flex:none; width:72vw; max-width:300px; height:220px; border-radius:20px; overflow:hidden;
-  scroll-snap-align:center; cursor:pointer; border:2px solid transparent; transition:border-color .15s ease;
+  position:relative; height:168px; border-radius:18px; overflow:hidden;
+  cursor:pointer; border:2px solid transparent; transition:border-color .15s ease;
   background:var(--surface-alt);
 }
+/* The 5th (odd-one-out) tile spans both grid columns on its own row
+   instead of sitting stranded off-center next to empty space — see
+   js/interpret-experience.js's renderPicker for the generic
+   `personas.length % 2 === 1` logic that applies this class. */
+.itp-persona-card.itp-persona-card--wide{ grid-column:1 / -1;}
 /* Fallback layer sits BELOW the real portrait image (spec §12: accent-
    gradient + initial, "so the branch never blocks on asset approval") —
    painted first, then the real `background-image` div stacks on top and
@@ -1574,13 +1633,13 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    .itp-portrait elsewhere, which DOES need a JS onerror since an <img>
    tag has no CSS equivalent of "fall through to what's underneath" the
    way a failed background-image naturally does). */
-.itp-persona-card .itp-persona-card-fallback{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:64px; font-weight:800; color:rgba(255,255,255,.32);}
+.itp-persona-card .itp-persona-card-fallback{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:46px; font-weight:800; color:rgba(255,255,255,.32);}
 .itp-persona-card .itp-persona-card-bg{ position:absolute; inset:0; background-size:cover; background-position:center top;}
 .itp-persona-card .itp-persona-card-scrim{ position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.92), rgba(0,0,0,.15) 55%, rgba(0,0,0,.35));}
-.itp-persona-card .itp-persona-card-content{ position:absolute; left:14px; right:14px; bottom:14px; z-index:2;}
-.itp-persona-card .itp-persona-card-name{ font-weight:800; font-size:15.5px; color:#fff;}
-.itp-persona-card .itp-persona-card-inspired{ font-size:10.5px; color:rgba(255,255,255,.6); margin-top:1px;}
-.itp-persona-card .itp-persona-card-tagline{ font-size:11.5px; color:rgba(255,255,255,.88); margin-top:7px; line-height:1.35;}
+.itp-persona-card .itp-persona-card-content{ position:absolute; left:11px; right:11px; bottom:11px; z-index:2;}
+.itp-persona-card .itp-persona-card-name{ font-weight:800; font-size:13.5px; color:#fff; line-height:1.2;}
+.itp-persona-card .itp-persona-card-inspired{ font-size:9.5px; color:rgba(255,255,255,.6); margin-top:1px;}
+.itp-persona-card .itp-persona-card-tagline{ font-size:10.5px; color:rgba(255,255,255,.88); margin-top:5px; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;}
 /* Already-read badge (spec §3.1: personas the user already got a reading
    from on THIS dream show a small ✓ badge). */
 .itp-persona-card-badge{
@@ -1589,9 +1648,6 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 }
 .itp-persona-card-badge .icon{ width:12px; height:12px;}
 .itp-persona-card.read .itp-persona-card-badge{ display:flex;}
-.itp-carousel-dots{ display:flex; justify-content:center; gap:6px; margin:2px 0 14px;}
-.itp-carousel-dot{ width:6px; height:6px; border-radius:50%; background:rgba(255,255,255,.22); transition:background-color .15s ease, transform .15s ease;}
-.itp-carousel-dot.active{ background:#fff; transform:scale(1.3);}
 .itp-picker-footer{ font-size:11.5px; color:var(--text-faint); text-align:center; line-height:1.4; margin:2px 0 14px;}
 
 /* ----- Loading phases (q_loading / r_loading) ----- */

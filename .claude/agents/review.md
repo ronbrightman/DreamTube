@@ -134,6 +134,32 @@ miss. Check new/changed code against these specifically:
   `<script>` block. New pages/components that don't follow this pattern
   (e.g. introduce a module system or a build step) are a real
   conformance issue for this app, not a style nitpick.
+- **Mocked media-element event ordering can hide real bugs.** A
+  duplicate-listener bug on the audio-regeneration path (branch
+  `fix-revisited-reading-dead-audio-dta2ae`) survived its own tests
+  because a stubbed `play()` resolves synchronously-ish and a mocked
+  `<audio>` never emits `timeupdate` on a failing element — a real
+  browser does both, in a different order than the mock. Any test
+  asserting behavior around `<audio>`/`<video>` event handlers
+  (`timeupdate`, `error`, autoplay-rejection) with a stubbed `play()`
+  should be treated with suspicion unless it deliberately controls
+  event *ordering*, not just event *occurrence*. Same branch's tests
+  also used `>=1` call-count assertions where an exact count was the
+  actual bar — `>=1` doesn't catch a duplicate listener; `=== 1` does.
+  Flag loose count assertions on anything listener/dedup-related.
+- **Fresh git worktrees need `node_modules` symlinked.** `node_modules`
+  isn't checked in and isn't per-worktree — every existing worktree
+  symlinks it to the main checkout's (`ln -s
+  /home/user/DreamTube/node_modules node_modules`). A worktree missing
+  this symlink fails ~200 tests with `Cannot find module
+  '@netlify/blobs'` (and similar) that look like widespread regressions
+  but are purely a missing-symlink artifact — check for the symlink
+  before treating a mass of unrelated-looking failures as real.
+- **`test/media-library-page.test.js`'s "desktop viewport" scroll test
+  is a known pre-existing flake** under concurrent load (Playwright
+  timeout waiting on a `waitForFunction`) — confirmed unrelated to
+  unrelated branches multiple times. Re-run it in isolation before
+  treating a failure there as a real regression.
 
 ## How to actually check this without running the code yourself
 

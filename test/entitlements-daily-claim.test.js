@@ -532,3 +532,67 @@ test('a read() (and its verify-read) that keeps returning the stale pre-claim sn
   var record = await entitlements.getEntitlement(ev, email);
   assert.equal(record.tokens.balance, 120, 'exactly one credit must have landed');
 });
+
+// ----- 2026-08-05 signup-dead-end fix, round 2 (tracker item
+// for-product-p1-urgent-fresh-signup-can-d-qhrrqy) — the guarded init
+// write. Round 1 (see test/entitlements-tokens.test.js's own "signup-
+// dead-end fix" section) closed the IP-slot-burn/permanent-0 holes with a
+// once-ever grant marker. What it left standing: syncTokens' init branch
+// still finished with a completely UNGUARDED plain `setEntitlement`
+// write — a full-object REPLACE of `tokens`, no fresh recheck at all.
+// Production probe: a claim seconds after signup reported E5, balance
+// stayed at the pre-claim 320 instead of 420, and only "healed" minutes
+// later once propagation settled and the claim's own write finally won —
+// a straggling SECOND syncTokens init call (e.g. a concurrent get-token-
+// status.js read racing the claim, both reaching this exact branch before
+// either one's own write was visible to the other yet) landed its plain
+// `tokens: fresh` write AFTER the claim's, silently erasing the claim's
+// balance AND lastClaimAt/lastClaimAttemptId.
+test('a straggling duplicate signup-init write must not clobber a claim that already landed (guarded init write, not a blind full-object replace)', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var email = 'clobberrace@example.com';
+
+  // The claim lands first and genuinely succeeds, normally.
+  var claimResult = await entitlements.claimDailyTokens(ev, email);
+  assert.equal(claimResult.claimed, true);
+  assert.equal(claimResult.balance, 420);
+
+  // Now simulate a SECOND, straggling caller's own syncTokens init call —
+  // e.g. a concurrent get-token-status.js read fired alongside the claim
+  // above, whose own very first read of the entitlement record genuinely
+  // raced ahead of everything above and still reports "no tokens yet"
+  // (as if it had started before any of the writes above landed). The
+  // token-init-grant marker read is stubbed the same way, for the same
+  // reason. This exercises exactly the "outer syncTokens condition still
+  // passes for a straggler" case — what matters is whether the GUARDED
+  // init write's own retryingWrite loop still refuses to clobber the
+  // real, already-claimed state once IT reads fresh.
+  var entitlementReads = 0;
+  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    entitlementReads++;
+    if (entitlementReads === 1) return { value: undefined }; // outer syncTokens check: "no record yet"
+    return null; // every read from here on (the guarded write's own retryingWrite attempts) sees the REAL, already-claimed record
+  });
+  mockBlobs.setReadOverride('dreamtube-rate-limits', function () { return { value: undefined }; }); // the marker also looks not-yet-written to this straggler
+
+  var status;
+  try {
+    status = await entitlements.getTokenStatus(ev, email);
+  } finally {
+    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+    mockBlobs.clearReadOverride('dreamtube-rate-limits');
+  }
+  assert.equal(status.balance, 420, 'must echo the REAL current balance, never fabricate/revert to a fresh 320');
+
+  var record = await entitlements.getEntitlement(ev, email);
+  assert.equal(record.tokens.balance, 420, 'the persisted record must still reflect the claim');
+  assert.ok(record.tokens.lastClaimAt, 'the claim\'s lastClaimAt must survive -- not wiped by the straggling init write');
+  assert.equal(record.tokens.streak, 1, 'the claim\'s streak must survive too');
+});
+// NEGATIVE-PROOFED (per this tracker item's own verification ask):
+// `git stash` the entitlements.js change and re-run this file -- the test
+// above fails with `320 !== 420` (the straggler's blind `tokens: fresh`
+// write reverts the balance and drops lastClaimAt/streak entirely),
+// reproducing the exact production incident this fix closes. Confirmed
+// manually before this fix was committed; not kept as a permanently
+// skipped duplicate test to avoid dead code.

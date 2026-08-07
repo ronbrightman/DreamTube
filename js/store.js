@@ -112,6 +112,8 @@
 //       for-product-funnel-ending-v2-founder-ins-tfuu0q — see that field's own doc comment)
 //   getPendingDreamId()         -> local read, the synthetic `pending:<operationName>` id the
 //       Chamber opens for a still-generating dream — see findPendingDream's own doc comment
+//   pendingDreamIdFor(opName)   -> pure helper, the same synthetic id for an operationName whose
+//       pendingJob has ALREADY been cleared (a just-settled generation) — see its own doc comment
 //   logNoRecallToday()          -> local write, records a content-less "no recall" dream-log
 //       check-in for today (idempotent per day, grants nothing) — see getDreamLogStatus above
 //   getAccountBackup()          -> local read, exports account+dreams+characters as a downloadable JSON backup
@@ -427,7 +429,7 @@
                     // Blobs (see getSharedFeed/toggleSharedLike), this just decides +1 vs -1
                     // and which browsers see a filled heart. Not deduped across devices/users;
                     // there's no real account system to dedupe against, same as everywhere else.
-      blockedByUser: {} // lowercased username -> { ownerHandle (e.g. "@alice"): true, ... }.
+      blockedByUser: {}, // lowercased username -> { ownerHandle (e.g. "@alice"): true, ... }.
                     // Local "who has THIS signed-in account blocked" state for the shared
                     // feed (tracker item for-product-public-feed-safety-in-app-re-ppuw77) —
                     // keyed per account, same scheme as charactersByUser immediately above
@@ -448,6 +450,19 @@
                     // or a different device — this local map is the fast, always-available
                     // copy that actually drives rendering, seeded/merged from that server copy
                     // on demand, never the other way around.
+      profileBioByUser: {} // lowercased username -> bio string (<=150 chars). Private local
+                    // cache of THIS account's own public-profile bio (Social Layer v2 slice 1
+                    // — docs/SOCIAL_LAYER_V2_DESIGN.md), keyed per account, same scheme as
+                    // charactersByUser/blockedByUser above — so a different account signed
+                    // into this same browser never sees or overwrites another account's bio.
+                    // The server-side copy (netlify/functions/lib/profile-store.js's
+                    // dreamtube-profiles record) is the one that actually renders on u.html —
+                    // this local copy exists purely so profile.html's Edit-profile sheet has
+                    // something to prefill from without a network round trip, mirroring why
+                    // charactersByUser is local-first too. Display name/avatar don't need an
+                    // equivalent local field: they're already sourced from the isSelf
+                    // character record (see getMeCharacter in profile.html) — bio is the one
+                    // genuinely new piece of profile data this feature introduces.
     };
   }
 
@@ -572,6 +587,7 @@
       // deleted.
       if (!parsed.likedIds) parsed.likedIds = {};
       if (!parsed.blockedByUser) parsed.blockedByUser = {};
+      if (!parsed.profileBioByUser) parsed.profileBioByUser = {};
       if (migrateLegacyState(parsed)) {
         try { localStorage.setItem(KEY, JSON.stringify(parsed)); } catch (e2) { /* storage unavailable — cleaned state still used for this page load */ }
       }
@@ -646,6 +662,7 @@
     delete state.accounts[usernameKey];
     delete state.charactersByUser[usernameKey];
     delete state.blockedByUser[usernameKey];
+    delete state.profileBioByUser[usernameKey];
     state.dreams = state.dreams.filter(function (d) { return d.ownerHandle !== myHandle; });
     if (state.pendingJob && state.pendingJob.ownerHandle === myHandle) state.pendingJob = null;
     state.user = null;
@@ -733,13 +750,58 @@
   // above (seed()) for the full mechanism this id plugs into.
   var PENDING_DREAM_ID_PREFIX = 'pending:';
 
+  /** The synthetic pending-dream id for an operationName. Sole place the prefix is ever concatenated — see the exported pendingDreamIdFor's own doc comment for why callers need this for an ALREADY-settled job too. */
+  function pendingDreamIdFor(operationName) {
+    return operationName ? PENDING_DREAM_ID_PREFIX + operationName : null;
+  }
+
+  /**
+   * The CURRENT account's real, already-finalized dream that a given
+   * operationName produced, or null. `sourceOperationName` is stamped by
+   * finalizeDream at the moment any job lands on a dream, and is already
+   * this file's established way to answer "which dream did this job
+   * become?" after pendingJob itself is gone — see isPendingJobStillCurrent,
+   * which disambiguates exactly the same cleared-pendingJob ambiguity from
+   * exactly the same field. Ownership-scoped the same way scopedPendingJob/
+   * getMyDreams are: another account's dream is never a match, and neither
+   * is anything at all while logged out.
+   */
+  function findResolvedDreamForOperation(operationName) {
+    var myHandle = state.user ? state.user.handle : null;
+    if (!operationName || !myHandle) return null;
+    for (var i = 0; i < state.dreams.length; i++) {
+      var d = state.dreams[i];
+      if (d && d.sourceOperationName === operationName && d.ownerHandle === myHandle) return d;
+    }
+    return null;
+  }
+
   /**
    * Resolves a `PENDING_DREAM_ID_PREFIX`-id to a lightweight, in-memory
    * dream-shaped object built straight off the CURRENT account's own
-   * pendingJob — or null if there's no matching in-flight job (already
-   * completed/failed, or belongs to a different account than the one
-   * currently signed in — scopedPendingJob() already enforces that same
-   * ownership check every other pendingJob read in this file gets).
+   * pendingJob — or, once that job has finished, to the REAL dream it
+   * produced (see the fall-through below). Null only when neither exists:
+   * no such in-flight job AND no finalized dream from it (a failed
+   * generation, or a job belonging to a different account than the one
+   * currently signed in — scopedPendingJob()/findResolvedDreamForOperation
+   * both enforce that same ownership check every other pendingJob read in
+   * this file gets).
+   *
+   * **The post-completion fall-through is load-bearing, not defensive.**
+   * The whole point of the pending id (tracker item for-product-founder-
+   * ask-08-04-offer-the--rlcai3) is that a reading can START while the video
+   * is still generating — which means a reading/TTS request can still be IN
+   * FLIGHT at the moment the video lands, and finalizeDream clears
+   * pendingJob in the very same tick it creates the real dream. Without this
+   * fall-through, such a response comes back to a pending id that no longer
+   * resolves to anything, and generateInterpretationReading/
+   * generateInterpAudio's `if (dream)` write guards skip the persist
+   * SILENTLY: the reading renders in the live session (js/interpret-
+   * experience.js's notifyDreamResolved/stillTargetsDream deliberately
+   * tolerate the swap) but is gone on the next visit, and any real TTS spend
+   * behind it is wasted. Resolving through to the real dream here fixes
+   * every findDream() caller at once rather than bolting an id-repair step
+   * onto each write path separately.
    *
    * `interpretations` is NOT a copy — it's the live
    * `state.pendingInterpretations[operationName]` object itself (created
@@ -748,20 +810,29 @@
    * persist();` path (findDream -> this function -> mutate the returned
    * object) durably persists here with ZERO special-case code in that
    * function — it already treats whatever findDream() gives it as the real
-   * record to mutate.
+   * record to mutate. Post-completion the same is true for free: the object
+   * handed back IS the real dream, and finalizeDream has already carried
+   * `state.pendingInterpretations[operationName]` over onto its
+   * `interpretations` map, so a late write lands on the same map any earlier
+   * pre-completion write did.
    *
    * Every other field is read-only scaffolding (storyText/caption/style/
    * mediaType) — good enough for the interpretation flow (which only ever
-   * reads `d.storyText || d.caption`), but this is deliberately NOT a real
-   * dream: it's never added to state.dreams, so getMyDreams/getDreamMilestone/
-   * the shared feed/profile grids never see it — only findDream() (and
-   * therefore getDream/getInterpretations/requestInterpretationQuestions/
-   * generateInterpretationReading, every one of which routes through
-   * findDream) ever resolves one.
+   * reads `d.storyText || d.caption`), but the PRE-completion object is
+   * deliberately NOT a real dream: it's never added to state.dreams, so
+   * getMyDreams/getDreamMilestone/the shared feed/profile grids never see
+   * it — only findDream() (and therefore getDream/getInterpretations/
+   * requestInterpretationQuestions/generateInterpretationReading/
+   * generateInterpAudio, every one of which routes through findDream) ever
+   * resolves one.
    */
   function findPendingDream(operationName) {
     var job = scopedPendingJob();
-    if (!job || job.operationName !== operationName) return null;
+    if (!job || job.operationName !== operationName) {
+      // No live job under this name — but it may simply have finished
+      // while a caller was mid-flight against its pending id. See above.
+      return findResolvedDreamForOperation(operationName);
+    }
     if (!state.pendingInterpretations[operationName]) state.pendingInterpretations[operationName] = {};
     return {
       id: PENDING_DREAM_ID_PREFIX + operationName,
@@ -1096,6 +1167,93 @@
     });
   }
 
+  // Public-profile avatar (Social Layer v2 slice 1, docs/
+  // SOCIAL_LAYER_V2_DESIGN.md's own field spec: "avatarDataUrl (Me-photo
+  // re-downscaled 256px JPEG via resizeImageFile)") — a THIRD size
+  // alongside the Me character's own full-quality 768px photoDataUrl
+  // (profile.html/create.html's identity sheet) and the tiny 48px feed
+  // thumbnail immediately above. Same canvas-based downscale technique,
+  // just its own max-dimension/quality tuned for a public profile page's
+  // single hero avatar rather than a small feed-row circle.
+  // Bio length cap (Social Layer v2 slice 1, docs/SOCIAL_LAYER_V2_DESIGN.md's
+  // own field spec: "bio <=150 chars (IG parity)") — shared by
+  // DreamStore.setMyBio's local validation and mirrored server-side by
+  // sync-profile.js's own BIO_MAX_CHARS constant.
+  var BIO_MAX_CHARS = 150;
+
+  var PROFILE_AVATAR_MAX_DIM = 256;
+  var PROFILE_AVATAR_QUALITY = 0.82;
+  function resizeDataUrlForProfileAvatar(dataUrl) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onerror = function () { reject(new Error('decode_failed')); };
+      img.onload = function () {
+        var scale = Math.min(1, PROFILE_AVATAR_MAX_DIM / Math.max(img.width, img.height));
+        var w = Math.max(1, Math.round(img.width * scale));
+        var h = Math.max(1, Math.round(img.height * scale));
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', PROFILE_AVATAR_QUALITY));
+      };
+      img.src = dataUrl;
+    });
+  }
+
+  /**
+   * Resolves to a 256px avatar for whoever is CURRENTLY signed in's Me
+   * character, or null if there isn't one (no self character yet, a
+   * describe-only self character with no photo, or logged out). Never
+   * rejects — same "always resolves, callers chain a single .then()"
+   * shape as currentUserAvatarThumbnail immediately below, so a decode
+   * failure just degrades to "no avatar this sync" rather than blocking
+   * the profile sync itself.
+   */
+  function currentUserProfileAvatarDataUrl() {
+    var self = state.user ? myCharacterList().filter(function (c) { return c.isSelf; })[0] : null;
+    if (!self || !self.photoDataUrl) return Promise.resolve(null);
+    return resizeDataUrlForProfileAvatar(self.photoDataUrl).catch(function () { return null; });
+  }
+
+  /**
+   * Fire-and-forget upsert of the CURRENTLY signed-in account's public
+   * profile record (netlify/functions/sync-profile.js — Social Layer v2
+   * slice 1). Called from two places, exactly matching the design doc's
+   * "written by token-gated sync-profile.js (on Edit-profile save and on
+   * first publish)": profile.html's Edit-profile save handler, and
+   * publishDream() below's isNewPublish branch. Same best-effort,
+   * never-blocks-the-caller posture as syncPublishedDreamToFeed — a
+   * failure here just means u.html serves a stale/blank profile record
+   * until the next successful sync, never a broken publish/save flow.
+   *
+   * displayName sources from the Me character's own name (falling back to
+   * the bare handle when unset, so a profile record is never saved with a
+   * genuinely empty display name); avatarDataUrl from
+   * currentUserProfileAvatarDataUrl above; bio from this device's own
+   * local profileBioByUser cache (see setMyBio below — always the freshest
+   * value THIS device knows, since bio has no other local source of
+   * truth the way name/photo do via the Me character).
+   */
+  function syncProfileToServer() {
+    if (!state.user || !state.user.authToken) return; // no verified identity to sync under -- see this file's other authToken-gated call sites' identical degrade
+    var handle = state.user.handle;
+    var self = myCharacterList().filter(function (c) { return c.isSelf; })[0] || null;
+    var displayName = (self && self.name) ? self.name : (typeof handle === 'string' ? handle.replace(/^@/, '') : '');
+    currentUserProfileAvatarDataUrl().then(function (avatarDataUrl) {
+      fetch('/.netlify/functions/sync-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          authToken: state.user.authToken,
+          handle: handle,
+          displayName: displayName,
+          avatarDataUrl: avatarDataUrl,
+          bio: state.profileBioByUser[state.user.username.toLowerCase()] || ''
+        })
+      }).catch(function () { /* best-effort — see comment above */ });
+    });
+  }
+
   /**
    * Resolves to a tiny avatar thumbnail for whoever is CURRENTLY signed
    * in's Me character, or null if there isn't one to send (no self
@@ -1109,6 +1267,27 @@
     var self = state.user ? myCharacterList().filter(function (c) { return c.isSelf; })[0] : null;
     if (!self || !self.photoDataUrl) return Promise.resolve(null);
     return resizeDataUrlForAvatarThumb(self.photoDataUrl).catch(function () { return null; });
+  }
+
+  /**
+   * Adds the local, per-viewer mine/likedByMe/blockedByMe flags to a raw
+   * array of shared-feed dream records — shared by getSharedFeed's own GET
+   * and by DreamStore.decorateFeedDreams (for callers with a raw dream
+   * array from a different endpoint, e.g. get-profile.js). See
+   * getSharedFeed's own doc comment for what each flag means and why none
+   * of them live on the shared record itself.
+   */
+  function decorateFeedDreams(dreams) {
+    var likedIds = state.likedIds || {};
+    var blockedHandles = currentBlockedMap() || {};
+    var myHandle = state.user ? state.user.handle : null;
+    return (dreams || []).map(function (d) {
+      return Object.assign({}, d, {
+        likedByMe: !!likedIds[d.id],
+        mine: !!myHandle && d.ownerHandle === myHandle,
+        blockedByMe: !!blockedHandles[d.ownerHandle]
+      });
+    });
   }
 
   /**
@@ -4584,7 +4763,26 @@
      */
     getPendingDreamId: function () {
       var job = scopedPendingJob();
-      return job ? PENDING_DREAM_ID_PREFIX + job.operationName : null;
+      return job ? pendingDreamIdFor(job.operationName) : null;
+    },
+
+    /**
+     * The synthetic `pending:<operationName>` id for an arbitrary
+     * operationName — the same string getPendingDreamId above returns, but
+     * computable AFTER that job has already settled (finalizeDream clears
+     * state.pendingJob before the completion promise resolves, so
+     * getPendingDreamId() is already null by the time a caller learns the
+     * generation finished). home.html's onGenerationSettled needs exactly
+     * that: "which synthetic id did the dream that just landed used to be
+     * addressed by," so an interpretation opened against the still-
+     * generating dream can be re-pointed at the real one
+     * (InterpretExperience.notifyDreamResolved). Pure string math, no
+     * state read and no ownership guard of its own — it names an id, it
+     * doesn't grant access to anything (findPendingDream/findDream still
+     * apply every existing ownership check when that id is actually used).
+     */
+    pendingDreamIdFor: function (operationName) {
+      return pendingDreamIdFor(operationName);
     },
 
     /**
@@ -4756,6 +4954,19 @@
         // place (see lib/dream-store.js's own removePrivateDream doc
         // comment).
         deletePrivateDreamBestEffort(d.id);
+        // Social Layer v2 slice 1 (docs/SOCIAL_LAYER_V2_DESIGN.md) — first
+        // publish is the OTHER trigger point for syncing this account's
+        // public-profile record (alongside profile.html's Edit-profile
+        // save), so a dreamer who publishes without ever opening Edit
+        // profile still gets a real, u.html-visible profile record (name/
+        // avatar sourced from their Me character, same as
+        // syncProfileToServer's own doc comment describes) rather than the
+        // profile page staying permanently unsynced. Only on the actual
+        // transition into published, same isNewPublish gate as the
+        // license-grant/analytics calls just above — a re-sync of an
+        // already-published dream (finalizeDream) has no reason to also
+        // re-sync the profile record every time.
+        if (isNewPublish) syncProfileToServer();
         if (isNewPublish) trackAnalytics('video_published', { style: d.style, mediaType: d.mediaType });
       }
       return d;
@@ -5115,17 +5326,24 @@
       }).then(function (data) {
         if (data.error) throw new Error(data.error);
         lastDreamOfDayId = data.dreamOfDayId || null;
-        var likedIds = state.likedIds || {};
-        var blockedHandles = currentBlockedMap() || {};
-        var myHandle = state.user ? state.user.handle : null;
-        return (data.feed || []).map(function (d) {
-          return Object.assign({}, d, {
-            likedByMe: !!likedIds[d.id],
-            mine: !!myHandle && d.ownerHandle === myHandle,
-            blockedByMe: !!blockedHandles[d.ownerHandle]
-          });
-        });
+        return decorateFeedDreams(data.feed || []);
       });
+    },
+
+    /**
+     * Adds the SAME per-viewer mine/likedByMe/blockedByMe flags
+     * getSharedFeed() above computes, to an already-fetched array of raw
+     * shared-feed dream records — for callers that fetch a dream list from
+     * a DIFFERENT server endpoint returning the same raw record shape (get-
+     * feed.js's own `feed` entries) rather than through getSharedFeed()
+     * itself. Added for u.html (Social Layer v2 slice 1): get-profile.js
+     * returns a server-filtered `dreams` array (already scoped to one
+     * ownerHandle), and re-fetching the ENTIRE shared feed just to get
+     * these three local flags would be wasteful. Pure/synchronous — no
+     * network call of its own.
+     */
+    decorateFeedDreams: function (dreams) {
+      return decorateFeedDreams(dreams || []);
     },
 
     /**
@@ -5457,6 +5675,41 @@
       persist();
       return true;
     },
+
+    // ===== Public-profile bio (Social Layer v2 slice 1) =====
+    // Local-first, per-account cache — see state.profileBioByUser's own
+    // doc comment for why this isn't folded into saveCharacter's isSelf
+    // record. The server-side dreamtube-profiles record (what u.html
+    // actually renders) is only ever updated via syncProfileToServer,
+    // which reads this same local cache — call setMyBio, THEN
+    // syncProfileToServer, same two-step "write local, sync best-effort"
+    // shape saveCharacter/syncPublishedDreamToFeed already use.
+
+    /** This account's own bio, or '' if unset/logged out. */
+    getMyBio: function () {
+      if (!state.user) return '';
+      return state.profileBioByUser[state.user.username.toLowerCase()] || '';
+    },
+
+    /**
+     * Sets this account's own bio (trimmed, capped at BIO_MAX_CHARS — IG
+     * parity, matches sync-profile.js's own server-side cap). Returns
+     * { ok:true } or { ok:false, error }. Does NOT itself call
+     * syncProfileToServer — callers (profile.html's Edit-profile save)
+     * chain that explicitly, same as every other local-write-then-sync
+     * pair in this file.
+     */
+    setMyBio: function (bio) {
+      if (!state.user) return { ok: false, error: 'not_logged_in' };
+      var trimmed = (bio || '').trim();
+      if (trimmed.length > BIO_MAX_CHARS) return { ok: false, error: 'Bio must be ' + BIO_MAX_CHARS + ' characters or fewer.' };
+      state.profileBioByUser[state.user.username.toLowerCase()] = trimmed;
+      persist();
+      return { ok: true };
+    },
+
+    /** See syncProfileToServer's own doc comment above. */
+    syncProfileToServer: syncProfileToServer,
 
     /**
      * Device-level video sound preference (not account-scoped — like a

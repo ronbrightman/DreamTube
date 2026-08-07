@@ -1,7 +1,9 @@
 // netlify/functions/report-dream.js
 //
-// POST { dreamId, dreamOwnerHandle?, dreamCaption?, reporterHandle?, reason? }
-// -> flags a specific published dream into the moderation queue
+// POST { dreamId, dreamOwnerHandle?, dreamCaption?, reporterHandle?, reason?,
+//        targetType?, commentId?, commentText?, commentAuthorHandle? }
+// -> flags a specific published dream (or, since Social Layer v2 slice 2,
+// a specific COMMENT on one) into the moderation queue
 // (lib/moderation-store.js). Tracker item
 // for-product-public-feed-safety-in-app-re-ppuw77 — App Store Guideline
 // 1.2 / Google Play's equivalent UGC policy require in-app content
@@ -23,6 +25,22 @@
 // fields already accepted elsewhere in this codebase), not something this
 // function re-derives from the shared feed itself.
 //
+// COMMENT TARGET TYPE (Social Layer v2 slice 2 — docs/SOCIAL_LAYER_V2_DESIGN.md's
+// own Data/API line: "extend report-dream.js/moderation-store.js with
+// comment target type"). Purely ADDITIVE, not a rewrite: `targetType`
+// defaults to `'dream'` (every existing caller — explore.html's/u.html's
+// "Report this dream" flow — keeps working completely unchanged, no
+// payload shape they send today needs to change). js/comment-sheet.js's
+// per-comment overflow "Report" item is the one new caller that sends
+// `targetType:'comment'` plus a `commentId` (required for that target
+// type — a comment report with no comment to point at is meaningless) and
+// the SAME "unverified client-supplied snapshot" trust level as
+// dreamOwnerHandle/dreamCaption above for `commentText`/`commentAuthorHandle`
+// — the reporting browser already has the exact comment on screen, so
+// snapshotting what it saw is simpler and more robust than a second
+// server-side comment-store lookup that could itself race the comment
+// being deleted mid-report.
+//
 // Error codes (local to this function, same small-number-scheme reasoning
 // as submit-support-message.js):
 //   E1 method_not_allowed — verb other than POST
@@ -32,13 +50,14 @@
 //   E5 rate_limited       — MAX_REPORTS_PER_IP_PER_DAY exceeded for today
 //                             (same per-IP-cap-on-a-public-endpoint shape
 //                             as submit-support-message.js/register-account.js)
+//   E6 comment_id_required — `targetType==='comment'` but `commentId` missing/blank
 
 var moderationStore = require('./lib/moderation-store');
 var rateLimit = require('./lib/rate-limit');
 var crypto = require('crypto');
 
 var MAX_REASON_LENGTH = 500;
-var MAX_SNAPSHOT_LENGTH = 2000; // generous cap on caption/handle snapshots -- purely defensive, these are just context strings for a human reader, never parsed/executed.
+var MAX_SNAPSHOT_LENGTH = 2000; // generous cap on caption/handle/comment-text snapshots -- purely defensive, these are just context strings for a human reader, never parsed/executed.
 var MAX_REPORTS_PER_IP_PER_DAY_DEFAULT = 20;
 
 function capString(value, max) {
@@ -74,6 +93,20 @@ exports.handler = async function (event) {
     reason = rawReason || null;
   }
 
+  // targetType defaults to 'dream' -- see this file's own COMMENT TARGET
+  // TYPE header comment. Any value other than the literal string
+  // 'comment' is treated as 'dream' (defensive default, not a rejection --
+  // this field only ever changes internal bookkeeping, never a
+  // security/permission decision).
+  var targetType = payload.targetType === 'comment' ? 'comment' : 'dream';
+  var commentId = null;
+  if (targetType === 'comment') {
+    commentId = capString(payload.commentId, MAX_SNAPSHOT_LENGTH);
+    if (!commentId) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'E6: comment_id_required' }) };
+    }
+  }
+
   var maxPerDay = parseInt(process.env.MAX_REPORTS_PER_IP_PER_DAY, 10);
   if (!maxPerDay || maxPerDay <= 0) maxPerDay = MAX_REPORTS_PER_IP_PER_DAY_DEFAULT;
   var ip = rateLimit.clientIp(event);
@@ -89,6 +122,10 @@ exports.handler = async function (event) {
     dreamCaption: capString(payload.dreamCaption, MAX_SNAPSHOT_LENGTH),
     reporterHandle: capString(payload.reporterHandle, MAX_SNAPSHOT_LENGTH),
     reason: reason,
+    targetType: targetType,
+    commentId: commentId,
+    commentText: targetType === 'comment' ? capString(payload.commentText, MAX_SNAPSHOT_LENGTH) : null,
+    commentAuthorHandle: targetType === 'comment' ? capString(payload.commentAuthorHandle, MAX_SNAPSHOT_LENGTH) : null,
     createdAt: new Date().toISOString()
   };
 

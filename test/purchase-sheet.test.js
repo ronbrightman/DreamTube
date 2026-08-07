@@ -94,3 +94,24 @@ test('waitLineText: reads the live 100-token first-claim-bonus amount when the s
     'Or claim 100 free tokens above'
   );
 });
+
+// claimErrorCopy (2026-08-05, tracker item for-product-p1-urgent-fresh-
+// signup-can-d-qhrrqy round 2, ask #3): a rejected claim must show
+// outcome-specific copy, not the same generic message for a genuine
+// rate-limit (E4/429) and a genuine transient write failure (E5/500) —
+// see this function's own doc comment in js/purchase-sheet.js.
+test('claimErrorCopy: E4 rate-limit gets its own honest "try again tomorrow" copy, distinct from the generic retry message', function () {
+  var e4 = PurchaseSheet.claimErrorCopy(new Error('E4: rate_limited: too many claim attempts from this network today, try again tomorrow'));
+  assert.match(e4, /tomorrow/i);
+  assert.doesNotMatch(e4, /try again in a moment/i);
+});
+
+test('claimErrorCopy: E5 write-failed and a plain network error both fall through to the generic transient-retry copy (both genuinely worth retrying immediately)', function () {
+  var e5 = PurchaseSheet.claimErrorCopy(new Error('E5: claim_write_failed: entitlements.claimDailyTokens: exhausted attempts'));
+  var network = PurchaseSheet.claimErrorCopy(new Error('Failed to fetch'));
+  var noMessage = PurchaseSheet.claimErrorCopy(new Error());
+  var noErrorAtAll = PurchaseSheet.claimErrorCopy(undefined);
+  [e5, network, noMessage, noErrorAtAll].forEach(function (copy) {
+    assert.match(copy, /try again in a moment/i);
+  });
+});

@@ -115,6 +115,7 @@
 <script src="js/share-sheet.js"></script>
 <script src="js/report-sheet.js"></script>
 <script src="js/purchase-sheet.js"></script>
+<script src="js/comment-sheet.js"></script>
 <script>
   // Deliberately no login gate here, unlike every other page — Explore is
   // the real shared feed now (see js/store.js's getSharedFeed), and a
@@ -315,6 +316,13 @@
       '<div class="feed-actions">' +
         '<div class="feed-action'+(d.likedByMe?' liked':'')+'" data-like="'+d.id+'">' +
           '<div class="icon">'+(d.likedByMe?Icons.heartFilled:Icons.heartOutline)+'</div><span data-count="'+d.id+'">'+formatCount(d.likes)+'</span>' +
+        '</div>' +
+        // Comments (Social Layer v2 slice 2, design doc's own open decision
+        // #3 — mounted on the Explore rail too, one shared js/comment-sheet.js
+        // component). d.commentCount is denormalized onto the shared feed
+        // record itself (see lib/feed-comment-count.js).
+        '<div class="feed-action" data-comments="'+d.id+'">' +
+          '<div class="icon">'+Icons.messageCircle+'</div><span data-comment-count="'+d.id+'">'+formatCount(d.commentCount||0)+'</span>' +
         '</div>' +
         '<div class="feed-action" data-share="'+d.id+'"><div class="icon">'+Icons.share+'</div><span>Share</span></div>' +
         // Report/block (tracker item for-product-public-feed-safety-in-app-re-ppuw77)
@@ -1049,6 +1057,32 @@
         dream: dream,
         shareText: 'Check out this dream: "' + dream.caption + '" — create your own on DreamTube!',
         onToast: showToast
+      });
+      return;
+    }
+    var commentsEl = e.target.closest('[data-comments]');
+    if(commentsEl){
+      var commentDream = findLoadedDream(commentsEl.dataset.comments);
+      if(!commentDream) return;
+      // Opens the shared comment sheet (js/comment-sheet.js) — Social Layer
+      // v2 slice 2, design doc's own open decision #3 (mounted on the
+      // Explore rail too). Same signup-nudge routing as the Report/Block
+      // "More" action below for whatever the sheet itself needs a real
+      // signed-in identity for (posting/blocking).
+      CommentSheet.show({
+        dream: commentDream,
+        currentUser: DreamStore.getCurrentUser(),
+        onRequireLogin: function(){
+          signupCta.href = 'login.html?mode=signup&next=' + encodeURIComponent('explore.html');
+          signupNudge.classList.add('open');
+        },
+        onToast: showToast,
+        onCountChange: function(id, newCount){
+          var d = findLoadedDream(id);
+          if(d) d.commentCount = newCount;
+          var countEl = document.querySelector('[data-comment-count="' + id + '"]');
+          if(countEl) countEl.textContent = formatCount(newCount);
+        }
       });
       return;
     }

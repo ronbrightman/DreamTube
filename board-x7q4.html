@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>DreamTube — The Board</title>
-<!-- The Founder Board (Manager-maintained, 2026-08-03). ONE page for everything open, by side. Zero scripts — works in any viewer. Replaces waiting-x7q4.html. Updated by Manager every cycle; anything said in chat as "waiting on you / I'll follow up" MUST land here same turn. STANDING RULE (Ron, 08-03): the .sub line stamps the exact refresh time in IDT (TZ=Asia/Jerusalem) — update it on EVERY edit. STANDING RULE (Ron, 08-03): every Waiting-on-RON item carries its exact do-steps INLINE (the .do box) so he can act from this page directly — never a pointer to steps that live somewhere else; if the task needs a tool (password-gated call etc.), build the owner page and link it. -->
+<!-- The Founder Board (Manager-maintained, 2026-08-03). ONE page for everything open, by side. One deliberate script (below): the Waiting-on-RON section is DERIVED LIVE from the tracker's waitingFor:ron flags, so nothing can wait on the founder invisibly again (founder escalation 2026-08-07: three finished PRs sat unseen; hand-curation proved unreliable twice). Everything else stays static and works with JS off. Replaces waiting-x7q4.html. Updated by Manager every cycle; anything said in chat as "waiting on you / I'll follow up" MUST land here same turn. STANDING RULE (Ron, 08-03): the .sub line stamps the exact refresh time in IDT (TZ=Asia/Jerusalem) — update it on EVERY edit. STANDING RULE (Ron, 08-03): every Waiting-on-RON item carries its exact do-steps INLINE (the .do box) so he can act from this page directly — never a pointer to steps that live somewhere else; if the task needs a tool (password-gated call etc.), build the owner page and link it. -->
 <style>
 html{background:#0c0a1a}body{font-family:system-ui,sans-serif;color:#eae7fb;margin:0;padding:18px 14px 60px;max-width:760px;margin-inline:auto;font-size:14px;line-height:1.5}
 h1{font-size:20px;font-weight:800;margin:2px 0 0;color:#fff}
@@ -21,10 +21,33 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-04 20:24 IDT</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-07 12:08 IDT</div>
 
 <h2 class="ron">🔴 Waiting on RON — 1</h2>
 
+<div id="live-ron-queue"><div class="note">Loading the live waiting-on-you list from the tracker…</div></div>
+<script>
+(function(){
+  var box = document.getElementById('live-ron-queue');
+  fetch('/.netlify/functions/get-tracker-items').then(function(r){ return r.json(); }).then(function(data){
+    var items = (data.items || []).filter(function(i){ return !i.done && i.waitingFor === 'ron'; });
+    var h2 = document.querySelector('h2.ron');
+    if (h2) h2.textContent = '🔴 Waiting on RON — ' + items.length + ' (live from the tracker)';
+    if (!items.length) { box.innerHTML = '<div class="donebox">✅ Nothing is waiting on you right now — every open flag is with the workers.</div>'; return; }
+    function esc(s){ var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+    function linkify(s){ return s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>'); }
+    box.innerHTML = items.map(function(i){
+      var title = esc((i.title || '').replace(/^\[for ron\]\s*/i, ''));
+      return '<details class="ron"><summary>' + title + ' <span class="tag new">live</span></summary>' +
+             '<div class="body"><div class="do">' + linkify(esc(i.detail || '')) + '</div></div></details>';
+    }).join('');
+  }).catch(function(){
+    box.innerHTML = '<div class="note">Live list unavailable (offline?) — the curated items below still apply.</div>';
+  });
+})();
+</script>
+
+<div class="donebox">✅ Your three "go"s from this afternoon are <b>MERGED AND LIVE</b> on dreamtube.life: <b>"Dream Meaning"</b> makeover (rename + persona tile grid) · <b>ElevenLabs reading voice</b> — including word captions, which I fixed against a real API call before merging (the preview's caption bug is gone) · <b>Sage offered during generation</b> (the ~4s button delay is filed as a fast-follow). Your "Tell your dream should offer write/record first" note is routed to Product as a design ask — you'll get a mock before it changes. <b>Social slice 1 is merged and live too</b> (your ok + your call: the share button now shows only to the profile's owner, never to visitors); slice 2 (comments) is next with Product.</div>
 
 
 
@@ -43,8 +66,11 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 
 
-<details class="ron"><summary>Instagram/TikTok: create the channel accounts <span class="tag new">5 min each</span></summary><div class="body">The posting engine's Phase 1 (daily ready-to-post pack, you press publish — nothing posts itself) is specced and routed to Product. It needs real accounts to point at.
-<div class="do"><b>Do:</b> (1) In the <b>Instagram</b> app: profile → add/create new account → sign up with your email → handle: <b>dreamtube</b> if free, else closest (dreamtube.app / dreamtube_ai / usedreamtube) → set the avatar to the app logo — long-press and save <a href="https://dreamtube1.netlify.app/assets/logo-v4-512.png">this file</a> to your photos first. (2) Same in the <b>TikTok</b> app: sign up with the same email, same handle choice, same avatar. (3) Reply here with the two handles you got + your watermark call: logo watermark on exported clips, yes/no. That's everything — bios/links Product fills in later.</div></div></details>
+
+
+
+<details class="ron"><summary>TikTok: create the channel account — IG is done (@dreamtube_ai ✓, watermark YES ✓) <span class="tag new">5 min</span></summary><div class="body">Instagram is live (<a href="https://www.instagram.com/dreamtube_ai/">@dreamtube_ai</a>) and your watermark yes is routed to Product. TikTok recognized your phone number and logged you in instead — the fix is signing up by EMAIL, not phone.
+<div class="do"><b>Do:</b> (1) In an incognito window open <b>tiktok.com/signup</b>. (2) Choose <b>"Use phone or email"</b>, then at the top of that form switch the tab from Phone to <b>Email</b> (exact wording may vary slightly). (3) Sign up with your email — if it says the email is already used, use <b>ronbrightman+dreamtube@gmail.com</b> (delivers to your same inbox). (4) Handle: <b>dreamtube_ai</b> to match Instagram (else the closest free). (5) Avatar: the same <a href="https://dreamtube1.netlify.app/assets/logo-v4-512.png">logo file</a>. Reply with the handle you got.</div></div></details>
 
 
 
@@ -56,6 +82,16 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 
 <h2 class="prod">🟡 In flight — PRODUCT</h2>
+
+<details class="p0"><summary>Fresh signup dead-ends at 0 tokens — CORE FIX LIVE (Manager took it over) <span class="tag p0">your repro 11:55 · fixed 12:45</span></summary><div class="body">You were right — it wasn't 5 signups. ONE signup burned all 5 anti-abuse slots by itself: the first minute fires many token reads, stale storage reads made each re-run the grant step, and once the cap tripped, a 0-balance write erased the 320 already granted. 5-6 <b>real users</b> since Aug 1 hit the same wall. <b>Fixed and deployed</b> (verified with production probes): replays can't burn slots or overwrite grants anymore, and a capped account is no longer permanently zeroed. Still with Product: an intermittent claim-erasure cousin of the same storage race (retry works; the systemic conditional-write migration is now justified), honest error copy, and topping up the affected users + your test account (send me the email you used for <b>rrrrrr</b> and I'll restore it).</div></details>
+
+<details class="p0"><summary>Triple first-dream email — dedup defeated by the same storage degradation <span class="tag p0">your report 14:05</span></summary><div class="body">Your 3 emails (plus one other account's 2) both happened today only, in short self-sealing windows — even the atomic dedup write was decided against stale storage. This makes <b>five</b> storage-consistency incidents in 24h, treated as one event. Routed to Product: provider-side idempotency on email sends (dedupe at Resend, immune to our storage), a check of the failure-release path, and a staleness canary so we detect degradation before you do. Your test account's eaten 320 tokens are <b>restored</b> (balance 320).</div></details>
+
+<details><summary>Homepage funnel unification — LIVE, ready for your walk <span class="tag new">your #1 ask · shipped 15:0x</span></summary><div class="body">Done and deployed (Manager built it): finishing your dream from the homepage now starts the video generating immediately, then shows the funnel-style wall — <b>"Your dream is forming…"</b> on top, your dream recap, then <b>Continue with Facebook</b>, the or-divider, and the <b>email entry below the forming indicator</b> (passwordless — no password ever). After the email, the account is created and the already-running generation is claimed. Walked end-to-end against real services on a phone viewport (real account, real generation, landed on home with the dream forming). Note: an already-registered email gets a 6-digit code step first — correct behavior, not a bug. The Facebook round trip needs your real-phone walk to fully confirm (Meta app + real domain).</div></details>
+
+<details><summary>Model cost per video: real number is ~$0.40-0.52 — tile inflated by a whisper leak <span class="tag today">your catch 12:05</span></summary><div class="body">Actual video generation (veo lite) is within your half-dollar target. The >$1 tile lumps in a <b>whisper runaway</b> (~5,000 alignment units/day for ~a dozen readings — looks like the caption-alignment job resubmits on every status poll; ~$4/day leak, routed to Product) plus voice-engine dev testing from the debugging days. The ElevenLabs switch in flight eliminates whisper entirely.</div></details>
+
+<details class="p0"><summary>Likes vanish from videos — confirmed, root-caused <span class="tag today">your catch 11:40</span></summary><div class="body">You were right. Three documented cases (including your like this morning): when two likes land seconds apart, the second one's save overwrites the first because the like counter rewrites the whole shared feed from a possibly-stale read. Routed to Product with the full diagnosis + fix direction; closes when the fix merges AND the 3 lost likes are restored.</div></details>
 
 <details><summary>Sage voice engine switch → ElevenLabs <span class="tag today">your pick, 13:40</span></summary><div class="body">Reading voice moves to the 1.3-second engine you chose (captions built in, old engine as fallback) — Product implementing. The matching "come closer" intro is <b>approved and live</b>.</div></details>
 
@@ -87,7 +123,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 
 
-<details><summary>Music beds: sound works — taste round running <span class="tag today">your ask, 3 options per style + scary</span></summary><div class="body">You confirmed audio plays; now Product generates three fresh candidates per style plus a new scary category, delivered as an audition page where you pick the winner per style (current track included as reference). Losers get deleted after your picks.</div></details>
+<details><summary>Music beds: audition infra built — candidates NOT generated yet <span class="tag stale">blocks your audition</span></summary><div class="body">The audition page + mood-keyed selection are built (PR #17, reviewed) but I walked it: <b>0 of 12 candidate tracks exist</b> — Product must generate the 2-per-mood candidates before your audition means anything. Pinged as the one missing step; your audition link comes when tracks exist.</div></details>
 
 
 
@@ -123,7 +159,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 
 
-<details><summary>End the scheduler saga <span class="tag today"></span></summary><div class="body">Durable server-side schedules are blocked on a permission approval that isn't reaching you; today I find the settings-level path. Until then: self-armed wakeups + honest flagging when one dies.</div></details>
+<details><summary>Scheduler saga: SOLVED — restart-proof wake-ups live and proven <span class="tag new">closed 08-07</span></summary><div class="body">The schedule now lives on GitHub's own infrastructure (survives every restart on our side): a twice-daily cron posts to a pinned PR in the Manager repo, and the Manager session wakes on that PR's webhook — proven end-to-end with a live test ping today. 03:47 UTC → 7am morning ritual · 13:02 UTC → afternoon Product check. Session-local crons stay armed as backup. <b>Rule: never close or merge Manager PR #1</b> — it's the wake-up bell. Also shipped alongside: tracker protocol v1 (timestamp aliases at the API, one reading contract, per-session heartbeats) closing the week's communication-failure class.</div></details>
 
 <details><summary>Morning report upgrades <span class="tag today">tomorrow's edition</span></summary><div class="body">Charts become tap-throughs to the live dashboard. Test-traffic exclusions extended (gfgg@shdh.com and friends).</div></details>
 
