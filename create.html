@@ -1711,8 +1711,13 @@
     var assembled = WizardChips.assembleCaption(Object.assign({}, chipFields, { style: null, freeText: buildFreeText }));
 
     var hasFreeText = !!(buildFreeText && buildFreeText.trim());
-    var storyText = WizardChips.buildDeterministicStory(chipFields) +
-      (hasFreeText ? ' ' + buildFreeText.trim() : '');
+    // Sentence-cased join (round 9) — shared with wizard.html, see
+    // WizardChips.joinStorySentences' own doc comment (the old bare
+    // space-glue shipped uncapitalized run-ons whenever the rewrite was
+    // slow or failed).
+    var storyText = hasFreeText
+      ? WizardChips.joinStorySentences(WizardChips.buildDeterministicStory(chipFields), buildFreeText)
+      : WizardChips.buildDeterministicStory(chipFields);
 
     DreamStore.setDraft({
       caption: assembled.caption,

@@ -1490,8 +1490,9 @@
   // (deterministic first, opportunistic LLM upgrade after), typing pins
   // the visitor's own words (storyEditedByUser — hand-edits beat the
   // late rewrite, ride payload.storyText/draftPatch/
-  // adoptPendingGeneration, and survive Back-from-the-wall; leaving THIS
-  // step backwards clears the pin, see the Back handler).
+  // adoptPendingGeneration, and — round 9 — surviving ANY navigation
+  // whose dream content is unchanged; the pin releases only when the
+  // content signature differs, see storyContentSignature's release rule).
   //
   // ANALYTICS (kept byte-stable, per the same rule that shaped the
   // original fold-in): this step fires the new, sanctioned
@@ -1522,6 +1523,10 @@
     document.getElementById('fn-story-recap-text').addEventListener('input', function(e){
       currentStoryText = e.target.value;
       storyEditedByUser = true;
+      // A hand-edit settles the story for the CURRENT inputs (round-9
+      // release rule): it survives any navigation that doesn't change
+      // the dream's content, and releases only when the signature does.
+      storySettledSignature = storyContentSignature();
     });
     computeStoryText();
     document.getElementById('fn-recap-continue').addEventListener('click', next);
@@ -1611,14 +1616,21 @@
   // (renderRecap — founder mock round 2 / round 8: "Here's your dream —
   // make it yours"). Once the visitor has typed into it, their words are
   // authoritative: the opportunistic LLM rewrite must not clobber them
-  // when it lands, and a re-render must not recompute over them. Cleared
-  // when the visitor leaves the RECAP step backwards (the topbar
-  // handler below): going back to change the chips means the next recap
-  // visit must recompute fresh from them — exactly the pre-redesign
-  // semantics, which never had an edit to preserve; a Back from the WALL
-  // to the recap keeps the edit (nothing upstream changed). What
-  // the edit CHANGES is storyText only — the dream's stored, displayed,
-  // emailed story (payload.storyText / draftPatch.storyText /
+  // when it lands, and a re-render must not recompute over them.
+  //
+  // RELEASE RULE (round 9, replacing round 8's blunt "leaving the recap
+  // backwards clears the pin"): a settled story — hand-edited OR
+  // LLM-upgraded — sticks for as long as its INPUTS are unchanged, and
+  // is released only when the content signature (storyContentSignature
+  // below) actually differs on the next recompute. Round 8's rule wiped
+  // a hand-edit on an accidental Back→Forward with nothing changed, and
+  // separately let the recap visibly DEGRADE on wall→Back (the nice LLM
+  // story flashed back to the raw template, then a duplicate rewrite
+  // call re-upgraded it seconds later — double LLM spend per revisit).
+  // Both were founder-reported in the 08-07 live-main bug hunt.
+  //
+  // What the edit CHANGES is storyText only — the dream's stored,
+  // displayed, emailed story (payload.storyText / draftPatch.storyText /
   // adoptPendingGeneration already all read currentStoryText live, so
   // the edited text rides every one of those paths with no further
   // wiring) — never the generation prompt (assembled.caption), and it's
@@ -1630,37 +1642,79 @@
   // prompttext-storytext-f-yt5kc7) that claim would be false — the
   // rendered sub-line uses the mock's other, accurate line instead.
   var storyEditedByUser = false;
+  // The content signature currentStoryText last SETTLED against — set
+  // when a hand-edit happens or an LLM rewrite lands, null while only
+  // the raw template is showing. computeStoryText compares against it.
+  var storySettledSignature = null;
+
+  /**
+   * A compact, deterministic signature of every input the recap's story
+   * derives from: the chip picks (characters projected to their
+   * story-relevant fields — name/description/has-photo, never the raw
+   * photo data URL, which is huge and story-irrelevant), the free text,
+   * the chosen style + POV (they shape the rewrite's promptText via
+   * assembled.caption even though the deterministic template ignores
+   * them), and entryMode (the write-mode verbatim contract). Two equal
+   * signatures mean "recomputing would start from exactly the same
+   * dream", which is what lets a settled story stand — see the release
+   * rule above.
+   */
+  function storyContentSignature(){
+    var fields = currentChipFields();
+    return JSON.stringify({
+      subjects: (fields.subjects || []).map(function(s){
+        return [s.subjectKey, s.character ? [s.character.name || '', s.character.description || '', !!s.character.photoDataUrl] : null, s.subjectOtherText || ''];
+      }),
+      place: [fields.placeKey, fields.placeOtherText || '', fields.sceneryTime || null],
+      action: [fields.actionKey, fields.actionOtherText || '', !!fields.pov],
+      mood: [fields.moodKey, fields.moodOtherText || ''],
+      style: chosenStyle,
+      freeText: (freeText || '').trim(),
+      entryMode: entryMode
+    });
+  }
 
   /**
    * Recomputes currentStoryText for whatever's currently staged, fires the
-   * opportunistic LLM rewrite if needed, and re-renders the wall's recap
-   * card (only relevant while the wall is the visible screen — renderStoryRecap
-   * itself no-ops harmlessly if its elements aren't in the DOM, e.g. an
-   * earlier step is showing).
+   * opportunistic LLM rewrite if needed, and re-renders the recap step's
+   * textarea (renderStoryRecap itself no-ops harmlessly if it isn't the
+   * current screen). A story that already SETTLED for these exact inputs
+   * — hand-edited or LLM-upgraded, per storyContentSignature — is
+   * repainted as-is: no template flash, no duplicate rewrite call.
    */
   function computeStoryText(){
-    // A user-edited recap is authoritative — repaint it, never recompute
-    // over it (see storyEditedByUser's own comment; this covers the
-    // fb_error return leg's wall re-render too, where the edit was
-    // restored from the redirect snapshot).
-    if(storyEditedByUser){ renderStoryRecap(); return; }
+    var sig = storyContentSignature();
+    if(storySettledSignature === sig){
+      renderStoryRecap();
+      return;
+    }
+    // Inputs genuinely changed since the story last settled — any pin
+    // (including a hand-edit) is now about a DIFFERENT dream; release it
+    // and recompute fresh. This is the round-9 release rule's other half.
+    storyEditedByUser = false;
+    storySettledSignature = null;
     var myToken = ++storyRewriteToken;
     var hasFreeText = !!(freeText && freeText.trim());
     // Write mode: the typed dream IS the story, verbatim — their words win,
     // no template and no LLM rewrite (mirrors the entryMode==='write'
-    // assembled-caption contract above). Build mode: free text is an
-    // ADDITION on top of the chip picks, never a replacement — the founder
-    // hit exactly that (typed "Anything to add?" text erased the whole
-    // assembled story from the recap, 08-07). The chip story stays, the
-    // extra words append, and the rewrite below (whose promptText via
-    // assembled.caption already carries freeText) blends them properly.
+    // assembled-caption contract above). Verbatim text is final, so it
+    // settles immediately. Build mode: free text is an ADDITION on top of
+    // the chip picks, never a replacement — the founder hit exactly that
+    // (typed "Anything to add?" text erased the whole assembled story
+    // from the recap, 08-07). The chip story stays, the extra words join
+    // as a real sentence (joinStorySentences), and the rewrite below
+    // (whose promptText via assembled.caption already carries freeText)
+    // blends them properly.
     if(entryMode === 'write' && hasFreeText){
       currentStoryText = freeText.trim();
+      storySettledSignature = sig;
       renderStoryRecap();
       return;
     }
-    currentStoryText = WizardChips.buildDeterministicStory(currentChipFields()) +
-      (hasFreeText ? ' ' + freeText.trim() : '');
+    var template = WizardChips.buildDeterministicStory(currentChipFields());
+    // Sentence-cased join (round 9) — shared with create.html's Build-it,
+    // see WizardChips.joinStorySentences' own doc comment.
+    currentStoryText = hasFreeText ? WizardChips.joinStorySentences(template, freeText) : template;
     renderStoryRecap();
     fetch('/.netlify/functions/rewrite-dream-story', {
       method: 'POST',
@@ -1673,6 +1727,12 @@
       if(storyEditedByUser) return; // the visitor edited while this was in flight -- their words win
       if(!result.ok || !result.data || !result.data.storyText) return;
       currentStoryText = result.data.storyText;
+      // The upgraded story is now the settled one for these inputs — a
+      // wall→Back revisit repaints it instead of re-flashing the template
+      // and re-billing a rewrite (round 9, bug-hunt finding #1). `sig`
+      // was captured at compute time, before the fetch — exactly the
+      // inputs this rewrite was derived from.
+      storySettledSignature = sig;
       renderStoryRecap();
     }).catch(function(){ /* best-effort -- deterministic template already shown */ });
   }
@@ -2078,6 +2138,11 @@
       storyEditedByUser = !!parsed.storyEdited; // pre-flag snapshots simply restore un-edited — falsy is the right default
       entryMode = parsed.entryMode || null;     // restore BEFORE assembleFromState — it decides the write-mode caption contract
       assembleFromState();
+      // The restored story text was what the visitor last SAW for these
+      // restored inputs — settle it against them (round-9 signature
+      // model), so a post-return recap visit repaints it instead of
+      // recomputing a template over a restored hand-edit/LLM story.
+      if(currentStoryText) storySettledSignature = storyContentSignature();
       return true;
     }catch(e){
       return false;
@@ -2722,12 +2787,12 @@
     // On the chooser itself, Back leaves the wizard for the welcome
     // screen — same exit the first step used to own.
     if(chooserActive){ location.href = 'index.html'; return; }
-    // Leaving the RECAP step backwards releases a pinned hand-edit: the
-    // visitor is going back to change the dream's content, so the next
-    // recap visit recomputes fresh from it. A Back from the WALL to the
-    // recap deliberately does NOT clear — nothing upstream changed, the
-    // edit stands. See storyEditedByUser's comment.
-    if(cur === RECAP_STEP) storyEditedByUser = false;
+    // (Round 9: Back deliberately does NOT touch the story pin anymore.
+    // Round 8 cleared it whenever the recap was left backwards, which
+    // wiped a hand-edit on an accidental Back→Forward with nothing
+    // changed — bug-hunt finding #2. The pin now releases itself inside
+    // computeStoryText the moment the dream's content signature actually
+    // differs; see storyContentSignature/the release rule comment.)
     // Invalidates any in-flight (or not-yet-acted-on) wall attempt the
     // moment the user navigates away via Back -- see signupAttemptToken's
     // own comment above. Bumping only on the wall's own submit click

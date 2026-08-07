@@ -1778,7 +1778,10 @@ test('wizard.html Build mode: "Anything to add?" text JOINS the chip-assembled s
     await page.waitForSelector('#fn-story-recap-text');
     var recap = await page.inputValue('#fn-story-recap-text');
     assert.match(recap, /flying/i, 'the chip-assembled story (Action pick) must still be in the recap when free text was typed');
-    assert.ok(recap.indexOf(EXTRA) !== -1, 'the typed "Anything to add?" words must appear in the recap too');
+    // Round 9: the join is sentence-cased (WizardChips.joinStorySentences)
+    // — the typed words appear capitalized with a final period, never the
+    // old raw space-glue.
+    assert.ok(recap.indexOf('And a silver whale drifted past the window.') !== -1, 'the typed "Anything to add?" words must appear in the recap, sentence-cased by the round-9 join');
     assert.notEqual(recap.trim(), EXTRA, 'free text alone must never BE the whole recap in Build mode');
   } finally {
     await page.close();
@@ -1830,6 +1833,160 @@ test('wizard.html entry chooser: NOT shown to non-fresh arrivals — a ?resume=1
     await safeGoto(page, baseUrl + '/wizard.html?fb_error=denied');
     await page.waitForSelector('#contact-email');
     assert.ok((await page.$('#entry-mode-row')) === null, 'a Facebook return leg must never see the chooser');
+  } finally {
+    await page.close();
+  }
+});
+
+// ===========================================================================
+// Round 9 (08-07 live-main bug hunt, founder "find and fix"): the story
+// pin is SIGNATURE-based now — a settled story (LLM-upgraded or
+// hand-edited) sticks for as long as the dream's content signature is
+// unchanged, and releases only on a real content change. Kills bug #1
+// (wall→Back degraded the recap to the raw template and re-billed a
+// duplicate rewrite per revisit) and #2 (an accidental Back→Forward wiped
+// a hand-edit). Bug #3's sentence-cased join is covered here behaviorally
+// and unit-level in test/wizard-chips.test.js.
+// ===========================================================================
+
+test('wizard.html round 9: wall→Back repaints the LLM-upgraded story with NO template flash and NO second rewrite-dream-story call — while a REAL content change (different mood) releases it and recomputes fresh', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var REWRITTEN = 'A stranger drifted through my dream, calm and impossibly light.';
+    var rewriteCalls = [];
+    await page.route('**/.netlify/functions/rewrite-dream-story', function (route) {
+      rewriteCalls.push(JSON.parse(route.request().postData() || '{}'));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ storyText: REWRITTEN + ' v' + rewriteCalls.length }) });
+    });
+
+    await gotoWizardBuild(page);
+    await page.click('[data-subj-other="stranger"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+    await page.waitForFunction(function (expected) {
+      var el = document.getElementById('fn-story-recap-text');
+      return el && el.value === expected;
+    }, REWRITTEN + ' v1', { timeout: 3000 });
+
+    // To the wall and Back — the upgraded story must be there IMMEDIATELY
+    // (the pre-round-9 code showed the deterministic template first).
+    await page.click('#fn-recap-continue');
+    await page.waitForSelector('#contact-email');
+    await page.click('#fnBack');
+    await page.waitForSelector('#fn-story-recap-text');
+    assert.equal(await page.inputValue('#fn-story-recap-text'), REWRITTEN + ' v1', 'wall→Back must repaint the settled LLM story instantly — no template flash');
+    await page.waitForTimeout(400);
+    assert.equal(rewriteCalls.length, 1, 'an unchanged revisit must NOT fire a second rewrite call — that was double LLM spend per revisit');
+    assert.equal(await page.inputValue('#fn-story-recap-text'), REWRITTEN + ' v1', 'still the settled story after the would-have-been rewrite window');
+
+    // Now a REAL content change: Back to mood, pick epic, forward again —
+    // the signature differs, so the recap recomputes (template first,
+    // then a NEW rewrite).
+    await page.click('#fnBack'); // freetext
+    await page.click('#fnBack'); // style
+    await page.click('#fnBack'); // mood
+    await page.waitForSelector('#mood-row');
+    await page.click('#mood-row [data-mood="epic"]'); // auto-advances to style
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+    await page.waitForFunction(function (expected) {
+      var el = document.getElementById('fn-story-recap-text');
+      return el && el.value === expected;
+    }, REWRITTEN + ' v2', { timeout: 3000 });
+    assert.equal(rewriteCalls.length, 2, 'a genuinely changed dream must recompute and fire ONE fresh rewrite');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html round 9: a hand-edited recap SURVIVES an accidental Back→Forward with nothing changed, and is released only when the dream\'s content actually changes', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var EDITED = 'The whole dream was mine and I wrote it myself.';
+    await page.route('**/.netlify/functions/rewrite-dream-story', function (route) {
+      route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+    });
+    await gotoWizardBuild(page);
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+    await page.waitForSelector('#fn-story-recap-text');
+    await page.fill('#fn-story-recap-text', EDITED);
+
+    // Accidental Back (to free text), nothing changed, Forward again.
+    await page.click('#fnBack');
+    await page.waitForSelector('#free-text-input');
+    await page.click('#fn-freetext-skip');
+    await page.waitForSelector('#fn-story-recap-text');
+    assert.equal(await page.inputValue('#fn-story-recap-text'), EDITED, 'a no-change Back→Forward must NOT wipe the visitor\'s own writing (round-8 behavior, founder bug #2)');
+
+    // A REAL change (type free text) must release the pin and recompute.
+    await page.click('#fnBack');
+    await page.waitForSelector('#free-text-input');
+    await page.fill('#free-text-input', 'now with a lighthouse');
+    await page.click('#fn-freetext-continue');
+    await page.waitForSelector('#fn-story-recap-text');
+    var recomputed = await page.inputValue('#fn-story-recap-text');
+    assert.notEqual(recomputed, EDITED, 'a genuine content change must release the hand-edit');
+    assert.match(recomputed, /Now with a lighthouse\.$/, 'the recomputed story must reflect the new content — sentence-cased by the round-9 join');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html round 9: the deterministic chips+freetext join is sentence-cased — terminal period on the chip story, capitalized addition, final period (what actually ships as storyText when the rewrite is slow or fails)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await page.route('**/.netlify/functions/rewrite-dream-story', function (route) {
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }); // rewrite fails -> the join IS the story
+    });
+    var startPendingCalls = [];
+    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+      startPendingCalls.push(JSON.parse(route.request().postData()));
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-join-1', operationName: 'fal:fake-model:req-join-1' }) });
+    });
+    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true, claimed: true }) });
+    });
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
+    });
+
+    await gotoWizardBuild(page);
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.fill('#free-text-input', 'the sea was made of glass'); // lowercase, no period — the bug-hunt repro
+    await page.click('#fn-freetext-continue');
+    await page.waitForSelector('#fn-story-recap-text');
+    var recap = await page.inputValue('#fn-story-recap-text');
+    assert.match(recap, /\. The sea was made of glass\.$/, 'the joined addition must start capitalized after a terminal period and end with one — got: ' + recap);
+    assert.doesNotMatch(recap, /\. the sea/, 'the old uncapitalized space-glue must be gone');
+
+    // And that exact sentence-cased text is what ships as storyText.
+    await page.click('#fn-recap-continue');
+    await page.waitForSelector('#contact-email');
+    await page.fill('#contact-email', 'join-case-test@example.com');
+    await page.click('#fn-contact-continue');
+    await settle(function () { return startPendingCalls.length >= 1; });
+    assert.match(startPendingCalls[0].storyText, /\. The sea was made of glass\.$/);
   } finally {
     await page.close();
   }

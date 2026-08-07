@@ -556,7 +556,31 @@
     return sentence.replace(/\s+/g, ' ').replace(/\s+([,.])/g, '$1').trim();
   }
 
+  /**
+   * Joins the deterministic chip story and the user's "Anything to add?"
+   * text as two proper sentences (round 9, 08-07 live bug hunt: the bare
+   * space-glue both wizards shipped read "…feeling dreamy and surreal.
+   * the sea was made of glass" whenever the LLM upgrade was slow or
+   * skipped — and that joined text IS what persists as storyText in
+   * those cases): terminal punctuation on the base, a capitalized first
+   * letter and a final period on the addition. Deliberately dumb and
+   * deterministic — no grammar cleverness, the opportunistic
+   * rewrite-dream-story call stays the polish layer. Lives HERE (not
+   * copied per page) for the same reason the chip tables do: wizard.html
+   * and create.html's Build-it must never drift on it.
+   */
+  function joinStorySentences(base, extra) {
+    var b = (base || '').trim();
+    if (b && !/[.!?…]$/.test(b)) b += '.';
+    var e = (extra || '').trim();
+    if (!e) return b;
+    e = e.charAt(0).toUpperCase() + e.slice(1);
+    if (!/[.!?…]$/.test(e)) e += '.';
+    return b ? b + ' ' + e : e;
+  }
+
   var WizardChips = {
+    joinStorySentences: joinStorySentences,
     SUBJECT_CHIPS: SUBJECT_CHIPS,
     SETTING_PLACE_CHIPS: SETTING_PLACE_CHIPS,
     ACTION_CHIPS: ACTION_CHIPS,
