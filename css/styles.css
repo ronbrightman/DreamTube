@@ -1497,6 +1497,11 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    `#itp-root.itp-overlay` — position:fixed so it truly takes over the
    viewport regardless of which host page's own #app it's appended into,
    independent of that page's own scroll position. */
+/* Picker-phase bottom nav inside the Chamber overlay (founder ask
+   2026-08-07): reserve room so the last persona tiles scroll clear of the
+   dock. Only while .itp-dock-on (picker phase) — immersive phases keep
+   the full viewport. */
+.itp-overlay.itp-dock-on .itp-body{ padding-bottom:calc(72px + env(safe-area-inset-bottom,0px)); }
 .itp-overlay{
   position:fixed; inset:0; z-index:80; background:#050505;
   opacity:0; pointer-events:none; transition:opacity .2s ease;

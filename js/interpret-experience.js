@@ -842,8 +842,20 @@
     root.innerHTML =
       '<div class="itp-topbar" id="itp-topbar"></div>' +
       '<div class="itp-dream-strip" id="itp-dream-strip"></div>' +
-      '<div class="itp-body" id="itp-body"></div>';
+      '<div class="itp-body" id="itp-body"></div>' +
+      // Bottom nav (founder ask 2026-08-07: the persona-picker screen had
+      // no way to navigate away except the topbar close). Shown ONLY in
+      // the picker phase (see render()) — the intro/reading phases stay
+      // immersive, same as the fullscreen player. .night-dock is
+      // position:absolute bottom-anchored, so inside this fixed overlay
+      // it pins to the overlay's own bottom edge.
+      '<nav class="night-dock" id="itp-dock" aria-label="Main" style="display:none;"></nav>';
     host.appendChild(root);
+    if (window.BottomNav) {
+      // No active tab: the Chamber isn't one of the dock's four tabs —
+      // same active-less mount result.html already uses.
+      window.BottomNav.mount(root.querySelector('#itp-dock'), {});
+    }
   }
 
   // ==========================================================================
@@ -1437,6 +1449,10 @@
   function render() {
     if (!session) return;
     renderTopbar();
+    var dock = document.getElementById('itp-dock');
+    if (dock) dock.style.display = session.phase === 'picker' ? '' : 'none';
+    var rootEl = document.getElementById(ROOT_ID);
+    if (rootEl) rootEl.classList.toggle('itp-dock-on', session.phase === 'picker');
     if (session.phase === 'picker') renderPicker();
     else if (session.phase === 'q_loading' || session.phase === 'r_loading') renderLoading();
     else if (session.phase === 'questions') renderQuestions();
