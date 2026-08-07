@@ -173,6 +173,54 @@
     return captions;
   }
 
+  /**
+   * Groups word-level caption cues into readable PHRASE cues (founder,
+   * 2026-08-07: single-word captions "make it difficult to read — group
+   * them into batches of 2-3 or 4-5 words, or sentences up to ~10").
+   * Pure/no-DOM. Break rules, in priority order, applied while
+   * accumulating consecutive words:
+   *   - after a word ending a sentence (. ! ? — with or without a
+   *     trailing quote/paren), always;
+   *   - after a word ending with , ; : — but only once the phrase
+   *     already has >= 3 words (a comma after word one reads worse than
+   *     riding on);
+   *   - at 6 words, always (hard cap keeps the strip one line on
+   *     mobile).
+   * Each phrase cue spans first word's startMs -> last word's endMs, so
+   * timing stays true to the voice. Sentence-level cues (or anything
+   * already phrase-shaped) pass through unchanged by construction —
+   * grouping only ever merges, never splits.
+   */
+  function groupWordCaptions(words) {
+    if (!Array.isArray(words) || words.length < 2) return words || [];
+    // Already phrase-grouped (any cue with a space) — e.g. a reading
+    // saved AFTER this change, or a sentence-level set passed by mistake:
+    // pass through untouched instead of merging phrases into paragraphs.
+    for (var i = 0; i < words.length; i++) {
+      if ((words[i].word || '').indexOf(' ') !== -1) return words;
+    }
+    var phrases = [];
+    var buf = [];
+    function flush() {
+      if (!buf.length) return;
+      phrases.push({
+        word: buf.map(function (w) { return w.word; }).join(' '),
+        startMs: buf[0].startMs,
+        endMs: buf[buf.length - 1].endMs
+      });
+      buf = [];
+    }
+    words.forEach(function (w) {
+      buf.push(w);
+      var t = (w.word || '').replace(/["')\]]+$/, '');
+      var sentenceEnd = /[.!?]$/.test(t);
+      var clauseEnd = /[,;:]$/.test(t) && buf.length >= 3;
+      if (sentenceEnd || clauseEnd || buf.length >= 6) flush();
+    });
+    flush();
+    return phrases;
+  }
+
   /** Index of the caption cue active at `currentMs` (word- or sentence-level — same shape either way), or -1 before the first cue starts. Assumes `captions` is sorted ascending by startMs (true by construction of both producers). Pure/no-DOM — unit tested directly. */
   function currentCaptionIndex(captions, currentMs) {
     if (!captions || !captions.length) return -1;
@@ -427,7 +475,9 @@
       if (myGen !== gen || voiceState !== vs || !stillTargetsDream(myDreamId) || session.personaKey !== myPersonaKey) return; // stale
       vs.audioUrl = result.audioUrl;
       vs.audioDurationMs = result.audioDurationMs;
-      vs.captions = result.captions || [];
+      vs.captions = result.captionsLevel === 'word'
+        ? groupWordCaptions(result.captions || [])
+        : (result.captions || []);
       vs.captionsLevel = result.captionsLevel;
       vs.audioReady = true;
       if (vs.captionsLevel === 'sentence') trackLocal('interp_voice_caption_fallback', { persona: persona.key });
@@ -809,7 +859,11 @@
       audioFailed: false,
       audioSource: savedEntry ? 'saved' : 'fresh',
       regenerateAttempted: false, // bounds beginAudioPlayback's own error-driven regenerate to one attempt per reading-open
-      captions: savedEntry ? (savedEntry.captions || []) : [],
+      // Saved readings persisted their captions word-level before the
+      // 2026-08-07 phrase-grouping change — group on read so old saved
+      // readings display exactly like fresh ones (grouping merges only,
+      // so re-grouping an already-grouped save is a no-op).
+      captions: savedEntry ? groupWordCaptions(savedEntry.captions || []) : [],
       captionsLevel: savedEntry ? (savedEntry.captionsLevel || 'word') : 'word',
       audioDurationMs: savedEntry ? (savedEntry.audioDurationMs || null) : null,
       listenStartedAt: null, totalListenedMs: 0, hasCompletedOnce: false,
