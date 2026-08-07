@@ -205,26 +205,58 @@
 // shared array): every write here is a single keyed idempotent overwrite of
 // one user's own record — two different users' writes never touch the same
 // key, so there's no read-modify-write race on a shared collection the way
-// the feed has (see get-feed.js's header comment). The realistic race here
-// is two near-simultaneous generate-video.js requests from the SAME email
-// both reading the same pre-spend balance (spendTokens/addTokens — see the
+// the feed has (see get-feed.js's header comment). The remaining risk is
+// entirely WITHIN one email's own record: spendTokens/addTokens (see the
 // STANDING CHECKLIST comment further down for why these two stay PLAIN,
-// unguarded writers, an explicit accepted tradeoff, not an oversight):
-// bounded in impact, at most a handful of tokens of drift, never unbounded,
-// and E109/E110 (rate limit + daily spend circuit breaker, both untouched
-// by this change, see generate-video.js) remain the real backstop against
-// runaway cost regardless of how this counter drifts. Every OTHER write to
-// this same per-email record (syncTokens' init write, claimDailyTokens,
+// unguarded writers — an explicit accepted tradeoff, not an oversight) are
+// still a plain, unconditional read -> merge -> write, same shape as every
+// other pre-migration writer here. Two near-simultaneous spendTokens calls
+// racing EACH OTHER (the case this comment used to describe in isolation)
+// really is bounded — at most a handful of tokens of drift, never
+// unbounded, with E109/E110 (rate limit + daily spend circuit breaker,
+// both untouched by this change, see generate-video.js) as the real
+// backstop against runaway cost regardless of how that narrow drift goes.
+// But spendTokens/addTokens racing ANY of this record's CAS'd writers
+// (claimDailyTokens, creditTokenPackAmountOnce, refundTokenAmountOnce,
+// applyAchievementGrantOnce, forgetAppliedTokenPack, forgetRefundedJobId)
+// is NOT bounded the same way: spendTokens/addTokens' own write is still
+// unconditional, with no etag check to reject a stale base. If
+// spendTokens/addTokens' own read happens to land BEFORE one of those
+// CAS'd writers' commit, and its own write lands AFTER, that plain write
+// silently reverts the WHOLE record — the CAS'd writer's entire credit
+// (a full daily claim, a full token-pack purchase, a full refund, a full
+// achievement grant), not just a few tokens of drift — back to the stale
+// value spendTokens/addTokens read. This is the SAME "claim erasure"
+// failure shape (tracker item for-product-p1-urgent-fresh-signup-can-d-
+// qhrrqy) this whole migration exists to close, just via spendTokens/
+// addTokens' own still-plain write rather than one of the writers already
+// migrated. This is a PRE-EXISTING, already-accepted tradeoff — it existed
+// before this migration too, not introduced by it — left as-is here
+// because spendTokens fires on every single generation (by far the
+// highest-frequency writer to this store) and a full CAS retry loop there
+// would be real, ongoing overhead for a fire-and-forget balance decrement,
+// a materially different cost/benefit than the low-frequency writers this
+// migration did cover. Documented here plainly, with the real severity,
+// rather than the "bounded... at most a handful of tokens... never
+// unbounded" framing an earlier draft of this comment used, which
+// understated the case where spendTokens/addTokens races a CAS'd writer
+// specifically (verified-gap finding, independent review of this file's
+// original CAS migration).
+//
+// Every writer NOT named above (syncTokens' init write, claimDailyTokens,
 // creditTokenPackAmountOnce, refundTokenAmountOnce,
-// applyAchievementGrantOnce) goes through lib/blobs-cas.js's real
-// compare-and-swap write instead — see that file's own header comment —
-// specifically BECAUSE Netlify Blobs' default client (`@netlify/blobs`
-// 8.2.0, still used by spendTokens/addTokens/setEntitlement here) has no
-// compare-and-swap primitive of its own; a separately-aliased `blobs10`
-// package is what actually provides one, deliberately scoped to the
-// writers this file's own tracker item (for-product-p1-urgent-fresh-
-// signup-can-d-qhrrqy) evidenced as vulnerable to a real, not just
-// theoretical, clobber.
+// applyAchievementGrantOnce, forgetAppliedTokenPack, forgetRefundedJobId)
+// goes through lib/blobs-cas.js's real compare-and-swap write instead —
+// see that file's own header comment — specifically BECAUSE Netlify
+// Blobs' default client (`@netlify/blobs` 8.2.0, still used by
+// spendTokens/addTokens/setEntitlement here) has no compare-and-swap
+// primitive of its own; a separately-aliased `blobs10` package is what
+// actually provides one, deliberately scoped to the writers this file's
+// own tracker item (for-product-p1-urgent-fresh-signup-can-d-qhrrqy)
+// evidenced as vulnerable to a real, not just theoretical, clobber —
+// forgetAppliedTokenPack/forgetRefundedJobId joined this list after an
+// independent review of the original migration caught them still calling
+// plain setEntitlement (see their own doc comments for that fix's detail).
 //
 // Reads were originally requested with Blobs' strong-consistency mode (a
 // paying user must never be told "not entitled" for up to a minute right
@@ -1035,26 +1067,44 @@ async function claimDailyTokens(event, email) {
 // ── STANDING CHECKLIST for adding a new low-frequency field to this
 //    record (recurring-pattern-new-entitlements-js-wr-m5mo9g) ──
 // spendTokens/addTokens below are this record's only remaining PLAIN
-// (unguarded, no CAS) writers — an already-accepted tradeoff since
+// (unguarded, no CAS) writers reachable from this file's own live
+// token-economy code paths — an already-accepted tradeoff since
 // spendTokens is by far the highest-frequency writer to this store (fires
 // on every generation) and a full blobsCas.casWrite retry loop there would
 // be needless overhead for a fire-and-forget balance decrement (see this
-// file's own header comment on the accepted narrow last-write-wins drift
-// this causes). Every OTHER field on this record (dodoCustomerId,
-// appliedTokenPackPaymentIds, firstPackPurchaseAt, refundedJobIds, ...) is
-// written through blobsCas.casWrite instead, specifically because a plain
-// write racing spendTokens/addTokens can silently clobber whichever one
-// lands second (see dodoCustomerId's own doc comment above for a full
-// worked example of exactly this class of bug, caught in review before it
-// shipped). So: when adding a NEW low-frequency field to this record, fold
-// it into an EXISTING hardened casWrite call (creditTokenPackAmountOnce,
-// claimDailyTokens, refundTokenAmountOnce, applyAchievementGrantOnce —
-// whichever already fires at a point in the field's own natural lifecycle)
-// rather than adding a standalone plain setEntitlement call beside it.
-// Only spendTokens/addTokens themselves get to stay plain, and only
-// because their own tradeoff (frequency vs. race-safety) has already been
-// explicitly accepted — a new field does not inherit that exemption just
-// by being written near them.
+// file's own header comment for the full severity this tradeoff actually
+// carries, not just a narrow last-write-wins drift — spendTokens/addTokens
+// racing a CAS'd writer can revert that writer's ENTIRE credit, since
+// spendTokens/addTokens' own write is unconditional too). The ONE other
+// exception is stripe-webhook.js's two setEntitlement calls (checkout/
+// subscription sync) — also still plain, but for the dormant Stripe/Dodo
+// subscription backend (see this file's own header comment on why token
+// economy no longer uses it), not part of the live low-frequency-field
+// question this checklist is about.
+//
+// Every LOW-FREQUENCY field on this record (appliedTokenPackPaymentIds,
+// firstPackPurchaseAt, refundedJobIds, firstClaimAt, achievement grants,
+// ...) is written through blobsCas.casWrite instead — including the
+// housekeeping forget* helpers (forgetAppliedTokenPack,
+// forgetRefundedJobId) that merely PRUNE an already-committed entry back
+// out of one of those fields, which is exactly the case an earlier
+// version of this migration missed: even a "just cleanup, not a new
+// credit" write still needs CAS, because a plain write racing
+// spendTokens/addTokens OR any other CAS'd writer can silently clobber
+// whichever one lands second (see forgetAppliedTokenPack's own doc
+// comment for a full worked example of exactly this class of bug, caught
+// by an independent review before this branch could ship). So: when
+// adding a NEW low-frequency field to this record — a fresh field OR a
+// housekeeping prune of an existing one — fold it into an EXISTING
+// hardened casWrite call (creditTokenPackAmountOnce, claimDailyTokens,
+// refundTokenAmountOnce, applyAchievementGrantOnce, forgetAppliedTokenPack,
+// forgetRefundedJobId — whichever already fires at a point in the field's
+// own natural lifecycle) rather than adding a standalone plain
+// setEntitlement call beside it. Only spendTokens/addTokens themselves get
+// to stay plain, and only because their own tradeoff (frequency vs.
+// race-safety) has already been explicitly accepted — a new field, or a
+// new cleanup step, does not inherit that exemption just by being written
+// near them.
 
 /**
  * Deducts `amount` tokens from this email's balance, called only from
@@ -1641,18 +1691,47 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
  * array from growing across a long-lived paying account's lifetime; NOT
  * required for correctness (a lingering entry is harmless — it just means
  * a paymentId that will never be looked up again stays idempotency-marked
- * forever), so callers should treat a failure here as non-fatal. No-ops
- * for an empty/missing email or a paymentId that isn't present.
+ * forever). No-ops for an empty/missing email or a paymentId that isn't
+ * present (checked fresh on every CAS attempt below, so a paymentId
+ * already pruned by an earlier/concurrent call is a clean SKIP, not a
+ * wasted write).
+ *
+ * Goes through blobsCas.casWrite, same as every other writer to this
+ * record (see the STANDING CHECKLIST comment above spendTokens/addTokens)
+ * — NOT a plain setEntitlement call, even though this is low-frequency
+ * housekeeping: a plain read -> merge -> unconditional-write here can
+ * silently revert a genuinely concurrent CAS credit (claimDailyTokens,
+ * creditTokenPackAmountOnce, refundTokenAmountOnce,
+ * applyAchievementGrantOnce) landing in the narrow window between this
+ * call's own read and its own write, since a plain write has no etag
+ * check to reject a stale base. Proven directly by this file's own test
+ * suite (test/entitlements-token-purchases.test.js's forget-vs-claim
+ * race) — this was a real, evidenced gap (an independent review of the
+ * original CAS migration caught it), not a theoretical one. Exhaustion
+ * here stays non-fatal (logged by blobsCas.casWrite itself, nothing
+ * thrown) — same "harmless if this never lands" posture as before,
+ * preserved even though the write itself is now atomic.
  */
 async function forgetAppliedTokenPack(event, email, paymentId) {
   var key = normalizeEmail(email);
   if (!key) return;
-  var record = await getEntitlement(event, key);
-  var applied = (record && record.appliedTokenPackPaymentIds) || [];
-  if (applied.indexOf(paymentId) === -1) return;
-  await setEntitlement(event, key, {
-    appliedTokenPackPaymentIds: applied.filter(function (id) { return id !== paymentId; })
+  await blobsCas.casWrite(event, STORE_NAME, key, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    mutate: function (existing) {
+      var rec = existing || { email: key };
+      var applied = rec.appliedTokenPackPaymentIds || [];
+      if (applied.indexOf(paymentId) === -1) return blobsCas.SKIP; // already absent -- nothing to prune
+      return Object.assign({}, rec, {
+        email: key,
+        appliedTokenPackPaymentIds: applied.filter(function (id) { return id !== paymentId; }),
+        updatedAt: Date.now()
+      });
+    }
   });
+  // Result deliberately not inspected -- ok, skipped, and exhausted are
+  // all a normal, non-fatal outcome for purely-cosmetic housekeeping (see
+  // this function's own doc comment above). blobsCas.casWrite already
+  // logs an exhaustion for diagnostics; nothing further to do with it here.
 }
 
 // ============================================================================
@@ -2008,19 +2087,33 @@ async function refundTokenAmountOnce(event, email, jobId, amount) {
  * `'committed'` (see refundTokensOnce) — at that point the marker record
  * is the sole durable source of truth for "already refunded" and this
  * per-email array no longer needs to remember it too. Mirrors
- * forgetAppliedTokenPack exactly (same reasoning, same "harmless if this
- * never runs" non-fatal cleanup). No-ops for an empty/missing email or a
- * jobId that isn't present.
+ * forgetAppliedTokenPack exactly, including going through blobsCas.casWrite
+ * rather than a plain setEntitlement call — see that function's own doc
+ * comment for the full "why CAS, not plain, even for low-frequency
+ * housekeeping" reasoning, which applies here identically. Purely a
+ * housekeeping step, not required for correctness (a lingering entry is
+ * harmless); a CAS exhaustion here stays non-fatal, logged by
+ * blobsCas.casWrite itself, never thrown. No-ops for an empty/missing
+ * email or a jobId that isn't present (checked fresh on every CAS attempt).
  */
 async function forgetRefundedJobId(event, email, jobId) {
   var key = normalizeEmail(email);
   if (!key) return;
-  var record = await getEntitlement(event, key);
-  var refunded = (record && record.refundedJobIds) || [];
-  if (refunded.indexOf(jobId) === -1) return;
-  await setEntitlement(event, key, {
-    refundedJobIds: refunded.filter(function (id) { return id !== jobId; })
+  await blobsCas.casWrite(event, STORE_NAME, key, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    mutate: function (existing) {
+      var rec = existing || { email: key };
+      var refunded = rec.refundedJobIds || [];
+      if (refunded.indexOf(jobId) === -1) return blobsCas.SKIP; // already absent -- nothing to prune
+      return Object.assign({}, rec, {
+        email: key,
+        refundedJobIds: refunded.filter(function (id) { return id !== jobId; }),
+        updatedAt: Date.now()
+      });
+    }
   });
+  // Result deliberately not inspected -- see forgetAppliedTokenPack's own
+  // identical closing comment.
 }
 
 // ============================================================================

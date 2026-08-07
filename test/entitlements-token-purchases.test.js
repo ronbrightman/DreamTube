@@ -641,3 +641,115 @@ test("a genuinely concurrent claimDailyTokens write is NOT reverted by creditTok
   assert.notEqual(record.tokens.lastClaimAt, pastCooldown, "the concurrent claim's fresh lastClaimAt must survive -- the bug this fix closes would silently revert it back to the pre-claim value");
   assert.equal(record.tokens.streak, 4, "the concurrent claim's bumped streak (3 -> 4) must survive, not get reverted back to 3");
 });
+
+// ----- forgetAppliedTokenPack racing a CAS'd writer for the SAME email:
+// the housekeeping cleanup must never revert a concurrent credit
+// (independent review finding on the CAS migration itself, fixed here) -----
+//
+// A DIFFERENT bug class again, this time in forgetAppliedTokenPack itself
+// (the best-effort cleanup creditTokenPackOnce calls right after its own
+// marker commits, see that function's own doc comment above). Before this
+// fix, forgetAppliedTokenPack called setEntitlement -- a PLAIN,
+// UNCONDITIONAL read -> merge -> write, no etag, no CAS at all -- to prune
+// a committed paymentId out of appliedTokenPackPaymentIds. If a concurrent
+// CAS'd writer to the SAME email's record (claimDailyTokens here) commits
+// its own credit in the narrow window between setEntitlement's own
+// internal read and its own internal write, that unconditional write
+// silently reverted the WHOLE record -- including tokens.balance/
+// lastClaimAt/streak -- back to the stale value setEntitlement's read
+// saw, erasing the claim entirely. Exactly the "claim erasure" shape this
+// whole file's CAS migration exists to close, just reached through a
+// housekeeping path the original migration didn't touch.
+//
+// A plain, undelayed Promise.all of these two calls does not reliably
+// reach this window either (confirmed during this fix's own
+// development): forgetAppliedTokenPack is a short operation with nothing
+// ahead of it to give a concurrent claim a head start, so it naturally
+// completes its whole read/write cycle before claimDailyTokens' own write
+// lands, in either call order -- never exercising the interesting case.
+// Two devices make this reliable instead of occasional: (1) a mockBlobs
+// read override that forces every STORE_NAME read inside
+// forgetAppliedTokenPack's own call stack (both its plain `.get()` reads,
+// pre-fix, and its `.getWithMetadata()` CAS read, post-fix -- the override
+// covers both call shapes so this ONE test genuinely exercises whichever
+// implementation is actually in the tree) to see the genuinely stale
+// PRE-claim record, captured right after seeding, before either call
+// starts -- exactly mimicking real Blobs propagation lag on forget's read
+// side, deterministically instead of leaving it to chance timing; (2)
+// starting forgetAppliedTokenPack after a `delay(0)`, so claimDailyTokens'
+// own write has genuinely already landed for real by the time forget's
+// forced-stale attempt tries to write against it -- without this, forget's
+// forced-stale write can land while the real current state still
+// legitimately matches it (claim hasn't written yet), which would never
+// actually exercise a real conflict either way.
+//
+// FAILS against the pre-fix code (forgetAppliedTokenPack's plain
+// setEntitlement call has no etag to reject a stale base, so its
+// unconditional write silently reverts the claim's already-committed
+// credit back to the pre-claim snapshot -- confirmed directly against a
+// stashed copy of the pre-fix function during this fix's own development);
+// PASSES against the fix (forgetAppliedTokenPack's own first CAS attempt's
+// conditional write is atomically REJECTED once it reaches the server,
+// since the real etag has already moved on -- blobsCas.casWrite's own loop
+// retries with a fresh read, which correctly sees the claim's landed
+// credit, and re-applies just the paymentId removal on top of it).
+
+function delayTick() {
+  return new Promise(function (resolve) { setTimeout(resolve, 0); });
+}
+
+test("forgetAppliedTokenPack's housekeeping cleanup does NOT revert a concurrent claimDailyTokens credit (real Promise.all concurrency, forced-stale first read simulating eventual-consistency lag)", async function () {
+  for (var i = 0; i < 5; i++) {
+    mockBlobs.reset();
+    var email = 'forget-race-claim-' + i + '@example.com';
+    var pastCooldown = Date.now() - (entitlements.CLAIM_COOLDOWN_MS + 60000);
+    var seedRecord = {
+      tokens: { balance: 50, lastClaimAt: pastCooldown, streak: 3 },
+      firstClaimAt: pastCooldown - 1000,
+      appliedTokenPackPaymentIds: ['pay_old']
+    };
+    await entitlements.setEntitlement({}, email, seedRecord);
+    // The genuinely stale pre-claim snapshot forgetAppliedTokenPack's own
+    // reads will be forced to see -- captured now, before either call
+    // below starts, exactly like a real lagging read would. Plain shape
+    // (for the pre-fix `.get()` path) and CAS shape (`{data, etag,
+    // metadata}`, for the post-fix `.getWithMetadata()` path) are both
+    // captured, since which one the current code actually calls is
+    // exactly what this test is agnostic to by design.
+    var stalePlain = await require('@netlify/blobs').getStore({ name: entitlements.STORE_NAME }).get(email, { type: 'json' });
+    var staleCas = await require('@netlify/blobs').getStore({ name: entitlements.STORE_NAME }).getWithMetadata(email, { type: 'json' });
+
+    mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key) {
+      if (new Error().stack.indexOf('forgetAppliedTokenPack') !== -1) return { value: stalePlain };
+      return null;
+    });
+    var forcedCasOnce = false;
+    mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key) {
+      if (!forcedCasOnce && new Error().stack.indexOf('forgetAppliedTokenPack') !== -1) {
+        forcedCasOnce = true;
+        return { value: staleCas };
+      }
+      return null;
+    });
+
+    var claimPromise = entitlements.claimDailyTokens({}, email);
+    var forgetPromise = delayTick().then(function () {
+      return entitlements.forgetAppliedTokenPack({}, email, 'pay_old');
+    });
+
+    var results;
+    try {
+      results = await Promise.all([forgetPromise, claimPromise]);
+    } finally {
+      mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+      mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
+    }
+
+    var claim = results[1];
+    assert.equal(claim.claimed, true, 'trial ' + i + ': the concurrent claim must succeed');
+    var record = await entitlements.getEntitlement({}, email);
+    assert.equal(record.tokens.balance, 50 + claim.amountClaimed, 'trial ' + i + ": the claim's credit must survive forgetAppliedTokenPack's housekeeping write -- the bug this fix closes would silently revert it back to 50");
+    assert.notEqual(record.tokens.lastClaimAt, pastCooldown, 'trial ' + i + ": the claim's fresh lastClaimAt must survive too, not just its balance delta");
+    assert.deepEqual(record.appliedTokenPackPaymentIds, [], 'trial ' + i + ': the housekeeping prune must still land once the stale attempt is rejected and retried with a fresh read');
+  }
+});
