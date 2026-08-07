@@ -235,7 +235,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 .pill:active{ transform:scale(.98); }
 .pulse{ animation:homePulse 2.6s ease-in-out infinite; }
 
-/* --- 3 · TONIGHT hero (~430px @844) — full-bleed CSS night scene: warm
+/* --- 3 · Tonight CTA — founder ruling 2026-08-07 (tracker item
+   for-product-founder-08-07-homepage-hero--015hgp): a single standalone
+   button, no card/box/background art of its own, replacing the old
+   .hero-tonight moon-card's unlogged prompt state entirely. Reuses the
+   .pill/.pulse button DNA above for its shape only (not the surrounding
+   hero-card); .tonight-cta here only cancels .pill's own margin-top
+   (meant for sitting under a hero-content title stack it no longer has)
+   since this button now stands alone at the top of the scroll shelf. --- */
+.tonight-cta{ margin-top:0; }
+
+/* --- 3b · TONIGHT hero (~430px @844) — full-bleed CSS night scene: warm
    moon top-right + blue/violet nebula (the result mock's .dreamvideo
    palette, card-sized), tiny stars, bottom scrim; content bottom-anchored --- */
 .hero-tonight{
@@ -275,56 +285,23 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 }
 .hero-tonight .hero-scrim{ background:linear-gradient(180deg, transparent 45%, rgba(12,10,26,.55)); }
 
-/* founder round 2 (2026-08-02, tracker item for-product-build-ship-today-
-   founder-app-zn9zyy, founder amendment comment) — a barely-there dream
-   whisper above the Tonight eyebrow while the hero is unlogged; rotates
-   through a few lines on a slow 8s fade (copy + mechanism verbatim from
-   home-mock5-x7q4.html's own WHISPERS array / whisper-cycling code).
-   DELIBERATELY no streak-sky constellation here — the founder's own call
-   (the same constellation already shows on the ritual module tile below,
-   "exactly the same"; showing it twice on one screen is duplication), so
-   this hero keeps only the moon (the existing .hero-tonight background
-   glow, untouched) plus this one whisper line. min-height bumped from
-   360px to 436px (was sized before this extra line existed, and the
-   flex column's justify-content:flex-end means all the added room lands
-   above the bottom-anchored content stack, exactly where the clearance
-   is needed) — specifically so the whisper never crowds the moon glow at
-   narrow/short viewports, the real overlap bug his screenshots showed.
-   Root-caused via real measurement, not guessed: the moon's own two
-   radial-gradients (top of this file's .hero-tonight background) are
-   centered at 15% from the card's top, so on the OLD 360-392px floor a
-   narrow viewport (which wraps the "What did you dream?" title to 2
-   lines, eating extra vertical space) left as little as ~109px between
-   the card's top and the whisper's own top edge — inside the moon's
-   ~134px-tall soft outer halo (the 150px-diameter, 30%-opacity radial).
-   436px (the new floor) leaves >150px of clearance in that same worst
-   case (2-line title + the Day-1 extra line), verified empirically
-   across 320-412px widths and 480-915px heights — see test/home-hero-
-   whisper-mky-copy-behavioral.test.js. */
-.whisper{
-  position:relative; z-index:1; margin-bottom:16px; pointer-events:none;
-  text-align:center; font-style:italic; font-size:15px; font-weight:500;
-  color:#cfc8ea; opacity:.55; text-shadow:0 1px 8px rgba(12,10,26,.6);
-  transition:opacity 1.2s ease;
-}
-.whisper.fade{ opacity:0; }
-
-/* Tonight's three quiet entry links, one centered 16px row */
-.entryrow{ display:flex; align-items:center; justify-content:center; gap:4px; margin-top:6px; position:relative; z-index:1; }
-.entryrow .dot{ color:#8b83b3; font-size:14px; }
-.entrylink{
-  background:none; border:none; cursor:pointer; padding:10px 8px; min-height:44px;
-  color:#c9c2e8; font:600 var(--t-body) var(--font-body);
-  text-shadow:0 1px 8px rgba(12,10,26,.6);
-  -webkit-tap-highlight-color:transparent;
-}
-.entrylink:active{ opacity:.7; }
-
-/* Day-1-only extra line inside the Tonight hero */
-.d1line{ margin-top:2px; font-size:var(--t-body); font-weight:500; color:#c9c2e8; text-align:center; position:relative; z-index:1; text-shadow:0 1px 8px rgba(12,10,26,.6); }
+/* founder ruling 2026-08-07 (tracker item for-product-founder-08-07-
+   homepage-hero--015hgp, "kill the square, bare 'What did you dream?'
+   button") replaced this card's UNLOGGED prompt state entirely with a
+   single standalone button (.tonight-cta, below) -- no card/box/moon-art/
+   whisper/quiet-links of its own. This element (#hero-tonight) now only
+   ever renders its "logged tonight" confirmation state (a real dream
+   still routes to the separate #day0-card room-card instead, as before)
+   -- untouched by that ruling, so its sizing/background below is
+   deliberately left exactly as it already was; the previous whisper-
+   clearance tuning history that used to live in this comment (min-height
+   436px etc., formerly covered by test/home-hero-whisper-mky-copy-
+   behavioral.test.js, renamed to test/home-mky-copy-behavioral.test.js
+   once that coverage was deleted) no longer applies to any surviving
+   state and was removed along with the whisper feature itself. */
 
 /* logged-today transform — in place: artwork stays full-size, title flips,
-   one clamped quote line, pill + links hidden, ok tint on the frame */
+   one clamped quote line, ok tint on the frame */
 .hero-tonight.logged{ border-color:rgba(75,211,155,.5); box-shadow:0 4px 20px -6px rgba(0,0,0,.5), 0 0 22px -4px rgba(75,211,155,.24); }
 .hero-tonight.logged .hero-title{ color:#bdf0d8; }
 .loggedquote{
@@ -357,10 +334,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
    .form-sweep/.form-arc/.form-caption. The card itself carries no day-0-only
    copy (its "Tonight's dream" title, its forming-state caption etc. are
    already scenario-neutral) — any actual first-ever-night framing
-   lives entirely OUTSIDE this card (hero-tonight's own d1line, the ritual
-   module's first-claim eyebrow), gated by isFirstEverNight there, untouched
-   by this generalization. Every OTHER Tonight state (unlogged, logged via
-   "No recall" only — day-0 or not, there is no dream to embed) is
+   lives entirely OUTSIDE this card (the ritual module's first-claim
+   eyebrow — the old .hero-tonight unlogged card's own "First night — any
+   entry counts" d1line was removed along with the rest of that state per
+   tracker item for-product-founder-08-07-homepage-hero--015hgp), gated by
+   isFirstEverNight there, untouched by this generalization. Every OTHER
+   Tonight state (unlogged, logged via "No recall" only — day-0 or not,
+   there is no dream to embed) is
    completely untouched — out of scope per this tracker item. .day0card/
    #day0-card/#d0-* naming is legacy from the original day-0-only ship and
    kept as-is (internal implementation detail, not user-facing) rather than
@@ -942,29 +922,54 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         <div class="quiet-caption" id="d0-caption">No need to wait for the video</div>
       </section>
 
-      <!-- 3 · TONIGHT hero — the guided Wizard pill leads; Write/Speak/No
-           recall are quiet links underneath it (founder amendment). Round
-           2 (tracker item for-product-build-ship-today-founder-app-zn9zyy,
-           founder amendment): moon + whisper only while unlogged, no
-           streak-sky stars (those already live on the ritual module tile
-           below, unchanged) — see the WHISPERS array/renderTonightHero()
-           below. -->
-      <section class="hero-card hero-tonight" id="hero-tonight" data-card="tonight">
+      <!-- 3 · TONIGHT CTA / logged confirmation — founder ruling 2026-08-07
+           (tracker item for-product-founder-08-07-homepage-hero--015hgp):
+           "kill the square, bare 'What did you dream?' button -> 3-choice
+           screen". Two mutually-exclusive pieces, toggled by
+           renderTonightHero() below (never more than one of these plus
+           #day0-card shown at once):
+
+             - #tonight-cta: a single standalone button, no card/box/
+               background art of its own, shown only while tonight is
+               UNLOGGED. Text is EXACTLY "What did you dream?" (the
+               founder's own wording, reused verbatim from this slot's old
+               h1 copy). Tapping it goes straight to create.html's
+               existing Build/Write/Record choice screen (bare deep-link;
+               that page's own login-redirect already handles a
+               logged-out visitor) -- deliberately replaces the old
+               moon-card's pill AND its Write/Speak/No-recall quiet-link
+               row entirely, per the founder's "single standalone button"
+               / "no small text below it" wording. Write/Speak remain one
+               tap further away via that same choice screen; "No recall"
+               (log a no-content night) has no equivalent there today and
+               -- as of this change -- has no other LIVE UI entry point
+               left in the app either (flagged explicitly on the tracker
+               item for founder preview at merge time, not silently
+               dropped; DreamStore.logNoRecallToday() itself is untouched
+               in js/store.js, since the underlying "no recall" data
+               concept is still real and still read in several other
+               places on this page).
+
+             - #hero-tonight: the ORIGINAL moon/nebula hero card, left
+               completely untouched (background/sizing CSS unchanged),
+               now used ONLY for the "logged tonight" confirmation state
+               -- a real dream still routes to the separate #day0-card
+               room-card module instead, exactly as before. This was
+               never what the founder's screenshots/ruling were about
+               (his own new button text reuses this OTHER state's h1
+               copy, not this one's); still a real, reachable state
+               whenever logStatus.loggedToday is true with no dream
+               content yet. -->
+      <button type="button" class="pill pulse tonight-cta" id="tonight-cta" data-card="tonight">What did you dream?</button>
+
+      <section class="hero-card hero-tonight" id="hero-tonight" data-card="tonight" hidden>
         <div class="hero-stars"></div>
         <div class="hero-scrim"></div>
-        <div class="whisper" id="tonight-whisper" aria-hidden="true"></div>
         <div class="hero-content">
           <div class="eyebrow">Tonight</div>
-          <h1 class="hero-title" id="tonight-title">What did you dream?</h1>
-          <p class="loggedquote" id="tonight-quote" hidden></p>
-          <button type="button" class="pill pulse" id="tonight-pill">✨ Tell your dream</button>
+          <h1 class="hero-title" id="tonight-title">Logged tonight ✓</h1>
+          <p class="loggedquote" id="tonight-quote"></p>
         </div>
-        <div class="entryrow" id="tonight-links">
-          <button type="button" class="entrylink" id="btn-write">Write</button><span class="dot" aria-hidden="true">·</span>
-          <button type="button" class="entrylink" id="btn-speak">Speak</button><span class="dot" aria-hidden="true">·</span>
-          <button type="button" class="entrylink" id="btn-norecall">No recall</button>
-        </div>
-        <div class="d1line" id="tonight-d1" hidden>First night — any entry counts.</div>
       </section>
 
       <!-- 4 · CHAMBER hero — no eyebrow; the sage's own artwork is the
@@ -1390,8 +1395,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // also show this exact dream as a My-dreams row tile) can never disagree
   // with each other about which state the page is in. Day-0-only COPY
   // (the "first ever" framing) stays gated separately by isFirstEverNight,
-  // entirely outside this card -- see hero-tonight's own d1line and the
-  // ritual module's first-claim eyebrow, both untouched by this function.
+  // entirely outside this card -- see the ritual module's first-claim
+  // eyebrow, untouched by this function (the old .hero-tonight unlogged
+  // card's own d1line equivalent was removed along with that card, per
+  // tracker item for-product-founder-08-07-homepage-hero--015hgp).
   function shouldShowRoomCard(){
     // optimisticFreshGenerationPending (see its own doc comment above) —
     // a fresh, brand-new generation submitted THIS load whose real
@@ -1404,48 +1411,34 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       (logStatus.todayEntryType === 'dream' || logStatus.todayEntryType === 'pending'));
   }
 
-  // ===== The Tonight hero's dream whisper (tracker item for-product-
-  // build-ship-today-founder-app-zn9zyy, founder amendment) — 3 lines on a
-  // slow 8s fade, copy + cycling mechanism verbatim from home-mock5-x7q4.
-  // html's own WHISPERS array. Shown only while unlogged (mirrors the
-  // mock's own `el.whisper.hidden = logged`) -- renderTonightHero below
-  // toggles visibility; this interval just advances the text and skips
-  // silently while hidden, same pattern. =====
-  var WHISPERS = [
-    'Falling? Flying? A face you knew?',
-    'A door that wasn’t there before?',
-    'A place you’ve never been — but knew.'
-  ];
-  var whisperIdx = 0;
-  var reduceMotionForWhisper = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if(!reduceMotionForWhisper){
-    setInterval(function(){
-      var el = document.getElementById('tonight-whisper');
-      if(!el || el.hidden) return;
-      el.classList.add('fade');
-      setTimeout(function(){
-        whisperIdx = (whisperIdx + 1) % WHISPERS.length;
-        el.textContent = WHISPERS[whisperIdx];
-        el.classList.remove('fade');
-      }, 1250);
-    }, 8000);
-  }
-
-  // ===== Tonight hero =====
+  // ===== Tonight CTA / logged confirmation (founder ruling 2026-08-07,
+  // tracker item for-product-founder-08-07-homepage-hero--015hgp) =====
+  //
+  // #tonight-cta (bare button) and #hero-tonight (the original moon-card,
+  // now used only for the "logged tonight" confirmation) are mutually
+  // exclusive, and both defer entirely to #day0-card whenever a real
+  // dream is what "tonight" actually is (shouldShowRoomCard() above) --
+  // never more than one of the three shown at once. The old dream-whisper
+  // cycling feature (WHISPERS array + its 8s-fade setInterval) lived only
+  // in the now-deleted unlogged prompt card and was removed along with it
+  // -- see git history for its prior coverage (formerly test/home-hero-
+  // whisper-mky-copy-behavioral.test.js, renamed to test/home-mky-copy-
+  // behavioral.test.js once that coverage was deleted).
   function renderTonightHero(){
+    var cta = document.getElementById('tonight-cta');
     var section = document.getElementById('hero-tonight');
-    var title = document.getElementById('tonight-title');
     var quote = document.getElementById('tonight-quote');
-    var pill = document.getElementById('tonight-pill');
-    var links = document.getElementById('tonight-links');
-    var d1 = document.getElementById('tonight-d1');
-    var whisper = document.getElementById('tonight-whisper');
     var logged = logStatus.loggedToday;
+    var showRoomCard = shouldShowRoomCard();
 
+    // .hidden (the real attribute), not style.display -- this page's own
+    // [hidden]{ display:none !important; } reset (top of this file's
+    // <style> block) beats a plain inline style.display, same reason
+    // every other el.hidden toggle on this page already uses it.
+    cta.hidden = logged || showRoomCard;
+    section.hidden = !logged || showRoomCard;
     section.classList.toggle('logged', logged);
-    whisper.hidden = logged;
-    if(!logged && !whisper.textContent){ whisper.textContent = WHISPERS[whisperIdx]; }
-    title.textContent = logged ? 'Logged tonight ✓' : 'What did you dream?';
+
     if(logged){
       // Root-cause fix (Manager screenshot-verified bug (A), 2026-08-01,
       // tracker item for-product-founder-walkthrough-punch-li-t33k3y): a
@@ -1467,19 +1460,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         // unchanged, just no longer uses that exact phrase.
         : 'Nothing remembered — and that counts too.';
       quote.textContent = quoteText;
-      quote.hidden = false;
-    } else {
-      quote.hidden = true;
     }
-    pill.hidden = logged;
-    pill.classList.toggle('pulse', !logged);
-    links.hidden = logged;
-    d1.hidden = logged || logStatus.hasEverLogged;
-
-    // The embedded dream's-room card (#day0-card, rendered by
-    // renderDay0Card below) takes over this hero's job entirely for the
-    // one state it owns -- never both on screen at once.
-    section.style.display = shouldShowRoomCard() ? 'none' : '';
   }
   renderTonightHero();
 
@@ -2659,50 +2640,29 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     }
   }, 60000);
 
-  // ===== Tonight hero entry points — reuse create.html's own Build/Write/
-  // Speak affordances (no reinvention). Tracker item
-  // for-product-founder-ask-08-05-tell-your--vmfvsk (founder preview
-  // catch): the primary pill used to deep-link straight past the choice
-  // with ?build=1, so tapping it dropped a first-time visitor directly
-  // into the chip wizard without ever surfacing Write/Record as options
-  // ("redirected to wizard without the choice first"). It now sends a
-  // bare `create.html` instead — landing on create.html's own EXISTING,
-  // already-tested default screen (#create-select: the Build it/Write
-  // it/Record it choice cards, ids #choice-build/#choice-write/
-  // #choice-record), so all three entry modes are offered as part of the
-  // pill's own main path, matching the founder's own suggested shape
-  // ("a first wizard screen offering them") with zero new UI. The quiet
-  // Write/Speak/No-recall row below the pill is intentionally left in
-  // place rather than removed now that the pill also reaches the same
-  // choice: Write/Speak still act as a faster one-tap shortcut for a
-  // returning user who already knows what they want (skips the choice
-  // screen via the ?write=1/?record=1 deep-links below, same as
-  // before), and "No recall" has no equivalent on create.html's choice
-  // screen at all -- it's the one entry point that logs a night with no
-  // dream content (see js/store.js's logNoRecallToday doc comment), so
-  // the row still earns its place as more than a redundant duplicate. =====
-  document.getElementById('tonight-pill').addEventListener('click', function(){
+  // ===== Tonight CTA — reuses create.html's own existing Build/Write/
+  // Record choice screen (no reinvention). Tracker item
+  // for-product-founder-08-07-homepage-hero--015hgp (founder ruling,
+  // "kill the square, bare 'What did you dream?' button -> 3-choice
+  // screen"): a bare `create.html` deep-link lands on that page's own
+  // EXISTING, already-tested default screen (#create-select: the Build
+  // it/Write it/Record it choice cards, ids #choice-build/#choice-write/
+  // #choice-record) -- its own login-redirect already handles a
+  // logged-out visitor. This supersedes the earlier for-product-founder-
+  // ask-08-05-tell-your--vmfvsk fix (same destination, same bare
+  // create.html target -- only the entry-point markup above it changed
+  // here). The quiet Write/Speak/No-recall row that used to sit under
+  // the old pill is gone along with the rest of that card's chrome per
+  // this ruling's "single standalone button" / "no small text below it"
+  // wording -- Write/Speak remain reachable one tap further away via
+  // this same choice screen, but "No recall" (DreamStore.
+  // logNoRecallToday(), untouched in js/store.js -- the underlying data
+  // concept is still real and read elsewhere on this page) currently has
+  // no other LIVE UI entry point in the app; flagged on the tracker item
+  // for founder preview, not silently dropped. =====
+  document.getElementById('tonight-cta').addEventListener('click', function(){
     track('home_today_entry_tapped', { method: 'wizard' });
     location.href = 'create.html';
-  });
-  document.getElementById('btn-write').addEventListener('click', function(){
-    track('home_today_entry_tapped', { method: 'write' });
-    location.href = 'create.html?write=1';
-  });
-  document.getElementById('btn-speak').addEventListener('click', function(){
-    track('home_today_entry_tapped', { method: 'speak' });
-    location.href = 'create.html?record=1';
-  });
-  document.getElementById('btn-norecall').addEventListener('click', function(){
-    track('home_today_entry_tapped', { method: 'no_recall' });
-    var result = DreamStore.logNoRecallToday();
-    if(!result.ok) return;
-    logStatus = DreamStore.getDreamLogStatus();
-    renderTonightHero();
-    renderDay0Card();
-    renderRitualModule();
-    renderDreamsRow();
-    showToast('Logged — no recall counts too.');
   });
 
   function showToast(msg){
