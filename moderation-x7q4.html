@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Moderation — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon-v4.png">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v4.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+<style>
+  /* Utilitarian owner tool, same posture as media-library-x7q4.html (per
+     that feature's own tracker item: "Night styling fine but utilitarian
+     is OK — it's an owner tool") — reuses css/styles.css's own
+     .tracker-item/.tracker-item-title/.tracker-item-meta/.tracker-review-btn
+     (tracker.html's established "Reviewed" one-way-marker look, the
+     closest precedent in this codebase per this feature's own tracker
+     item) rather than inventing a parallel visual system, plus a handful
+     of small local rules for the parts that ARE genuinely new here: the
+     dream/comment target-type badge and the comment-quote block. */
+  .mod-summary{ display:flex; gap:10px; margin:14px 0 18px; }
+  .mod-stat{ flex:1; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px 12px; }
+  .mod-stat-num{ font-size:18px; font-weight:800; }
+  .mod-stat-label{ font-size:10.5px; color:var(--text-muted); margin-top:2px; }
+  .mod-badge{ display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#000; border-radius:6px; padding:3px 7px; margin-right:8px; vertical-align:middle; }
+  .mod-badge.dream{ background:var(--accent-value); }
+  .mod-badge.comment{ background:var(--accent-growth); }
+  .mod-when{ font-size:11px; color:var(--text-faint); float:right; }
+  .mod-item-title{ font-size:13.5px; font-weight:600; line-height:1.4; }
+  .mod-item-caption{ font-size:12.5px; color:var(--text-muted); margin-top:4px; line-height:1.5; }
+  .mod-comment-quote{ margin-top:10px; padding:10px 12px; background:var(--surface-alt); border-radius:10px; border-left:3px solid var(--accent-growth); font-size:12.5px; line-height:1.5; }
+  .mod-comment-author{ font-weight:700; color:var(--text-primary); margin-bottom:2px; }
+  .mod-actions{ padding:12px 14px 14px; }
+  .mod-handled-tag{ display:inline-block; font-size:11px; color:var(--text-faint); font-weight:600; }
+  /* Handled reports visually separate from open ones — same .68-opacity
+     dimming tracker.html's own Done section uses for reviewed items. */
+  .mod-list .tracker-item.mod-handled{ opacity:.68; }
+  .mod-empty{ padding:40px 20px; text-align:center; color:var(--text-muted); font-size:13px; }
+</style>
+</head>
+<body>
+
+<div id="app" class="scroll-shell">
+  <div class="topbar">
+    <a class="icon-btn" id="mod-back" href="admin.html"></a>
+    <div class="topbar-logo" style="font-size:15px;">Moderation</div>
+    <div style="width:36px;"></div>
+  </div>
+
+  <!-- scroll-shell + .scroll-area — same desktop-scroll fix media-library-x7q4.html
+       and tracker.html already carry (see that page's own comment for the
+       full "content past the fold gets clipped" root cause). -->
+  <div class="scroll-area">
+  <div class="px">
+
+    <!-- Unauthorized / not-logged-in state -->
+    <div id="mod-unauthorized" style="padding:60px 0; text-align:center; display:none;">
+      <div class="icon" style="width:32px; height:32px; color:var(--text-faint); margin:0 auto 14px;" id="mod-unauthorized-icon"></div>
+      <div class="auth-sub" style="margin:0;">This page isn't available for your account.</div>
+    </div>
+
+    <!-- Main content -->
+    <div id="mod-content" style="display:none;">
+      <div class="admin-row-sub" style="margin-bottom:14px;">User-flagged content reports (dreams and comments), newest first. Filed via the in-app Report control — see report-dream.js. Marking a report handled is a one-way signal (no un-handle control), matching tracker.html's own Reviewed marker.</div>
+
+      <div class="mod-summary" id="mod-summary"></div>
+
+      <div class="mod-list" id="mod-list"></div>
+      <div class="mod-empty" id="mod-empty" style="display:none;">No reports on file.</div>
+    </div>
+    <div class="err-text" id="mod-error" style="margin-top:8px;"></div>
+  </div>
+  </div>
+</div>
+
+<script src="js/icons.js"></script>
+<script src="js/store.js"></script>
+<script src="js/pwa.js"></script>
+<script>
+  document.getElementById('mod-back').innerHTML = Icons.back;
+  document.getElementById('mod-unauthorized-icon').innerHTML = Icons.lock;
+
+  var user = DreamStore.getCurrentUser();
+  if (!user) { location.href = 'login.html?next=moderation-x7q4.html'; }
+
+  var email = DreamStore.getAccountEmail();
+  var unauthorizedEl = document.getElementById('mod-unauthorized');
+  var contentEl = document.getElementById('mod-content');
+  var listEl = document.getElementById('mod-list');
+  var emptyEl = document.getElementById('mod-empty');
+  var summaryEl = document.getElementById('mod-summary');
+  var errorEl = document.getElementById('mod-error');
+
+  var allReports = [];
+
+  function showUnauthorized() {
+    unauthorizedEl.style.display = 'block';
+    contentEl.style.display = 'none';
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function renderSummary(reports) {
+    var handledCount = reports.filter(function (r) { return !!r.handled; }).length;
+    summaryEl.innerHTML = [
+      { label: 'Total reports', num: reports.length },
+      { label: 'Unhandled', num: reports.length - handledCount },
+      { label: 'Handled', num: handledCount }
+    ].map(function (s) {
+      return '<div class="mod-stat"><div class="mod-stat-num">' + s.num + '</div><div class="mod-stat-label">' + s.label + '</div></div>';
+    }).join('');
+  }
+
+  function itemHTML(r) {
+    var isComment = r.targetType === 'comment';
+    var when = r.createdAt ? new Date(r.createdAt).toLocaleString() : 'unknown time';
+    var reporterLine = 'Reporter: ' + esc(r.reporterHandle || 'anonymous');
+    var reasonLine = r.reason ? ' &nbsp;·&nbsp; Reason: ' + esc(r.reason) : '';
+    var captionHTML = r.dreamCaption ? '<div class="mod-item-caption" dir="auto">' + esc(r.dreamCaption) + '</div>' : '';
+    var commentHTML = isComment
+      ? '<div class="mod-comment-quote" dir="auto"><div class="mod-comment-author">' + esc(r.commentAuthorHandle || 'unknown') + '</div>' + esc(r.commentText || '') + '</div>'
+      : '';
+    var actionsHTML = r.handled
+      ? '<span class="mod-handled-tag">Handled' + (r.dismissedAt ? ' ' + new Date(r.dismissedAt).toLocaleString() : '') + '</span>'
+      : '<button type="button" class="btn btn-secondary mod-dismiss-btn">Mark handled</button>';
+
+    return '<div class="tracker-item' + (r.handled ? ' mod-handled' : '') + '" data-id="' + esc(r.id) + '" data-handled="' + (r.handled ? 'true' : 'false') + '">' +
+      '<div class="tracker-item-summary" style="cursor:default;">' +
+        '<div class="mod-item-title">' +
+          '<span class="mod-badge ' + (isComment ? 'comment' : 'dream') + '">' + (isComment ? 'Comment report' : 'Dream report') + '</span>' +
+          'Dream: ' + esc(r.dreamId || 'unknown') + (r.dreamOwnerHandle ? ' (' + esc(r.dreamOwnerHandle) + ')' : '') +
+          '<span class="mod-when">' + esc(when) + '</span>' +
+        '</div>' +
+        captionHTML +
+        commentHTML +
+        '<div class="tracker-item-meta"><span>' + reporterLine + reasonLine + '</span></div>' +
+      '</div>' +
+      '<div class="mod-actions">' + actionsHTML + '</div>' +
+    '</div>';
+  }
+
+  function renderList() {
+    // Newest first — this page's own explicit requirement (tracker item
+    // for-product-build-the-moderation-review--sbf5ol's own wording).
+    var sorted = allReports.slice().sort(function (a, b) {
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    });
+    renderSummary(sorted);
+
+    if (!sorted.length) {
+      listEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    listEl.innerHTML = sorted.map(itemHTML).join('');
+  }
+
+  function loadReports() {
+    return fetch('/.netlify/functions/get-moderation-reports?email=' + encodeURIComponent(email))
+      .then(function (res) {
+        if (res.status === 403) { showUnauthorized(); throw new Error('forbidden'); }
+        return res.json();
+      })
+      .then(function (data) {
+        allReports = data.reports || [];
+        contentEl.style.display = 'block';
+        renderList();
+      });
+  }
+
+  if (!email) {
+    // Logged in, but this account has no email on file at all — can never
+    // match OWNER_EMAIL, so there's no point calling the function (same
+    // short-circuit admin.html's own gate uses).
+    showUnauthorized();
+  } else {
+    loadReports().catch(function (err) {
+      if (err && err.message === 'forbidden') return; // already handled above
+      // Network/parse failure — fail closed, same visible result as not
+      // being the owner, rather than a broken half-rendered page.
+      showUnauthorized();
+    });
+  }
+
+  // ===== Mark handled (mark-report-handled.js) — optimistic update with
+  // revert-on-failure, same discipline as tracker.html's own Mark Reviewed
+  // button (see that page's reviewControl/handleReviewChange). =====
+  listEl.addEventListener('click', function (e) {
+    var btn = e.target.closest('.mod-dismiss-btn');
+    if (!btn) return;
+    var itemEl = btn.closest('.tracker-item');
+    var id = itemEl.getAttribute('data-id');
+    var report = allReports.filter(function (r) { return r.id === id; })[0];
+    if (!report) return;
+
+    btn.disabled = true;
+    fetch('/.netlify/functions/mark-report-handled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, email: email })
+    })
+      .then(function (res) {
+        return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+      })
+      .then(function (result) {
+        if (!result.ok) throw new Error((result.data && result.data.error) || 'mark_handled_failed');
+        report.handled = true;
+        report.dismissedAt = result.data.report ? result.data.report.dismissedAt : new Date().toISOString();
+        renderList();
+      })
+      .catch(function () {
+        btn.disabled = false;
+        errorEl.textContent = "Couldn't mark that report handled — try again.";
+      });
+  });
+</script>
+</body>
+</html>
