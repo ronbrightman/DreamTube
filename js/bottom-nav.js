@@ -128,15 +128,21 @@
     // see avatarInnerHTML() above). Icons.compass is already a line
     // glyph; Icons.home is filled, so Icons.homeOutline is its
     // line-variant pair for whichever page isn't Home.
-    document.getElementById('dock-icon-home').innerHTML = (active === 'home') ? Icons.home : Icons.homeOutline;
-    document.getElementById('dock-icon-explore').innerHTML = Icons.compass;
-    document.getElementById('dock-icon-create').innerHTML = Icons.plus;
+    // Scoped to THIS container, not getElementById (bug, founder screenshot
+    // 2026-08-07): the Chamber's persona picker mounts a SECOND dock on a
+    // page that already has one, and document-global id lookups always hit
+    // the FIRST dock — leaving the overlay's copy with empty icon slots
+    // (blank + button, label-only tabs). Every dock now fills its own
+    // elements regardless of how many are mounted.
+    container.querySelector('#dock-icon-home').innerHTML = (active === 'home') ? Icons.home : Icons.homeOutline;
+    container.querySelector('#dock-icon-explore').innerHTML = Icons.compass;
+    container.querySelector('#dock-icon-create').innerHTML = Icons.plus;
 
     // New-likes badge dot (tracker item idea-notify-likes) -- the same
     // synchronous, no-network read every bottom-nav page has always done.
     // See js/store.js's getCachedNewLikesCount doc block for why this
     // never fetches anything itself.
-    document.getElementById('nav-profile-badge').hidden =
+    container.querySelector('#nav-profile-badge').hidden =
       !(typeof DreamStore !== 'undefined' && DreamStore.getCachedNewLikesCount() > 0);
   }
 
