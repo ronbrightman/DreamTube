@@ -286,56 +286,55 @@ test('creditTokenPackAmountOnce is idempotent per paymentId when called directly
 
 // ----- Round-2 review findings: stale-read balance clobber, and exhaustion-must-throw -----
 //
-// These use mock-blobs.js's setReadOverride/clearReadOverride to simulate
-// hazards the plain in-memory Map can't otherwise reproduce: a read that
-// lands behind a write that already happened (Blobs has no
-// read-your-own-write guarantee — see this file's own header comment on
-// the strong-consistency incident), and a verify read that never
-// converges within the bounded attempt count.
+// These use mock-blobs.js's setCasReadOverride/clearCasReadOverride (the
+// getWithMetadata()-side counterpart to setReadOverride/clearReadOverride,
+// see that file's own header comment) to simulate hazards the plain
+// in-memory Map can't otherwise reproduce: a CAS read that observes stale
+// state (Blobs' read side is still only eventually consistent even under
+// real compare-and-swap — see lib/blobs-cas.js's own header comment), and
+// a CAS read that never converges within the bounded attempt count.
 //
-// NOTE on an earlier, broken version of these tests: the first attempt at
-// this monkeypatched `require('@netlify/blobs').getStore` directly, but
-// entitlements.js/blobs-retry.js both do `var { getStore } =
-// require('@netlify/blobs')` at module-load time, copying the function
-// reference into a local binding — reassigning the exports property
-// afterward never reaches those already-bound locals, so the override
-// silently had no effect at all (every test using it "passed" or "failed"
-// for the wrong reason — the real, un-intercepted store was used
-// throughout). setReadOverride fixes this by living inside fakeGetStore's
-// own closure instead, which every caller already holds a reference to
-// regardless of when they destructured it.
+// CAS REWRITE NOTE: this section used to intercept get() (via
+// setReadOverride/callIndex counting), simulating blobs-retry.js's old
+// read -> mutate -> write -> verify loop. Now that creditTokenPackAmountOnce
+// goes through blobsCas.casWrite (lib/blobs-cas.js), its own reads are
+// getWithMetadata() calls, a SEPARATE override mechanism — a get()-based
+// override no longer intercepts anything on this path. See lib/blobs-
+// cas.js's own header comment for why a stale read can no longer silently
+// commit a wrong value under CAS (a wrong guess's conditional write is
+// atomically rejected, not written) — these tests now PROVE that directly:
+// force a stale read on the FIRST attempt, and confirm the write is
+// rejected and retried against the real state, rather than merely
+// confirming the end-to-end result happens to be right.
 
-test("creditTokenPackAmountOnce bases the new balance on syncTokens' own returned value, not a stale independent re-read (a stale re-read would silently discard a just-applied signup grant)", async function () {
-  // Against a brand-new email, two STORE_NAME reads happen BEFORE
-  // creditTokenPackAmountOnce's own independent retryingWrite `read()`
-  // ever runs: syncTokens' own getEntitlement (call #1, genuinely sees
-  // nothing) and, once that decides to apply the first-ever signup grant,
-  // setEntitlement's own internal existing-read as part of persisting it
-  // (call #2). Call #3 is the one this test actually targets —
-  // creditTokenPackAmountOnce's own read, landing (in this simulation)
-  // BEFORE syncTokens' just-completed signup-grant write has propagated
-  // to it. Every later get() call (the verify-read, and any retry) sees
-  // the real current state.
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
-    if (callIndex === 3) {
-      return { value: { email: key, tokens: { balance: 0, lastClaimAt: Date.now() - 100000 } } };
+test("a stale first CAS read (observing a pre-signup-grant snapshot with a non-current etag) is atomically REJECTED, not silently committed — the retry lands on the real balance", async function () {
+  // Seed the record directly (bypassing syncTokens' own init branch
+  // entirely) so this test targets ONLY creditTokenPackAmountOnce's own
+  // casWrite loop, with no ambiguity about how many getWithMetadata calls
+  // syncTokens' own init might separately make.
+  await entitlements.setEntitlement({}, 'staleread@example.com', { tokens: { balance: 320, lastClaimAt: Date.now() - 100000 } });
+
+  // Attempt 1 of creditTokenPackAmountOnce's own casWrite loop observes a
+  // STALE snapshot (balance 0, as if read before the real 320 grant had
+  // propagated) carrying an etag that can never match the record's real
+  // current one — forcing the conditional write below to be built on a
+  // wrong base. Every later attempt falls through to the real, current
+  // state (a real etag that DOES match, so its write succeeds).
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 1) {
+      return { value: { data: { email: key, tokens: { balance: 0, lastClaimAt: Date.now() - 100000 } }, etag: 'stale-etag-will-never-match', metadata: {} } };
     }
-    return null; // fall through to the real stored value for every other call
+    return null; // fall through to the real current state
   });
 
   try {
-    // Deliberately brand-new/unseeded: syncTokens (called first, inside
-    // creditTokenPackAmountOnce) applies the one-time 320-token signup
-    // grant as part of this very call. No bonus multiplier applies
-    // regardless of purchase history (retired 2026-08-02, "The Vault"
-    // shop redesign) — the credit is always the plain base amount.
     var applyResult = await entitlements.creditTokenPackAmountOnce({}, 'staleread@example.com', 'pay_stale_read', 100);
-    assert.equal(applyResult.ok, true);
+    assert.equal(applyResult.ok, true, 'the retry must still succeed once a fresher attempt reads the real state');
 
     var record = await entitlements.getEntitlement({}, 'staleread@example.com');
-    assert.equal(record.tokens.balance, 320 + 100, "balance must be 320 (signup grant, from syncTokens' own in-memory return value) + 100 (this credit) — a buggy re-read-based implementation would compute 0 + 100 = 100 here, silently discarding the signup grant that had just landed");
+    assert.equal(record.tokens.balance, 320 + 100, 'balance must be 320 (the REAL pre-existing balance) + 100 (this credit) — attempt 1\'s stale-based write (0 + 100 = 100) must have been atomically rejected, never persisted');
   } finally {
-    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
   }
 });
 
@@ -371,8 +370,14 @@ test("genuine exhaustion applying the balance credit (creditTokenPackAmountOnce'
     email: email, tokens: 100, status: 'pending', claimId: 'stale', createdAt: Date.now() - 5000
   });
 
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function () {
-    return { value: undefined };
+  // Every CAS read against the entitlement record comes back with an etag
+  // that can never match the real current one — every attempt's
+  // conditional write is therefore atomically rejected, genuinely
+  // exhausting the loop (not just failing to observe a write that
+  // actually landed, the old verify-loop hazard this simulated before the
+  // CAS migration — see this section's own header comment).
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key) {
+    return { value: { data: { email: key, tokens: { balance: 0 } }, etag: 'stale-etag-will-never-match', metadata: {} } };
   });
 
   try {
@@ -382,7 +387,7 @@ test("genuine exhaustion applying the balance credit (creditTokenPackAmountOnce'
       'genuine exhaustion applying the balance credit must throw too, not leave the marker pending forever with no way to resume'
     );
   } finally {
-    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
   }
 });
 

@@ -129,15 +129,27 @@
 //    `set(key, value, { onlyIfNew: true })` and `{ onlyIfMatch: etag }`,
 //    returning `{ modified: boolean }` and implemented server-side via
 //    if-none-match/if-match — which is exactly the compare-and-swap
-//    primitive this file's header says doesn't exist, and would let every
-//    single-key dedup-marker call site (first-dream-email-store.js,
-//    push-dedup-store.js, entitlements.js's payment/refund markers) drop
-//    the read/verify race entirely. The installed 8.2.0 has none of it.
-//    Deliberately NOT taken here: that is a two-major-version dependency
-//    bump touching every Blobs-backed store including the money paths, its
-//    behavior against this specific deploy environment cannot be verified
-//    from a sandbox, and it needs its own reviewed change — see this
-//    tracker item's round-4 write-up.
+//    primitive this file's header says doesn't exist. The installed 8.2.0
+//    has none of it. UPDATE (2026-08 onward, see lib/blobs-cas.js): this IS
+//    now taken, but deliberately SCOPED rather than a blanket SDK bump —
+//    installed as a separate aliased `blobs10` package (see package.json),
+//    used only where the "concurrent writes to the SAME key landing out of
+//    order" race actually applies: first-dream-email-store.js/
+//    push-dedup-store.js's own once-ever dedup markers (the original spike,
+//    tracker item for-product-spike-conditional-write-only-rnurgw), and —
+//    as of tracker item for-product-p1-urgent-fresh-signup-can-d-qhrrqy's
+//    own follow-up — entitlements.js's per-email balance-record writers
+//    (syncTokens' init write, claimDailyTokens, creditTokenPackAmountOnce,
+//    refundTokenAmountOnce, applyAchievementGrantOnce) and like-dream.js's
+//    feed-index write, see lib/blobs-cas.js's own header comment for the
+//    full "why now, and why this shape" reasoning. Every OTHER store in
+//    this codebase — including this file itself and entitlements.js's OWN
+//    payment/refund/achievement MARKER stores (keyed by an opaque
+//    paymentId/jobId/achievement-pair, not by email — a different key per
+//    event, so the same-key race this migration closes doesn't apply to
+//    them) — deliberately stays on this file/`@netlify/blobs` 8.2.0. Not a
+//    blanket dependency bump: each migration is its own scoped, reviewed
+//    change, applied only where a real, evidenced race justifies it.
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 

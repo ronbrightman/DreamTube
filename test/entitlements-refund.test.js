@@ -323,31 +323,34 @@ test('refundTokenAmountOnce is idempotent per jobId when called directly twice',
 
 // ----- Balance-base correctness + exhaustion-must-throw -----
 
-test("refundTokenAmountOnce bases the new balance on syncTokens' own returned value, not a stale independent re-read", async function () {
-  // Same three-call sequence entitlements-token-purchases.test.js's own
-  // equivalent test documents for creditTokenPackAmountOnce (identical
-  // structure — syncTokens then retryingWrite, both against STORE_NAME):
-  // call #1 is syncTokens' own getEntitlement (sees nothing, brand-new
-  // email); call #2 is that same first-ever-read branch's internal
-  // setEntitlement existing-read, persisting the signup grant; call #3 is
-  // refundTokenAmountOnce's own retryingWrite `read()` for its first
-  // attempt — the one this test actually targets, simulated as landing
-  // BEFORE the signup grant's write (from call #2) has propagated to it.
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
-    if (callIndex === 3) {
-      return { value: { email: key, tokens: { balance: 0, lastClaimAt: Date.now() - 100000 } } };
+// CAS REWRITE NOTE (mirrors entitlements-token-purchases.test.js's own
+// identical note for creditTokenPackAmountOnce): refundTokenAmountOnce now
+// goes through blobsCas.casWrite (lib/blobs-cas.js), whose reads are
+// getWithMetadata() calls — a get()-based setReadOverride no longer
+// intercepts anything on this path. Use setCasReadOverride instead, and
+// prove the CAS invariant directly: a stale read's conditional write is
+// atomically rejected, never silently committed.
+test("a stale first CAS read (observing a pre-signup-grant snapshot with a non-current etag) is atomically REJECTED, not silently committed — the retry lands on the real balance", async function () {
+  // Seed the record directly (bypassing syncTokens' own init branch
+  // entirely) so this test targets ONLY refundTokenAmountOnce's own
+  // casWrite loop.
+  await entitlements.setEntitlement({}, 'refundstaleread@example.com', { tokens: { balance: 320, lastClaimAt: Date.now() - 100000 } });
+
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 1) {
+      return { value: { data: { email: key, tokens: { balance: 0, lastClaimAt: Date.now() - 100000 } }, etag: 'stale-etag-will-never-match', metadata: {} } };
     }
-    return null; // fall through to the real stored value for every other call
+    return null; // fall through to the real current state
   });
 
   try {
     var result = await entitlements.refundTokenAmountOnce({}, 'refundstaleread@example.com', 'job_stale_read', 100);
-    assert.equal(result.ok, true);
+    assert.equal(result.ok, true, 'the retry must still succeed once a fresher attempt reads the real state');
 
     var record = await entitlements.getEntitlement({}, 'refundstaleread@example.com');
-    assert.equal(record.tokens.balance, 320 + 100, "balance must be 320 (Token Economy C's INITIAL_GRANT, from syncTokens' own in-memory return value) + 100 (this refund) — a buggy re-read-based implementation would compute 0 + 100 = 100 here, silently discarding the signup grant that had just landed");
+    assert.equal(record.tokens.balance, 320 + 100, 'balance must be 320 (the REAL pre-existing balance) + 100 (this refund) — attempt 1\'s stale-based write (0 + 100 = 100) must have been atomically rejected, never persisted');
   } finally {
-    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
   }
 });
 
@@ -381,8 +384,12 @@ test("genuine exhaustion applying the balance credit (refundTokenAmountOnce's ow
     email: email, amount: 100, status: 'pending', claimId: 'stale', createdAt: Date.now() - 5000
   });
 
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function () {
-    return { value: undefined };
+  // Every CAS read against the entitlement record comes back with an etag
+  // that can never match the real current one, so every attempt's
+  // conditional write is atomically rejected — genuine exhaustion, not a
+  // write that actually landed but went unobserved.
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key) {
+    return { value: { data: { email: key, tokens: { balance: 0 } }, etag: 'stale-etag-will-never-match', metadata: {} } };
   });
 
   try {
@@ -392,7 +399,7 @@ test("genuine exhaustion applying the balance credit (refundTokenAmountOnce's ow
       'genuine exhaustion applying the balance credit must throw too, not leave the marker pending forever with no way to resume'
     );
   } finally {
-    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
   }
 });
 
