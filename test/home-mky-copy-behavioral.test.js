@@ -1,34 +1,30 @@
-// test/home-hero-whisper-mky-copy-behavioral.test.js
+// test/home-mky-copy-behavioral.test.js
 //
-// Behavioral coverage for the two disjoint pieces of tracker item
-// for-product-build-ship-today-founder-app-zn9zyy's home-related portion
-// (the founder-amendment comment, 2026-08-02T08:18):
+// Behavioral coverage for the Make-it-yours card's "install" vs "add to
+// your home screen" copy split (tracker item for-product-build-ship-
+// today-founder-app-zn9zyy's home-related portion, the founder-amendment
+// comment, 2026-08-02T08:18) -- unified everywhere on that card (reward
+// line, done-state, the inline install-row CTA + its supporting text, the
+// no-PwaInstall webview fallback note) plus js/install-nudge.js's own
+// small nudge card's fallback CTA button (the same split existed there
+// too -- its head already said "Add DreamTube to your home screen", but
+// its button underneath said "Install").
 //
-//   1. Tonight hero "empty sky" — moon (the existing .hero-tonight
-//      background glow, untouched) + a cycling whisper line ONLY, no
-//      streak-sky constellation stars (those already live on the ritual
-//      module tile below -- test/home-round4-behavioral.test.js already
-//      covers that the ritual module's own constellation renders; this
-//      file proves the Tonight hero never duplicates it). Copy + the 8s-
-//      fade cycling mechanism are verbatim from home-mock5-x7q4.html's own
-//      WHISPERS array / whisper-cycling code -- see home.html's own
-//      renderTonightHero()/the module-level whisper setInterval it added.
-//   2. The Make-it-yours card's "install" vs "add to your home screen"
-//      copy split -- unified everywhere on that card (reward line,
-//      done-state, the inline install-row CTA + its supporting text, the
-//      no-PwaInstall webview fallback note) plus js/install-nudge.js's
-//      own small nudge card's fallback CTA button (the same split existed
-//      there too -- its head already said "Add DreamTube to your home
-//      screen", but its button underneath said "Install").
+// RENAMED from home-hero-whisper-mky-copy-behavioral.test.js (tracker item
+// for-product-founder-08-07-homepage-hero--015hgp): this file used to also
+// cover the Tonight hero's "empty sky" moon + cycling whisper line, the
+// OTHER disjoint piece of the same zn9zyy tracker item's home-related
+// portion. The founder's 015hgp ruling replaced that whole card's
+// unlogged prompt state (whisper included) with a single bare button, so
+// the whisper feature itself no longer exists anywhere in home.html --
+// that section's tests were deleted rather than updated (nothing left to
+// assert), and this file was renamed to describe what it actually covers
+// now that only piece 2 remains. See git history for the deleted whisper
+// coverage if ever useful as a reference for reintroducing similar copy.
 //
 // Follows this repo's established Playwright/node:test convention (test/
 // home-round4-behavioral.test.js's own seedHomeUser/mockTokenStatus/
-// mockFeed/blockThirdParty shape) rather than inventing a new one. The
-// viewport-sweep helper below (VIEWPORTS) is new to this file -- no
-// existing home.html test iterates multiple sizes in one test (they all
-// use one fixed MOBILE_VIEWPORT) -- built directly from Playwright's own
-// browser.newContext({ viewport }) API, same shape this codebase already
-// uses per-test, just looped.
+// mockFeed/blockThirdParty shape) rather than inventing a new one.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -106,163 +102,8 @@ async function seedHomeUser(page, opts) {
   await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
 }
 
-var WHISPERS = [
-  'Falling? Flying? A face you knew?',
-  'A door that wasn’t there before?',
-  'A place you’ve never been — but knew.'
-];
-
 // ============================================================================
-// 1a. TONIGHT HERO -- moon + whisper only, no streak-sky stars
-// ============================================================================
-
-test('home.html: the Tonight hero shows a non-empty whisper line while unlogged, and carries NO streak-sky/constellation markup -- the founder\'s own "already on the ritual tile, duplication" call', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page);
-    await mockFeed(page, []);
-    await seedHomeUser(page, { username: 'whispertester1', dreams: [] });
-    await page.waitForSelector('#hero-tonight', { state: 'visible', timeout: 5000 });
-
-    var whisperEl = page.locator('#tonight-whisper');
-    assert.equal(await whisperEl.isHidden(), false, 'the whisper must be visible while tonight is unlogged');
-    var whisperText = (await whisperEl.textContent()).trim();
-    assert.ok(WHISPERS.indexOf(whisperText) !== -1, 'expected one of the mock\'s own approved whisper lines, got: ' + JSON.stringify(whisperText));
-
-    // No streak-sky/constellation DOM anywhere inside the Tonight hero --
-    // it was dropped entirely per the founder's amendment, not just hidden.
-    var streakSkyCount = await page.locator('#hero-tonight .streak-sky, #hero-tonight #streak-sky, #hero-tonight .sstar, #hero-tonight .sline').count();
-    assert.equal(streakSkyCount, 0, 'the Tonight hero must never render a streak-sky constellation -- that already lives on the ritual module tile');
-  } finally {
-    await context.close();
-  }
-});
-
-test('home.html: the whisper is hidden once tonight is logged (both the plain logged-hero state and the embedded room-card state where the hero itself is hidden)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page);
-    await mockFeed(page, []);
-    // "No recall" logged tonight -- the plain hero-tonight.logged state, no embedded room card.
-    await seedHomeUser(page, { username: 'whispertester2', dreams: [], noRecallDates: [new Date().toDateString()] });
-    await page.waitForSelector('#hero-tonight.logged', { timeout: 5000 });
-    assert.equal(await page.locator('#tonight-whisper').isHidden(), true, 'the whisper must be hidden once tonight is logged');
-  } finally {
-    await context.close();
-  }
-});
-
-test('home.html: the whisper cycles through its 3 approved lines on a slow 8s fade, without ever landing on empty or repeating a line before the other two have shown (page.clock, no real wait)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.clock.install({ time: Date.now() });
-    await mockTokenStatus(page);
-    await mockFeed(page, []);
-    await seedHomeUser(page, { username: 'whispercycletester', dreams: [] });
-    await page.waitForSelector('#hero-tonight', { state: 'visible', timeout: 5000 });
-
-    var seen = [(await page.locator('#tonight-whisper').textContent()).trim()];
-    for (var i = 0; i < 4; i++) {
-      // 8000ms until the fade starts + 1250ms fade/swap timeout, plus a
-      // little slack so the swap has genuinely landed before we read it.
-      // runFor (not fastForward) -- the swap's own setTimeout is scheduled
-      // FROM INSIDE the 8s interval's callback, i.e. during the jump
-      // itself; fastForward only fires timers that were already scheduled
-      // before the jump started, so a nested one like this needs runFor's
-      // sequential tick-through semantics to actually fire in the same call.
-      await page.clock.runFor(9400);
-      seen.push((await page.locator('#tonight-whisper').textContent()).trim());
-    }
-
-    seen.forEach(function (text, idx) {
-      assert.ok(WHISPERS.indexOf(text) !== -1, 'tick ' + idx + ' landed on a non-empty, approved whisper line, got: ' + JSON.stringify(text));
-    });
-    // Exactly the 3 approved lines, seen across 5 samples of a 3-line cycle.
-    assert.deepEqual(Array.from(new Set(seen)).sort(), Array.from(new Set(WHISPERS)).sort());
-    // Consecutive ticks must actually advance, not repeat the same line twice in a row.
-    for (var j = 1; j < seen.length; j++) {
-      assert.notEqual(seen[j], seen[j - 1], 'tick ' + j + ' must advance to the next line, not repeat tick ' + (j - 1));
-    }
-  } finally {
-    await context.close();
-  }
-});
-
-// ============================================================================
-// 1b. TONIGHT HERO -- no text-overlap at any viewport (the founder's
-// screenshot bug: "whisper/label colliding with the image/moon area").
-// Exercised at the WORST-CASE state for vertical crowding -- a brand-new,
-// never-logged account (hasEverLogged:false) shows the extra "First night
-// -- any entry counts" d1 line AND, at narrow widths, the "What did you
-// dream?" title wraps to 2 lines -- both eat into the same top clearance
-// the whisper needs. See home.html's own .hero-tonight comment for the
-// real numbers this was tuned against.
-// ============================================================================
-
-var VIEWPORTS = [
-  { width: 320, height: 568, name: 'iPhone SE (1st gen) -- narrowest common width' },
-  { width: 375, height: 667, name: 'iPhone SE2/8' },
-  { width: 390, height: 844, name: 'iPhone 12/13' },
-  { width: 412, height: 915, name: 'Pixel 7' },
-  { width: 360, height: 740, name: 'common small Android' },
-  { width: 375, height: 600, name: 'squeezed height (short viewport, e.g. split-screen/landscape-adjacent)' },
-  { width: 320, height: 480, name: 'very short legacy device' }
-];
-
-test('home.html: the whisper never overlaps the Tonight eyebrow/title text, and keeps clear of the moon\'s own glow zone, across several representative mobile widths/heights', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  for (var i = 0; i < VIEWPORTS.length; i++) {
-    var vp = VIEWPORTS[i];
-    var context = await browser.newContext({ viewport: { width: vp.width, height: vp.height } });
-    try {
-      var page = await context.newPage();
-      await blockThirdParty(page);
-      await mockTokenStatus(page);
-      await mockFeed(page, []);
-      // Brand-new account -- day-1 state, the tallest realistic content
-      // stack (whisper + eyebrow + title + pill + entry links + d1line).
-      await seedHomeUser(page, { username: 'overlaptester' + i, dreams: [] });
-      await page.waitForSelector('#hero-tonight', { state: 'visible', timeout: 5000 });
-
-      var hero = await page.locator('#hero-tonight').boundingBox();
-      var whisper = await page.locator('#tonight-whisper').boundingBox();
-      var eyebrow = await page.locator('#hero-tonight .eyebrow').boundingBox();
-      var title = await page.locator('#tonight-title').boundingBox();
-      assert.ok(hero && whisper && eyebrow && title, vp.name + ': expected all four elements to have a real bounding box');
-
-      // No overlap with the real text below it -- the whisper's bottom edge
-      // must sit strictly above the eyebrow's top edge.
-      assert.ok(whisper.y + whisper.height <= eyebrow.y + 0.5, vp.name + ': whisper (bottom ' + (whisper.y + whisper.height).toFixed(1) + ') must not overlap the eyebrow (top ' + eyebrow.y.toFixed(1) + ')');
-      assert.ok(whisper.y + whisper.height <= title.y + 0.5, vp.name + ': whisper must not overlap the title either');
-
-      // Keeps clear of the moon's own glow zone -- the hero's background
-      // carries two radial-gradients centered at 15% from the card's top:
-      // a bright 56px-diameter disc (the moon itself, ~28px radius) and a
-      // softer 150px-diameter halo (~75px radius, fading to transparent).
-      // On a 436px-tall card that's roughly y=59 (15%) +/- 75 = a halo
-      // reaching to about y=134 from the card's top -- this asserts the
-      // whisper's own top edge sits below that with real margin, not just
-      // technically past the bright disc.
-      var clearance = whisper.y - hero.y;
-      // Threshold retuned for the founder's round-3 shorter hero (2026-08-07): the moon is now a smaller corner glow (104px halo centered 84%/11%, soft bottom edge ~82px from the card top) and the hero reserves 104px of sky via padding-top, so 100px is the honest clearance floor (was 140 against the old 150px halo at 15%).
-      assert.ok(clearance >= 100, vp.name + ': expected the whisper to start at least 100px below the hero\'s top edge (clear of the smaller corner moon\'s glow zone), got ' + clearance.toFixed(1));
-    } finally {
-      await context.close();
-    }
-  }
-});
-
-// ============================================================================
-// 2. MAKE-IT-YOURS CARD -- "install" vs "add to your home screen" unified
+// MAKE-IT-YOURS CARD -- "install" vs "add to your home screen" unified
 // ============================================================================
 
 test('home.html: the Make-it-yours reward line and done-state both say "add to your home screen"/"phone", never bare "install"', async function (t) {
