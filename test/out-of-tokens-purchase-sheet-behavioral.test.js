@@ -437,8 +437,12 @@ test('home.html: an E112 (insufficient tokens) generation failure auto-opens the
     assert.match(body, /75 more/);
     // The underlying Home screen is still visible/available underneath --
     // the sheet slides up OVER it, same "overlay, not a full replacement"
-    // treatment every other blocked-action entry point already has.
-    assert.equal(await page.locator('#hero-tonight').isVisible(), true);
+    // treatment every other blocked-action entry point already has. This
+    // account is unlogged, so the bare Tonight CTA button is what's
+    // showing (not #hero-tonight -- that card is reserved for the
+    // "logged tonight" confirmation state as of tracker item
+    // for-product-founder-08-07-homepage-hero--015hgp).
+    assert.equal(await page.locator('#tonight-cta').isVisible(), true);
   } finally {
     await context.close();
   }

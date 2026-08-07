@@ -201,7 +201,7 @@ test('home.html redirects to login.html when not authenticated', async function 
   }
 });
 
-test('home.html: a brand-new (D1) account sees the Tonight hero\'s "first night" line, all three quiet entry links, the primary pulsing pill, "Start your streak tonight" in the ritual module, and the My Dreams row hidden entirely -- never a punitive missed-day message anywhere on the page', async function (t) {
+test('home.html: a brand-new (D1) account sees the bare Tonight CTA button, "Start your streak tonight" in the ritual module, and the My Dreams row hidden entirely -- never a punitive missed-day message anywhere on the page', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -210,16 +210,15 @@ test('home.html: a brand-new (D1) account sees the Tonight hero\'s "first night"
     await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: 0, dailyClaimAmount: 100, streak: 0 });
     await seedHomeUser(page, {});
 
-    await page.waitForSelector('#tonight-d1', { state: 'visible', timeout: 5000 });
-    var d1Text = await page.locator('#tonight-d1').textContent();
-    assert.match(d1Text, /first night/i);
-
-    assert.equal(await page.locator('#tonight-links').isVisible(), true);
-    assert.equal(await page.locator('#btn-write').isVisible(), true);
-    assert.equal(await page.locator('#btn-speak').isVisible(), true);
-    assert.equal(await page.locator('#btn-norecall').isVisible(), true);
-    assert.equal(await page.locator('#tonight-pill').isVisible(), true);
-    assert.match(await page.locator('#tonight-pill').getAttribute('class'), /\bpulse\b/, 'the primary pill must pulse while tonight is unlogged');
+    // Founder ruling 2026-08-07 (tracker item for-product-founder-08-07-
+    // homepage-hero--015hgp) replaced the old card's "First night — any
+    // entry counts" d1 line and Write/Speak/No-recall quiet-link row with
+    // a single bare button -- there is no longer any day-1-specific copy
+    // in this slot at all, so this test now only proves the button itself.
+    await page.waitForSelector('#tonight-cta', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#tonight-cta').textContent(), 'What did you dream?');
+    assert.match(await page.locator('#tonight-cta').getAttribute('class'), /\bpulse\b/, 'the button must pulse while tonight is unlogged');
+    assert.equal(await page.locator('#hero-tonight').isVisible(), false, 'the logged-confirmation card must stay hidden while tonight is unlogged');
 
     var ritualBig = await page.locator('#ritual-big').textContent();
     assert.match(ritualBig, /start your streak tonight/i);
@@ -256,29 +255,25 @@ test('home.html: an account with only a LEGACY dream (no createdAt field) is nev
   }
 });
 
-test('home.html: tapping "No recall" logs today without any token/claim call, flips the Tonight hero to the logged state, reveals the My Dreams row (now that this account has logged something) with its empty-state message, and persists across a reload', async function (t) {
+test('home.html: an account already logged as "No recall" tonight (DreamStore.logNoRecallToday state, no live home-screen entry point as of tracker item for-product-founder-08-07-homepage-hero--015hgp) shows the logged-confirmation card (bare Tonight CTA hidden), reveals the My Dreams row with its empty-state message, and persists across a reload', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 220, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 3 });
-    var claimCalled = false;
-    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
-      claimCalled = true;
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: false, nextClaimAt: 0 }) });
-    });
-    await seedHomeUser(page, { dreams: [] });
+    // The home-screen "No recall" quiet link that used to drive this state
+    // is gone as of the 015hgp hero simplification -- seeded directly here
+    // (same technique this file already uses elsewhere, e.g. the
+    // norecalltester case below) rather than via a UI click, since there is
+    // no longer a UI action left on this page to click. The underlying
+    // DreamStore.logNoRecallToday()/noRecallDates data path this seeds is
+    // still real and still read by getDreamLogStatus -- only its home-screen
+    // entry point was removed.
+    await seedHomeUser(page, { dreams: [], noRecallDates: [new Date().toDateString()] });
 
-    await page.waitForSelector('#btn-norecall', { timeout: 5000 });
-    await page.click('#btn-norecall');
-
-    await page.waitForFunction(function () {
-      var el = document.getElementById('hero-tonight');
-      return el && el.classList.contains('logged');
-    }, null, { timeout: 5000 });
-    assert.equal(await page.locator('#tonight-pill').isVisible(), false, 'the primary pill should hide once tonight is logged');
-    assert.equal(await page.locator('#tonight-links').isVisible(), false, 'the quiet entry links should hide once tonight is logged');
+    await page.waitForSelector('#hero-tonight.logged', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#tonight-cta').isVisible(), false, 'the bare Tonight button should hide once tonight is logged');
     var quoteText = await page.locator('#tonight-quote').textContent();
     // "No recall" wording removed from this logged-state copy (founder
     // walkthrough punch list, 2026-08-01, tracker item
@@ -296,9 +291,7 @@ test('home.html: tapping "No recall" logs today without any token/claim call, fl
     await page.waitForSelector('#dreams-empty', { state: 'visible', timeout: 5000 });
     assert.equal(await page.locator('#dreams-row').isVisible(), false);
 
-    assert.equal(claimCalled, false, 'logging "no recall" must never call the token-claim endpoint -- it grants nothing');
-
-    // Persists across a reload (real store.js write, not just in-memory JS state).
+    // Persists across a reload (real store.js read, not just in-memory JS state).
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(function () {
       var el = document.getElementById('hero-tonight');
@@ -894,7 +887,7 @@ test('home.html: the Bar A night dock is Home (active) / Explore / +Create / Pro
   }
 });
 
-test('home.html: Write / Speak quiet links reuse create.html\'s EXISTING entry points via the same deep-link convention as ?record=1', async function (t) {
+test('home.html: the bare Tonight CTA button has the founder\'s exact "What did you dream?" text, no card chrome around it, a real tap-target size, and lands on create.html\'s EXISTING Build/Write/Record choice screen (a bare create.html deep-link, no ?build=1) -- tracker item for-product-founder-08-07-homepage-hero--015hgp (founder ruling: "kill the square, bare \'What did you dream?\' button -> 3-choice screen"), superseding the earlier for-product-founder-ask-08-05-tell-your--vmfvsk fix that first pointed the old pill at this same bare create.html destination', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -903,37 +896,34 @@ test('home.html: Write / Speak quiet links reuse create.html\'s EXISTING entry p
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
     await seedHomeUser(page, { dreams: [] });
 
-    await page.waitForSelector('#btn-write', { timeout: 5000 });
-    await page.click('#btn-write');
-    await page.waitForURL(/create\.html\?write=1/, { timeout: 5000, waitUntil: 'domcontentloaded' });
-    assert.equal(await page.locator('#create-write').isVisible(), true, '?write=1 must land directly in Write mode');
-  } finally {
-    await context.close();
-  }
-});
+    await page.waitForSelector('#tonight-cta', { timeout: 5000 });
+    var cta = page.locator('#tonight-cta');
+    assert.equal(await cta.isVisible(), true);
+    assert.equal(await cta.textContent(), 'What did you dream?', 'button text must be EXACTLY the founder\'s wording, including the question mark');
+    assert.match(await cta.getAttribute('class'), /\bpill\b/);
+    var ctaBox = await cta.boundingBox();
+    assert.ok(ctaBox.height >= 44, 'the button must meet a real tap-target minimum (spec: 56px tall)');
 
-test('home.html: the Tonight hero\'s pill is the primary, pulsing "Tell your dream" action and now lands on create.html\'s EXISTING Build/Write/Record choice screen (a bare create.html deep-link, no ?build=1) rather than skipping straight into the wizard (tracker item for-product-founder-ask-08-05-tell-your--vmfvsk, founder preview catch: "when I clicked the Tell your dream button I was redirected to wizard without the choice first or without the suggestion to record or write instead" -- supersedes the earlier for-product-home-screen-spec-drift-from--575djz fix that sent the pill straight to ?build=1)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
-    await seedHomeUser(page, { dreams: [] });
+    // No card/box/background art anywhere around the button -- it's a
+    // bare <button>, not wrapped in a .hero-card ancestor (that older
+    // card only survives, hidden by default, for the separate "logged
+    // tonight" confirmation state).
+    var tagName = await cta.evaluate(function (el) { return el.tagName; });
+    assert.equal(tagName, 'BUTTON');
+    var heroCardAncestor = await cta.evaluate(function (el) { return !!el.closest('.hero-card'); });
+    assert.equal(heroCardAncestor, false, 'the CTA button must not sit inside any .hero-card container');
+    assert.equal(await page.locator('#hero-tonight').isVisible(), false, 'the old moon-card is hidden while tonight is unlogged');
 
-    await page.waitForSelector('#tonight-pill', { timeout: 5000 });
-    assert.equal(await page.locator('#tonight-pill').isVisible(), true);
-    assert.match(await page.locator('#tonight-pill').getAttribute('class'), /\bpill\b/);
-    var pillBox = await page.locator('#tonight-pill').boundingBox();
-    assert.ok(pillBox.height >= 44, 'the primary pill must meet a real tap-target minimum (spec: 56px tall)');
+    // No sub-copy of any kind below the button (the old whisper, day-1
+    // line, and Write/Speak/No-recall quiet-link row are all gone).
+    assert.equal(await page.locator('#tonight-whisper').count(), 0);
+    assert.equal(await page.locator('#tonight-d1').count(), 0);
+    assert.equal(await page.locator('#tonight-links').count(), 0);
+    assert.equal(await page.locator('#btn-write').count(), 0);
+    assert.equal(await page.locator('#btn-speak').count(), 0);
+    assert.equal(await page.locator('#btn-norecall').count(), 0);
 
-    // DOM order of the quiet entry links underneath: Write, Speak, No
-    // recall -- these remain as a faster one-tap shortcut for a returning
-    // user, alongside the pill now also offering the full choice.
-    var entryIds = await page.locator('#tonight-links button').evaluateAll(function (els) { return els.map(function (e) { return e.id; }); });
-    assert.deepEqual(entryIds, ['btn-write', 'btn-speak', 'btn-norecall']);
-
-    await page.click('#tonight-pill');
+    await page.click('#tonight-cta');
     await page.waitForURL(function (url) { return /\/create\.html$/.test(url.pathname) && url.search === ''; }, { timeout: 5000, waitUntil: 'domcontentloaded' });
 
     // Confirm the actual Build/Write/Record choice screen is what's
@@ -959,7 +949,7 @@ test('home.html: the Tonight hero\'s pill is the primary, pulsing "Tell your dre
   }
 });
 
-test('home.html: the Tonight hero pill\'s choice screen, from Write it / Record it, still leads to their correct existing destinations (create.html\'s own #choice-write/#choice-record handlers, unchanged)', async function (t) {
+test('home.html: the Tonight CTA button\'s choice screen, from Write it / Record it, still leads to their correct existing destinations (create.html\'s own #choice-write/#choice-record handlers, unchanged)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -968,8 +958,8 @@ test('home.html: the Tonight hero pill\'s choice screen, from Write it / Record 
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
     await seedHomeUser(page, { dreams: [] });
 
-    await page.waitForSelector('#tonight-pill', { timeout: 5000 });
-    await page.click('#tonight-pill');
+    await page.waitForSelector('#tonight-cta', { timeout: 5000 });
+    await page.click('#tonight-cta');
     await page.waitForSelector('#choice-write', { state: 'visible', timeout: 5000 });
     await page.click('#choice-write');
     await page.waitForSelector('#create-write', { state: 'visible', timeout: 5000 });
@@ -978,7 +968,7 @@ test('home.html: the Tonight hero pill\'s choice screen, from Write it / Record 
     await context.close();
   }
 
-  // Fresh page for Record it, same pill entry point. Needs a fake
+  // Fresh page for Record it, same CTA entry point. Needs a fake
   // getUserMedia/MediaRecorder (same convention as test/record-mode-
   // behavioral.test.js's installMediaRecorderMock) so #choice-record's
   // real startRecordingUI() can run end to end without a real mic.
@@ -1011,8 +1001,8 @@ test('home.html: the Tonight hero pill\'s choice screen, from Write it / Record 
     await mockTokenStatus(page2, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
     await seedHomeUser(page2, { dreams: [] });
 
-    await page2.waitForSelector('#tonight-pill', { timeout: 5000 });
-    await page2.click('#tonight-pill');
+    await page2.waitForSelector('#tonight-cta', { timeout: 5000 });
+    await page2.click('#tonight-cta');
     await page2.waitForSelector('#choice-record', { state: 'visible', timeout: 5000 });
     await page2.click('#choice-record');
     // #choice-record's own handler (startRecordingUI) opens the record
@@ -1025,7 +1015,7 @@ test('home.html: the Tonight hero pill\'s choice screen, from Write it / Record 
   }
 });
 
-test('home.html: analytics -- home_viewed fires on load, home_today_entry_tapped fires for the no_recall tap, home_card_tapped fires on a card tap, and no event name or string prop is ever health/therapy-flavored', async function (t) {
+test('home.html: analytics -- home_viewed fires on load, home_today_entry_tapped fires for the Tonight CTA tap, home_card_tapped fires on a card tap, and no event name or string prop is ever health/therapy-flavored', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -1034,16 +1024,31 @@ test('home.html: analytics -- home_viewed fires on load, home_today_entry_tapped
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 });
     await seedHomeUser(page, { dreams: [] });
 
-    await page.waitForSelector('#btn-norecall', { timeout: 5000 });
+    await page.waitForSelector('#tonight-cta', { timeout: 5000 });
     var initialCalls = await readPostHogCalls(page);
     assert.equal(captures(initialCalls, 'home_viewed').length, 1);
 
-    await page.click('#btn-norecall');
-    await page.waitForSelector('#dreams-empty', { state: 'visible', timeout: 5000 });
-
-    await page.click('#dreams-empty');
-
-    var phCalls = await readPostHogCalls(page);
+    // The CTA's click handler tracks synchronously, THEN navigates
+    // (location.href = 'create.html') -- a real top-level navigation
+    // begins essentially immediately in Chromium (page.route() stalling
+    // the request does NOT keep this document's JS context alive the way
+    // it does for a stalled XHR/fetch elsewhere in this suite), so the
+    // click AND the posthog read both happen inside ONE page.evaluate call
+    // (element.click() dispatches its listener synchronously -- track()
+    // and the location.href assignment both run before this same script
+    // turn yields, so reading window.posthog immediately after still sees
+    // them, before any navigation-driven unload can occur). The button
+    // also carries data-card="tonight", so this single tap fires BOTH
+    // home_today_entry_tapped (its own handler) and home_card_tapped (the
+    // whole-scroll delegated card-tap listener) -- no second click needed
+    // (unlike before this change, a brand-new D1 account like this one has
+    // no #dreams-empty to click yet -- that only appears once something
+    // has actually been logged).
+    await page.route('**/create.html', function () { /* never resolved -- avoids an unhandled-navigation console error; irrelevant to the assertion itself since the click+read below happen in one synchronous turn regardless */ });
+    var phCalls = await page.evaluate(function () {
+      document.getElementById('tonight-cta').click();
+      return (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];
+    });
     assert.equal(captures(phCalls, 'home_today_entry_tapped').length, 1);
     assert.equal(captures(phCalls, 'home_card_tapped').length >= 1, true);
 
@@ -1158,18 +1163,18 @@ test('home.html: the weekly-summary and streak-freeze analytics dedup flags are 
   }
 });
 
-test('home.html: no horizontal overflow at a real 390px mobile viewport, and the primary pill / entry links all meet a real tap-target minimum', async function (t) {
+test('home.html: no horizontal overflow at a real 390px mobile viewport, and the bare Tonight CTA button meets a real tap-target minimum', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 2 });
-    // Deliberately no dreams -- an unlogged-tonight account, so the quiet
-    // entry links under the Tonight hero are actually visible to measure
-    // (a "today" dream, like most other tests here seed, would flip tonight
-    // to its logged state and correctly hide them, per the mock's own
-    // state machine).
+    // Deliberately no dreams -- an unlogged-tonight account, so the bare
+    // Tonight CTA button is actually visible to measure (a "today" dream,
+    // like most other tests here seed, would flip tonight to its logged
+    // state and correctly hide it in favor of the logged-confirmation
+    // card, per the mock's own state machine).
     await seedHomeUser(page, { dreams: [] });
 
     await page.waitForSelector('#chamber-pill', { state: 'visible', timeout: 5000 });
@@ -1178,10 +1183,8 @@ test('home.html: no horizontal overflow at a real 390px mobile viewport, and the
     });
     assert.equal(overflowsHorizontally, false, 'home.html must not cause horizontal overflow at a real 390px mobile viewport');
 
-    var pillBox = await page.locator('#tonight-pill').boundingBox();
-    assert.ok(pillBox.height >= 44, 'the primary pill must meet a real tap-target minimum');
-    var entryBox = await page.locator('#btn-write').boundingBox();
-    assert.ok(entryBox.height >= 44, 'quiet entry links must meet a real 44px tap-target minimum');
+    var ctaBox = await page.locator('#tonight-cta').boundingBox();
+    assert.ok(ctaBox.height >= 44, 'the Tonight CTA button must meet a real tap-target minimum');
   } finally {
     await context.close();
   }

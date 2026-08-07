@@ -225,9 +225,9 @@ test('home.html day-0 card: forming state shows the shimmer/arc/caption veil, th
     assert.equal(await page.locator('#dreams').isVisible(), false);
 
     // innerText (not textContent) -- respects display:none, so a hidden
-    // #hero-tonight's own "No recall" quiet link (still in the DOM, just
-    // hidden while #day0-card owns this state) doesn't produce a false
-    // positive here.
+    // #hero-tonight's own "Nothing remembered" logged-quote copy (still in
+    // the DOM, just hidden while #day0-card owns this state) doesn't
+    // produce a false positive here.
     var bodyText = await page.locator('#app').innerText();
     assert.doesNotMatch(bodyText, /no recall/i, 'this state must never show the literal "No recall" phrase anywhere VISIBLE on the page');
   } finally {
@@ -683,8 +683,8 @@ test('home.html: the "haven\'t logged yet today" prompt state (unlogged Tonight 
     });
     await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('#tonight-pill', { state: 'visible', timeout: 5000 });
-    assert.doesNotMatch(await page.locator('#hero-tonight').getAttribute('class'), /\blogged\b/);
+    await page.waitForSelector('#tonight-cta', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#hero-tonight').isVisible(), false, 'the logged-confirmation card must stay hidden while tonight is genuinely unlogged');
     assert.equal(await page.locator('#day0-card').isVisible(), false);
   } finally {
     await context.close();
