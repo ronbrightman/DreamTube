@@ -25,6 +25,9 @@
   .cta.dim{opacity:.45;pointer-events:none}
   .skip{text-align:center;color:#8f88b3;font-size:13.5px;margin-top:4px;cursor:pointer;text-decoration:underline}
   .step{display:none}.step.on{display:block}
+  .custom-in{display:none;margin-top:2px}
+  .custom-in.on{display:block}
+  .custom-in input{width:100%;box-sizing:border-box;background:rgba(255,255,255,.07);border:1.5px solid #ff8bb3;border-radius:999px;color:#fff;font-size:16px;padding:13px 18px;outline:none}
   /* wall */
   .veil{border-radius:22px;background:radial-gradient(70% 90% at 50% 0%,rgba(183,131,255,.35),transparent 70%),rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.12);padding:18px;text-align:center;margin-bottom:16px}
   .veil .pulse{width:52px;height:52px;margin:4px auto 10px;border-radius:99px;background:radial-gradient(circle,#ffd9a0,#b783ff);animation:pu 2.2s ease-in-out infinite}
@@ -53,15 +56,19 @@ var STEPS = [
   { q:'Pick your dream’s style', sub:'', opts:[
     ['🎨','Cartoon'],['🎬','Cinematic'],['🌸','Anime'],['📷','Realistic']]},
   { q:'Anything to add?', sub:'A few extra words — totally optional.', free:true },
+  { q:'Here’s your dream — make it yours', sub:'Edit anything before we bring it to life.', recap:true },
   { q:'Where should we send your first dream?', sub:'', wall:true }
 ];
+var picks = {};
 var idx = 0;
 function render(){
   var dots = STEPS.map(function(_,i){ return '<i class="'+(i<idx?'done':i===idx?'on':'')+'"></i>'; }).join('');
   document.getElementById('dots').innerHTML = dots;
   var s = STEPS[idx], html = '<div class="step on"><h2>'+s.q+'</h2>'+(s.sub?'<p class="sub">'+s.sub+'</p>':'<div style="height:8px"></div>');
-  if (s.opts) html += s.opts.map(function(o,i){ return '<div class="opt'+(o[1][0]==='+'?' ghost':'')+'" data-i="'+i+'"><span class="chip">'+o[0]+'</span>'+o[1]+'</div>'; }).join('');
+  if (s.opts) html += s.opts.map(function(o,i){ return '<div class="opt'+(o[1][0]==='+'?' ghost':'')+'" data-i="'+i+'"><span class="chip">'+o[0]+'</span>'+o[1]+'</div>'; }).join('') +
+    '<div class="custom-in" id="custom-in"><input placeholder="Describe it in your own words…" id="custom-field"></div>';
   else if (s.free) html += '<textarea placeholder="Anything else about your dream…"></textarea><p class="skip">Skip</p>';
+  else if (s.recap) html += '<textarea style="min-height:150px;border-radius:22px" id="recap-field"></textarea><p class="sub" style="margin-top:10px">This exact text drives your video.</p>';
   else if (s.wall) html += '<div class="veil"><div class="pulse"></div><b>Your dream is forming…</b><span>“I was flying over a quiet sea, feeling weightless.”</span></div>'+
     '<div class="fb">📘 Continue with Facebook</div><div class="or">OR</div>'+
     '<input type="email" placeholder="you@email.com"><div style="color:#8f88b3;font-size:12px;text-align:center;margin-bottom:4px">Free to start, no card — we email your dream the moment it’s ready.</div>';
@@ -72,11 +79,36 @@ function render(){
     o.addEventListener('click', function(){
       document.querySelectorAll('.opt').forEach(function(x){x.classList.remove('sel');});
       o.classList.add('sel');
+      var isElse = o.textContent.indexOf('Something else') !== -1;
+      var custom = document.getElementById('custom-in');
+      if (isElse && custom){
+        // Founder fix (mock round 2): "+ Something else" opens a free
+        // input right under the rows instead of dead-ending — Continue
+        // advances with whatever was typed.
+        custom.classList.add('on');
+        document.getElementById('custom-field').focus();
+        return; // no auto-advance — the user is typing
+      }
+      if (custom) custom.classList.remove('on');
+      picks[idx] = o.textContent.trim();
       if (idx < 4) setTimeout(next, 260); // auto-advance on single-select steps, Flo-style
     });
   });
+  if (s.recap){
+    // Founder fix (mock round 2): show the assembled dream as editable
+    // text before anything generates — same as the real wizard's recap.
+    var parts = [];
+    var who = picks[0] || 'Me', where = picks[1] || 'somewhere unreal', what = picks[2] || 'flying', mood = picks[3] || 'dreamy';
+    document.getElementById('recap-field').value =
+      'I dreamt of ' + who.toLowerCase().replace('me','myself') + ' in ' + where.toLowerCase() +
+      ', ' + what.toLowerCase() + ' — it all felt ' + mood.toLowerCase().replace(' & ',' and ') + '.';
+  }
 }
-function next(){ if (idx < STEPS.length-1){ idx++; render(); } }
+function next(){
+  var cf = document.getElementById('custom-field');
+  if (cf && cf.closest('.custom-in').classList.contains('on') && cf.value.trim()) picks[idx] = cf.value.trim();
+  if (idx < STEPS.length-1){ idx++; render(); }
+}
 document.getElementById('cta').addEventListener('click', next);
 document.getElementById('back').addEventListener('click', function(){ if (idx>0){ idx--; render(); } });
 render();
