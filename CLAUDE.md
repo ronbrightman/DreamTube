@@ -39,6 +39,9 @@ several of them founder-urgent — the founder caught it, twice. The
 failure is in HOW the queue is read, so the reading rule is now fixed
 in writing:
 
+0. **Read `docs/TRACKER_PROTOCOL.md`** — the cross-session contract
+   (field names, queue definitions, heartbeats). The rules below are its
+   Product-specific application.
 1. **THE QUEUE IS**: every open (`done:false`) tracker item whose title
    carries `[for product]`, PLUS this repo's own open PRs, PLUS the
    Board's (`board-x7q4.html`) "In flight — PRODUCT" section. Nothing
@@ -63,7 +66,12 @@ in writing:
    re-skipped: "Manager-owned" is only true if a Manager comment on
    that item says so; "gated on founder" is only true if the item
    carries waitingFor:ron AND the Board shows it to him.
-4. Current founder-priority order on next wake: mood-music candidate
+4. **HEARTBEAT (protocol §3)**: end every real work cycle by appending
+   one `HB <ISO-time> queue=<n> acted=<n> note=<...>` comment to the
+   tracker item titled `[HB] product session heartbeat` (create it once
+   if missing) — this is how the rest of the portfolio tells "quiet"
+   from "down" without waking the founder.
+5. Current founder-priority order on next wake: mood-music candidate
    generation (2 per mood x 6 — the audition page shows 0 of 12,
    founder waiting) → claim-erasure race → edit-shows-old-video
    escalation → dream-vanish refund closure → double-credit
