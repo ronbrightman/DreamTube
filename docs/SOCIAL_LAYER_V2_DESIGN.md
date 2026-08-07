@@ -68,7 +68,11 @@ G. Interpretations: never on u.html. Owner-public-preview only, muted line under
 3. Follow (functions + button states + Explore chip + owner private counts).
 
 ## Out of scope
-Threaded comments, comment likes, public follower counts, dedicated following
+Threaded comments (**superseded — founder approved one-level threading as the
+next increment after this slice shipped; see tracker item
+for-product-founder-go-08-07-add-threadi-zb3j26 and docs/TEST_REGISTRY.md's
+own THREADING paragraph under this slice's row for what actually got built**),
+comment likes, public follower counts, dedicated following
 feed, notifications (seam only), interpretation opt-in (seam only), QR, /u/handle
 vanity redirect (later netlify.toml line).
 

@@ -9,6 +9,36 @@
 // sync-profile.js — a bare client-supplied handle would let anyone forge a
 // delete of someone else's comment.
 //
+// CASCADE DELETE ON REPLIES (tracker item
+// for-product-founder-go-08-07-add-threadi-zb3j26 — one-level threading on
+// top of slice 2's flat comments): deleting a TOP-LEVEL comment (its own
+// parentId is null/absent) also deletes every reply whose parentId points
+// at it, in the SAME store write (commentStore.deleteComments, plural — see
+// that function's own header comment). Deleting a REPLY deletes only that
+// one row, same as before threading existed. Chosen over a Reddit-style
+// "[deleted]" placeholder that preserves the replies: this codebase has no
+// existing soft-delete/placeholder concept for ANY content (comments,
+// dreams, reports) — every existing delete in this app is a real removal —
+// and introducing one here would be new, unproven UI/data surface for a
+// one-level-deep MVP feature. Full cascade removal is the simplest option
+// that's consistent with this endpoint's own pre-existing single-delete
+// semantics, just applied to more than one id when the target has replies.
+// PERMISSION is still evaluated against the TARGET comment only (commenter-
+// or-dream-owner, unchanged) — a cascade of the target's own replies
+// proceeds regardless of who wrote each individual reply, the same way
+// deleting a dream already removes every comment/report attached to it
+// without re-checking permission per attached item.
+//
+// commentCount SEMANTICS: the denormalized feed counter counts the WHOLE
+// comment tree (top-level + replies), not just top-level rows — see
+// add-comment.js's own +1-per-post (fires identically for a reply) and this
+// file's own delta below, which is -(however many rows this delete actually
+// removed: 1 for a lone comment/reply, or 1+repliesRemoved for a cascading
+// top-level delete). Chosen because the sheet's own visible "Comments · N"
+// count (js/comment-sheet.js) is total rows rendered, replies included —
+// a badge that undercounts what you actually see after opening the sheet
+// would be the confusing outcome, not this one.
+//
 // PERMISSION (design doc's own Data/API line): allowed if
 // commenter === caller OR dream owner === caller — i.e. you can always
 // delete your own comment, and a dream's own author can additionally
@@ -117,8 +147,14 @@ exports.handler = async function (event) {
       return { statusCode: 403, body: JSON.stringify({ error: 'E8: forbidden' }) };
     }
 
-    await commentStore.deleteComment(event, dreamId, commentId);
-    var newCount = await feedCommentCount.adjustCommentCount(event, dreamId, -1);
+    // See this file's own CASCADE DELETE ON REPLIES header comment.
+    var idsToDelete = [commentId];
+    if (!target.parentId) {
+      comments.forEach(function (c) { if (c.parentId === commentId) idsToDelete.push(c.id); });
+    }
+
+    await commentStore.deleteComments(event, dreamId, idsToDelete);
+    var newCount = await feedCommentCount.adjustCommentCount(event, dreamId, -idsToDelete.length);
     return { statusCode: 200, body: JSON.stringify({ ok: true, commentCount: newCount }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'delete_comment_failed: ' + (e && e.message) }) };

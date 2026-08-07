@@ -54,6 +54,33 @@
 // reopened for a DIFFERENT dream) must never mutate DOM that no longer
 // belongs to it.
 //
+// THREADING, one level deep (tracker item
+// for-product-founder-go-08-07-add-threadi-zb3j26 — the founder-approved
+// next increment after flat comments shipped). get-comments.js still
+// returns one FLAT array (each comment carries `parentId`, null for
+// top-level) — this file does the grouping at render time: `renderList`
+// buckets `loadedComments` into top-level comments each followed by its own
+// `.cs-replies` block, both levels kept in the SAME newest-first order the
+// flat array already arrives in (filtering a newest-first array can't
+// reorder what it keeps). A reply itself is never reply-able — `commentRowHTML`
+// only renders the "Reply" action on a top-level row, and `startReply` only
+// ever accepts a top-level comment id — this is the CLIENT half of the
+// one-level-deep limit; add-comment.js independently enforces the same rule
+// server-side (E12), since a hostile client could otherwise skip this file
+// entirely. `replyTarget` (module state, reset in show()/hide() same as
+// `loadedComments`) holds which top-level comment the composer is currently
+// scoped to, null for a plain top-level post — see renderComposer()'s own
+// comment for how that's surfaced in the composer UI, and submitComment()'s
+// own comment for why a FAILED reply post deliberately does NOT clear it
+// (so the user can retry without re-tapping Reply) while a successful one
+// does. Deleting a top-level comment cascades to its replies — see
+// deleteCommentAction's own comment for the client-side mirror of
+// delete-comment.js's server-side cascade (same header comment there has
+// the full "why cascade, not a [deleted] placeholder" reasoning).
+// `commentCount`/the sheet's own "Comments · N" title count the WHOLE tree
+// (top-level + replies), matching delete-comment.js's own commentCount
+// SEMANTICS comment.
+//
 // Plain script (no ES modules — see CLAUDE.md), attaches
 // window.CommentSheet.
 
@@ -63,8 +90,9 @@
   var SHEET_ID = 'comment-sheet-overlay';
   var current = null; // the opts object passed to the most recent show() call
   var currentGen = 0; // bumped on every show()/hide() -- see header comment
-  var loadedComments = []; // newest-first, decorated with nothing extra -- raw { id, handle, text, createdAt } records from get-comments.js (or an optimistic in-flight entry, see submitComment)
+  var loadedComments = []; // FLAT, newest-first -- raw { id, handle, text, parentId, createdAt } records from get-comments.js (or an optimistic in-flight entry, see submitComment); renderList groups these into threads at render time, see this file's own THREADING header comment
   var loadReqSeq = 0; // guards against an in-flight get-comments fetch resolving after a newer load() call (e.g. rapid re-open) landed first
+  var replyTarget = null; // the top-level comment {id,handle,...} the composer is currently scoped to reply to, or null for a plain top-level post -- reset in show()/hide(), see this file's own THREADING header comment
 
   var MAX_COMMENT_CHARS = 300;
   var COUNTER_WARN_AT = 250;
@@ -169,7 +197,8 @@
   // Rendering
   // ==========================================================================
 
-  function commentRowHTML(c) {
+  /** isReply: true for a row rendered inside a `.cs-replies` block -- suppresses the "Reply" action (one-level-deep limit, see this file's own THREADING header comment) and lets CSS de-emphasize/indent it via `.cs-replies .cs-comment`. */
+  function commentRowHTML(c, isReply) {
     var handle = stripAt(c.handle);
     var mine = myHandleLower() === handle.toLowerCase();
     var dreamOwnerHandle = current.dream && current.dream.ownerHandle;
@@ -184,6 +213,11 @@
       items += '<button type="button" class="cs-overflow-item" data-action="block">Block</button>';
     }
 
+    // Reply action -- top-level rows only. Rendered even for a signed-out
+    // viewer (same posture as the per-comment Block action above) so a tap
+    // routes through onRequireLogin rather than the button simply vanishing.
+    var replyBtn = isReply ? '' : '<button type="button" class="cs-reply-btn" data-reply-to="' + esc(c.id) + '">Reply</button>';
+
     return '<div class="cs-comment" data-comment-id="' + esc(c.id) + '">' +
       '<div class="cs-avatar" style="background:' + fallback.gradient + '">' + esc(fallback.initial) + '</div>' +
       '<div class="cs-body">' +
@@ -192,6 +226,7 @@
           '<span class="cs-time">' + esc(timeAgo(c.createdAt)) + '</span>' +
         '</div>' +
         '<div class="cs-text" dir="auto">' + esc(c.text) + '</div>' +
+        replyBtn +
       '</div>' +
       (items ? (
         '<div class="cs-overflow-wrap">' +
@@ -202,23 +237,45 @@
     '</div>';
   }
 
+  /** Builds one `.cs-thread` — a top-level comment plus its own `.cs-replies` block (empty when it has none). See this file's own THREADING header comment for the grouping/ordering rules. */
+  function threadHTML(topLevelComment) {
+    var replies = loadedComments.filter(function (r) { return r.parentId === topLevelComment.id; });
+    var repliesHTML = replies.length
+      ? ('<div class="cs-replies">' + replies.map(function (r) { return commentRowHTML(r, true); }).join('') + '</div>')
+      : '';
+    return '<div class="cs-thread" data-thread-id="' + esc(topLevelComment.id) + '">' + commentRowHTML(topLevelComment, false) + repliesHTML + '</div>';
+  }
+
   function renderList() {
     var listEl = document.getElementById('cs-list');
     if (!current) return;
     if (!loadedComments.length) {
       listEl.innerHTML = '<div class="cs-empty" id="cs-empty">No thoughts yet — be the first.</div>';
     } else {
-      listEl.innerHTML = loadedComments.map(commentRowHTML).join('');
+      var topLevel = loadedComments.filter(function (c) { return !c.parentId; });
+      listEl.innerHTML = topLevel.map(threadHTML).join('');
     }
+    // Total tree size (top-level + replies) -- see this file's own
+    // THREADING header comment for why replies count toward this badge too.
     document.getElementById('cs-title').textContent = 'Comments · ' + loadedComments.length;
   }
 
   function renderComposer() {
     var wrap = document.getElementById('cs-composer-wrap');
     if (isLoggedIn()) {
+      // Reply-scoped context banner (see this file's own THREADING header
+      // comment) -- absent entirely for a plain top-level post, which is
+      // also how a fresh show()/hide() and a successful reply post both
+      // return to this same plain state (replyTarget reset to null first).
+      var replyBanner = replyTarget
+        ? ('<div class="cs-reply-context" id="cs-reply-context">Replying to <b>@' + esc(stripAt(replyTarget.handle)) + '</b>' +
+           '<button type="button" class="cs-reply-cancel" id="cs-reply-cancel" aria-label="Cancel reply">&times;</button></div>')
+        : '';
+      var placeholder = replyTarget ? ('Reply to @' + stripAt(replyTarget.handle) + '…') : 'Add a thought…';
       wrap.innerHTML =
+        replyBanner +
         '<div class="cs-composer-row">' +
-        '  <textarea class="cs-composer-textarea" id="cs-composer-textarea" dir="auto" rows="1" maxlength="' + MAX_COMMENT_CHARS + '" placeholder="Add a thought…"></textarea>' +
+        '  <textarea class="cs-composer-textarea" id="cs-composer-textarea" dir="auto" rows="1" maxlength="' + MAX_COMMENT_CHARS + '" placeholder="' + esc(placeholder) + '"></textarea>' +
         '  <button type="button" class="cs-composer-post" id="cs-composer-post" disabled>Post</button>' +
         '</div>' +
         '<div class="cs-composer-counter" id="cs-composer-counter">0/' + MAX_COMMENT_CHARS + '</div>';
@@ -307,6 +364,7 @@
     current = opts;
     currentGen++;
     loadedComments = [];
+    replyTarget = null;
     closeAllOverflowMenus();
     renderComposer();
     renderList();
@@ -320,6 +378,7 @@
     if (el) el.classList.remove('open');
     current = null;
     currentGen++;
+    replyTarget = null;
     closeAllOverflowMenus();
   }
 
@@ -336,14 +395,27 @@
     var dream = current.dream;
     var user = current.currentUser;
     var myGen = currentGen;
+    // Captured now, not read fresh inside the .then/.catch below -- if the
+    // user cancels/switches reply target while THIS request is still in
+    // flight, this submit's own outcome must only ever affect ITS OWN reply
+    // context, never whatever replyTarget happens to be by the time the
+    // response lands (same per-instance-guard spirit as currentGen, just on
+    // the composer's reply-scope axis instead of the whole sheet's).
+    var myReplyTarget = replyTarget;
+    var parentId = myReplyTarget ? myReplyTarget.id : null;
     var postBtn = document.getElementById('cs-composer-post');
     if (postBtn) postBtn.disabled = true;
 
     // Optimistic insert at the top (newest-first) -- rolled back on
     // failure, same "flip immediately, reconcile or roll back" pattern
-    // u.html's/explore.html's own like handlers already use.
+    // u.html's/explore.html's own like handlers already use. Unshifting is
+    // still correct for a reply: renderList/threadHTML group by parentId
+    // via Array.filter, which preserves relative order, so a reply placed
+    // at the front of the flat array still lands at the front of ITS OWN
+    // parent's `.cs-replies` slice -- it never "jumps" into the top-level
+    // list just because it's now array index 0.
     var optimisticId = 'optimistic-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-    var optimisticComment = { id: optimisticId, handle: user.handle, text: text, createdAt: new Date().toISOString() };
+    var optimisticComment = { id: optimisticId, handle: user.handle, text: text, parentId: parentId, createdAt: new Date().toISOString() };
     loadedComments.unshift(optimisticComment);
     renderList();
     textarea.value = '';
@@ -353,7 +425,7 @@
     fetch('/.netlify/functions/add-comment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dreamId: dream.id, handle: user.handle, authToken: user.authToken, text: text })
+      body: JSON.stringify({ dreamId: dream.id, handle: user.handle, authToken: user.authToken, text: text, parentId: parentId })
     }).then(function (res) {
       return res.json().then(function (data) { return { ok: res.ok, data: data }; });
     }).then(function (result) {
@@ -362,15 +434,26 @@
       var idx = loadedComments.findIndex(function (c) { return c.id === optimisticId; });
       if (idx !== -1) loadedComments[idx] = result.data.comment;
       renderList();
-      trackLocal('comment_posted', { dreamId: dream.id });
+      trackLocal('comment_posted', { dreamId: dream.id, isReply: !!parentId });
       if (typeof current.onCountChange === 'function') {
         current.onCountChange(dream.id, result.data.commentCount != null ? result.data.commentCount : loadedComments.length);
+      }
+      // Exit reply mode on SUCCESS, but only if the composer is still
+      // scoped to THIS SAME reply target -- see this function's own comment
+      // on myReplyTarget above for why a stale success must not clobber a
+      // reply-target the user has since changed.
+      if (replyTarget && myReplyTarget && replyTarget.id === myReplyTarget.id) {
+        replyTarget = null;
+        renderComposer();
       }
     }).catch(function () {
       if (myGen !== currentGen) return; // see header comment
       loadedComments = loadedComments.filter(function (c) { return c.id !== optimisticId; });
       renderList();
       if (typeof current.onToast === 'function') current.onToast("Couldn't post your comment — try again.");
+      // Deliberately does NOT clear replyTarget on failure -- see this
+      // function's own comment above: the user should be able to retry the
+      // same reply without re-tapping Reply.
     });
   }
 
@@ -378,16 +461,42 @@
   // Delete
   // ==========================================================================
 
+  /**
+   * Deleting a TOP-LEVEL comment cascades to its replies client-side too --
+   * mirrors delete-comment.js's own server-side cascade exactly (see that
+   * file's own CASCADE DELETE ON REPLIES header comment for the full "why"
+   * cascade-delete rather than a "[deleted]" placeholder that preserves
+   * replies). Deleting a REPLY removes only that one row, same as any
+   * single comment delete before threading existed.
+   */
   function deleteCommentAction(commentId) {
     if (!current || !isLoggedIn()) return;
     var dream = current.dream;
     var user = current.currentUser;
     var myGen = currentGen;
 
-    var removedIndex = loadedComments.findIndex(function (c) { return c.id === commentId; });
-    if (removedIndex === -1) return;
-    var removed = loadedComments[removedIndex];
-    loadedComments = loadedComments.filter(function (c) { return c.id !== commentId; });
+    var target = loadedComments.filter(function (c) { return c.id === commentId; })[0];
+    if (!target) return;
+
+    var idsToRemove = [commentId];
+    if (!target.parentId) {
+      loadedComments.forEach(function (c) { if (c.parentId === commentId) idsToRemove.push(c.id); });
+    }
+    var idSet = {};
+    idsToRemove.forEach(function (id) { idSet[id] = true; });
+
+    // Snapshot each removed row's ORIGINAL index (ascending) so a failed
+    // delete can splice everything back into its exact original position --
+    // same "splice back in at removedIndex" rollback the single-comment
+    // case always used, just extended to possibly more than one row.
+    // Reinserting lowest-original-index first is what makes this correct
+    // for multiple ids: once an earlier index is restored, the array's
+    // prefix up to the next removed index again matches the original
+    // array exactly, so that index is still the right splice point.
+    var removedEntries = [];
+    loadedComments.forEach(function (c, idx) { if (idSet[c.id]) removedEntries.push({ index: idx, comment: c }); });
+
+    loadedComments = loadedComments.filter(function (c) { return !idSet[c.id]; });
     renderList();
 
     fetch('/.netlify/functions/delete-comment', {
@@ -399,15 +508,16 @@
     }).then(function (result) {
       if (myGen !== currentGen) return; // see header comment
       if (!result.ok || (result.data && result.data.ok === false)) throw new Error((result.data && result.data.error) || 'delete_comment_failed');
-      trackLocal('comment_deleted', { dreamId: dream.id });
+      trackLocal('comment_deleted', { dreamId: dream.id, cascaded: idsToRemove.length > 1 });
       if (typeof current.onCountChange === 'function') {
         current.onCountChange(dream.id, result.data.commentCount != null ? result.data.commentCount : loadedComments.length);
       }
-      if (typeof current.onToast === 'function') current.onToast('Comment deleted');
+      if (typeof current.onToast === 'function') current.onToast(idsToRemove.length > 1 ? 'Comment and its replies deleted' : 'Comment deleted');
     }).catch(function () {
       if (myGen !== currentGen) return; // see header comment
-      // Roll back -- reinsert at its original position.
-      loadedComments.splice(removedIndex, 0, removed);
+      // Roll back -- reinsert every removed row at its ORIGINAL index (see
+      // this function's own comment on removedEntries above for ordering).
+      removedEntries.forEach(function (entry) { loadedComments.splice(entry.index, 0, entry.comment); });
       renderList();
       if (typeof current.onToast === 'function') current.onToast("Couldn't delete — try again.");
     });
@@ -474,6 +584,36 @@
   }
 
   // ==========================================================================
+  // Reply (composer scoping) — see this file's own THREADING header comment
+  // ==========================================================================
+
+  function startReply(commentId) {
+    if (!current) return;
+    if (!isLoggedIn()) {
+      // Same posture as blockCommentAuthorAction above -- Reply is rendered
+      // even signed-out (see commentRowHTML's own comment), so a tap routes
+      // to the caller's signup nudge instead of scoping a composer that, in
+      // the signed-out state, doesn't even render (renderComposer's login row).
+      if (typeof current.onRequireLogin === 'function') current.onRequireLogin();
+      return;
+    }
+    // Only a genuinely top-level comment can be a reply target -- defensive
+    // guard matching the server's own E12, even though commentRowHTML never
+    // renders a Reply button on a reply row in the first place.
+    var comment = loadedComments.filter(function (c) { return c.id === commentId && !c.parentId; })[0];
+    if (!comment) return;
+    replyTarget = comment;
+    renderComposer();
+    var textarea = document.getElementById('cs-composer-textarea');
+    if (textarea) textarea.focus();
+  }
+
+  function cancelReply() {
+    replyTarget = null;
+    renderComposer();
+  }
+
+  // ==========================================================================
   // Event delegation
   // ==========================================================================
 
@@ -483,6 +623,12 @@
     var gotoEl = e.target.closest('[data-goto-handle]');
     if (gotoEl) {
       location.href = 'u.html?handle=' + encodeURIComponent(gotoEl.dataset.gotoHandle);
+      return;
+    }
+
+    var replyEl = e.target.closest('[data-reply-to]');
+    if (replyEl) {
+      startReply(replyEl.dataset.replyTo);
       return;
     }
 
@@ -514,6 +660,10 @@
     if (!current) return;
     if (e.target.closest('#cs-login-row')) {
       if (typeof current.onRequireLogin === 'function') current.onRequireLogin();
+      return;
+    }
+    if (e.target.closest('#cs-reply-cancel')) {
+      cancelReply();
       return;
     }
     if (e.target.closest('#cs-composer-post')) {

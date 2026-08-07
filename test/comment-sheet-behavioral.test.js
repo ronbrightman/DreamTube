@@ -523,3 +523,238 @@ test('deleting a comment rolls back on a failed delete-comment response, reinser
     await context.close();
   }
 });
+
+// ===== THREADING (one-level replies -- tracker item
+// for-product-founder-go-08-07-add-threadi-zb3j26) =====
+
+test('threading: tapping Reply scopes the composer, and a successful post nests the reply under its parent (DOM + the request payload + total-tree title count)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedUser(page, '@viewer');
+    await mockGetFeed(page, [makeDream({ id: 'd1', commentCount: 1 })]);
+    await mockGetComments(page, 'd1', [
+      { id: 'top1', handle: '@author', text: 'a top-level comment', parentId: null, createdAt: new Date().toISOString() }
+    ]);
+
+    var capturedBody = null;
+    await page.route('**/.netlify/functions/add-comment', function (route) {
+      capturedBody = JSON.parse(route.request().postData());
+      route.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          comment: { id: 'real-reply-1', handle: '@viewer', text: capturedBody.text, parentId: capturedBody.parentId, createdAt: new Date().toISOString() },
+          commentCount: 2
+        })
+      });
+    });
+
+    await safeGoto(page, baseUrl + '/explore.html');
+    await page.waitForSelector('.feed-card', { timeout: 5000 });
+    await page.click('[data-comments="d1"]');
+    await page.waitForSelector('.cs-comment[data-comment-id="top1"]', { timeout: 5000 });
+
+    assert.equal(await page.$('.cs-replies'), null, 'no replies yet -- no .cs-replies block should render');
+
+    await page.click('[data-reply-to="top1"]');
+    await page.waitForSelector('#cs-reply-context', { timeout: 2000 });
+    var bannerText = await page.textContent('#cs-reply-context');
+    assert.match(bannerText, /Replying to @author/);
+
+    await page.fill('#cs-composer-textarea', 'a reply to top1');
+    await page.click('#cs-composer-post');
+
+    await page.waitForSelector('.cs-thread[data-thread-id="top1"] .cs-replies .cs-comment', { timeout: 3000 });
+    assert.equal(capturedBody.parentId, 'top1', "the request must carry the parent comment's id");
+    assert.equal(capturedBody.text, 'a reply to top1');
+
+    var replyText = await page.textContent('.cs-thread[data-thread-id="top1"] .cs-replies .cs-text');
+    assert.equal(replyText, 'a reply to top1');
+
+    // A successful reply exits reply mode -- back to a plain composer.
+    assert.equal(await page.$('#cs-reply-context'), null);
+
+    // commentCount / the sheet's own title counts the WHOLE tree.
+    await page.waitForFunction(function () { return document.getElementById('cs-title').textContent === 'Comments · 2'; }, { timeout: 3000 });
+    var cardBadge = await page.textContent('[data-comment-count="d1"]');
+    assert.equal(cardBadge, '2');
+  } finally {
+    await context.close();
+  }
+});
+
+test('threading: cancelling a reply reverts the composer to a plain top-level post, and never fires a network call', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedUser(page, '@viewer');
+    await mockGetFeed(page, [makeDream({ id: 'd1', commentCount: 1 })]);
+    await mockGetComments(page, 'd1', [
+      { id: 'top1', handle: '@author', text: 'a top-level comment', parentId: null, createdAt: new Date().toISOString() }
+    ]);
+    var addCommentCalled = false;
+    await page.route('**/.netlify/functions/add-comment', function () { addCommentCalled = true; });
+
+    await safeGoto(page, baseUrl + '/explore.html');
+    await page.waitForSelector('.feed-card', { timeout: 5000 });
+    await page.click('[data-comments="d1"]');
+    await page.waitForSelector('.cs-comment[data-comment-id="top1"]', { timeout: 5000 });
+
+    await page.click('[data-reply-to="top1"]');
+    await page.waitForSelector('#cs-reply-context', { timeout: 2000 });
+    var placeholder1 = await page.getAttribute('#cs-composer-textarea', 'placeholder');
+    assert.match(placeholder1, /Reply to @author/);
+
+    await page.click('#cs-reply-cancel');
+    assert.equal(await page.$('#cs-reply-context'), null, 'the reply banner must be gone after cancelling');
+    var placeholder2 = await page.getAttribute('#cs-composer-textarea', 'placeholder');
+    assert.equal(placeholder2, 'Add a thought…');
+    assert.equal(addCommentCalled, false, 'cancelling must never touch the network');
+  } finally {
+    await context.close();
+  }
+});
+
+test('threading: a reply row never renders its own Reply action -- one level deep, enforced client-side too', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedUser(page, '@viewer');
+    await mockGetFeed(page, [makeDream({ id: 'd1', commentCount: 2 })]);
+    await mockGetComments(page, 'd1', [
+      { id: 'top1', handle: '@author', text: 'top level', parentId: null, createdAt: new Date().toISOString() },
+      { id: 'reply1', handle: '@replier', text: 'a reply', parentId: 'top1', createdAt: new Date().toISOString() }
+    ]);
+
+    await safeGoto(page, baseUrl + '/explore.html');
+    await page.waitForSelector('.feed-card', { timeout: 5000 });
+    await page.click('[data-comments="d1"]');
+    await page.waitForSelector('.cs-comment[data-comment-id="reply1"]', { timeout: 5000 });
+
+    var nestedCount = await page.locator('.cs-thread[data-thread-id="top1"] .cs-replies .cs-comment[data-comment-id="reply1"]').count();
+    assert.equal(nestedCount, 1, "the reply must render inside its parent thread's .cs-replies block");
+
+    var replyBtnOnReply = await page.$('.cs-comment[data-comment-id="reply1"] [data-reply-to="reply1"]');
+    assert.equal(replyBtnOnReply, null, 'a reply row must never render its own Reply action');
+
+    var replyBtnOnTop = await page.$('.cs-comment[data-comment-id="top1"] [data-reply-to="top1"]');
+    assert.notEqual(replyBtnOnTop, null, 'a top-level comment must still show its Reply action');
+  } finally {
+    await context.close();
+  }
+});
+
+test('XSS: a REPLY containing <script>/<img onerror> renders as inert literal text, never executes -- same discipline as top-level comments', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockGetFeed(page, [makeDream({ id: 'd1', commentCount: 2 })]);
+    var maliciousReplyText = 'nice reply <script>window.__xss_reply_text=1</script>';
+    var maliciousReplyHandle = '@<img src=x onerror=window.__xss_reply_handle=1>evil';
+    await mockGetComments(page, 'd1', [
+      { id: 'top1', handle: '@author', text: 'top level', parentId: null, createdAt: new Date().toISOString() },
+      { id: 'reply1', handle: maliciousReplyHandle, text: maliciousReplyText, parentId: 'top1', createdAt: new Date().toISOString() }
+    ]);
+
+    await safeGoto(page, baseUrl + '/explore.html');
+    await page.waitForSelector('.feed-card', { timeout: 5000 });
+    await page.click('[data-comments="d1"]');
+    await page.waitForSelector('.cs-comment[data-comment-id="reply1"]', { timeout: 5000 });
+
+    var xssTextFired = await page.evaluate(function () { return window.__xss_reply_text; });
+    var xssHandleFired = await page.evaluate(function () { return window.__xss_reply_handle; });
+    assert.equal(xssTextFired, undefined, 'a <script> tag in a reply must never execute');
+    assert.equal(xssHandleFired, undefined, 'an <img onerror> in a reply handle must never execute');
+
+    var repliesHTML = await page.$eval('.cs-thread[data-thread-id="top1"] .cs-replies', function (el) { return el.innerHTML; });
+    assert.match(repliesHTML, /&lt;script&gt;/, 'the escaped script tag should be visible as literal text');
+    assert.ok(repliesHTML.indexOf('<script>window.__xss_reply_text') === -1, 'no live <script> tag should ever land in the DOM');
+  } finally {
+    await context.close();
+  }
+});
+
+test('threading: deleting a top-level comment removes the WHOLE thread (its replies too) from the DOM in one action, and decrements the title/badge by the total removed', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedUser(page, '@viewer');
+    await mockGetFeed(page, [makeDream({ id: 'd1', commentCount: 3, ownerHandle: '@viewer' })]);
+    await mockGetComments(page, 'd1', [
+      { id: 'top1', handle: '@viewer', text: 'my top-level comment', parentId: null, createdAt: new Date().toISOString() },
+      { id: 'reply1', handle: '@someone', text: 'reply one', parentId: 'top1', createdAt: new Date().toISOString() },
+      { id: 'reply2', handle: '@someoneelse', text: 'reply two', parentId: 'top1', createdAt: new Date().toISOString() }
+    ]);
+    await page.route('**/.netlify/functions/delete-comment', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, commentCount: 0 }) });
+    });
+
+    await safeGoto(page, baseUrl + '/explore.html');
+    await page.waitForSelector('.feed-card', { timeout: 5000 });
+    await page.click('[data-comments="d1"]');
+    await page.waitForSelector('.cs-comment[data-comment-id="reply2"]', { timeout: 5000 });
+    await page.waitForFunction(function () { return document.getElementById('cs-title').textContent === 'Comments · 3'; }, { timeout: 3000 });
+
+    var topRow = page.locator('.cs-comment[data-comment-id="top1"]');
+    await topRow.locator('[data-overflow-toggle]').click();
+    await page.waitForSelector('#cs-overflow-top1.open', { timeout: 2000 });
+    await page.click('#cs-overflow-top1 [data-action="delete"]');
+
+    await page.waitForSelector('.cs-empty', { timeout: 3000 });
+    var emptyText = await page.textContent('.cs-empty');
+    assert.match(emptyText, /No thoughts yet/, 'deleting the top-level comment must also remove its two replies, not just the parent row');
+
+    await page.waitForFunction(function () { return document.getElementById('cs-title').textContent === 'Comments · 0'; }, { timeout: 3000 });
+    var cardBadge = await page.textContent('[data-comment-count="d1"]');
+    assert.equal(cardBadge, '0');
+  } finally {
+    await context.close();
+  }
+});
+
+test('threading: deleting a single reply only removes that row, leaving its parent and sibling reply in place', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedUser(page, '@viewer');
+    await mockGetFeed(page, [makeDream({ id: 'd1', commentCount: 3 })]);
+    await mockGetComments(page, 'd1', [
+      { id: 'top1', handle: '@author', text: 'top-level comment', parentId: null, createdAt: new Date().toISOString() },
+      { id: 'reply1', handle: '@viewer', text: 'my reply', parentId: 'top1', createdAt: new Date().toISOString() },
+      { id: 'reply2', handle: '@someoneelse', text: 'another reply', parentId: 'top1', createdAt: new Date().toISOString() }
+    ]);
+    await page.route('**/.netlify/functions/delete-comment', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, commentCount: 2 }) });
+    });
+
+    await safeGoto(page, baseUrl + '/explore.html');
+    await page.waitForSelector('.feed-card', { timeout: 5000 });
+    await page.click('[data-comments="d1"]');
+    await page.waitForSelector('.cs-comment[data-comment-id="reply2"]', { timeout: 5000 });
+
+    var myReplyRow = page.locator('.cs-comment[data-comment-id="reply1"]');
+    await myReplyRow.locator('[data-overflow-toggle]').click();
+    await page.waitForSelector('#cs-overflow-reply1.open', { timeout: 2000 });
+    await page.click('#cs-overflow-reply1 [data-action="delete"]');
+
+    await page.waitForSelector('.cs-comment[data-comment-id="reply1"]', { state: 'detached', timeout: 3000 });
+    assert.notEqual(await page.$('.cs-comment[data-comment-id="top1"]'), null, 'the parent comment must survive');
+    assert.notEqual(await page.$('.cs-comment[data-comment-id="reply2"]'), null, 'the sibling reply must survive');
+    await page.waitForFunction(function () { return document.getElementById('cs-title').textContent === 'Comments · 2'; }, { timeout: 3000 });
+  } finally {
+    await context.close();
+  }
+});

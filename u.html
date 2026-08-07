@@ -318,7 +318,7 @@
     '</div>';
   }
 
-  /** Best-effort top-2 newest-first comment preview lines for a card, fetched once it's rendered — design doc's own Direction B card spec. A failure just leaves the preview area empty; the teaser link still opens the full sheet regardless. */
+  /** Best-effort top-2 newest-first comment preview lines for a card, fetched once it's rendered — design doc's own Direction B card spec. A failure just leaves the preview area empty; the teaser link still opens the full sheet regardless. TOP-LEVEL ONLY (excludes replies) since threading shipped (tracker item for-product-founder-go-08-07-add-threadi-zb3j26): get-comments.js's response is a flat array with a `parentId` field now, and a bare `<b>@user</b> reply text` line with no visible parent would read as a confusing, context-free fragment here — this card preview has no room to show the thread structure js/comment-sheet.js's own indented rendering does, so it sticks to top-level comments only, same as it always showed pre-threading. */
   function loadCommentPreviewFor(d){
     if(!d.commentCount) return; // nothing to preview -- skip the network call entirely
     fetch('/.netlify/functions/get-comments?dreamId=' + encodeURIComponent(d.id))
@@ -327,7 +327,9 @@
         var el = document.getElementById('dj-comments-preview-' + d.id);
         if(!el) return; // card no longer in the DOM (dehydrated/re-rendered) -- no-op
         var blocked = DreamStore.getBlockedHandles();
-        var top2 = (data.comments || []).filter(function(c){ return blocked.indexOf(c.handle) === -1; }).slice(0, 2);
+        var top2 = (data.comments || [])
+          .filter(function(c){ return !c.parentId && blocked.indexOf(c.handle) === -1; })
+          .slice(0, 2);
         el.innerHTML = top2.map(function(c){
           return '<div class="dj-comment-preview-line" dir="auto"><b>' + esc(DreamStore.displayHandle(c.handle)) + '</b> ' + esc(c.text) + '</div>';
         }).join('');

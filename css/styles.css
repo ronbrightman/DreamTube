@@ -1175,14 +1175,31 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    The composer instead pins itself to the bottom of that SAME scroll flow
    via `position:sticky`. */
 .cs-empty{ padding:28px 4px; text-align:center; color:var(--text-muted); font-size:13.5px; line-height:1.6;}
-.cs-comment{ display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--border);}
-.cs-comment:last-child{ border-bottom:none;}
+/* Thread grouping (one-level replies — tracker item
+   for-product-founder-go-08-07-add-threadi-zb3j26): the bottom border that
+   used to sit on every .cs-comment row now lives on .cs-thread instead, so
+   a top-level comment plus its indented replies read as one visual group
+   with one divider after the whole thread, not one after the parent alone. */
+.cs-thread{ border-bottom:1px solid var(--border); padding-bottom:2px;}
+.cs-thread:last-child{ border-bottom:none;}
+.cs-comment{ display:flex; align-items:flex-start; gap:10px; padding:10px 0;}
+.cs-replies{ margin-left:38px;} /* 28px avatar + 10px gap, so a reply's own avatar lines up under the parent's text, not its avatar */
+.cs-replies .cs-comment{ padding:8px 0;}
+.cs-replies .cs-avatar{ width:24px; height:24px; font-size:11px;} /* slightly smaller — same "indented + de-emphasized" convention most flat-plus-one-level comment UIs use (Instagram, YouTube) */
 .cs-avatar{ width:28px; height:28px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; color:#fff; font-size:12px; font-weight:800; text-transform:uppercase; margin-top:1px;}
 .cs-body{ flex:1; min-width:0;}
 .cs-meta{ display:flex; align-items:baseline; gap:8px; margin-bottom:2px;}
 .cs-handle{ font-weight:700; font-size:13px; color:var(--text-primary); cursor:pointer;}
 .cs-time{ font-size:11.5px; color:var(--text-faint); flex:none;}
 .cs-text{ font-size:13.5px; line-height:1.45; color:var(--text-primary); word-break:break-word; white-space:pre-wrap;}
+/* Reply action — a small text link under the comment body, same density
+   class as .cs-handle/.cs-time rather than a full 44px control (this app's
+   own overflow-menu items already carry the 44px tap-target discipline for
+   anything that needs it; a dense per-row text link matches how this sheet
+   already treats .cs-handle). Never rendered on a reply row itself — see
+   js/comment-sheet.js's own commentRowHTML for the one-level-deep guard. */
+.cs-reply-btn{ display:inline-block; margin-top:4px; padding:2px 0; font-size:12px; font-weight:700; color:var(--text-muted); cursor:pointer; font-family:var(--font-body); background:none; border:none;}
+.cs-reply-btn:hover{ color:var(--text-primary);}
 /* Kebab button — >=44px tap target via padding/negative-margin (design doc
    QA checklist explicitly calls this out), not a visually-44px icon. */
 .cs-overflow-wrap{ position:relative; flex:none;}
@@ -1195,6 +1212,13 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .cs-overflow-item[data-action="delete"]{ color:var(--danger);}
 
 .cs-composer-wrap{ position:sticky; bottom:0; background:var(--bg-app); padding-top:10px; margin-top:6px; border-top:1px solid var(--border);}
+/* Reply-scoped composer context — shown above the textarea while replying
+   to a specific comment (js/comment-sheet.js's replyTarget state), with a
+   cancel back to a plain top-level composer. */
+.cs-reply-context{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; font-size:12px; color:var(--text-muted);}
+.cs-reply-context b{ color:var(--text-primary);}
+.cs-reply-cancel{ flex:none; width:28px; height:28px; display:flex; align-items:center; justify-content:center; background:none; border:none; color:var(--text-muted); font-size:16px; line-height:1; cursor:pointer; font-family:var(--font-body);}
+.cs-reply-cancel:hover{ color:var(--text-primary);}
 .cs-composer-row{ display:flex; align-items:flex-end; gap:8px;}
 .cs-composer-textarea{ flex:1; resize:none; border:1px solid var(--border); background:var(--surface); border-radius:16px; padding:10px 14px; font-family:var(--font-body); font-size:13.5px; line-height:1.4; color:var(--text-primary); max-height:72px; overflow-y:hidden;}
 .cs-composer-post{ flex:none; min-width:44px; min-height:44px; border-radius:100px; background:#fff; color:#000; font-weight:800; font-size:13px; border:none; padding:0 18px; cursor:pointer; font-family:var(--font-body);}
