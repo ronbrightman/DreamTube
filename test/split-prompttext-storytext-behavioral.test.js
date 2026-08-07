@@ -19,9 +19,14 @@
 //      result.html is the human-readable version, and
 //      interpret-dream.js's request carries the story text, not the
 //      prompt.
-//   2. Chips WITH free text: the user's own words are preserved byte-for-
-//      byte as storyText (founder amendment — never rewritten, never
-//      composed with chip context), while promptText still carries the
+//   2. Chips WITH free text: the typed words JOIN the chip-assembled
+//      story rather than replacing it (founder ruling 2026-08-07, shipped
+//      first in wizard.html's own Build mode — see that file's
+//      computeStoryText doc comment; this test file's own section 2 below
+//      used to encode the OLDER, now-superseded verbatim-replace amendment).
+//      storyText is the deterministic chip story with the free text
+//      appended, opportunistically upgraded by the LLM rewrite (whose
+//      input already carries both), while promptText still carries the
 //      full chip-assembled prompt (with the free text appended, unchanged
 //      from before this fix).
 //   3. Write-it: unchanged/no-op — storyText === promptText === the
@@ -339,9 +344,15 @@ test('chips-only (no free text), LLM rewrite fails: falls back to the determinis
 });
 
 // ---------------------------------------------------------------------
-// 2. Chips WITH free text -- founder amendment: verbatim, never rewritten
+// 2. Chips WITH free text -- contract CHANGED 08-07 (founder ruling,
+//    shipped first in wizard.html's own Build mode -- see that file's
+//    computeStoryText doc comment): typed text JOINS the chip-assembled
+//    story, it never REPLACES it. This test used to encode the OLDER
+//    verbatim-replace amendment (the block above this comment, before this
+//    fix); that behavior now survives ONLY in Write-it mode (test 3 below,
+//    untouched by this change).
 // ---------------------------------------------------------------------
-test('chips WITH free text: the user\'s own words are preserved byte-for-byte as storyText (never rewritten, never composed with chip context), while the engineered prompt still carries both', async function (t) {
+test('chips WITH free text: the typed words JOIN the chip-assembled story (never replace it) -- the deterministic template shows the join immediately, and the LLM rewrite (now always attempted in Build mode) blends both once it lands', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -349,21 +360,44 @@ test('chips WITH free text: the user\'s own words are preserved byte-for-byte as
     await blockThirdParty(page);
     await mockTokenStatus(page);
 
+    var REWRITTEN = 'I was a wary stranger who met a talking cat that somehow knew my name.';
     var rewriteCalls = [];
-    await page.route('**/.netlify/functions/rewrite-dream-story', function (route) {
-      rewriteCalls.push(true);
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ storyText: 'should never be used' }) });
+    var releaseRewrite;
+    var rewriteGate = new Promise(function (resolve) { releaseRewrite = resolve; });
+    await page.route('**/.netlify/functions/rewrite-dream-story', async function (route) {
+      var body = JSON.parse(route.request().postData() || '{}');
+      rewriteCalls.push(body);
+      await rewriteGate; // held open so the pre-rewrite deterministic recap can be inspected below
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ storyText: REWRITTEN }) });
     });
     var generateVideoCalls = mockGenerateAndPoll(page);
 
     var FREE_TEXT = 'There was also a talking cat who knew my name.';
-    await seedLoggedInUserAt(page, 'chipwithtext', '/create.html');
+    await seedLoggedInUserAt(page, 'chipwithtextjoin', '/create.html');
     await reachStyleScreenViaChips(page, FREE_TEXT);
 
-    // Recap shows the user's own words, unaltered -- no rewrite call at all.
+    // Deterministic template shows immediately, before the rewrite lands --
+    // the chip story AND the typed words are both present, free text is
+    // never shown alone.
     await page.waitForSelector('#style-recap-card[style*="block"]', { timeout: 3000 });
-    assert.equal(await page.textContent('#style-recap-text'), FREE_TEXT);
-    assert.equal(rewriteCalls.length, 0, 'the LLM rewrite must never be called when the user typed their own free text');
+    var recapBeforeRewrite = await page.textContent('#style-recap-text');
+    assert.match(recapBeforeRewrite, /^I was a stranger,/, 'the chip-assembled story must still open the recap, not be replaced by the free text');
+    assert.match(recapBeforeRewrite, new RegExp(FREE_TEXT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), 'the typed free text must be appended after the chip story');
+
+    // The LLM rewrite now fires unconditionally in Build mode (it used to
+    // be skipped entirely whenever free text was present, under the old
+    // verbatim-replace contract) -- its promptText already carries chip
+    // context + free text (assembled.caption is unchanged by this fix).
+    await settle(function () { return rewriteCalls.length >= 1; });
+    assert.equal(rewriteCalls.length, 1);
+    assert.match(rewriteCalls[0].promptText, /of a stranger,/);
+    assert.match(rewriteCalls[0].promptText, new RegExp(FREE_TEXT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'));
+
+    releaseRewrite();
+    await page.waitForFunction(function (expected) {
+      var el = document.getElementById('style-recap-text');
+      return el && el.textContent === expected;
+    }, REWRITTEN, { timeout: 3000 });
 
     await page.click('.style-card[data-style="Cartoon"]');
     await page.click('#generate-btn');
@@ -380,9 +414,9 @@ test('chips WITH free text: the user\'s own words are preserved byte-for-byte as
       var raw = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
       return raw.dreams.filter(function (d) { return d.id === id; })[0];
     });
-    assert.equal(dream.storyText, FREE_TEXT, 'storyText must be EXACTLY the user\'s free text -- no chip-derived context woven in');
-    assert.equal(dream.caption, FREE_TEXT);
-    assert.notEqual(dream.promptText, FREE_TEXT, 'promptText must remain the full engineered string, distinct from the plain story');
+    assert.equal(dream.storyText, REWRITTEN, 'storyText settles on the LLM-blended chip+free-text story once the rewrite lands');
+    assert.equal(dream.caption, REWRITTEN, 'dream.caption (the legacy/back-compat display field) must equal storyText for a new dream');
+    assert.notEqual(dream.promptText, REWRITTEN, 'promptText must remain the full engineered string, distinct from the plain story');
   } finally {
     await context.close();
   }
