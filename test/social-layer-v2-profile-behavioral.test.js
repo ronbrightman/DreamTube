@@ -76,6 +76,13 @@ function mockLikeDream(page, likes) {
   });
 }
 
+/** Intercepts get-comments.js for a specific dreamId -- backs u.html's own loadCommentPreviewFor. */
+function mockGetComments(page, dreamId, comments) {
+  return page.route('**/.netlify/functions/get-comments?dreamId=' + encodeURIComponent(dreamId), function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ comments: comments }) });
+  });
+}
+
 function makeDream(overrides) {
   return Object.assign({
     id: 'synthetic-1', caption: 'A synthetic dream', style: 'Cinematic',
@@ -177,6 +184,92 @@ test('u.html: a loaded profile renders identity (name/bio/avatar fallback), the 
     // Owner controls (toggle) must NOT show for a signed-out visitor.
     var toggleVisible = await page.isVisible('#u-visibility-row');
     assert.equal(toggleVisible, false);
+  } finally {
+    await context.close();
+  }
+});
+
+test('u.html: a dream with comments shows an escaped top-2 newest-first preview, and the "View all N" teaser opens the shared comment sheet', async function (t) {
+  // Fills the gap flagged in review on social-layer-v2-slice2: this is
+  // u.html's OWN loadCommentPreviewFor render path (a second, independent
+  // esc()-based innerHTML build from js/comment-sheet.js's, per that
+  // function's own header comment) and had zero coverage despite
+  // test/comment-sheet-behavioral.test.js's header comment claiming this
+  // file already covered it.
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var maliciousText = 'nice dream <script>window.__previewXss=1</script>';
+    await mockGetProfile(page, {
+      exists: true, profile: null,
+      dreams: [makeDream({ id: 'd1', ownerHandle: '@luna', commentCount: 3 })],
+      publishedCount: 1, commentCounts: { d1: 3 }
+    });
+    // Newest-first, only the top 2 should render as preview lines even
+    // though 3 exist -- matches get-comments.js's own newest-first order.
+    await mockGetComments(page, 'd1', [
+      { id: 'c-newest', handle: '@newest', text: maliciousText, createdAt: new Date().toISOString() },
+      { id: 'c-middle', handle: '@middle', text: 'a completely ordinary comment', createdAt: new Date().toISOString() },
+      { id: 'c-oldest', handle: '@oldest', text: 'this one should be cut off, not shown', createdAt: new Date().toISOString() }
+    ]);
+
+    await safeGoto(page, baseUrl + '/u.html?handle=luna');
+    await page.waitForSelector('.dj-card', { timeout: 5000 });
+
+    // The teaser reads "View all N" once commentCount > 0.
+    var teaserText = await page.textContent('[data-comments-teaser="d1"]');
+    assert.match(teaserText, /View all 3 comments/);
+
+    await page.waitForSelector('#dj-comments-preview-d1 .dj-comment-preview-line', { timeout: 5000 });
+    var previewLines = await page.locator('#dj-comments-preview-d1 .dj-comment-preview-line').count();
+    assert.equal(previewLines, 2, 'only the top 2 newest comments should render as preview lines');
+
+    var firstLineText = await page.textContent('#dj-comments-preview-d1 .dj-comment-preview-line:first-child');
+    assert.match(firstLineText, /<script>/, 'the malicious comment text must render as literal escaped text, not be stripped');
+    var oldestShown = await page.textContent('#dj-comments-preview-d1');
+    assert.doesNotMatch(oldestShown, /should be cut off/, 'the 3rd/oldest comment must not appear in a top-2 preview');
+
+    // The <script> must never actually execute.
+    var xssFired = await page.evaluate(function () { return window.__previewXss; });
+    assert.equal(xssFired, undefined, 'a <script> tag embedded in comment text must never execute');
+
+    // Tapping the teaser opens the SAME shared js/comment-sheet.js sheet
+    // (not a separate preview-only UI).
+    await page.click('[data-comments-teaser="d1"]');
+    await page.waitForSelector('#comment-sheet-overlay.open', { timeout: 5000 });
+    await page.waitForFunction(function () { return document.getElementById('cs-title').textContent === 'Comments · 3'; }, { timeout: 3000 });
+  } finally {
+    await context.close();
+  }
+});
+
+test('u.html: a dream with zero comments shows no preview and the "Add a thought…" teaser', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var getCommentsCalled = false;
+    await page.route('**/.netlify/functions/get-comments*', function (route) {
+      getCommentsCalled = true;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ comments: [] }) });
+    });
+    await mockGetProfile(page, {
+      exists: true, profile: null,
+      dreams: [makeDream({ id: 'd1', ownerHandle: '@luna', commentCount: 0 })],
+      publishedCount: 1, commentCounts: { d1: 0 }
+    });
+
+    await safeGoto(page, baseUrl + '/u.html?handle=luna');
+    await page.waitForSelector('.dj-card', { timeout: 5000 });
+
+    var teaserText = await page.textContent('[data-comments-teaser="d1"]');
+    assert.match(teaserText, /Add a thought…/);
+    var previewHtml = await page.$eval('#dj-comments-preview-d1', function (el) { return el.innerHTML.trim(); });
+    assert.equal(previewHtml, '', 'no preview markup should render when commentCount is 0');
+    assert.equal(getCommentsCalled, false, 'loadCommentPreviewFor should skip the network call entirely when commentCount is 0');
   } finally {
     await context.close();
   }

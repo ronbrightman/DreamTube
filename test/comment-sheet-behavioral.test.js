@@ -10,10 +10,13 @@
 // intermittent outbound-network stalls — see CLAUDE.md).
 //
 // Mounted via explore.html (one of this component's two mount points —
-// the other, u.html, already has its own dedicated behavioral suite for
-// everything specific to that page's card layout/teaser/preview lines;
-// this file focuses on the SHARED js/comment-sheet.js component itself,
-// which behaves identically regardless of which page opened it).
+// the other, u.html, has its own coverage in
+// test/social-layer-v2-profile-behavioral.test.js for what's SPECIFIC to
+// that page's card layout (the top-2 comment-preview lines and the
+// "View all N"/"Add a thought…" teaser, including that page's own,
+// separate esc()-based render of the preview lines); this file focuses on
+// the SHARED js/comment-sheet.js component itself, which behaves
+// identically regardless of which page opened it.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -281,6 +284,60 @@ test('posting a comment is optimistic, reconciles with the server response, and 
   }
 });
 
+test('posting a comment rolls back on a failed add-comment response, restoring the composer text and leaving no optimistic entry behind', async function (t) {
+  // Fills the gap flagged in review: the prior delete-rollback test's mock
+  // always returned ok:true, so submitComment's own .catch (js/comment-sheet.js's
+  // "Couldn't post your comment — try again." branch) had zero coverage.
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedUser(page, '@viewer');
+    await mockGetFeed(page, [makeDream({ id: 'd1', commentCount: 0 })]);
+    await mockGetComments(page, 'd1', []);
+    // Delayed on purpose (same pattern as the "second rapid tap while
+    // pending" like-dream test) -- an instantly-resolving mock races the
+    // optimistic-insert assertion below against the rollback under load,
+    // since both happen on the same tick from this test's point of view.
+    await page.route('**/.netlify/functions/add-comment', async function (route) {
+      await new Promise(function (r) { setTimeout(r, 200); });
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'add_comment_failed: boom' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/explore.html');
+    await page.waitForSelector('.feed-card', { timeout: 5000 });
+    await page.click('[data-comments="d1"]');
+    await page.waitForSelector('#comment-sheet-overlay.open', { timeout: 5000 });
+
+    await page.fill('#cs-composer-textarea', 'this will fail to post');
+    await page.click('#cs-composer-post');
+
+    // Optimistic insert happens immediately, well before the delayed
+    // failure response lands.
+    await page.waitForSelector('.cs-text', { timeout: 3000 });
+    var optimisticText = await page.textContent('.cs-text');
+    assert.equal(optimisticText, 'this will fail to post');
+
+    // ...then rolls back once the (failed) response lands: the optimistic
+    // row is removed, the sheet goes back to its empty state, and an error
+    // toast fires -- the card's comment-count badge must NOT have moved.
+    await page.waitForSelector('.cs-empty', { timeout: 3000 });
+    var emptyText = await page.textContent('.cs-empty');
+    assert.match(emptyText, /No thoughts yet/, 'the optimistic entry must be removed on failure, back to the empty state');
+    await page.waitForFunction(function () { return document.getElementById('cs-title').textContent === 'Comments · 0'; }, { timeout: 3000 });
+
+    var cardBadge = await page.textContent('[data-comment-count="d1"]');
+    assert.equal(cardBadge, '0', 'a failed post must never bump the card badge (onCountChange only fires on success)');
+
+    await page.waitForSelector('.toast.show', { timeout: 2000 });
+    var toastText = await page.textContent('#toast');
+    assert.match(toastText, /Couldn't post your comment/);
+  } finally {
+    await context.close();
+  }
+});
+
 test('empty composer disables Post; the empty-comments state reads "No thoughts yet — be the first."', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
@@ -377,7 +434,10 @@ test('tap-target: the per-comment overflow (kebab) button meets the 44px minimum
   }
 });
 
-test('deleting a comment is optimistic with rollback on failure, and blocking a comment author removes their comments from the list', async function (t) {
+test('deleting a comment succeeds optimistically, and blocking a comment author removes their comments from the list', async function (t) {
+  // Renamed from a prior version that also claimed "rollback on failure" in
+  // its title while mocking delete-comment to always return ok:true -- see
+  // the dedicated failure test right below this one for that coverage.
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
   try {
@@ -413,6 +473,52 @@ test('deleting a comment is optimistic with rollback on failure, and blocking a 
     await page.waitForSelector('.cs-empty', { timeout: 3000 });
     var emptyText = await page.textContent('.cs-empty');
     assert.match(emptyText, /No thoughts yet/);
+  } finally {
+    await context.close();
+  }
+});
+
+test('deleting a comment rolls back on a failed delete-comment response, reinserting it at its original position', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: MOBILE_VIEWPORT });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedUser(page, '@viewer');
+    await mockGetFeed(page, [makeDream({ id: 'd1', commentCount: 2 })]);
+    await mockGetComments(page, 'd1', [
+      { id: 'newer', handle: '@someone', text: 'newer comment', createdAt: new Date().toISOString() },
+      { id: 'mine', handle: '@viewer', text: 'delete me but it fails', createdAt: new Date().toISOString() }
+    ]);
+    await page.route('**/.netlify/functions/delete-comment', function (route) {
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'delete_comment_failed: boom' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/explore.html');
+    await page.waitForSelector('.feed-card', { timeout: 5000 });
+    await page.click('[data-comments="d1"]');
+    await page.waitForSelector('.cs-comment', { timeout: 5000 });
+
+    var mineRow = page.locator('.cs-comment[data-comment-id="mine"]');
+    await mineRow.locator('[data-overflow-toggle]').click();
+    await page.waitForSelector('#cs-overflow-mine.open', { timeout: 2000 });
+    await page.click('#cs-overflow-mine [data-action="delete"]');
+
+    // Optimistic removal happens immediately...
+    await page.waitForSelector('.cs-comment[data-comment-id="mine"]', { state: 'detached', timeout: 3000 });
+
+    // ...then the failed response reinserts it at its ORIGINAL position
+    // (second row, not re-appended at the top) -- js/comment-sheet.js's
+    // own deleteCommentAction splices back in at removedIndex.
+    await page.waitForSelector('.cs-comment[data-comment-id="mine"]', { timeout: 3000 });
+    var idsInOrder = await page.locator('.cs-comment').evaluateAll(function (els) {
+      return els.map(function (el) { return el.dataset.commentId; });
+    });
+    assert.deepEqual(idsInOrder, ['newer', 'mine'], 'a failed delete must reinsert the comment at its original index, not lose the ordering');
+
+    await page.waitForSelector('.toast.show', { timeout: 2000 });
+    var toastText = await page.textContent('#toast');
+    assert.match(toastText, /Couldn't delete/);
   } finally {
     await context.close();
   }
