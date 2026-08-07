@@ -84,6 +84,21 @@ function render(){
         // (Me AND someone known AND a stranger can all be in one dream) —
         // rows toggle independently, Continue advances.
         o.classList.toggle('sel');
+        // Founder round 6 ("if user chooses Me - maybe open the more info
+        // option?") — consistent with his 08-04 ruling that the Me/Someone
+        // details ask lives AT the chip pick or nowhere: selecting Me or
+        // Someone reveals an OPTIONAL detail line right under the rows.
+        // Never blocks Continue; the real build wires this to the existing
+        // Me-character description/photo machinery.
+        var wantsDetail = Array.prototype.some.call(document.querySelectorAll('.opt.sel'), function(x){
+          var l = x.getAttribute('data-label') || '';
+          return l === 'Me' || l === 'Someone I know';
+        });
+        var ci = document.getElementById('custom-in');
+        if (ci){
+          ci.classList.toggle('on', wantsDetail);
+          if (wantsDetail) document.getElementById('custom-field').placeholder = 'Optional: a few words about how you/they look — helps the video match';
+        }
       } else {
         document.querySelectorAll('.opt').forEach(function(x){x.classList.remove('sel');});
         o.classList.add('sel');
