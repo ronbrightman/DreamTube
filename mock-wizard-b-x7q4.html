@@ -102,7 +102,7 @@ function render(){
         return; // multi steps advance via Continue only
       }
       picks[idx] = o.getAttribute('data-label') || o.textContent.trim();
-      if (idx < 4) setTimeout(next, 260); // auto-advance on single-select steps, Flo-style
+      if (idx <= 4) setTimeout(next, 260); // auto-advance on every single-select step, style included (founder round 4)
     });
   });
   if (s.recap){
