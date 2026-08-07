@@ -1646,9 +1646,22 @@
     if(storyEditedByUser){ renderStoryRecap(); return; }
     var myToken = ++storyRewriteToken;
     var hasFreeText = !!(freeText && freeText.trim());
-    currentStoryText = hasFreeText ? freeText.trim() : WizardChips.buildDeterministicStory(currentChipFields());
+    // Write mode: the typed dream IS the story, verbatim — their words win,
+    // no template and no LLM rewrite (mirrors the entryMode==='write'
+    // assembled-caption contract above). Build mode: free text is an
+    // ADDITION on top of the chip picks, never a replacement — the founder
+    // hit exactly that (typed "Anything to add?" text erased the whole
+    // assembled story from the recap, 08-07). The chip story stays, the
+    // extra words append, and the rewrite below (whose promptText via
+    // assembled.caption already carries freeText) blends them properly.
+    if(entryMode === 'write' && hasFreeText){
+      currentStoryText = freeText.trim();
+      renderStoryRecap();
+      return;
+    }
+    currentStoryText = WizardChips.buildDeterministicStory(currentChipFields()) +
+      (hasFreeText ? ' ' + freeText.trim() : '');
     renderStoryRecap();
-    if(hasFreeText) return;
     fetch('/.netlify/functions/rewrite-dream-story', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

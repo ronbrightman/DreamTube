@@ -642,7 +642,12 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
   }
 });
 
-test('wizard.html: chips WITH free text -- the pending-generation payload carries the user\'s own words verbatim as storyText, and the LLM rewrite is never called', async function (t) {
+// Contract CHANGED 08-07 (founder repro): in Build mode, "Anything to
+// add?" text JOINS the chip story instead of replacing it, and the LLM
+// rewrite runs as usual (its promptText already carries the free text).
+// The old their-words-verbatim-only behavior survives in WRITE mode —
+// see wizard-ui-behavioral's write-mode test.
+test('wizard.html: chips WITH free text -- storyText keeps the chip story AND the typed words (rewrite result wins when it lands), never the free text alone', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -650,7 +655,7 @@ test('wizard.html: chips WITH free text -- the pending-generation payload carrie
     var rewriteCalls = [];
     await page.route('**/.netlify/functions/rewrite-dream-story', function (route) {
       rewriteCalls.push(true);
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ storyText: 'should never be used' }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ storyText: 'I soared over rooftops while a dragon showed me the way home.' }) });
     });
     var startPendingCalls = [];
     await page.route('**/.netlify/functions/start-pending-generation', function (route) {
@@ -671,8 +676,14 @@ test('wizard.html: chips WITH free text -- the pending-generation payload carrie
     await page.click('#fn-freetext-continue');
 
     await page.waitForSelector('#fn-story-recap-text', { timeout: 3000 });
-    assert.equal(await page.inputValue('#fn-story-recap-text'), FREE_TEXT);
-    assert.equal(rewriteCalls.length, 0, 'the LLM rewrite must never be called when the user typed their own free text');
+    // The rewrite (whose promptText carries chips + free text) wins once
+    // it lands; before/without it the deterministic chip story + the
+    // typed words show. Either way the free text alone is never the
+    // whole recap.
+    var REWRITTEN = 'I soared over rooftops while a dragon showed me the way home.';
+    await settle(function () { return rewriteCalls.length >= 1; });
+    await settle(async function () { return (await page.inputValue('#fn-story-recap-text')) === REWRITTEN; });
+    assert.equal(await page.inputValue('#fn-story-recap-text'), REWRITTEN, 'the LLM rewrite (chips + free text blended) is what the recap settles on in Build mode');
 
     await page.click('#fn-recap-continue');
     await page.waitForSelector('#contact-email');
@@ -680,7 +691,7 @@ test('wizard.html: chips WITH free text -- the pending-generation payload carrie
     await page.click('#fn-contact-continue');
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1);
-    assert.equal(startPendingCalls[0].storyText, FREE_TEXT);
+    assert.equal(startPendingCalls[0].storyText, REWRITTEN);
     assert.match(startPendingCalls[0].caption, new RegExp(FREE_TEXT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'), 'promptText keeps the chip context + free text appended, unchanged shape');
   } finally {
     await page.close();

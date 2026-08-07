@@ -1753,6 +1753,38 @@ test('wizard.html entry chooser: Write jumps straight to the free-text step and 
   }
 });
 
+test('wizard.html Build mode: "Anything to add?" text JOINS the chip-assembled story on the recap — it must never replace it (founder repro 08-07: typed extras erased the whole assembled dream)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var EXTRA = 'and a silver whale drifted past the window';
+    // Force the deterministic path — the LLM rewrite must not be what
+    // saves this (its failure used to leave freeText alone on screen).
+    await page.route('**/.netlify/functions/rewrite-dream-story', function (route) {
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+    });
+
+    await gotoWizardBuild(page);
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.fill('#free-text-input', EXTRA);
+    await page.click('#fn-freetext-continue');
+
+    await page.waitForSelector('#fn-story-recap-text');
+    var recap = await page.inputValue('#fn-story-recap-text');
+    assert.match(recap, /flying/i, 'the chip-assembled story (Action pick) must still be in the recap when free text was typed');
+    assert.ok(recap.indexOf(EXTRA) !== -1, 'the typed "Anything to add?" words must appear in the recap too');
+    assert.notEqual(recap.trim(), EXTRA, 'free text alone must never BE the whole recap in Build mode');
+  } finally {
+    await page.close();
+  }
+});
+
 test('wizard.html entry chooser: Speak routes to create.html\'s existing record flow (?record=1, via its login gate — no new pre-signup recording surface), and is hidden entirely in an Instagram in-app webview', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
