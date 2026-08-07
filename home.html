@@ -2641,16 +2641,31 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     }
   }, 60000);
 
-  // ===== Tonight hero entry points — reuse create.html's own Write/Speak
-  // affordances (no reinvention); "No recall" is the one genuinely
-  // content-less entry point (see js/store.js's logNoRecallToday doc
-  // comment for why it never creates a fake dream record). The primary
-  // pill is the Wizard — create.html's existing chip-first "Build it"
-  // dream-builder (#choice-build), reached via the ?build=1 deep-link,
-  // matching ?write=1/?record=1's own established convention. =====
+  // ===== Tonight hero entry points — reuse create.html's own Build/Write/
+  // Speak affordances (no reinvention). Tracker item
+  // for-product-founder-ask-08-05-tell-your--vmfvsk (founder preview
+  // catch): the primary pill used to deep-link straight past the choice
+  // with ?build=1, so tapping it dropped a first-time visitor directly
+  // into the chip wizard without ever surfacing Write/Record as options
+  // ("redirected to wizard without the choice first"). It now sends a
+  // bare `create.html` instead — landing on create.html's own EXISTING,
+  // already-tested default screen (#create-select: the Build it/Write
+  // it/Record it choice cards, ids #choice-build/#choice-write/
+  // #choice-record), so all three entry modes are offered as part of the
+  // pill's own main path, matching the founder's own suggested shape
+  // ("a first wizard screen offering them") with zero new UI. The quiet
+  // Write/Speak/No-recall row below the pill is intentionally left in
+  // place rather than removed now that the pill also reaches the same
+  // choice: Write/Speak still act as a faster one-tap shortcut for a
+  // returning user who already knows what they want (skips the choice
+  // screen via the ?write=1/?record=1 deep-links below, same as
+  // before), and "No recall" has no equivalent on create.html's choice
+  // screen at all -- it's the one entry point that logs a night with no
+  // dream content (see js/store.js's logNoRecallToday doc comment), so
+  // the row still earns its place as more than a redundant duplicate. =====
   document.getElementById('tonight-pill').addEventListener('click', function(){
     track('home_today_entry_tapped', { method: 'wizard' });
-    location.href = 'create.html?build=1';
+    location.href = 'create.html';
   });
   document.getElementById('btn-write').addEventListener('click', function(){
     track('home_today_entry_tapped', { method: 'write' });
