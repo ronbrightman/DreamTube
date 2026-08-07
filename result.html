@@ -1269,7 +1269,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // eligibility no longer depends on any per-dream choice -- every video
     // dream with a known style is eligible now, full stop.
     var musicBed = document.getElementById('result-music-bed');
-    var bedUrl = window.MusicBed ? MusicBed.urlForStyle(dream.style) : null;
+    // urlForDream (not urlForStyle) as of the mood-keyed bed layer —
+    // tracker item for-product-founder-08-04-evening-music--jfjco0: the
+    // dream's own chosen `mood` picks the bed when it has one and a track
+    // for that mood exists, otherwise this resolves to exactly the same
+    // style-matched bed it always did. See js/music-bed.js's header.
+    var bedUrl = window.MusicBed ? MusicBed.urlForDream(dream) : null;
     var bedEligible = !!(window.MusicBed && MusicBed.eligible(dream));
     // Three-way: video (existing <video>) -> image (new <img>, same frame
     // position) -> gradient fallback (unchanged) — see

@@ -316,3 +316,30 @@ test('rejects a non-GET/POST method', async function () {
   assert.equal(res.statusCode, 405);
   assert.match(JSON.parse(res.body).error, /^E1: method_not_allowed/);
 });
+
+test('a dream\'s `mood` round-trips through the private-dream sync -- without it in DREAM_FIELDS a dream restored on a NEW DEVICE would come back moodless and quietly fall back to its visual-style bed, i.e. the same dream sounding different on two devices (tracker item for-product-founder-08-04-evening-music--jfjco0)', async function () {
+  var token = await registerAndGetToken('moodsyncer', 'realpassword1', 'moodsyncer@example.com');
+  var res = await dreamSyncHandler(fakeEvent({
+    method: 'POST',
+    body: { authToken: token, action: 'upsert', dream: dreamPayload('d-mood', { caption: 'a tense dream', style: 'Cartoon', mood: 'tense' }) }
+  }));
+  assert.equal(JSON.parse(res.body).ok, true);
+
+  var getRes = await dreamSyncHandler(fakeEvent({ method: 'GET', query: { authToken: token } }));
+  var dreams = JSON.parse(getRes.body).dreams;
+  assert.equal(dreams.length, 1);
+  assert.equal(dreams[0].mood, 'tense', 'mood must survive the upsert/GET round trip');
+  assert.equal(dreams[0].style, 'Cartoon', 'and must not disturb the style it coexists with');
+});
+
+test('a dream with NO mood syncs exactly as it always did -- the new field is additive, never fabricated for the many dreams (Write it / Record it / anything predating this) that legitimately have none', async function () {
+  var token = await registerAndGetToken('moodlesssyncer', 'realpassword1', 'moodlesssyncer@example.com');
+  await dreamSyncHandler(fakeEvent({
+    method: 'POST',
+    body: { authToken: token, action: 'upsert', dream: dreamPayload('d-nomood', { caption: 'a plain dream', style: 'Anime' }) }
+  }));
+  var getRes = await dreamSyncHandler(fakeEvent({ method: 'GET', query: { authToken: token } }));
+  var dreams = JSON.parse(getRes.body).dreams;
+  assert.equal(dreams.length, 1);
+  assert.ok(dreams[0].mood === undefined || dreams[0].mood === null, 'no mood must stay no mood, never a guessed default');
+});

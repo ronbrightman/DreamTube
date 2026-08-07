@@ -72,6 +72,36 @@
 // applied to a smaller, analogous case. This ships today or it doesn't ship
 // at all; the founder's own "walk before wide flip" instruction (see this
 // item's own tracker text) favors that.
+//
+// ===== MOOD-KEYED BEDS (2026-08-04, tracker item for-product-founder-
+// 08-04-evening-music--jfjco0, FINAL-FINAL scope — supersedes nothing
+// above, ADDS a layer on top of it) =====
+// The founder's own insight: a dream's VISUAL style ("Cartoon") is a weak
+// signal for what it should sound like, but the dream-builder wizard's
+// MOOD step (step 4 of 5 — peaceful / joyful / dreamy-surreal /
+// mysterious / tense-scary / epic, see js/wizard-chips.js's MOOD_CHIPS)
+// is exactly the right one. So bed selection is now two-tier:
+//
+//   1. If the dream carries a real chosen `mood` AND a bed file exists for
+//      that mood -> use the mood-keyed bed.
+//   2. Otherwise (mood skipped, mood was "+ Something else" free text,
+//      the dream predates mood persistence, or no mood bed file exists
+//      yet) -> fall back to the visual-style bed above, exactly as before.
+//
+// The four style beds are therefore PERMANENT, not a migration step —
+// they are the fallback tier, and deleting them would break case 2.
+//
+// TIER 1 IS LIVE (2026-08-07). The audition ran its full course the same
+// day the 12 candidates were generated (fal.ai stable-audio 45s seamless
+// loops, 2 per mood): the founder picked one winner per mood on
+// bed-audition-x7q4.html (peaceful-A, joyful-B, dreamy-A, mysterious-B,
+// tense-B, epic-B), each winner was promoted in place to
+// assets/music-beds/moods/<mood>.wav, and — per the tracker item's own
+// no-dead-assets instruction — the six losing candidates AND the audition
+// page itself were deleted. MOOD_FILES below is the switch that engaged
+// it all. A dream with a real chosen mood now hears its mood bed; a
+// skipped/free-text/legacy mood still falls back to its visual-style bed
+// exactly as before (tier 2, permanent).
 var MusicBed = (function () {
   // One committed WAV per style — see this file's header comment for
   // provenance. Keys are lowercased style values; style.html's own
@@ -83,6 +113,35 @@ var MusicBed = (function () {
     cinematic: 'cinematic.wav',
     anime: 'anime.wav',
     realistic: 'realistic.wav'
+  };
+
+  // The mood values a dream's `mood` field can actually carry — the six
+  // real MOOD_CHIPS keys from js/wizard-chips.js, and nothing else.
+  // Deliberately excludes 'other': that chip is free text, which has no
+  // fixed bed and (per the tracker item's own explicit scope cut) is NOT
+  // keyword-mapped in this pass — it falls through to the style bed like
+  // any other unknown value. Duplicated here rather than imported because
+  // this file has to stand alone: explore.html loads js/music-bed.js
+  // without js/wizard-chips.js. test/mood-music-bed-behavioral.test.js
+  // asserts this list still matches MOOD_CHIPS exactly, so the two copies
+  // cannot silently drift apart.
+  var MOOD_KEYS = ['peaceful', 'joyful', 'dreamy', 'mysterious', 'tense', 'epic'];
+
+  // mood key -> committed filename under assets/music-beds/moods/. These
+  // six are the founder's audition winners (2026-08-07 — see this file's
+  // header comment), committed as real static assets, one per mood. A
+  // future mood key with no entry here resolves to null in urlForMood and
+  // falls back to the style bed. Never add a placeholder/fake file here to
+  // make the map look populated — a missing asset is tolerated, never
+  // faked (same convention as a missing character portrait elsewhere in
+  // this app).
+  var MOOD_FILES = {
+    peaceful: 'peaceful.wav',
+    joyful: 'joyful.wav',
+    dreamy: 'dreamy.wav',
+    mysterious: 'mysterious.wav',
+    tense: 'tense.wav',
+    epic: 'epic.wav'
   };
 
   /**
@@ -97,19 +156,70 @@ var MusicBed = (function () {
   }
 
   /**
+   * The mood-keyed bed asset URL for a dream's `mood` value, or null when
+   * there isn't one. All six real mood keys resolve to a committed winner
+   * track as of 2026-08-07 (see this file's header comment). Three
+   * distinct null cases remain, all deliberately collapsed into the same
+   * "no mood bed, fall back" answer:
+   *   - `mood` is absent/null: the mood step was SKIPPED, or this dream
+   *     predates mood persistence entirely.
+   *   - `mood` is some other string: a "+ Something else" free-text mood,
+   *     or a future mood key this build doesn't know. Fails closed rather
+   *     than guessing, same discipline as urlForStyle above.
+   *   - `mood` is a known key with no MOOD_FILES entry: impossible today,
+   *     but the guard stays for any future mood added before its track.
+   */
+  function urlForMood(mood) {
+    var key = typeof mood === 'string' ? mood.toLowerCase() : '';
+    if (MOOD_KEYS.indexOf(key) === -1) return null;
+    var file = MOOD_FILES[key];
+    return file ? 'assets/music-beds/moods/' + file : null;
+  }
+
+  /**
+   * THE bed URL for a whole dream — the two-tier resolution described in
+   * this file's header comment: the dream's own chosen mood first, the
+   * visual-style bed as the permanent fallback. Every playback surface
+   * (result.html, explore.html) calls this rather than urlForStyle
+   * directly, so switching tier 1 on later needs no change at any call
+   * site. Returns null only when NEITHER tier resolves (an unrecognized
+   * style with no usable mood).
+   */
+  function urlForDream(dream) {
+    if (!dream) return null;
+    return urlForMood(dream.mood) || urlForStyle(dream.style);
+  }
+
+  /**
    * Whether `dream` should ever get a music-bed <audio> element at all.
    * Per the 2026-08-03 founder simplification (see this file's header
    * comment), there is no user choice left to check — music is always on
-   * for every dream that has both a real video and a style with a known
-   * bed file. Deliberately does NOT read `dream.musicBedOn` at all (that
+   * for every dream that has both a real video and a bed that actually
+   * resolves. As of the mood-keyed layer that means EITHER tier resolving
+   * (urlForDream): a dream whose visual style has no bed IS eligible when
+   * its mood has a track — live since 2026-08-07, when all six mood beds
+   * landed. Deliberately does NOT read `dream.musicBedOn` at all (that
    * field no longer means anything, and may still be `false`/`true`/absent
    * on dreams generated across this feature's three history phases) — this
    * is what makes a dream generated before this simplification also always
    * play its bed now, with no stale opt-out surviving from the toggle era.
    */
   function eligible(dream) {
-    return !!(dream && dream.videoUrl && urlForStyle(dream.style));
+    return !!(dream && dream.videoUrl && urlForDream(dream));
   }
 
-  return { urlForStyle: urlForStyle, eligible: eligible };
+  // MOOD_KEYS/MOOD_FILES are exposed as the SAME object/array references
+  // the functions above close over — not copies. That's what let
+  // test/mood-music-bed-behavioral.test.js prove tier 1 worked before the
+  // real tracks landed, and what still lets it assert the live map's
+  // exact contents, without this file needing a test-only backdoor
+  // function.
+  return {
+    urlForStyle: urlForStyle,
+    urlForMood: urlForMood,
+    urlForDream: urlForDream,
+    eligible: eligible,
+    MOOD_KEYS: MOOD_KEYS,
+    MOOD_FILES: MOOD_FILES
+  };
 })();

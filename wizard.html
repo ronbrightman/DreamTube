@@ -1036,6 +1036,30 @@
   // ===================================================================
   var moodKey = WizardChips.DEFAULT_MOOD;
   var moodOtherText = '';
+  // Did the user SKIP this step rather than answer it? (tracker item
+  // for-product-founder-08-04-evening-music--jfjco0.) moodKey alone can't
+  // tell: it's pre-seeded to DEFAULT_MOOD so a chip is always visibly
+  // pre-highlighted, making "tapped Skip" indistinguishable from "accepted
+  // the highlighted default via Continue" — but those are different answers
+  // for music-bed purposes (Skip falls back to the visual-style bed). Only
+  // affects what gets STORED as dream.mood; prompt/story assembly still
+  // reads raw moodKey and is completely unchanged. Mirrors create.html's
+  // buildMoodSkipped — see that file's comment, and
+  // WizardChips.persistedMood.
+  var moodSkipped = false;
+
+  /**
+   * The value to persist as this dream's `mood` — always read LIVE off the
+   * two vars above at the moment it's needed, never captured into a
+   * snapshot variable earlier in the flow. Same discipline chosenStyle/
+   * currentStoryText already follow at these call sites, and for the same
+   * reason: this wizard lets the user go Back and change an earlier step,
+   * so a value captured at Continue time can be stale by the time signup
+   * actually completes and the pending job is adopted.
+   */
+  function currentMoodForDream(){
+    return WizardChips.persistedMood(moodKey, moodSkipped);
+  }
 
   function renderMood(el){
     var chips = WizardChips.MOOD_CHIPS.map(function(c){
@@ -1062,6 +1086,7 @@
       var chip = e.target.closest('.fn-chip');
       if(!chip) return;
       moodKey = chip.dataset.mood;
+      moodSkipped = false; // tapping a chip is a real answer -- clears a Skip from an earlier pass (Back is available)
       renderChips();
       if(moodKey === 'other') document.getElementById('mood-other-input').focus();
     });
@@ -1069,8 +1094,10 @@
     if(moodOtherText) document.getElementById('mood-other-input').value = moodOtherText;
 
     renderChips();
-    document.getElementById('fn-mood-continue').addEventListener('click', next);
-    document.getElementById('fn-mood-skip').addEventListener('click', next);
+    // Continue = the highlighted chip IS the answer; Skip = declined. Both
+    // still call next() identically -- see moodSkipped's own comment.
+    document.getElementById('fn-mood-continue').addEventListener('click', function(){ moodSkipped = false; next(); });
+    document.getElementById('fn-mood-skip').addEventListener('click', function(){ moodSkipped = true; next(); });
   }
 
   // ===================================================================
@@ -1757,8 +1784,11 @@
       }
       if(pendingOperationName && !pendingStartFailed){
         // mediaType omitted (undefined) — this wall always adopts a
-        // video, see adoptPendingGeneration's own doc comment.
-        DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle, undefined, currentStoryText);
+        // video, see adoptPendingGeneration's own doc comment. mood rides
+        // along (merge of the mood-music branch onto the unified wall):
+        // the adopted dream must carry dream.mood so its bed is
+        // mood-keyed — same threading as every other adopt site.
+        DreamStore.adoptPendingGeneration(pendingOperationName, pendingStartedAt, assembled.caption, chosenStyle, undefined, currentStoryText, currentMoodForDream());
       }
       track('wizard_completed', { style: chosenStyle, had_pending_generation: !!(pendingOperationName && !pendingStartFailed) });
       location.href = 'home.html?generate=1';
@@ -1846,7 +1876,19 @@
       delete comparisonPayload.storyText;
       var comparisonKey = JSON.stringify(comparisonPayload);
 
-      var draftPatch = { caption: assembled.caption, storyText: currentStoryText, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey };
+      // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
+      // — the Mood step's answer, previously consumed only by
+      // assembleCaption/buildDeterministicStory (prompt + story text) and
+      // then dropped, so it never reached the finished dream record. Now
+      // persisted so js/music-bed.js can key the ambient bed off it. Note
+      // this flows to the finished dream by TWO separate routes, and both
+      // are wired: the draft (for anything that later regenerates from it)
+      // AND, on the actual pre-signup path, the adopted pending job below —
+      // that path never calls generateVideo at all, so the draft alone
+      // would not have been enough. See WizardChips.persistedMood for what
+      // null means here.
+      var moodForDream = currentMoodForDream();
+      var draftPatch = { caption: assembled.caption, storyText: currentStoryText, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey, mood: moodForDream };
 
       continueBtn.disabled = true;
       backBtn.disabled = true;

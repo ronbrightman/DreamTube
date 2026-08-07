@@ -77,7 +77,23 @@ var dreamStore = require('./lib/dream-store');
 var DREAM_FIELDS = [
   'caption', 'promptText', 'storyText', 'style', 'mediaType',
   'videoUrl', 'imageUrl', 'dur', 'sourceOperationName',
-  'interpretationText', 'interpretationAt', 'updatedAt'
+  'interpretationText', 'interpretationAt', 'updatedAt',
+  // mood (tracker item for-product-founder-08-04-evening-music--jfjco0) —
+  // the dream-builder wizard's Mood step answer, which js/music-bed.js keys
+  // the ambient music bed off. Without it in this list the field is silently
+  // dropped on upsert, so a dream RESTORED onto a new device (or after a
+  // reinstall) would come back moodless and quietly fall back to its
+  // visual-style bed — the same dream sounding different on two devices.
+  // This only affects restore, never destroys an existing local value:
+  // reconcilePrivateDreamsFromServer merges with Object.assign, which does
+  // not delete keys the server copy simply doesn't carry.
+  // Deliberately NOT validated against the known-mood list here, unlike
+  // publish-dream.js (which writes into a world-readable SHARED blob): this
+  // is the owner's own private record, stored as-is alongside caption/
+  // storyText, and the only reader of the value — js/music-bed.js's
+  // urlForMood — already fails closed on anything that isn't one of the six
+  // real mood keys.
+  'mood'
 ];
 
 /**

@@ -221,9 +221,12 @@
 //       short-lived owner generation-rate-limit bypass token locally (see
 //       netlify/functions/lib/owner-bypass.js and admin.html's "Owner Generation Bypass" control).
 //   getOwnerBypassStatus() / clearOwnerBypass() -> local read/write of that token's UI state.
-//   adoptPendingGeneration(operationName,startedAt,caption,style) -> local write, adopts an
-//       already-submitted (pre-signup) generation job as this browser's pendingJob — see
-//       wizard.html's "generate during signup" seam and start-pending-generation.js
+//   adoptPendingGeneration(operationName,startedAt,caption,style,mediaType,storyText,mood) -> local
+//       write, adopts an already-submitted (pre-signup) generation job as this browser's
+//       pendingJob — see wizard.html's "generate during signup" seam and
+//       start-pending-generation.js. `mood` (tracker item for-product-founder-08-04-evening-
+//       music--jfjco0) is the wizard's Mood step answer; this is the ONLY place it can be
+//       attached on that path, since it never calls startGeneration on the way out.
 //   saveClaimedDream(caption,style,videoUrl) -> local write, materializes an
 //       already-finished dream (claim-dream.html, the abandoned-dream re-engagement
 //       email/WhatsApp link's landing page) into the current account's local dreams
@@ -396,7 +399,7 @@
       // are the retired server-side model-audio request fields, still
       // seeded here permanently inert — see generate-video.js's own header
       // comment.
-      draft: { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null, isEditDelta: false, editDeltaLength: null },
+      draft: { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null, mood: null, isEditDelta: false, editDeltaLength: null },
       dreams: [],
       pendingJob: null, // { ..., ownerHandle } once set (see savePendingJob) — like dreams'
                          // ownerHandle, reads are scoped to whoever is CURRENTLY logged in
@@ -562,6 +565,16 @@
       if (parsed.draft.sourceImageUrl === undefined) parsed.draft.sourceImageUrl = null;
       if (parsed.draft.audioOn === undefined) parsed.draft.audioOn = false;
       if (parsed.draft.musicStyle === undefined) parsed.draft.musicStyle = null;
+      // `mood` (tracker item for-product-founder-08-04-evening-music--jfjco0)
+      // — the dream-builder wizard's Mood step answer, carried to the
+      // finished dream record so js/music-bed.js can pick a mood-keyed
+      // ambient bed from it. NOT the retired `musicStyle` field just above
+      // (a permanently-inert server-side model-audio request modifier) —
+      // completely unrelated despite both sounding music-ish. A draft
+      // written before this field existed simply has no mood, which is the
+      // same "no mood" state a SKIPPED mood step produces, and both fall
+      // back to the visual-style bed — see js/music-bed.js's urlForDream.
+      if (parsed.draft.mood === undefined) parsed.draft.mood = null;
       // musicBedOn migration removed (tracker item for-product-build-
       // founder-approved-08-03-jlkjy9, 2026-08-03 founder simplification) —
       // the field no longer means anything (js/music-bed.js's eligible()
@@ -1340,6 +1353,16 @@
           // from, not just this browser's local copy.
           channelLicenseRevokedAt: dream.channelLicenseRevokedAt || null,
           okToFeatureOnChannels: dream.okToFeatureOnChannels !== false,
+          // mood (tracker item for-product-founder-08-04-evening-music--
+          // jfjco0) — carried into the SHARED feed-index record, not just
+          // this browser's local copy, for the same reason
+          // caption/style/mediaType already are: explore.html builds its
+          // cards entirely from the feed record, so a mood that never
+          // reaches it can never influence that surface's music bed. Absent
+          // on anything published before this shipped, which publish-dream.js
+          // stores as null — the documented "fall back to the style bed"
+          // state, identical to what those cards already do today.
+          mood: dream.mood || null,
           // musicBedOn field removed from this payload (tracker item
           // for-product-build-founder-approved-08-03-jlkjy9, 2026-08-03
           // founder simplification) — js/music-bed.js's eligible() no
@@ -1494,6 +1517,23 @@
           videoUrl: dream.videoUrl || null, imageUrl: dream.imageUrl || null, dur: dream.dur || null,
           sourceOperationName: dream.sourceOperationName || null,
           interpretationText: dream.interpretationText || null, interpretationAt: dream.interpretationAt || null,
+          // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
+          // — the dream-builder wizard's Mood step answer, which
+          // js/music-bed.js keys the ambient bed off. This list is an
+          // explicit, hand-maintained whitelist (see this function's own doc
+          // comment above): a new dream field is NOT carried automatically,
+          // and omitting one fails silently rather than loudly. dream-sync.js's
+          // server-side DREAM_FIELDS allowlist having 'mood' is necessary but
+          // NOT sufficient — without it here too, the server never receives
+          // the field to store in the first place, so a dream RESTORED onto a
+          // new device or after a webview storage wipe (the entire reason this
+          // sync exists) comes back permanently moodless and quietly falls
+          // back to its visual-style bed. Null-coalesced like every optional
+          // field beside it, so "no mood" (a skipped Mood step, a free-text
+          // "+ Something else", or a creation path with no mood step at all —
+          // Write it / Record it / claim-dream) travels as a real explicit
+          // answer rather than an absent key.
+          mood: dream.mood || null,
           updatedAt: dream.updatedAt || Date.now()
         }
       })
@@ -2130,6 +2170,14 @@
     mediaType = mediaType === 'image' ? 'image' : 'video';
     var resolvedStoryText = (storyText && storyText.trim()) ? storyText.trim() : caption;
     var extraModelUsed = (extra && typeof extra.modelUsed !== 'undefined') ? extra.modelUsed : null;
+    // mood (tracker item for-product-founder-08-04-evening-music--jfjco0) —
+    // the wizard's Mood step answer, stamped onto the dream so
+    // js/music-bed.js can pick a mood-keyed bed at playback time. null means
+    // "no usable mood" (skipped, free-text "+ Something else", or a creation
+    // path with no mood step at all — Write it / Record it / claim-dream),
+    // which is a first-class, permanently-supported state, not a gap to
+    // backfill: it falls back to the visual-style bed exactly as today.
+    var extraMood = (extra && extra.mood) || null;
     var dream;
     if (sourceDreamId) {
       dream = findDream(sourceDreamId);
@@ -2190,6 +2238,16 @@
         style: style, mediaType: mediaType, interpretationText: null, interpretationAt: null,
         interpretations: null, sourceOperationName: operationName || null,
         modelUsed: extraModelUsed || dream.modelUsed || null,
+        // mood: preserve whatever this dream already had whenever THIS
+        // completion didn't carry one of its own — exactly the same
+        // "null here means unchanged, not erase it" rule as modelUsed
+        // directly above. Regenerate/Try Again/Edit Dream have no mood
+        // picker of their own (they re-run an EXISTING dream, they don't
+        // re-walk the wizard), so they always land here with extraMood
+        // null and must leave the dream's music bed exactly as the user
+        // already knows it — silently dropping to the style bed mid-edit
+        // would be a real, unrequested behavior change.
+        mood: extraMood || dream.mood || null,
         // updatedAt (tracker item for-product-build-p0-server-side-dream-p-
         // zl3rb2): stamped on every mutation so reconcilePrivateDreamsFromServer
         // can tell which of two devices' copies of this dream is newer.
@@ -2212,6 +2270,11 @@
         ownerHandle: state.user ? state.user.handle : '@you',
         caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText,
         style: style, mediaType: mediaType,
+        // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
+        // — see extraMood above. Forward-only, same shape as
+        // createdAt/storyText/modelUsed: a dream created before this field
+        // existed simply has no mood and is never retroactively guessed.
+        mood: extraMood,
         likes: 0, likedByMe: false, isPublished: false,
         videoUrl: mediaType === 'video' ? mediaUrl : null,
         imageUrl: mediaType === 'image' ? mediaUrl : null,
@@ -2353,6 +2416,20 @@
     // finalizeDream's own caption fallback — see that function's doc
     // comment.
     var storyText = opts.storyText || null;
+    // mood (tracker item for-product-founder-08-04-evening-music--jfjco0) —
+    // the dream-builder wizard's Mood step answer (one of js/wizard-chips.js's
+    // six real MOOD_CHIPS keys, or null when the step was SKIPPED / answered
+    // with "+ Something else" free text / never existed for this path).
+    // Purely a CLIENT-SIDE playback hint: deliberately NOT added to the
+    // generate-video.js/generate-image.js request payload below, because the
+    // mood already reached the model through the assembled prompt text
+    // itself (js/wizard-chips.js's assembleCaption emits a "<mood> mood,"
+    // clause) — sending it a second time as its own field would be
+    // redundant plumbing on a paid endpoint for no behavior change. It only
+    // needs to travel as far as savePendingJob (so a resumed job keeps it)
+    // and finalizeDream (so the finished dream record carries it), exactly
+    // the same route storyText above already takes.
+    var mood = opts.mood || null;
     var submitUrl = mediaType === 'image' ? '/.netlify/functions/generate-image' : '/.netlify/functions/generate-video';
     // Captured once, up front, so the SAME value is used both on the
     // submission request below and later on every status poll (see
@@ -2452,6 +2529,12 @@
         operationName: operationName, startedAt: startedAt,
         caption: caption, storyText: storyText, style: style, sourceDreamId: sourceDreamId,
         mediaType: mediaType,
+        // mood — same "re-stamp what this job already decided" reasoning as
+        // audioOn/storyText below: carried on the pending job itself so a
+        // RESUME (resumePendingJob) still finalizes the dream with the mood
+        // the wizard originally chose, even though the draft it came from
+        // may be long gone by then. See this function's own `mood` comment.
+        mood: mood,
         // Audio/music toggle (tracker item for-product-audio-on-off-
         // choice-at-creat-dyyr98) — stamped onto the job itself (not just
         // read off the draft) so processing.html's wait-screen checklist
@@ -2509,7 +2592,8 @@
       }
       var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName, storyText, {
         modelUsed: capturedModelUsed,
-        editHistoryEntry: opts.editHistoryEntry || null
+        editHistoryEntry: opts.editHistoryEntry || null,
+        mood: mood
       });
       // No duration concept applies to a still image — only probe/patch
       // dream.dur on the video path. Don't make the user wait on this —
@@ -4457,7 +4541,7 @@
 
     getDraft: function () { return state.draft; },
     setDraft: function (patch) { Object.assign(state.draft, patch); persist(); },
-    clearDraft: function () { state.draft = { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null, isEditDelta: false, editDeltaLength: null }; persist(); },
+    clearDraft: function () { state.draft = { caption: '', storyText: '', needsStoryRewrite: false, style: null, sourceDreamId: null, restore: false, characterIds: [], cameraView: null, sceneryTime: null, sceneryPlace: null, mediaType: null, sourceImageUrl: null, audioOn: false, musicStyle: null, mood: null, isEditDelta: false, editDeltaLength: null }; persist(); },
 
     /** Creates a brand new dream via fal.ai. Returns a Promise that resolves once the video is ready. opts: { characterIds, cameraView, sceneryTime, sceneryPlace, turnstileToken, audioOn, musicStyle }. Implicitly always 'video' — see generateImage below for the cheaper alternative; a caller that wants an image calls that instead, this method never looks at opts.mediaType. musicBedOn is no longer a recognized opt (tracker item for-product-build-founder-approved-08-03-jlkjy9, 2026-08-03 founder simplification) — music-bed eligibility is now computed purely from the finished dream's own style, see js/music-bed.js. */
     generateVideo: function (caption, style, opts) {
@@ -4467,7 +4551,12 @@
         sceneryTime: opts.sceneryTime, sceneryPlace: opts.sceneryPlace,
         turnstileToken: opts.turnstileToken,
         audioOn: opts.audioOn, musicStyle: opts.musicStyle,
-        storyText: opts.storyText
+        storyText: opts.storyText,
+        // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
+        // — the wizard's Mood step answer, forwarded through so the finished
+        // dream record carries it for music-bed selection. See
+        // startGeneration's own `mood` comment.
+        mood: opts.mood
       });
     },
 
@@ -4726,8 +4815,19 @@
      * not-yet-updated caller, or a legacy pending job), same fallback
      * finalizeDream itself applies.
      */
-    adoptPendingGeneration: function (operationName, startedAt, caption, style, mediaType, storyText) {
-      savePendingJob({ operationName: operationName, startedAt: startedAt, caption: caption, storyText: storyText || null, style: style, sourceDreamId: null, mediaType: mediaType === 'image' ? 'image' : 'video', notify: false });
+    adoptPendingGeneration: function (operationName, startedAt, caption, style, mediaType, storyText, mood) {
+      savePendingJob({ operationName: operationName, startedAt: startedAt, caption: caption, storyText: storyText || null, style: style, sourceDreamId: null, mediaType: mediaType === 'image' ? 'image' : 'video',
+        // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
+        // — wizard.html's pre-signup flow never touches startGeneration on
+        // the way OUT (the real submission already happened server-side via
+        // start-pending-generation.js), so this adoption is the ONLY place
+        // its Mood step answer can be attached to the job that eventually
+        // finalizes the dream. Omitted by any caller that has no mood
+        // (start.html's own pre-signup flow has no Mood step at all) —
+        // undefined becomes null, the documented "fall back to the
+        // style bed" state.
+        mood: mood || null,
+        notify: false });
     },
 
     /**
@@ -4790,6 +4890,14 @@
         // own call sites), re-stamped here rather than left to finalizeDream's
         // caption fallback just because this is a resume.
         storyText: job.storyText,
+        // mood — same reasoning again (tracker item for-product-founder-
+        // 08-04-evening-music--jfjco0). This is the line that actually makes
+        // wizard.html's pre-signup flow work end to end: that path NEVER
+        // calls generateVideo, it adopts a server-started job and lets
+        // home.html resume it, so without re-stamping job.mood here the
+        // wizard's Mood step answer would be silently dropped on the exact
+        // funnel it matters most for.
+        mood: job.mood,
         // modelUsed/editHistoryEntry (docs/EDIT_MECHANISM_SPEC.md §3.4) —
         // same "re-stamp what this job already decided" reasoning as
         // audioOn/storyText above: a resume has no fresh generate-video.js

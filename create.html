@@ -1187,6 +1187,20 @@
   var buildActionExpanded = false;
   var buildMoodKey = WizardChips.DEFAULT_MOOD;
   var buildMoodOtherText = '';
+  // Did the user SKIP the Mood step rather than answer it? (tracker item
+  // for-product-founder-08-04-evening-music--jfjco0.) buildMoodKey alone
+  // can't answer that: it's pre-seeded to DEFAULT_MOOD ('dreamy') so a chip
+  // is always visibly pre-highlighted, which makes "tapped Skip" and
+  // "accepted the highlighted default via Continue" produce an identical
+  // buildMoodKey. They are NOT the same thing for music-bed purposes —
+  // Continue is an accepted answer, Skip is a declined one, and the tracker
+  // item's FINAL-FINAL scope calls for a skipped mood to fall back to the
+  // visual-style bed. This flag is the ONLY thing that distinguishes them;
+  // it deliberately does NOT affect prompt/story assembly, which keeps
+  // using buildMoodKey exactly as before (a skip has always contributed
+  // 'dreamy' to the generated prompt, and changing that would be a real,
+  // unrequested regression in what actually gets generated).
+  var buildMoodSkipped = false;
   var buildFreeText = '';
   var buildCharEditingId = null;
   var buildCharSubMode = 'describe';
@@ -1531,6 +1545,9 @@
       var chip = e.target.closest('.opt-chip');
       if(!chip) return;
       buildMoodKey = chip.dataset.buildMood;
+      // Tapping any chip is a real answer — clears a Skip recorded on an
+      // earlier pass through this step (the user can come Back to it).
+      buildMoodSkipped = false;
       renderChips();
       if(buildMoodKey === 'other') document.getElementById('build-mood-other-input').focus();
     });
@@ -1538,8 +1555,12 @@
     if(buildMoodOtherText) document.getElementById('build-mood-other-input').value = buildMoodOtherText;
 
     renderChips();
-    document.getElementById('build-mood-continue').addEventListener('click', buildNext);
-    document.getElementById('build-mood-skip').addEventListener('click', buildNext);
+    // Continue = the highlighted chip IS the answer (whether the user tapped
+    // it or accepted the pre-highlighted default). Skip = declined; see
+    // buildMoodSkipped's own comment. Both still call buildNext identically,
+    // so the step's flow/prompt behavior is completely unchanged.
+    document.getElementById('build-mood-continue').addEventListener('click', function(){ buildMoodSkipped = false; buildNext(); });
+    document.getElementById('build-mood-skip').addEventListener('click', function(){ buildMoodSkipped = true; buildNext(); });
   }
 
   function renderBuildFreeText(el){
@@ -1614,7 +1635,18 @@
       storyText: storyText,
       needsStoryRewrite: !hasFreeText,
       characterIds: assembled.characterIdsForGeneration,
-      sceneryPlace: buildSettingPlaceKey
+      sceneryPlace: buildSettingPlaceKey,
+      // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
+      // — this line is the actual FIX for the bug that item's scope names:
+      // the Mood step's answer used to reach assembleCaption/
+      // buildDeterministicStory (i.e. the generated prompt text) and then be
+      // dropped on the floor here, so it never survived onto the finished
+      // dream record and nothing downstream could ever key off it. It now
+      // rides the draft -> home.html's startFreshGenerationFromDraft ->
+      // DreamStore.generateVideo -> startGeneration -> finalizeDream route
+      // all the way to `dream.mood`. See WizardChips.persistedMood for what
+      // null means here (skipped / free-text / unknown).
+      mood: WizardChips.persistedMood(buildMoodKey, buildMoodSkipped)
     });
     location.href = 'style.html';
   }
