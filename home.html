@@ -1137,7 +1137,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
               <div class="mky-exp" id="mky-bookmark-exp"></div>
             </div>
           </div>
-          <div class="mky-reward gold">Adding DreamTube to your home screen unlocks +100 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
+          <div class="mky-reward gold">Add DreamTube to your home screen, then open it from the new icon — that first open unlocks +100 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
           <button type="button" class="mky-claim" id="mky-claim" disabled></button>
         </div>
         <div id="mky-done" hidden>
@@ -2573,7 +2573,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     document.getElementById('mky-install-check').hidden = !installed;
     var claimBtn = document.getElementById('mky-claim');
     claimBtn.disabled = !installed;
-    claimBtn.innerHTML = 'Claim +100&nbsp;' + tok();
+    // Founder catch (2026-08-07): he added the icon, stayed in the
+    // browser tab, and read the dead button as broken — the disabled
+    // state now SAYS what unlocks it instead of silently waiting.
+    claimBtn.innerHTML = installed
+      ? ('Claim +100&nbsp;' + tok())
+      : ('Open from your icon to claim +100&nbsp;' + tok());
     document.getElementById('mky-reward-icon').innerHTML = window.Icons ? Icons.token : '';
     renderMkyInstallExp();
     renderMkyBookmarkExp();
