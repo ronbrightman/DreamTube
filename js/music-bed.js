@@ -91,18 +91,17 @@
 // The four style beds are therefore PERMANENT, not a migration step —
 // they are the fallback tier, and deleting them would break case 2.
 //
-// TODAY, TIER 1 IS STILL INERT — BUT ONLY PENDING THE FOUNDER'S PICKS.
-// MOOD_FILES below stays empty until he auditions. The 12 real candidate
-// tracks (2 per mood) ARE now generated and committed (2026-08-07, fal.ai
-// stable-audio 45s seamless loops) at assets/music-beds/moods/candidates/,
-// and bed-audition-x7q4.html plays them all; what has NOT happened yet is
-// the founder picking a winner per mood there. Every mood therefore still
-// resolves to null in tier 1 and falls through to tier 2 — i.e. this layer
-// changes nothing any user actually hears right now, which is deliberate
-// and is covered by test/mood-music-bed-behavioral.test.js. Switching it
-// on is one line per mood once he picks (move the winner to
-// assets/music-beds/moods/<mood>.wav + an entry in MOOD_FILES); no other
-// code has to change.
+// TIER 1 IS LIVE (2026-08-07). The audition ran its full course the same
+// day the 12 candidates were generated (fal.ai stable-audio 45s seamless
+// loops, 2 per mood): the founder picked one winner per mood on
+// bed-audition-x7q4.html (peaceful-A, joyful-B, dreamy-A, mysterious-B,
+// tense-B, epic-B), each winner was promoted in place to
+// assets/music-beds/moods/<mood>.wav, and — per the tracker item's own
+// no-dead-assets instruction — the six losing candidates AND the audition
+// page itself were deleted. MOOD_FILES below is the switch that engaged
+// it all. A dream with a real chosen mood now hears its mood bed; a
+// skipped/free-text/legacy mood still falls back to its visual-style bed
+// exactly as before (tier 2, permanent).
 var MusicBed = (function () {
   // One committed WAV per style — see this file's header comment for
   // provenance. Keys are lowercased style values; style.html's own
@@ -128,17 +127,22 @@ var MusicBed = (function () {
   // cannot silently drift apart.
   var MOOD_KEYS = ['peaceful', 'joyful', 'dreamy', 'mysterious', 'tense', 'epic'];
 
-  // mood key -> committed filename under assets/music-beds/moods/.
-  // INTENTIONALLY EMPTY until the founder's audition picks land — see this
-  // file's header comment. The candidate tracks themselves exist (under
-  // moods/candidates/, for bed-audition-x7q4.html), but nothing goes in
-  // this map until a picked winner is moved to assets/music-beds/moods/
-  // proper. An empty entry means "no mood bed for this mood yet," which
-  // urlForMood turns into null and urlForDream turns into the style-bed
-  // fallback. Never add a placeholder/fake file here to make the map look
-  // populated — a missing asset is tolerated, never faked (same convention
-  // as a missing character portrait elsewhere in this app).
-  var MOOD_FILES = {};
+  // mood key -> committed filename under assets/music-beds/moods/. These
+  // six are the founder's audition winners (2026-08-07 — see this file's
+  // header comment), committed as real static assets, one per mood. A
+  // future mood key with no entry here resolves to null in urlForMood and
+  // falls back to the style bed. Never add a placeholder/fake file here to
+  // make the map look populated — a missing asset is tolerated, never
+  // faked (same convention as a missing character portrait elsewhere in
+  // this app).
+  var MOOD_FILES = {
+    peaceful: 'peaceful.wav',
+    joyful: 'joyful.wav',
+    dreamy: 'dreamy.wav',
+    mysterious: 'mysterious.wav',
+    tense: 'tense.wav',
+    epic: 'epic.wav'
+  };
 
   /**
    * The bed asset URL for a given dream `style` string, or null if that
@@ -153,16 +157,17 @@ var MusicBed = (function () {
 
   /**
    * The mood-keyed bed asset URL for a dream's `mood` value, or null when
-   * there isn't one — which today is ALWAYS, since MOOD_FILES is still
-   * empty (see this file's header comment). Three distinct null cases, all
-   * deliberately collapsed into the same "no mood bed, fall back" answer:
+   * there isn't one. All six real mood keys resolve to a committed winner
+   * track as of 2026-08-07 (see this file's header comment). Three
+   * distinct null cases remain, all deliberately collapsed into the same
+   * "no mood bed, fall back" answer:
    *   - `mood` is absent/null: the mood step was SKIPPED, or this dream
    *     predates mood persistence entirely.
    *   - `mood` is some other string: a "+ Something else" free-text mood,
    *     or a future mood key this build doesn't know. Fails closed rather
    *     than guessing, same discipline as urlForStyle above.
-   *   - `mood` is a real known key but has no committed file yet: today's
-   *     state for all six.
+   *   - `mood` is a known key with no MOOD_FILES entry: impossible today,
+   *     but the guard stays for any future mood added before its track.
    */
   function urlForMood(mood) {
     var key = typeof mood === 'string' ? mood.toLowerCase() : '';
@@ -191,10 +196,9 @@ var MusicBed = (function () {
    * comment), there is no user choice left to check — music is always on
    * for every dream that has both a real video and a bed that actually
    * resolves. As of the mood-keyed layer that means EITHER tier resolving
-   * (urlForDream): a dream whose visual style has no bed is now eligible
-   * after all if its mood has a track — which today can never happen,
-   * since MOOD_FILES is empty, so this is byte-for-byte the same answer
-   * it has always given. Deliberately does NOT read `dream.musicBedOn` at all (that
+   * (urlForDream): a dream whose visual style has no bed IS eligible when
+   * its mood has a track — live since 2026-08-07, when all six mood beds
+   * landed. Deliberately does NOT read `dream.musicBedOn` at all (that
    * field no longer means anything, and may still be `false`/`true`/absent
    * on dreams generated across this feature's three history phases) — this
    * is what makes a dream generated before this simplification also always
@@ -205,11 +209,11 @@ var MusicBed = (function () {
   }
 
   // MOOD_KEYS/MOOD_FILES are exposed as the SAME object/array references
-  // the functions above close over — not copies. That's what lets
-  // test/mood-music-bed-behavioral.test.js prove tier 1 really works by
-  // populating MOOD_FILES at runtime (standing in for the real committed
-  // tracks that don't exist yet) and watching urlForDream switch over,
-  // without this file needing a test-only backdoor function.
+  // the functions above close over — not copies. That's what let
+  // test/mood-music-bed-behavioral.test.js prove tier 1 worked before the
+  // real tracks landed, and what still lets it assert the live map's
+  // exact contents, without this file needing a test-only backdoor
+  // function.
   return {
     urlForStyle: urlForStyle,
     urlForMood: urlForMood,

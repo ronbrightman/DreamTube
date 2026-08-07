@@ -17,20 +17,21 @@
 //   2. THE SELECTION LAYER (js/music-bed.js's urlForMood/urlForDream). Two
 //      tiers: the dream's own mood first, the visual-style bed as fallback.
 //
-//   3. THE AUDITION PAGE's reviewing/picking flow (bed-audition-x7q4.html).
+//   3. THE SIX LIVE MOOD BEDS (assets/music-beds/moods/<mood>.wav) — the
+//      founder's audition winners, committed as real production assets.
 //
-// The non-thing: THERE IS NO LIVE MOOD-KEYED BED YET. The 12 candidate
-// tracks (2 per mood) ARE committed now (2026-08-07 — the one-time fal.ai
-// seamless-loop pipeline finally ran, in an environment that held a
-// FAL_KEY) at assets/music-beds/moods/candidates/, but they are AUDITION
-// candidates only: js/music-bed.js's MOOD_FILES map stays empty until the
-// founder picks a winner per mood on bed-audition-x7q4.html. So the single
-// most important assertion in this file is still the ZERO-REGRESSION one:
-// with that map empty, urlForDream returns byte-identically what
-// urlForStyle always did, for every mood x style combination — today's
-// users hear exactly what they heard before this layer existed. The tests
-// that prove tier 1 actually works do so by POPULATING MOOD_FILES at
-// runtime, standing in for the winners that haven't been promoted yet.
+// HISTORY, for anyone reading old diffs: this suite originally covered
+// bed-audition-x7q4.html's picking flow and a ZERO-REGRESSION guarantee
+// that an empty MOOD_FILES map changed nothing users heard. Both are
+// finished business as of 2026-08-07: the 12 fal.ai candidates were
+// generated, the founder picked one winner per mood (peaceful-A, joyful-B,
+// dreamy-A, mysterious-B, tense-B, epic-B), the winners were promoted to
+// assets/music-beds/moods/<mood>.wav, MOOD_FILES went live with all six,
+// and the losing candidates AND the audition page were deleted (the
+// tracker item's own no-dead-assets instruction). What this suite protects
+// NOW: tier 1 actually serving every real mood, and the fallback tier
+// still serving skipped/free-text/legacy moods byte-identically to the
+// pre-mood era.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -84,50 +85,6 @@ function blockThirdParty(page) {
 
 function newMobileContext() {
   return browser.newContext({ viewport: MOBILE_VIEWPORT });
-}
-
-/**
- * Installs a MOOD_FILES override that takes effect the INSTANT
- * js/music-bed.js defines its global — before any page script can read it.
- *
- * js/music-bed.js is a plain script doing `var MusicBed = (function(){...})()`
- * at top level, so the assignment goes through window. Pre-defining an
- * accessor property for that name (configurable, so the later `var`
- * declaration finds it already present and leaves it alone) lets the setter
- * seed MOOD_FILES the moment the real module lands — which is what makes
- * this work for pages like result.html that resolve the bed URL during their
- * own initial render, long before a test could otherwise reach in.
- *
- * `files` is a { moodKey: filename } map standing in for the real committed
- * tracks that don't exist yet.
- */
-function overrideMoodFiles(page, files) {
-  return page.addInitScript(function (seedFiles) {
-    var real;
-    Object.defineProperty(window, 'MusicBed', {
-      configurable: true,
-      get: function () { return real; },
-      set: function (v) {
-        real = v;
-        if (v && v.MOOD_FILES) {
-          Object.keys(seedFiles).forEach(function (k) { v.MOOD_FILES[k] = seedFiles[k]; });
-        }
-      }
-    });
-  }, files);
-}
-
-/**
- * Serves the mood-bed directory (which contains no real files) from one of
- * the four REAL committed style beds, so an overridden MOOD_FILES entry
- * resolves to genuinely playable audio rather than a 404. Test-only stand-in
- * for the tracks the fal.ai pipeline still has to produce.
- */
-function serveStandInMoodBeds(page) {
-  var realWav = path.join(REPO_ROOT, 'assets', 'music-beds', 'anime.wav');
-  return page.route('**/assets/music-beds/moods/**', function (route) {
-    route.fulfill({ status: 200, contentType: 'audio/wav', body: fs.readFileSync(realWav) });
-  });
 }
 
 /** Mocks a whole generation round trip (submit -> status poll -> done) at zero cost — never touches fal.ai. */
@@ -229,7 +186,7 @@ test('the mood key list is identical in all three places that hold a copy (wizar
 // 1. js/music-bed.js's selection logic
 // ─────────────────────────────────────────────────────────────────────────
 
-test('ZERO REGRESSION: with no mood tracks committed (today), urlForDream returns exactly what urlForStyle always did for every mood x style combination -- a real chosen mood changes nothing a user currently hears', async function (t) {
+test('LIVE TIER 1: every real mood resolves to its own committed winner bed for every style -- and the NO-mood path still returns exactly what urlForStyle always did (the zero-regression guarantee, now scoped to the dreams it still applies to)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -239,7 +196,7 @@ test('ZERO REGRESSION: with no mood tracks committed (today), urlForDream return
     await page.waitForFunction(function () { return !!window.MusicBed; }, { timeout: 5000 });
 
     var result = await page.evaluate(function () {
-      var out = { moodKeys: MusicBed.MOOD_KEYS.slice(), moodFileCount: Object.keys(MusicBed.MOOD_FILES).length, rows: [], moodUrls: {} };
+      var out = { moodKeys: MusicBed.MOOD_KEYS.slice(), moodFiles: JSON.parse(JSON.stringify(MusicBed.MOOD_FILES)), rows: [], legacyRows: [], moodUrls: {} };
       var styles = ['Cartoon', 'Cinematic', 'Anime', 'Realistic', 'Surrealist'];
       MusicBed.MOOD_KEYS.forEach(function (mood) {
         out.moodUrls[mood] = MusicBed.urlForMood(mood);
@@ -247,6 +204,17 @@ test('ZERO REGRESSION: with no mood tracks committed (today), urlForDream return
           var dream = { videoUrl: 'x.mp4', style: style, mood: mood };
           out.rows.push({
             mood: mood, style: style,
+            forDream: MusicBed.urlForDream(dream),
+            eligible: MusicBed.eligible(dream)
+          });
+        });
+      });
+      // The dreams tier 1 does NOT apply to: no mood at all, and free text.
+      styles.forEach(function (style) {
+        [null, undefined, 'other', 'vaguely ominous but hopeful'].forEach(function (mood) {
+          var dream = { videoUrl: 'x.mp4', style: style, mood: mood };
+          out.legacyRows.push({
+            mood: String(mood), style: style,
             forDream: MusicBed.urlForDream(dream),
             forStyle: MusicBed.urlForStyle(style),
             eligible: MusicBed.eligible(dream)
@@ -258,46 +226,58 @@ test('ZERO REGRESSION: with no mood tracks committed (today), urlForDream return
 
     assert.deepEqual(result.moodKeys, ['peaceful', 'joyful', 'dreamy', 'mysterious', 'tense', 'epic'],
       'the live MOOD_KEYS value must match MOOD_CHIPS (cross-checks the source-read assertion above)');
-    assert.equal(result.moodFileCount, 0,
-      'MOOD_FILES must still be empty -- the moment a real track is committed, this assertion is the reminder to update this test and the zero-regression claim with it');
+    assert.deepEqual(result.moodFiles, {
+      peaceful: 'peaceful.wav', joyful: 'joyful.wav', dreamy: 'dreamy.wav',
+      mysterious: 'mysterious.wav', tense: 'tense.wav', epic: 'epic.wav'
+    }, 'MOOD_FILES must carry exactly the six audition winners -- one committed bed per real mood, nothing extra');
 
     Object.keys(result.moodUrls).forEach(function (mood) {
-      assert.equal(result.moodUrls[mood], null, mood + ' has no committed track yet, so tier 1 must resolve to null');
+      assert.equal(result.moodUrls[mood], 'assets/music-beds/moods/' + mood + '.wav',
+        mood + ' must resolve to its own committed winner track');
     });
     assert.equal(result.rows.length, 30);
     result.rows.forEach(function (row) {
+      assert.equal(row.forDream, 'assets/music-beds/moods/' + row.mood + '.wav',
+        'mood "' + row.mood + '" + style "' + row.style + '": the dream\'s own mood must pick the bed, the visual style is ignored');
+      assert.equal(row.eligible, true,
+        'a real mood bed makes every real-video dream eligible, even one whose style has no bed');
+    });
+    result.legacyRows.forEach(function (row) {
       assert.equal(row.forDream, row.forStyle,
-        'mood "' + row.mood + '" + style "' + row.style + '": urlForDream must fall through to the identical style bed today');
+        'mood "' + row.mood + '" + style "' + row.style + '": a skipped/free-text/legacy mood must fall through to the identical style bed, exactly as before this layer existed');
       assert.equal(row.eligible, row.forStyle !== null,
-        'eligibility must be unchanged too -- still driven purely by a real video + a resolvable bed');
+        'eligibility for the no-mood path must be unchanged too -- still driven purely by a real video + a resolvable bed');
     });
   } finally {
     await context.close();
   }
 });
 
-test('js/music-bed.js: once a mood-keyed track EXISTS, the dream\'s own mood wins over its visual style -- and a mood with no track, an unknown mood, a free-text mood, or no mood at all all still fall back to the style bed', async function (t) {
+test('js/music-bed.js: the dream\'s own mood wins over its visual style with the REAL live map -- and an unknown mood, a free-text mood, or no mood at all still fall back to the style bed, failing closed when neither tier resolves', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    // Stand-ins for two of the twelve real candidates. Deliberately only TWO
-    // of the six moods, so the same page also proves the partially-populated
-    // state (some moods live, the rest still falling back) that will really
-    // exist between the founder's first pick and his last.
-    await overrideMoodFiles(page, { tense: 'tense.wav', peaceful: 'peaceful.wav' });
     await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(function () { return !!window.MusicBed && Object.keys(MusicBed.MOOD_FILES).length === 2; }, { timeout: 5000 });
+    await page.waitForFunction(function () { return !!window.MusicBed; }, { timeout: 5000 });
 
     var r = await page.evaluate(function () {
       var d = function (mood, style) { return { videoUrl: 'x.mp4', style: style, mood: mood }; };
+      // A hypothetical FUTURE mood key added to MOOD_KEYS before its track
+      // exists must fall back, not go silent -- the guard urlForMood keeps
+      // for exactly that window. Simulated by extending the live arrays the
+      // module exports (same object references the closures read).
+      MusicBed.MOOD_KEYS.push('melancholy');
+      var futureMoodNoTrack = MusicBed.urlForDream(d('melancholy', 'Cartoon'));
+      var futureMoodNoTrackUnknownStyle = MusicBed.urlForDream(d('melancholy', 'Surrealist'));
+      var futureMoodNoTrackEligible = MusicBed.eligible(d('melancholy', 'Surrealist'));
+      MusicBed.MOOD_KEYS.pop();
       return {
         // Tier 1 wins: the mood picks the bed, the visual style is ignored.
         tenseCartoon: MusicBed.urlForDream(d('tense', 'Cartoon')),
         tenseAnime: MusicBed.urlForDream(d('tense', 'Anime')),
         peacefulRealistic: MusicBed.urlForDream(d('peaceful', 'Realistic')),
-        // Tier 2: a real mood that has no track yet still falls back.
         joyfulCartoon: MusicBed.urlForDream(d('joyful', 'Cartoon')),
         epicCinematic: MusicBed.urlForDream(d('epic', 'Cinematic')),
         // Tier 2: skipped / free text / unknown / absent -> style bed.
@@ -307,23 +287,26 @@ test('js/music-bed.js: once a mood-keyed track EXISTS, the dream\'s own mood win
         noMoodField: MusicBed.urlForDream({ videoUrl: 'x.mp4', style: 'Cartoon' }),
         // Case-insensitive, same contract urlForStyle already had.
         upperMood: MusicBed.urlForDream(d('TENSE', 'Cartoon')),
-        // A mood that HAS a track rescues an otherwise-unresolvable style...
+        // A mood bed rescues an otherwise-unresolvable style...
         tenseUnknownStyle: MusicBed.urlForDream(d('tense', 'Surrealist')),
         tenseUnknownStyleEligible: MusicBed.eligible(d('tense', 'Surrealist')),
-        // ...but a mood WITHOUT one leaves both tiers unresolved.
-        joyfulUnknownStyle: MusicBed.urlForDream(d('joyful', 'Surrealist')),
-        joyfulUnknownStyleEligible: MusicBed.eligible(d('joyful', 'Surrealist')),
+        // ...but no mood + unknown style leaves both tiers unresolved.
+        noMoodUnknownStyle: MusicBed.urlForDream(d(null, 'Surrealist')),
+        noMoodUnknownStyleEligible: MusicBed.eligible(d(null, 'Surrealist')),
+        futureMoodNoTrack: futureMoodNoTrack,
+        futureMoodNoTrackUnknownStyle: futureMoodNoTrackUnknownStyle,
+        futureMoodNoTrackEligible: futureMoodNoTrackEligible,
         // An image-only dream is never eligible however good its mood is.
         imageOnly: MusicBed.eligible({ imageUrl: 'x.jpg', videoUrl: null, style: 'Cartoon', mood: 'tense' }),
         nullDream: MusicBed.urlForDream(null)
       };
     });
 
-    assert.equal(r.tenseCartoon, 'assets/music-beds/moods/tense.wav', 'the mood must beat the visual style once its track exists');
+    assert.equal(r.tenseCartoon, 'assets/music-beds/moods/tense.wav', 'the mood must beat the visual style');
     assert.equal(r.tenseAnime, 'assets/music-beds/moods/tense.wav', 'same mood + a different style still resolves to the mood bed');
     assert.equal(r.peacefulRealistic, 'assets/music-beds/moods/peaceful.wav');
-    assert.equal(r.joyfulCartoon, 'assets/music-beds/cartoon.wav', 'a mood with no track yet must fall back, not go silent');
-    assert.equal(r.epicCinematic, 'assets/music-beds/cinematic.wav');
+    assert.equal(r.joyfulCartoon, 'assets/music-beds/moods/joyful.wav');
+    assert.equal(r.epicCinematic, 'assets/music-beds/moods/epic.wav');
     assert.equal(r.nullMood, 'assets/music-beds/cartoon.wav', 'a SKIPPED mood falls back to the visual-style bed -- the tracker item\'s explicit requirement');
     assert.equal(r.otherMood, 'assets/music-beds/cartoon.wav', 'a "+ Something else" free-text mood falls back -- keyword mapping is explicitly out of scope');
     assert.equal(r.freeTextMood, 'assets/music-beds/cartoon.wav');
@@ -331,8 +314,11 @@ test('js/music-bed.js: once a mood-keyed track EXISTS, the dream\'s own mood win
     assert.equal(r.upperMood, 'assets/music-beds/moods/tense.wav');
     assert.equal(r.tenseUnknownStyle, 'assets/music-beds/moods/tense.wav');
     assert.equal(r.tenseUnknownStyleEligible, true, 'a real mood bed makes a previously-ineligible unknown-style dream eligible');
-    assert.equal(r.joyfulUnknownStyle, null, 'both tiers failing must fail closed to no bed, never guess');
-    assert.equal(r.joyfulUnknownStyleEligible, false);
+    assert.equal(r.noMoodUnknownStyle, null, 'both tiers failing must fail closed to no bed, never guess');
+    assert.equal(r.noMoodUnknownStyleEligible, false);
+    assert.equal(r.futureMoodNoTrack, 'assets/music-beds/cartoon.wav', 'a future mood key with no MOOD_FILES entry must fall back, not go silent');
+    assert.equal(r.futureMoodNoTrackUnknownStyle, null);
+    assert.equal(r.futureMoodNoTrackEligible, false);
     assert.equal(r.imageOnly, false);
     assert.equal(r.nullDream, null);
   } finally {
@@ -468,8 +454,6 @@ test('js/store.js: a mood on the draft reaches the FINISHED dream record through
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await overrideMoodFiles(page, { mysterious: 'mysterious.wav' });
-    await serveStandInMoodBeds(page);
     await seedLoggedInUser(page, 'moodgenerator');
     await mockGeneration(page, '/assets/music-beds/anime.wav');
     await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
@@ -656,8 +640,6 @@ test('explore.html: a shared-feed card picks its bed from the record\'s own mood
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await overrideMoodFiles(page, { tense: 'tense.wav' });
-    await serveStandInMoodBeds(page);
     await page.route('**/.netlify/functions/get-feed*', function (route) {
       route.fulfill({
         status: 200, contentType: 'application/json', body: JSON.stringify({
@@ -696,211 +678,62 @@ test('explore.html: a shared-feed card picks its bed from the record\'s own mood
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// 3. The audition page's reviewing/picking flow
+// 3. The six live mood beds are real production assets
+//
+// (This section replaced the audition-page tests when the audition
+// concluded and bed-audition-x7q4.html was deleted — see the header
+// comment. The picking flow it covered no longer exists to test.)
 // ─────────────────────────────────────────────────────────────────────────
 
-test('bed-audition-x7q4.html: with no candidate tracks reachable (the pre-generation state, simulated by 404ing every candidate path -- the 12 real tracks are committed now), all 12 slots show an honest pending state with playback and picking disabled -- no fake audio, no fake waveform', async function (t) {
+test('assets/music-beds/moods/: all six winner beds exist on disk as valid, full-length WAVs, are served at their production URLs, and genuinely decode and play in a real browser', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
+  var moods = ['peaceful', 'joyful', 'dreamy', 'mysterious', 'tense', 'epic'];
+
+  // On disk: a truncated download or wrong-format encode must not be able
+  // to pass this suite. Same spec family as the four style beds.
+  moods.forEach(function (mood) {
+    var p = path.join(REPO_ROOT, 'assets', 'music-beds', 'moods', mood + '.wav');
+    var buf = fs.readFileSync(p);
+    assert.equal(buf.slice(0, 4).toString('ascii'), 'RIFF', p + ' must be a RIFF container');
+    assert.equal(buf.slice(8, 12).toString('ascii'), 'WAVE', p + ' must be a WAVE file');
+    assert.ok(buf.length > 1000000, p + ' must not be a stub/truncated file');
+  });
+
+  // And no candidate leftovers: the audition's losers (and the whole
+  // candidates directory) were deleted, per the no-dead-assets instruction.
+  assert.equal(fs.existsSync(path.join(REPO_ROOT, 'assets', 'music-beds', 'moods', 'candidates')), false,
+    'the candidates directory must be gone once the audition is over');
+  assert.equal(fs.existsSync(path.join(REPO_ROOT, 'bed-audition-x7q4.html')), false,
+    'the audition page must be gone once the audition is over');
+
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    // The candidate files exist on disk now, so the empty state this test
-    // protects (a deploy missing the files, a future mood added before its
-    // tracks) has to be simulated rather than relied on.
-    await page.route('**/assets/music-beds/moods/candidates/**', function (route) {
-      route.fulfill({ status: 404, body: '' });
-    });
-    await page.goto(baseUrl + '/bed-audition-x7q4.html', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.mood');
+    await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
 
-    var state = await page.evaluate(function () {
-      var slots = Array.prototype.map.call(document.querySelectorAll('.slot:not(.ref)'), function (s) {
-        return {
-          exists: s.dataset.exists,
-          playDisabled: s.querySelector('.play').disabled,
-          pickDisabled: s.querySelector('.pick').disabled,
-          pending: !!s.querySelector('.pending')
-        };
-      });
-      return {
-        moodRows: document.querySelectorAll('.mood').length,
-        moodLabels: Array.prototype.map.call(document.querySelectorAll('.mood h2'), function (h) { return h.textContent; }),
-        slots: slots,
-        status: document.getElementById('status').textContent,
-        statusClass: document.getElementById('status').className,
-        picks: document.getElementById('picks-text').textContent,
-        referencePlayers: document.querySelectorAll('.slot.ref .play').length
-      };
-    });
+    // Served: every production URL answers 200 (the exact URLs urlForMood
+    // hands to the players).
+    for (var i = 0; i < moods.length; i++) {
+      var res = await page.request.head(baseUrl + '/assets/music-beds/moods/' + moods[i] + '.wav');
+      assert.equal(res.status(), 200, moods[i] + '.wav must be served at its production path');
+    }
 
-    assert.equal(state.moodRows, 6, 'one row per mood');
-    assert.deepEqual(state.moodLabels, ['Peaceful', 'Joyful', 'Dreamy / surreal', 'Mysterious', 'Tense / scary', 'Epic / awe-inspiring']);
-    assert.equal(state.slots.length, 12, 'two candidate slots per mood');
-    state.slots.forEach(function (s, i) {
-      assert.equal(s.exists, 'no', 'slot ' + i + ' must report no file');
-      assert.equal(s.playDisabled, true, 'slot ' + i + ' must not offer playback of a track that does not exist');
-      assert.equal(s.pickDisabled, true, 'slot ' + i + ' must not be pickable');
-      assert.equal(s.pending, true, 'slot ' + i + ' must say plainly that it has not been generated yet');
-    });
-    assert.match(state.status, /0 of 12 candidate tracks available/);
-    assert.match(state.statusClass, /none/);
-    assert.match(state.picks, /No picks yet/);
-    assert.equal(state.referencePlayers, 6, 'every row still offers a reference bed to compare against');
-  } finally {
-    await context.close();
-  }
-});
-
-test('bed-audition-x7q4.html: the 12 real committed candidate tracks are all found and playable -- no interception, the actual files at the actual paths (the state the founder auditions in)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.goto(baseUrl + '/bed-audition-x7q4.html', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(function () {
-      return document.querySelectorAll('.slot[data-exists="yes"]').length === 12;
-    }, { timeout: 8000 });
-
-    var status = await page.textContent('#status');
-    assert.match(status, /All 12 candidate tracks are here/, 'the page must report full delivery');
-
-    // One committed track really decodes and plays — proving the files are
-    // real audio, not just paths that 200.
-    await page.click('.mood[data-mood="dreamy"] .slot[data-slot="a"] .play');
-    await page.waitForFunction(function () {
-      var p = document.getElementById('player');
-      return p && !p.paused && p.currentTime > 0 && /dreamy-a\.wav$/.test(p.getAttribute('src') || '');
-    }, { timeout: 6000 });
-
-    // And every committed file is a valid RIFF/WAVE container of the same
-    // spec as the four style beds (44.1kHz 16-bit stereo), asserted directly
-    // on disk — a truncated download or wrong-format encode must not be able
-    // to pass this suite.
-    var moods = ['peaceful', 'joyful', 'dreamy', 'mysterious', 'tense', 'epic'];
-    moods.forEach(function (mood) {
-      ['a', 'b'].forEach(function (slot) {
-        var p = path.join(REPO_ROOT, 'assets', 'music-beds', 'moods', 'candidates', mood + '-' + slot + '.wav');
-        var buf = fs.readFileSync(p);
-        assert.equal(buf.slice(0, 4).toString('ascii'), 'RIFF', p + ' must be a RIFF container');
-        assert.equal(buf.slice(8, 12).toString('ascii'), 'WAVE', p + ' must be a WAVE file');
-        assert.ok(buf.length > 1000000, p + ' must not be a stub/truncated file');
+    // Playable: one bed genuinely decodes and progresses in real Chromium —
+    // proving real audio, not just paths that 200.
+    var played = await page.evaluate(function () {
+      return new Promise(function (resolve) {
+        var a = new Audio('assets/music-beds/moods/peaceful.wav');
+        a.muted = true;
+        a.play().then(function () {
+          var check = setInterval(function () {
+            if (a.currentTime > 0) { clearInterval(check); a.pause(); resolve(true); }
+          }, 50);
+          setTimeout(function () { clearInterval(check); resolve(a.currentTime > 0); }, 5000);
+        }).catch(function () { resolve(false); });
       });
     });
-  } finally {
-    await context.close();
-  }
-});
-
-test('bed-audition-x7q4.html: the reference player really plays one of the four committed style beds -- the comparison anchor next to each candidate pair', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.goto(baseUrl + '/bed-audition-x7q4.html', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.mood');
-
-    await page.click('.mood[data-mood="tense"] .slot.ref .play');
-    await page.waitForFunction(function () {
-      var p = document.getElementById('player');
-      return p && !p.paused && p.currentTime > 0;
-    }, { timeout: 6000 });
-
-    var playing = await page.evaluate(function () {
-      return { src: document.getElementById('player').getAttribute('src'), buttonState: document.querySelector('.mood[data-mood="tense"] .slot.ref .play').className };
-    });
-    assert.match(playing.src, /assets\/music-beds\/anime\.wav$/, 'defaults to the first reference bed in the dropdown');
-    assert.match(playing.buttonState, /playing/);
-
-    // Switching the reference dropdown to another real bed plays that one.
-    await page.selectOption('.mood[data-mood="tense"] .slot.ref .ref-select', 'cinematic');
-    await page.click('.mood[data-mood="tense"] .slot.ref .play');
-    await page.waitForFunction(function () {
-      var p = document.getElementById('player');
-      return p && !p.paused && /cinematic\.wav$/.test(p.getAttribute('src') || '');
-    }, { timeout: 6000 });
-  } finally {
-    await context.close();
-  }
-});
-
-test('bed-audition-x7q4.html: the moment real candidate files exist at the expected paths, the page lights up on its own -- slots become playable, picking works, one winner per mood is recorded and survives a reload. THIS is the flow that has to work before the 12 real tracks are handed over.', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    // Stand in for the real tracks at exactly the paths the page probes for,
-    // proving no code change is needed to switch this page on -- only files.
-    // Two moods' worth (4 files), so the partially-delivered state is
-    // covered too rather than only the all-or-nothing one.
-    var realWav = fs.readFileSync(path.join(REPO_ROOT, 'assets', 'music-beds', 'anime.wav'));
-    await page.route('**/assets/music-beds/moods/candidates/**', function (route) {
-      var url = route.request().url();
-      if (/(tense|peaceful)-(a|b)\.wav$/.test(url)) {
-        route.fulfill({ status: 200, contentType: 'audio/wav', body: realWav });
-      } else {
-        route.fulfill({ status: 404, body: '' });
-      }
-    });
-
-    await page.goto(baseUrl + '/bed-audition-x7q4.html', { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(function () {
-      return document.querySelectorAll('.slot[data-exists="yes"]').length === 4;
-    }, { timeout: 8000 });
-
-    var status = await page.textContent('#status');
-    assert.match(status, /4 of 12 candidate tracks available/, 'the page must report partial delivery honestly rather than all-or-nothing');
-
-    // A delivered slot is playable for real.
-    await page.click('.mood[data-mood="tense"] .slot[data-slot="b"] .play');
-    await page.waitForFunction(function () {
-      var p = document.getElementById('player');
-      return p && !p.paused && /tense-b\.wav$/.test(p.getAttribute('src') || '');
-    }, { timeout: 6000 });
-
-    // Picking a winner.
-    await page.click('.mood[data-mood="tense"] .slot[data-slot="b"] .pick');
-    await page.click('.mood[data-mood="peaceful"] .slot[data-slot="a"] .pick');
-
-    var afterPicks = await page.evaluate(function () {
-      return {
-        picksText: document.getElementById('picks-text').textContent,
-        tenseB: document.querySelector('.mood[data-mood="tense"] .slot[data-slot="b"] .pick').textContent,
-        tenseA: document.querySelector('.mood[data-mood="tense"] .slot[data-slot="a"] .pick').textContent
-      };
-    });
-    assert.match(afterPicks.picksText, /Tense \/ scary: candidate B/);
-    assert.match(afterPicks.picksText, /Peaceful: candidate A/);
-    assert.match(afterPicks.picksText, /2 of 6 moods picked/);
-    assert.match(afterPicks.tenseB, /Winner/);
-    assert.equal(afterPicks.tenseA, 'Pick', 'exactly ONE winner per mood -- picking B must not also mark A');
-
-    // Re-picking the OTHER candidate in the same mood moves the win.
-    await page.click('.mood[data-mood="tense"] .slot[data-slot="a"] .pick');
-    var moved = await page.evaluate(function () {
-      return {
-        a: document.querySelector('.mood[data-mood="tense"] .slot[data-slot="a"] .pick').textContent,
-        b: document.querySelector('.mood[data-mood="tense"] .slot[data-slot="b"] .pick').textContent,
-        picksText: document.getElementById('picks-text').textContent
-      };
-    });
-    assert.match(moved.a, /Winner/);
-    assert.equal(moved.b, 'Pick', 'changing his mind must move the win, never leave two winners in one mood');
-    assert.match(moved.picksText, /Tense \/ scary: candidate A/);
-
-    // Picks survive a reload -- an audition of 12 tracks is not a
-    // single-sitting job, and losing his picks would be the worst possible
-    // failure of this page.
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(function () {
-      return document.querySelectorAll('.slot[data-exists="yes"]').length === 4;
-    }, { timeout: 8000 });
-    var afterReload = await page.textContent('#picks-text');
-    assert.match(afterReload, /Tense \/ scary: candidate A/, 'picks must persist across a reload');
-    assert.match(afterReload, /Peaceful: candidate A/);
+    assert.equal(played, true, 'a committed mood bed must actually decode and play');
   } finally {
     await context.close();
   }
