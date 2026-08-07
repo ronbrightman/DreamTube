@@ -253,7 +253,8 @@ test('home.html: the whisper never overlaps the Tonight eyebrow/title text, and 
       // whisper's own top edge sits below that with real margin, not just
       // technically past the bright disc.
       var clearance = whisper.y - hero.y;
-      assert.ok(clearance >= 140, vp.name + ': expected the whisper to start at least 140px below the hero\'s top edge (clear of the moon\'s glow zone), got ' + clearance.toFixed(1));
+      // Threshold retuned for the founder's round-3 shorter hero (2026-08-07): the moon is now a smaller corner glow (104px halo centered 84%/11%, soft bottom edge ~82px from the card top) and the hero reserves 104px of sky via padding-top, so 100px is the honest clearance floor (was 140 against the old 150px halo at 15%).
+      assert.ok(clearance >= 100, vp.name + ': expected the whisper to start at least 100px below the hero\'s top edge (clear of the smaller corner moon\'s glow zone), got ' + clearance.toFixed(1));
     } finally {
       await context.close();
     }

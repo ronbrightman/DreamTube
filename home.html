@@ -239,10 +239,23 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
    moon top-right + blue/violet nebula (the result mock's .dreamvideo
    palette, card-sized), tiny stars, bottom scrim; content bottom-anchored --- */
 .hero-tonight{
-  min-height:clamp(436px, 54vh, 460px);
+  /* founder round 3 (2026-08-07, his screenshots): the 436-460px card read
+     as a big empty square — "see how much empty space users see". Shrunk
+     to ~300-330px and the moon pulled smaller + tighter into the top-right
+     corner so the whisper still clears its halo at the reduced height
+     (the same overlap class the 436px bump had fixed, now solved by
+     shrinking/moving the moon instead of growing the card). */
+  min-height:clamp(300px, 38vh, 330px);
+  /* Hard floor keeping the whisper (and everything else in the
+     bottom-anchored stack) out of the corner moon's glow zone at ANY
+     viewport: the halo's soft bottom edge sits ~82px from the card top
+     (11% center of a <=330px card + 52px halo radius), so 104px of
+     reserved sky guarantees clearance even on the shortest phones —
+     the card simply grows past its min-height when content needs it. */
+  padding-top:104px;
   background:
-    radial-gradient(56px 56px at 76% 15%, rgba(255,236,190,.98), rgba(255,220,158,.5) 55%, transparent 74%),
-    radial-gradient(150px 150px at 76% 15%, rgba(255,222,164,.30), transparent 70%),
+    radial-gradient(44px 44px at 84% 11%, rgba(255,236,190,.98), rgba(255,220,158,.5) 55%, transparent 74%),
+    radial-gradient(104px 104px at 84% 11%, rgba(255,222,164,.30), transparent 70%),
     radial-gradient(95% 62% at 10% 94%, rgba(80,145,255,.5), transparent 64%),
     radial-gradient(70% 50% at 80% 96%, rgba(60,110,230,.35), transparent 65%),
     radial-gradient(110% 70% at 40% 44%, rgba(140,110,255,.2), transparent 70%),
