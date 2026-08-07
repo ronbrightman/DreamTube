@@ -91,16 +91,18 @@
 // The four style beds are therefore PERMANENT, not a migration step —
 // they are the fallback tier, and deleting them would break case 2.
 //
-// TODAY, TIER 1 IS INERT BY DESIGN: MOOD_FILES below is empty, because the
-// 12 real candidate tracks (2 per mood, for the founder to audition on
-// bed-audition-x7q4.html and pick a winner from) need the one-time fal.ai
-// ~45s seamless-loop pipeline run by someone who actually holds a FAL_KEY,
-// which the agent sandbox this layer was built in does not have. Every
-// mood therefore currently resolves to null in tier 1 and falls through to
-// tier 2 — i.e. this layer changes nothing any user actually hears right
-// now, which is deliberate and is covered by test/mood-music-bed-
-// behavioral.test.js. Switching it on later is one line per mood (an entry
-// in MOOD_FILES + the committed file); no other code has to change.
+// TODAY, TIER 1 IS STILL INERT — BUT ONLY PENDING THE FOUNDER'S PICKS.
+// MOOD_FILES below stays empty until he auditions. The 12 real candidate
+// tracks (2 per mood) ARE now generated and committed (2026-08-07, fal.ai
+// stable-audio 45s seamless loops) at assets/music-beds/moods/candidates/,
+// and bed-audition-x7q4.html plays them all; what has NOT happened yet is
+// the founder picking a winner per mood there. Every mood therefore still
+// resolves to null in tier 1 and falls through to tier 2 — i.e. this layer
+// changes nothing any user actually hears right now, which is deliberate
+// and is covered by test/mood-music-bed-behavioral.test.js. Switching it
+// on is one line per mood once he picks (move the winner to
+// assets/music-beds/moods/<mood>.wav + an entry in MOOD_FILES); no other
+// code has to change.
 var MusicBed = (function () {
   // One committed WAV per style — see this file's header comment for
   // provenance. Keys are lowercased style values; style.html's own
@@ -128,11 +130,14 @@ var MusicBed = (function () {
 
   // mood key -> committed filename under assets/music-beds/moods/.
   // INTENTIONALLY EMPTY until the founder's audition picks land — see this
-  // file's header comment. An empty entry means "no mood bed for this mood
-  // yet," which urlForMood turns into null and urlForDream turns into the
-  // style-bed fallback. Never add a placeholder/fake file here to make the
-  // map look populated — a missing asset is tolerated, never faked (same
-  // convention as a missing character portrait elsewhere in this app).
+  // file's header comment. The candidate tracks themselves exist (under
+  // moods/candidates/, for bed-audition-x7q4.html), but nothing goes in
+  // this map until a picked winner is moved to assets/music-beds/moods/
+  // proper. An empty entry means "no mood bed for this mood yet," which
+  // urlForMood turns into null and urlForDream turns into the style-bed
+  // fallback. Never add a placeholder/fake file here to make the map look
+  // populated — a missing asset is tolerated, never faked (same convention
+  // as a missing character portrait elsewhere in this app).
   var MOOD_FILES = {};
 
   /**

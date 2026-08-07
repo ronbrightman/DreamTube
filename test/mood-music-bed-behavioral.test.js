@@ -19,18 +19,18 @@
 //
 //   3. THE AUDITION PAGE's reviewing/picking flow (bed-audition-x7q4.html).
 //
-// The non-thing: THERE ARE NO REAL MOOD-KEYED TRACKS YET. The 12 candidates
-// (2 per mood) need the one-time fal.ai ~45s seamless-loop pipeline run by
-// someone holding a FAL_KEY, which the sandbox this was built in does not
-// have. So js/music-bed.js's MOOD_FILES map is empty, and the single most
-// important assertion in this file is the ZERO-REGRESSION one: with that map
-// empty, urlForDream returns byte-identically what urlForStyle always did,
-// for every mood x style combination — today's users hear exactly what they
-// heard before this layer existed. The tests that prove tier 1 actually
-// works do so by POPULATING MOOD_FILES at runtime, standing in for the real
-// tracks. That is a mock of a missing asset in a test, never a fake asset
-// committed to the repo (this codebase tolerates a missing asset and never
-// fakes one — same convention as a missing character portrait).
+// The non-thing: THERE IS NO LIVE MOOD-KEYED BED YET. The 12 candidate
+// tracks (2 per mood) ARE committed now (2026-08-07 — the one-time fal.ai
+// seamless-loop pipeline finally ran, in an environment that held a
+// FAL_KEY) at assets/music-beds/moods/candidates/, but they are AUDITION
+// candidates only: js/music-bed.js's MOOD_FILES map stays empty until the
+// founder picks a winner per mood on bed-audition-x7q4.html. So the single
+// most important assertion in this file is still the ZERO-REGRESSION one:
+// with that map empty, urlForDream returns byte-identically what
+// urlForStyle always did, for every mood x style combination — today's
+// users hear exactly what they heard before this layer existed. The tests
+// that prove tier 1 actually works do so by POPULATING MOOD_FILES at
+// runtime, standing in for the winners that haven't been promoted yet.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -699,12 +699,18 @@ test('explore.html: a shared-feed card picks its bed from the record\'s own mood
 // 3. The audition page's reviewing/picking flow
 // ─────────────────────────────────────────────────────────────────────────
 
-test('bed-audition-x7q4.html: with no candidate tracks generated (today\'s real state), all 12 slots show an honest pending state with playback and picking disabled -- no fake audio, no fake waveform', async function (t) {
+test('bed-audition-x7q4.html: with no candidate tracks reachable (the pre-generation state, simulated by 404ing every candidate path -- the 12 real tracks are committed now), all 12 slots show an honest pending state with playback and picking disabled -- no fake audio, no fake waveform', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
+    // The candidate files exist on disk now, so the empty state this test
+    // protects (a deploy missing the files, a future mood added before its
+    // tracks) has to be simulated rather than relied on.
+    await page.route('**/assets/music-beds/moods/candidates/**', function (route) {
+      route.fulfill({ status: 404, body: '' });
+    });
     await page.goto(baseUrl + '/bed-audition-x7q4.html', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.mood');
 
@@ -746,7 +752,48 @@ test('bed-audition-x7q4.html: with no candidate tracks generated (today\'s real 
   }
 });
 
-test('bed-audition-x7q4.html: the reference player really plays one of the four committed style beds -- the only real audio this page has today', async function (t) {
+test('bed-audition-x7q4.html: the 12 real committed candidate tracks are all found and playable -- no interception, the actual files at the actual paths (the state the founder auditions in)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await page.goto(baseUrl + '/bed-audition-x7q4.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(function () {
+      return document.querySelectorAll('.slot[data-exists="yes"]').length === 12;
+    }, { timeout: 8000 });
+
+    var status = await page.textContent('#status');
+    assert.match(status, /All 12 candidate tracks are here/, 'the page must report full delivery');
+
+    // One committed track really decodes and plays — proving the files are
+    // real audio, not just paths that 200.
+    await page.click('.mood[data-mood="dreamy"] .slot[data-slot="a"] .play');
+    await page.waitForFunction(function () {
+      var p = document.getElementById('player');
+      return p && !p.paused && p.currentTime > 0 && /dreamy-a\.wav$/.test(p.getAttribute('src') || '');
+    }, { timeout: 6000 });
+
+    // And every committed file is a valid RIFF/WAVE container of the same
+    // spec as the four style beds (44.1kHz 16-bit stereo), asserted directly
+    // on disk — a truncated download or wrong-format encode must not be able
+    // to pass this suite.
+    var moods = ['peaceful', 'joyful', 'dreamy', 'mysterious', 'tense', 'epic'];
+    moods.forEach(function (mood) {
+      ['a', 'b'].forEach(function (slot) {
+        var p = path.join(REPO_ROOT, 'assets', 'music-beds', 'moods', 'candidates', mood + '-' + slot + '.wav');
+        var buf = fs.readFileSync(p);
+        assert.equal(buf.slice(0, 4).toString('ascii'), 'RIFF', p + ' must be a RIFF container');
+        assert.equal(buf.slice(8, 12).toString('ascii'), 'WAVE', p + ' must be a WAVE file');
+        assert.ok(buf.length > 1000000, p + ' must not be a stub/truncated file');
+      });
+    });
+  } finally {
+    await context.close();
+  }
+});
+
+test('bed-audition-x7q4.html: the reference player really plays one of the four committed style beds -- the comparison anchor next to each candidate pair', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {

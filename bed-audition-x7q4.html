@@ -17,28 +17,33 @@
      That needs 2 genuinely different candidate tracks per mood — 12 total
      — for the founder to audition and pick one winner from per mood.
 
-     WHY THE CANDIDATE SLOTS ARE EMPTY RIGHT NOW
-     Those 12 tracks need the one-time fal.ai ~45s-seamless-loop pipeline,
-     run by someone who actually holds a FAL_KEY. The agent build that
-     produced this page had none, so it generated NO audio — and did not
-     ship placeholder/filler audio pretending to be a candidate either.
-     This codebase's convention is to tolerate a missing asset honestly and
-     never fake one (same as a missing character portrait), so each empty
-     slot says plainly that its track hasn't been generated yet.
-
-     HOW IT LIGHTS UP — NO CODE CHANGE NEEDED
-     On load, this page HEAD-probes every expected candidate path (see
-     candidateUrl below). Whoever generates the tracks just commits them at
-     those exact paths:
+     THE 12 CANDIDATE TRACKS ARE NOW COMMITTED (2026-08-07)
+     The one-time fal.ai pipeline this page originally shipped without (the
+     build that produced it held no FAL_KEY) has since been run: all 12
+     candidates exist at the exact paths this page probes,
 
          assets/music-beds/moods/candidates/<mood>-a.wav
          assets/music-beds/moods/candidates/<mood>-b.wav
 
      ...where <mood> is one of peaceful/joyful/dreamy/mysterious/tense/epic
-     (js/wizard-chips.js's MOOD_CHIPS keys, minus 'other'). Any slot whose
-     file exists turns into a real player with its pick button enabled;
-     any slot still missing keeps its honest pending state. Mixed states
-     are fine — 3 of 12 present renders 3 live slots and 9 pending ones.
+     (js/wizard-chips.js's MOOD_CHIPS keys, minus 'other'). Each is a 45s
+     seamless loop (generated at 47s via fal-ai/stable-audio, then the last
+     2s crossfaded into the first 2s so the loop point is inaudible),
+     44.1kHz/16-bit stereo — the same spec as the four committed style
+     beds — and gain-matched to those beds' loudness. The A/B pair per mood
+     is deliberately two genuinely different directions (different
+     instrumentation/tempo/texture), per the founder's own instruction
+     after rejecting an earlier batch.
+
+     HOW THE PAGE FINDS THEM — NO CODE INVOLVED
+     On load, this page HEAD-probes every expected candidate path (see
+     candidateUrl below). Any slot whose file exists turns into a real
+     player with its pick button enabled; any slot missing (e.g. a file
+     later deleted) keeps its honest pending state rather than faking
+     audio — this codebase's convention is to tolerate a missing asset
+     honestly and never fake one (same as a missing character portrait).
+     Mixed states are fine — 3 of 12 present renders 3 live slots and 9
+     pending ones.
 
      AFTER THE FOUNDER PICKS
      His picks are summarised at the bottom as one line of copyable text.
@@ -251,8 +256,9 @@ select{font-family:inherit;font-size:12.5px;background:#221c3d;border:1px solid 
           '<div class="body">' + (exists
             ? '<div class="fname">' + esc(url.split('/').pop()) + '</div>'
             // Honest empty state — no filler audio, no fake waveform. See
-            // this file's header comment.
-            : '<div class="pending">Not generated yet — needs the fal.ai pipeline run.</div>') +
+            // this file's header comment. All 12 are committed now, so a
+            // pending slot means the file is missing from THIS deploy.
+            : '<div class="pending">Track file not found on this deploy.</div>') +
           '</div>';
 
         var playBtn = document.createElement('button');
