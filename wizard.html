@@ -2455,7 +2455,13 @@
     emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); trySubmit(); } });
     wireFacebookSignupButton();
     applyPendingFacebookError();
-    emailInput.focus();
+    // Round 9, fix #6 (founder iPhone screenshot): NO auto-focus here.
+    // Focusing the email field on render made iOS open the keyboard +
+    // AutoFill bar immediately and scroll the "Your dream is forming…"
+    // veil — the top of this wall, the screen's whole persuasion — out
+    // of view. The field focuses only when the user themselves taps it
+    // (or explicitly asks to retype — see the code step's "Use a
+    // different email" handler, which DOES focus after re-rendering).
   }
 
   /**
@@ -2491,6 +2497,13 @@
       DreamStore.invalidatePendingSignup();
       backBtn.disabled = false;
       renderWallEmailStep(el);
+      // "Use a different email" is the user explicitly asking to type —
+      // the one place focusing the field IS the right response (fix #6
+      // removed the wall's render-time auto-focus; this is the sanctioned
+      // exception, per the same user-gesture rule every other focus()
+      // in this file follows).
+      var retypeEmail = document.getElementById('contact-email');
+      if(retypeEmail) retypeEmail.focus();
     });
 
     resendLink.addEventListener('click', function(){
@@ -2630,7 +2643,9 @@
 
     continueBtn.addEventListener('click', submit);
     emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); submit(); } });
-    emailInput.focus();
+    // No render-time auto-focus (round 9, fix #6) — this half-step renders
+    // off a redirect return, not a user tap, and iOS answers a focused
+    // field with the keyboard + a scroll. Same rule as the main wall.
   }
 
   // ===================================================================

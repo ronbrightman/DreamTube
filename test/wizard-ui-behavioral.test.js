@@ -1991,3 +1991,52 @@ test('wizard.html round 9: the deterministic chips+freetext join is sentence-cas
     await page.close();
   }
 });
+
+test('wizard.html round 9 fix #6: neither the wall\'s email input nor the recap textarea steals focus on render (iOS keyboard was hiding the forming veil) — while "Use a different email" still focuses the field, being an explicit ask to type', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await page.route('**/.netlify/functions/check-email', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: false, deliverable: true }) });
+    });
+    await page.route('**/.netlify/functions/register-account-passwordless', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, pendingVerification: true }) });
+    });
+
+    await gotoWizardBuild(page);
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.click('#fn-setting-skip');
+    await page.click('[data-action="flying"]');
+    await page.click('#fn-mood-skip');
+    await page.click('#fn-style-skip');
+    await page.click('#fn-freetext-skip');
+
+    // Recap render: the textarea must not be focused (it never was — this
+    // pins it against regression, per the founder's screenshot review).
+    await page.waitForSelector('#fn-story-recap-text');
+    var recapFocus = await page.evaluate(function () { return document.activeElement && document.activeElement.id; });
+    assert.notEqual(recapFocus, 'fn-story-recap-text', 'the recap textarea must not steal focus on step entry');
+
+    // Wall render: the email input must NOT be focused — iOS answers a
+    // focused field with the keyboard + AutoFill bar + a scroll that
+    // pushes the forming veil (the wall\'s whole persuasion) off screen.
+    await page.click('#fn-recap-continue');
+    await page.waitForSelector('#contact-email');
+    var wallFocus = await page.evaluate(function () { return document.activeElement && document.activeElement.id; });
+    assert.notEqual(wallFocus, 'contact-email', 'the wall must render with NO auto-focused email input (founder iPhone screenshot, fix #6)');
+
+    // "Use a different email" IS an explicit ask to type — that path
+    // must still hand the field focus.
+    await page.fill('#contact-email', 'refocus-check@example.com');
+    await page.click('#fn-contact-continue');
+    await page.waitForSelector('#fn-change-email', { timeout: 5000 });
+    await page.click('#fn-change-email');
+    await page.waitForSelector('#contact-email');
+    var retypeFocus = await page.evaluate(function () { return document.activeElement && document.activeElement.id; });
+    assert.equal(retypeFocus, 'contact-email', '"Use a different email" must focus the field — the user just asked to retype');
+  } finally {
+    await page.close();
+  }
+});
