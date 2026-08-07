@@ -163,9 +163,12 @@ test('u.html: a loaded profile renders identity (name/bio/avatar fallback), the 
     var captionText = await page.textContent('.dj-caption');
     assert.match(captionText, /<script>/, 'the escaped markup should be visible as literal text, not stripped or executed');
 
-    // Comment-count action is present but inert -- no click handler, not a button.
-    var commentEl = await page.$('.dj-action.dj-action-inert');
-    assert.ok(commentEl, 'expected the static comment-count placeholder to be present');
+    // Comment-count action is real and interactive as of Social Layer v2
+    // slice 2 (js/comment-sheet.js) -- see test/comment-sheet-behavioral.test.js
+    // for the full sheet-opening/posting/XSS coverage; this test only
+    // confirms the action itself renders with the right dream id wired.
+    var commentEl = await page.$('[data-comments="d1"]');
+    assert.ok(commentEl, 'expected the comment action to be present and wired to this card\'s dream id');
 
     // Privacy note is shown once, page-level.
     var privNote = await page.textContent('#u-priv-note');

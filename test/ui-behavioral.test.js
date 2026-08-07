@@ -339,7 +339,7 @@ test('a pre-existing account with a sub-3-character password still logs in (no r
   }
 });
 
-test('Explore cards render without the removed comment/repost icons and without a layout regression', async function (t) {
+test('Explore cards render without the removed repost icon, WITH the reintroduced comment action, and without a layout regression', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -351,26 +351,29 @@ test('Explore cards render without the removed comment/repost icons and without 
     await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.feed-card', { timeout: 5000 });
 
-    // Exactly 3 actions per card as of the public-feed-safety build
-    // (tracker item for-product-public-feed-safety-in-app-re-ppuw77):
-    // like + share + the new Report/Block "More" action (js/report-sheet.js)
-    // — a deliberate, intentional addition, NOT a reappearance of the old
-    // comment/repost icons this test originally guarded against removing
-    // (see the specific comment/repost path-fragment assertions below,
-    // which still must hold). This viewer is logged out for this test
-    // (no state.user seeded), and the mocked dream isn't "mine" either
-    // way, so More is expected to render here — see explore.html's
-    // cardHTML, which hides it only for d.mine.
+    // Exactly 4 actions per card as of Social Layer v2 slice 2 (comments —
+    // docs/SOCIAL_LAYER_V2_DESIGN.md, tracker item
+    // for-product-build-social-layer-v2-direct-34047c, open decision #3):
+    // like + comments (js/comment-sheet.js) + share + the Report/Block
+    // "More" action (js/report-sheet.js, tracker item
+    // for-product-public-feed-safety-in-app-re-ppuw77). The comment icon's
+    // reappearance here is a DELIBERATE, spec'd reintroduction — a real
+    // comment sheet backing it, not the old dead placeholder this test
+    // originally guarded against silently coming back. Repost stays gone
+    // (see the repost-specific assertions below, still enforced). This
+    // viewer is logged out for this test (no state.user seeded), and the
+    // mocked dream isn't "mine" either way, so More is expected to render
+    // here — see explore.html's cardHTML, which hides it only for d.mine.
     var actionCount = await page.$$eval('.feed-card .feed-actions .feed-action', function (els) { return els.length; });
-    assert.equal(actionCount, 3, 'expected exactly like+share+more actions per card, no comment/repost');
+    assert.equal(actionCount, 4, 'expected exactly like+comments+share+more actions per card, no repost');
 
     var actionsHTML = await page.$eval('.feed-card .feed-actions', function (el) { return el.innerHTML; });
     assert.ok(!/repost/i.test(actionsHTML), 'no leftover "repost" reference in the actions markup');
-    // Distinctive path fragments unique to the removed comment/repost SVGs
-    // (js/icons.js) -- guards against the icons somehow still being
-    // embedded even under a different data-attribute/class name.
-    assert.ok(actionsHTML.indexOf('M21 11.5a8.4') === -1, 'comment icon path should not be present');
+    // Distinctive path fragment unique to the removed repost SVG (js/icons.js)
+    // -- guards against it somehow still being embedded even under a
+    // different data-attribute/class name.
     assert.ok(actionsHTML.indexOf('M17 2l4 4-4 4') === -1, 'repost icon path should not be present');
+    assert.equal(await page.locator('.feed-card .feed-actions [data-comments]').count(), 1, 'the reintroduced comment action must be present');
     assert.equal(await page.locator('.feed-card .feed-actions [data-more]').count(), 1, 'the new Report/Block "More" action must be present');
 
     var box = await page.$eval('.feed-card .feed-actions', function (el) {
