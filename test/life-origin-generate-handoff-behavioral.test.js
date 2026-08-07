@@ -441,7 +441,7 @@ test('BUG 3 regression (tracker item for-product-urgent-founder-repro-index-g-c6
     // bare evaluate() has no auto-wait and can read the DOM in the gap
     // between them (real full-suite-load flake observed here once).
     await page.waitForFunction(function () {
-      return /Who was in the dream\?/.test(document.body.innerText);
+      return /What did you dream\?/.test(document.body.innerText);
     }, { timeout: 5000 });
 
     // The ?entry=index marker must not linger in the address bar once read.
@@ -493,7 +493,7 @@ test('BUG 2 regression, control: wizard.html, visited directly while logged out 
 
     assert.match(page.url(), /\/wizard\.html$/, 'a genuinely first-time visitor must still land on wizard.html, not be redirected away');
     var bodyText = await page.evaluate(function () { return document.body.innerText; });
-    assert.match(bodyText, /Who was in the dream\?/, 'a genuinely first-time visitor must still see the wizard\'s first question');
+    assert.match(bodyText, /What did you dream\?/, 'a genuinely first-time visitor must still see the wizard\'s first screen (the round-8 entry chooser)');
   } finally {
     await page.close();
   }

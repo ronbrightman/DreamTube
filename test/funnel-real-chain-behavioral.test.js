@@ -246,6 +246,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     // ===== The actual wizard.html click-through, exactly as a real visitor
     // would drive it (no shortcuts/localStorage seeding) =====
     await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
@@ -254,6 +255,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
+    await page.click('#fn-recap-continue'); // round 8: recap step before the wall
 
     // The merged signup wall (tracker item for-product-wizard-signup-
     // wall-is-the-ol-lt1l9j) -- this one submit is the exact moment

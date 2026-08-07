@@ -585,6 +585,7 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
     });
 
     await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
     await page.click('[data-subj-other="stranger"]');
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
@@ -593,11 +594,11 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
 
-    // The signup wall is wizard.html's own preview moment -- recap must
-    // show a real human sentence immediately (deterministic template),
-    // then upgrade once the mocked LLM rewrite resolves. (An editable
-    // textarea under Layout-B -- read via .value/inputValue.)
-    await page.waitForSelector('#fn-story-recap-card[style*="block"]', { timeout: 3000 });
+    // The RECAP STEP (round 8: its own screen before the wall) is
+    // wizard.html's preview moment -- it must show a real human sentence
+    // immediately (deterministic template), then upgrade once the mocked
+    // LLM rewrite resolves. (An editable textarea -- read via inputValue.)
+    await page.waitForSelector('#fn-story-recap-text', { timeout: 3000 });
     var recapBeforeRewrite = await page.inputValue('#fn-story-recap-text');
     assert.ok(recapBeforeRewrite.length > 0, 'recap must never be blank');
     assert.doesNotMatch(recapBeforeRewrite, /tracking shot|aerial|crane shot|close-up shot|POV shot|dreamlike/i);
@@ -609,6 +610,8 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
     assert.equal(rewriteCalls.length, 1);
     assert.match(rewriteCalls[0].promptText, /of a stranger,/, 'the rewrite call\'s own input must be the engineered prompt, camera direction included');
 
+    await page.click('#fn-recap-continue');
+    await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', 'wizard-storytext@example.com');
     await page.click('#fn-contact-continue');
 
@@ -657,6 +660,7 @@ test('wizard.html: chips WITH free text -- the pending-generation payload carrie
 
     var FREE_TEXT = 'A dragon showed me the way home.';
     await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
@@ -666,10 +670,12 @@ test('wizard.html: chips WITH free text -- the pending-generation payload carrie
     await page.fill('#free-text-input', FREE_TEXT);
     await page.click('#fn-freetext-continue');
 
-    await page.waitForSelector('#fn-story-recap-card[style*="block"]', { timeout: 3000 });
+    await page.waitForSelector('#fn-story-recap-text', { timeout: 3000 });
     assert.equal(await page.inputValue('#fn-story-recap-text'), FREE_TEXT);
     assert.equal(rewriteCalls.length, 0, 'the LLM rewrite must never be called when the user typed their own free text');
 
+    await page.click('#fn-recap-continue');
+    await page.waitForSelector('#contact-email');
     await page.fill('#contact-email', 'wizard-freetext@example.com');
     await page.click('#fn-contact-continue');
     await settle(function () { return startPendingCalls.length >= 1; });

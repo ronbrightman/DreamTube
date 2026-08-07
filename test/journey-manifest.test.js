@@ -78,9 +78,16 @@ test('JOURNEY_MANIFEST.md: start.html\'s actual SCREEN_RENDERERS sequence matche
 // per this test's own contract.
 // ===========================================================================
 
+// renderRecap (between FreeText and the wall) is founder round 8 on the
+// Layout-B redesign: the editable "Here's your dream — make it yours"
+// recap became its own screen again, per the approved mock ("it was
+// supposed to be editable in a previous page"). The entry chooser the
+// same round added is deliberately NOT in SCREEN_RENDERERS (a pre-step
+// shown to fresh entries only, firing wizard_entry_mode_chosen and no
+// wizard_step_viewed) — see wizard.html's own chooser section comment.
 var EXPECTED_ORGANIC_SCREENS = [
   'renderSubject', 'renderSetting', 'renderAction', 'renderMood',
-  'renderStyleStep', 'renderFreeText', 'renderSignupWall'
+  'renderStyleStep', 'renderFreeText', 'renderRecap', 'renderSignupWall'
 ];
 
 test('JOURNEY_MANIFEST.md: wizard.html\'s actual SCREEN_RENDERERS sequence matches the organic journey documented there', function () {

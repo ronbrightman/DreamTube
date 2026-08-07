@@ -128,14 +128,13 @@ test('wizard.html: cancelling a photo pick on the self character\'s sheet, then 
   await blockThirdParty(page);
   try {
     await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
     await page.waitForSelector('#subject-chip-row');
 
     // Create the self character with a REAL photo (unstubbed resize) so it
-    // has a real, known-good photoDataUrl to protect. Layout-B: the Me row
-    // stages + selects inline (no sheet on tap -- founder 08-04 ruling);
-    // photo upload is still the sheet's job, reached via the row's pencil.
+    // has a real, known-good photoDataUrl to protect. Round 8: tapping the
+    // Me row selects it AND opens the sheet directly, photo option included.
     await page.click('#subj-me-row');
-    await page.click('.char-chip[data-char-select] .chip-edit-area');
     await page.waitForSelector('#sheet-character-overlay.open');
     assert.equal(await page.locator('#char-mode-row [data-char-mode="photo"]').evaluate(function (el) { return el.classList.contains('active'); }), false, 'brand-new self sheet defaults to Describe');
     await page.click('#char-mode-row [data-char-mode="photo"]');

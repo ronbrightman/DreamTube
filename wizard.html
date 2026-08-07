@@ -297,15 +297,17 @@
      parts Meta's guidelines actually pin — are untouched). */
   #app.funnel-app #fn-fb-continue{ border-radius:999px !important;}
 
-  /* The wall's recap — restyled per the founder's mock recap screen
-     ("Here's your dream — make it yours"): the card chrome dissolves and
-     the story text itself becomes an EDITABLE rounded textarea (see
-     renderWallEmailStep for the editability wiring + why the mock's
-     "drives your video" sub-line was NOT carried over). */
-  #app.funnel-app .story-recap-card{ background:transparent; border:none; padding:0; margin-bottom:0;}
-  #app.funnel-app .story-recap-label{ font-size:14px; font-weight:800; letter-spacing:0; text-transform:none; color:#fff; text-align:center; margin-bottom:8px;}
-  #app.funnel-app .lb-recap-text{ min-height:96px; margin-bottom:6px;}
-  #app.funnel-app .lb-recap-sub{ font-size:12px; color:var(--fn-ink-faint); text-align:center;}
+  /* The recap STEP's editable dream text (renderRecap — founder round 8:
+     "Here's your dream — make it yours", its own screen before the wall,
+     and OBVIOUSLY editable: real input chrome — a visible border that
+     brightens on focus — plus a small pencil affordance floating in the
+     box's corner, not a flat card that reads as static text. The pencil
+     is decoration over the textarea (pointer-events:none) — tapping it
+     lands in the textarea itself, which is the actual edit surface. */
+  .lb-recap-wrap{ position:relative;}
+  .lb-recap-wrap .lb-recap-text{ min-height:150px; padding-right:44px; border-color:rgba(255,255,255,.28);}
+  .lb-recap-wrap .lb-recap-pencil{ position:absolute; top:14px; right:16px; width:16px; height:16px; color:var(--fn-ink-soft); pointer-events:none;}
+  .lb-recap-wrap .lb-recap-pencil svg{ width:16px; height:16px;}
 
   /* "+ Something else" progressive-disclosure reveal (per the spec: a
      collapsed tap that reveals a small text input, not an always-visible
@@ -730,6 +732,11 @@
     nameInput.value = existing ? existing.name : '';
     document.getElementById('char-desc-input').value = existing ? (existing.description || '') : '';
     document.getElementById('char-desc-input').dataset.mode = mode;
+    // Self mode speaks to the person themselves ("you"), not about a
+    // third party — round 8 put this sheet directly behind the Me row,
+    // so the mismatched pronoun became founder-visible. Same copy
+    // profile.html's own identity sheet uses.
+    document.getElementById('char-desc-input').placeholder = mode === 'self' ? 'Describe how you look...' : 'Describe how they look...';
     document.getElementById('char-error').textContent = '';
     document.getElementById('char-delete-link').style.display = existing ? 'block' : 'none';
     document.getElementById('char-mode-row').style.display = mode === 'self' ? 'flex' : 'none';
@@ -861,21 +868,25 @@
   }
 
   /**
-   * The OPTIONAL per-row detail input, rendered DIRECTLY below its own
-   * selected Me/"Someone I know" row (founder mock round 7 — one input
-   * per detail-worthy row, never pooled at the bottom of the list).
-   * Wired straight to the staged character's `description` — the exact
-   * field the character sheet edits and flushStagedCharactersToStore
-   * persists into the real DreamStore character at signup, so a detail
-   * typed here prefills Characters and is NEVER re-asked later (the
-   * 08-04 ruling's other half, tracker item for-product-paired-with-
-   * growth-funnel-pr-22o77k). The value is populated programmatically
-   * after innerHTML (renderSubjectChips below), not baked into a
-   * value="" attribute — esc() escapes markup, not attribute quotes.
+   * The OPTIONAL per-row detail input, rendered DIRECTLY below a
+   * selected "Someone I know" row (founder mock round 7 — one input per
+   * detail-worthy row, never pooled at the bottom of the list). NON-SELF
+   * rows only since founder round 8: "Me" gets the full character SHEET
+   * on selection instead (description + photo upload — see the subject
+   * click handler below), so an inline Me input here would be dead,
+   * duplicated UI. Wired straight to the staged character's
+   * `description` — the exact field the character sheet edits and
+   * flushStagedCharactersToStore persists into the real DreamStore
+   * character at signup, so a detail typed here prefills Characters and
+   * is NEVER re-asked later (the 08-04 ruling's other half, tracker item
+   * for-product-paired-with-growth-funnel-pr-22o77k). The value is
+   * populated programmatically after innerHTML (renderSubjectChips
+   * below), not baked into a value="" attribute — esc() escapes markup,
+   * not attribute quotes.
    */
   function charDetailRowHTML(c){
     return '<div class="lb-detail">' +
-      '<input data-char-detail="' + c.id + '" placeholder="Optional: a few words about how ' + (c.isSelf ? 'you' : 'they') + ' look — helps the video match" dir="auto">' +
+      '<input data-char-detail="' + c.id + '" placeholder="Optional: a few words about how they look — helps the video match" dir="auto">' +
     '</div>';
   }
 
@@ -885,18 +896,22 @@
     var hasSelf = staged.characters.some(function(c){ return c.isSelf; });
     var html = staged.characters.map(function(c){
       var selected = staged.subjectCharacterIds.indexOf(c.id) !== -1;
-      // Selecting a Me/Someone row reveals its own detail input right
-      // under it; deselecting hides it again (the typed description
-      // itself survives on the staged character either way).
-      return charChipHTML(c, selected) + (selected ? charDetailRowHTML(c) : '');
+      // Selecting a "Someone I know" row reveals its own detail input
+      // right under it; deselecting hides it again (the typed
+      // description itself survives on the staged character either way).
+      // Me rows get NO inline input — founder round 8, the sheet opens
+      // for Me instead (see charDetailRowHTML's doc comment).
+      return charChipHTML(c, selected) + (selected && !c.isSelf ? charDetailRowHTML(c) : '');
     }).join('');
     // The "Me" row, pre-staging: a NORMAL option row (not a dashed add
-    // tile) whose first tap stages + selects the self character inline —
-    // see ensureStagedSelfCharacter's doc comment. Adding a "Someone I
-    // know" still goes through the character sheet (dashed add row):
-    // unlike Me, a non-self character NEEDS a name (store validation,
-    // caption assembly, the never-ask-twice prefill all key on it), and
-    // the sheet is the machinery that collects one.
+    // tile). Tapping it stages + selects the self character AND opens
+    // the character sheet in self mode — founder round 8 ("opens nicely
+    // for Someone i know but not for Me and it should including the
+    // option to upload image"); see the click handler below. Adding a
+    // "Someone I know" still goes through the character sheet (dashed
+    // add row): unlike Me, a non-self character NEEDS a name (store
+    // validation, caption assembly, the never-ask-twice prefill all key
+    // on it), and the sheet is the machinery that collects one.
     if(!hasSelf) html += '<div class="char-chip" id="subj-me-row"><span class="chip-check">' + LB_EMOJI.subject.me + '<span class="icon">' + Icons.check + '</span></span><span>Me</span></div>';
     html += '<div class="char-chip-add" id="subj-add-other"><span class="lb-chip">' + LB_EMOJI.subject.someone + '</span> + Someone I know</div>';
     row.innerHTML = html;
@@ -907,10 +922,19 @@
     });
     var meRow = document.getElementById('subj-me-row');
     if(meRow) meRow.addEventListener('click', function(){
+      // Selection is immediate and UNCONDITIONAL (multi-select semantics
+      // unchanged); the sheet opens ON TOP of it as the optional
+      // describe/photo ask. Cancel just closes — Me stays selected with
+      // no details, per the 08-04 "details optional, never block"
+      // ruling; the sheet's own Save-side desc-or-photo validation is
+      // untouched (Save is an explicit "I'm done describing" act).
+      // Passed existing:null deliberately — this is an ADD ("Add
+      // yourself" title, empty fields); localSaveCharacter's own
+      // isSelf-fallback lookup updates the staged record on Save.
       var self = ensureStagedSelfCharacter();
       if(staged.subjectCharacterIds.indexOf(self.id) === -1) staged.subjectCharacterIds.push(self.id);
       renderSubjectChips();
-      focusCharDetailInput(self.id);
+      openCharSheet('self', null);
     });
     document.getElementById('subj-add-other').addEventListener('click', function(){ openCharSheet('other', null); });
 
@@ -1094,9 +1118,20 @@
       var wasSelected = staged.subjectCharacterIds.indexOf(id) !== -1;
       toggleSubjectCharacter(id);
       renderSubjectChips();
-      // Freshly selecting a row reveals its detail input — hand it focus
-      // (mock round 6); a toggle-OFF re-render has nothing to focus.
-      if(!wasSelected) focusCharDetailInput(id);
+      if(!wasSelected){
+        var c = staged.characters.filter(function(x){ return x.id === id; })[0];
+        if(c && c.isSelf && !(c.description || '').trim() && !c.photoDataUrl){
+          // Re-selecting a Me that still has no details re-offers the
+          // sheet (founder round 8) — same optional ask as the first
+          // tap; a Me that already has a description/photo just toggles,
+          // details are edited via the pencil.
+          openCharSheet('self', null);
+        } else if(c && !c.isSelf){
+          // Freshly selecting a Someone row reveals its detail input —
+          // hand it focus (mock round 6).
+          focusCharDetailInput(id);
+        }
+      }
     });
     // The per-row detail inputs live inside the re-rendered chip row, so
     // their typing is captured via ONE delegated listener here (attached
@@ -1444,6 +1479,55 @@
   }
 
   // ===================================================================
+  // Recap — its OWN step before the wall (founder round 8, overruling
+  // the earlier fold-onto-the-wall deviation: "No edit button and it was
+  // supposed to be editable in a previous page"). The approved mock's
+  // structure restored: "Here's your dream — make it yours", an
+  // OBVIOUSLY-editable dream textarea (visible input styling + a pencil
+  // affordance), "Edit anything before we bring it to life.", and a
+  // "Looks good →" CTA into the wall. The data path is unchanged from
+  // the folded-in version: computeStoryText populates currentStoryText
+  // (deterministic first, opportunistic LLM upgrade after), typing pins
+  // the visitor's own words (storyEditedByUser — hand-edits beat the
+  // late rewrite, ride payload.storyText/draftPatch/
+  // adoptPendingGeneration, and survive Back-from-the-wall; leaving THIS
+  // step backwards clears the pin, see the Back handler).
+  //
+  // ANALYTICS (kept byte-stable, per the same rule that shaped the
+  // original fold-in): this step fires the new, sanctioned
+  // wizard_recap_viewed {} instead of a wizard_step_viewed — see
+  // STEP_ANALYTICS below for how every pre-existing step keeps its exact
+  // historical step number (the wall stays step:7).
+  // ===================================================================
+  function renderRecap(el){
+    assembleFromState(); // the rewrite call inside computeStoryText reads assembled.caption
+    el.innerHTML =
+      '<div class="fn-headline">Here’s your dream — make it yours</div>' +
+      '<div class="fn-body-copy">Edit anything before we bring it to life.</div>' +
+      // ph-no-capture: same session-replay exclusion create.html's
+      // #dream-text carries — people edit genuinely personal dream
+      // content here (maskAllInputs already masks it; this is the
+      // explicit belt half of that).
+      '<div class="lb-recap-wrap">' +
+        '<textarea class="fn-field lb-recap-text ph-no-capture" id="fn-story-recap-text" dir="auto" aria-label="Your dream, editable"></textarea>' +
+        '<span class="lb-recap-pencil icon" aria-hidden="true">' + Icons.pencil + '</span>' +
+      '</div>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary lb-cta" id="fn-recap-continue" type="button">Looks good →</button>';
+
+    // Editable-recap wiring: typing pins the visitor's own words as
+    // currentStoryText — every downstream reader (payload, draftPatch,
+    // adoptPendingGeneration) already reads that var live, so there is
+    // deliberately NO other write site. See storyEditedByUser's comment.
+    document.getElementById('fn-story-recap-text').addEventListener('input', function(e){
+      currentStoryText = e.target.value;
+      storyEditedByUser = true;
+    });
+    computeStoryText();
+    document.getElementById('fn-recap-continue').addEventListener('click', next);
+  }
+
+  // ===================================================================
   // Prompt assembly — resolves the current wizard state into a final
   // caption + which (if any) character id should ride along on the real
   // generation request. See js/wizard-chips.js for the algorithm itself.
@@ -1483,6 +1567,25 @@
   }
 
   function assembleFromState(){
+    // WRITE-mode caption contract (entry chooser, founder round 8): a
+    // visitor who chose "Write it in your own words" never saw the
+    // Subject..Mood steps, so chip assembly would bake pure DEFAULTS
+    // into their prompt — most damagingly the required Action's
+    // 'flying' — around a dream they typed themselves. Their words go
+    // through VERBATIM as the caption instead: exactly the contract
+    // create.html's own Write-it path sets (caption = the typed text,
+    // style rides separately on the payload/draft), reused rather than
+    // invented. No characters can be staged on this path, so
+    // characterIdsForGeneration is honestly empty. If they typed
+    // nothing (skipped the box), chip assembly with defaults applies —
+    // identical to a build-mode visitor skipping everything. Note a
+    // write-mode visitor who Back-navigates into the chip steps and
+    // picks chips still gets their TYPED text as the caption while the
+    // text exists — in write mode the written dream is authoritative.
+    if(entryMode === 'write' && freeText && freeText.trim()){
+      assembled = { caption: freeText.trim(), characterIdsForGeneration: [] };
+      return assembled;
+    }
     var chipFields = currentChipFields();
     assembled = WizardChips.assembleCaption(Object.assign({}, chipFields, { style: chosenStyle, freeText: freeText }));
     return assembled;
@@ -1504,14 +1607,16 @@
   // ===================================================================
   var currentStoryText = '';
   var storyRewriteToken = 0; // bumped every recompute -- an in-flight fetch from a PRIOR chip-state (e.g. the user went back and changed something) must never clobber a newer one's result.
-  // Layout-B: the wall's recap became an EDITABLE textarea (founder mock
-  // round 2 — "Here's your dream — make it yours"). Once the visitor has
-  // typed into it, their words are authoritative: the opportunistic LLM
-  // rewrite must not clobber them when it lands, and a wall re-render
-  // must not recompute over them. Cleared on Back (the topbar handler
-  // below): leaving the wall to change chips means the next visit's
-  // recap must recompute fresh from the new chips — exactly the
-  // pre-redesign semantics, which never had an edit to preserve. What
+  // Layout-B: the recap is an EDITABLE textarea on its own step
+  // (renderRecap — founder mock round 2 / round 8: "Here's your dream —
+  // make it yours"). Once the visitor has typed into it, their words are
+  // authoritative: the opportunistic LLM rewrite must not clobber them
+  // when it lands, and a re-render must not recompute over them. Cleared
+  // when the visitor leaves the RECAP step backwards (the topbar
+  // handler below): going back to change the chips means the next recap
+  // visit must recompute fresh from them — exactly the pre-redesign
+  // semantics, which never had an edit to preserve; a Back from the WALL
+  // to the recap keeps the edit (nothing upstream changed). What
   // the edit CHANGES is storyText only — the dream's stored, displayed,
   // emailed story (payload.storyText / draftPatch.storyText /
   // adoptPendingGeneration already all read currentStoryText live, so
@@ -1560,15 +1665,13 @@
   }
 
   function renderStoryRecap(){
-    var card = document.getElementById('fn-story-recap-card');
     var textEl = document.getElementById('fn-story-recap-text');
-    if(!card || !textEl) return; // the wall isn't the current screen -- see computeStoryText's own comment
-    // The recap is a textarea now (Layout-B, editable) — .value, not
-    // textContent. Skipped while it's the active element: a repaint
-    // mid-typing (the LLM upgrade landing) would move the caret even
-    // when the text itself is protected above.
+    if(!textEl) return; // the recap step isn't the current screen -- see computeStoryText's own comment
+    // The recap is an editable textarea — .value, not textContent.
+    // Skipped while it's the active element: a repaint mid-typing (the
+    // LLM upgrade landing) would move the caret even when the text
+    // itself is protected above.
     if(document.activeElement !== textEl) textEl.value = currentStoryText;
-    card.style.display = currentStoryText ? 'block' : 'none';
   }
 
   // ===================================================================
@@ -1784,16 +1887,14 @@
   // Beats, top to bottom (fnStageHtml groups, same vertical-distribution
   // treatment as screen 13):
   //   1. headline + the forming-veil "your dream is forming" frame
-  //   2. the story recap card — the founder-required pre-generation
-  //      preview (tracker item for-product-split-prompttext-storytext-
-  //      f-yt5kc7): this wall is the one screen right before Continue
-  //      fires the real generation request, so it keeps the recap the
-  //      former Contact step carried (screen 13 has no equivalent only
-  //      because the ad funnel shows its recap funnel-side, pre-handoff)
-  //   3. reassurance line (screen 13 passwordless's own copy, verbatim)
-  //   4. (flag-gated) Facebook button, then the "or" divider
-  //   5. email field + inline error
-  //   6. the "Send me my dream" CTA (never "Sign up" — screen 13's rule)
+  //      (the editable story recap sits on its OWN step right before
+  //      this wall — renderRecap, founder round 8; the pre-generation
+  //      preview requirement from tracker item for-product-split-
+  //      prompttext-storytext-f-yt5kc7 is satisfied there)
+  //   2. reassurance line (screen 13 passwordless's own copy, verbatim)
+  //   3. (flag-gated) Facebook button, then the "or" divider
+  //   4. email field + inline error
+  //   5. the "Send me my dream" CTA (never "Sign up" — screen 13's rule)
   //
   // Submit mirrors renderScreen13Passwordless's trySubmit exactly:
   // deliverability check first (checkEmailAvailable — only `deliverable`
@@ -1910,9 +2011,13 @@
         chosenStyle: chosenStyle, freeText: freeText,
         storyText: currentStoryText,
         // A hand-edited recap must survive the Facebook round trip AND
-        // still be protected from recomputation on the re-rendered wall
-        // (the fb_error leg) — the flag rides with the text it protects.
-        storyEdited: storyEditedByUser
+        // still be protected from recomputation after the round trip —
+        // the flag rides with the text it protects. entryMode rides too:
+        // a write-mode visitor's restored state must keep the verbatim
+        // caption contract (see assembleFromState), not fall back to
+        // chip-default assembly on the return leg.
+        storyEdited: storyEditedByUser,
+        entryMode: entryMode
       }));
       return true;
     }catch(e){
@@ -1958,6 +2063,7 @@
       freeText = parsed.freeText || '';
       currentStoryText = parsed.storyText || '';
       storyEditedByUser = !!parsed.storyEdited; // pre-flag snapshots simply restore un-edited — falsy is the right default
+      entryMode = parsed.entryMode || null;     // restore BEFORE assembleFromState — it decides the write-mode caption contract
       assembleFromState();
       return true;
     }catch(e){
@@ -2130,21 +2236,10 @@
     el.innerHTML = fnStageHtml([
       '<div class="fn-headline">Where should we send your first dream?</div>' +
         formingFrameHtml('Your dream is forming…', chosenStyle),
-      // Story recap — the founder-required pre-generation preview (see
-      // this section's own header comment, beat 2), Layout-B EDITABLE:
-      // the mock's recap screen folded onto this wall's existing recap
-      // card (same ids, same computeStoryText/renderStoryRecap plumbing)
-      // rather than becoming its own step — a new step would renumber
-      // wizard_step_viewed's step property for the wall, and analytics
-      // are frozen. ph-no-capture: same session-replay exclusion
-      // create.html's #dream-text carries — people edit genuinely
-      // personal dream content here (maskAllInputs already masks it;
-      // this is the explicit belt half of that).
-      '<div class="story-recap-card" id="fn-story-recap-card" style="display:none;">' +
-        '<div class="story-recap-label">Here’s your dream — make it yours</div>' +
-        '<textarea class="fn-field lb-recap-text ph-no-capture" id="fn-story-recap-text" dir="auto" aria-label="Your dream, editable"></textarea>' +
-        '<div class="lb-recap-sub">Edit anything before we bring it to life.</div>' +
-      '</div>',
+      // (The editable story recap that briefly lived on this wall is its
+      // OWN step now — renderRecap, the screen right before this one —
+      // founder round 8: "it was supposed to be editable in a previous
+      // page". currentStoryText arrives here already computed/edited.)
       // Screen 13 passwordless's own reassurance copy, verbatim.
       '<div class="fn-microcopy" style="margin:0;">Free to start, no card needed — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.</div>',
       facebookSignupButtonHtml(),
@@ -2155,21 +2250,7 @@
       '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin:8px 0 0;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>'
     ]);
 
-    // Recompute + paint the recap now that its elements exist (see
-    // computeStoryText's own doc comment) — re-fires on every render of
-    // this screen, so a Back-edited dream always recomputes fresh.
-    computeStoryText();
     tryShowFormingPreview();
-
-    // Editable recap wiring (Layout-B): typing pins the visitor's own
-    // words as currentStoryText — every downstream reader (payload,
-    // draftPatch, adoptPendingGeneration) already reads that var live, so
-    // there is deliberately NO other write site. See storyEditedByUser's
-    // own comment for the full semantics.
-    document.getElementById('fn-story-recap-text').addEventListener('input', function(e){
-      currentStoryText = e.target.value;
-      storyEditedByUser = true;
-    });
 
     var emailInput = document.getElementById('contact-email');
     var errEl = document.getElementById('contact-error');
@@ -2475,13 +2556,110 @@
   }
 
   // ===================================================================
+  // Entry chooser — the approved mock's screen 1 (🪄 build / ✍️ write /
+  // 🎙️ speak), added as wizard.html's FIRST screen per founder round 8:
+  // "Clicking get started skips the choosing between the 3 options."
+  // Shown to FRESH entries only (?entry=index or a direct hit) — never
+  // to a Facebook return leg (an identity exchange resuming at the
+  // wall) and never to a funnel-style resume arrival (?resume=1 — not a
+  // real wizard.html path today, but excluded defensively per the same
+  // rule: funnel users already chose their mode funnel-side).
+  //
+  // Deliberately a PRE-step outside SCREEN_RENDERERS: it fires only
+  // wizard_entry_mode_chosen { mode, surface:'wizard' } (the sanctioned
+  // event create.html's chooser already fires with surface:'create') —
+  // no wizard_step_viewed, so every existing step number stays
+  // byte-stable (see STEP_ANALYTICS).
+  //
+  // Routing per mode:
+  //   build  → the normal step flow from Subject (goToStep(0)).
+  //   write  → straight to the existing free-text step; the remaining
+  //            machinery runs unchanged from there (free text → recap →
+  //            wall). See assembleFromState for the write-mode caption
+  //            contract, and the Back handler for write-mode Back.
+  //   record → create.html's existing record flow via its login gate
+  //            (location.href='create.html?record=1'). Pre-signup
+  //            recording would need transcription for a visitor with no
+  //            account — a new server surface this deliberately does NOT
+  //            build; create.html's gate sends them through login/signup
+  //            first, exactly its existing behavior. Hidden entirely in
+  //            FB/IG in-app webviews, mirroring create.html's own
+  //            record-guard (same UA-token detection, same per-page-copy
+  //            convention — see create.html's detectInAppHost).
+  // ===================================================================
+  var chooserOffered = false; // did THIS session show the chooser? (drives the extra first progress dot)
+  var chooserActive = false;  // is the chooser the screen on display right now?
+  var entryMode = null;       // null | 'build' | 'write' | 'record' — the committed chooser pick
+
+  function detectInAppHost(){
+    var ua = navigator.userAgent || '';
+    if (/FBAN|FBAV/.test(ua)) return 'Facebook';
+    if (/Instagram/.test(ua)) return 'Instagram';
+    return null;
+  }
+
+  function showChooser(){
+    chooserActive = true;
+    cancelAutoAdvance();
+    renderProgress();
+    var speakRow = detectInAppHost()
+      ? '' // media-constrained webview — same "never offer a path that can't work" rule as create.html's record guard
+      : '<span class="fn-chip" data-entry-mode="record">' + '<span class="lb-chip">🎙️</span>' + 'Speak it — just talk</span>';
+    screenEl.innerHTML =
+      '<div class="fn-headline">What did you dream?</div>' +
+      '<div class="fn-body-copy">However it comes back to you — we take it from there.</div>' +
+      '<div class="fn-chip-row" id="entry-mode-row">' +
+        '<span class="fn-chip" data-entry-mode="build"><span class="lb-chip">🪄</span>Build it step by step</span>' +
+        '<span class="fn-chip" data-entry-mode="write"><span class="lb-chip">✍️</span>Write it in your own words</span>' +
+        speakRow +
+      '</div>' +
+      '<div class="fn-spacer"></div>';
+    screenEl.scrollTop = 0;
+    window.scrollTo(0, 0);
+
+    var chooserCommitTimer = null; // single-flight, re-armed per tap — a quick second tap on a different row means the LAST pick wins, exactly once
+    document.getElementById('entry-mode-row').addEventListener('click', function(e){
+      var row = e.target.closest('.fn-chip');
+      if(!row) return;
+      var mode = row.dataset.entryMode;
+      // Once per commit-tap — the tap IS the choice; the 260ms flash
+      // below is presentation (same beat as create.html's chooser).
+      track('wizard_entry_mode_chosen', { mode: mode, surface: 'wizard' });
+      Array.prototype.forEach.call(document.querySelectorAll('#entry-mode-row .fn-chip'), function(x){ x.classList.remove('sel'); });
+      row.classList.add('sel');
+      if(chooserCommitTimer) clearTimeout(chooserCommitTimer);
+      chooserCommitTimer = setTimeout(function(){
+        chooserCommitTimer = null;
+        entryMode = mode;
+        if(mode === 'record'){ location.href = 'create.html?record=1'; return; }
+        chooserActive = false;
+        goToStep(mode === 'write' ? FREETEXT_STEP : 0);
+      }, 260);
+    });
+  }
+
+  // ===================================================================
   // Navigation engine — same shape as start.html's own goToStep/next/prev.
   // ===================================================================
-  var SCREEN_RENDERERS = [renderSubject, renderSetting, renderAction, renderMood, renderStyleStep, renderFreeText, renderSignupWall];
-  // Same dynamic-lookup reasoning as start.html's SIGNUP_STEP — the
-  // wall's index could shift if a screen is ever added in front of it, so
-  // the Facebook-return boot() below never hardcodes it.
+  var SCREEN_RENDERERS = [renderSubject, renderSetting, renderAction, renderMood, renderStyleStep, renderFreeText, renderRecap, renderSignupWall];
+  // ANALYTICS STABILITY (founder round 8's recap step + the entry
+  // chooser, added WITHOUT renumbering anything): every screen that
+  // existed before keeps the exact wizard_step_viewed step value it has
+  // always reported — Subject..FreeText stay 1-6 and the wall stays 7,
+  // so every historical funnel/dashboard keyed on those numbers reads
+  // on. The recap screen maps to null here and fires the new, sanctioned
+  // wizard_recap_viewed {} instead (see render below); the entry chooser
+  // is a pre-step outside this array entirely and fires only
+  // wizard_entry_mode_chosen. This table is positional against
+  // SCREEN_RENDERERS — a new screen gets null + its own event, never a
+  // renumbering.
+  var STEP_ANALYTICS = [1, 2, 3, 4, 5, 6, null, 7];
+  // Same dynamic-lookup reasoning as start.html's SIGNUP_STEP — these
+  // indexes shift if a screen is ever added in front of them, so nothing
+  // below hardcodes them.
   var WALL_STEP = SCREEN_RENDERERS.indexOf(renderSignupWall);
+  var RECAP_STEP = SCREEN_RENDERERS.indexOf(renderRecap);
+  var FREETEXT_STEP = SCREEN_RENDERERS.indexOf(renderFreeText);
   var cur = 0;
   var screenEl = document.getElementById('fnScreen');
   var progressEl = document.getElementById('fnProgress');
@@ -2489,23 +2667,28 @@
   backBtn.innerHTML = Icons.back;
 
   function renderProgress(){
-    // Progress dots only cover the 5 core + optional steps (0-5) — the
-    // signup wall is its own distinct phase, same as start.html not
-    // counting its own signup/pricing/confirm screens against the
-    // earlier Advanced dots.
-    var coreCount = 6;
+    // Progress dots cover the entry chooser (when this session was
+    // offered one — the mock counts it as the first dot), the six core
+    // steps, and the recap. The signup wall stays its own dot-less
+    // phase, same as start.html not counting its own signup/pricing/
+    // confirm screens against the earlier Advanced dots.
     var dots = '';
-    for(var i = 0; i < coreCount; i++){
-      dots += '<i class="' + (i < cur ? 'done' : i === cur ? 'now' : '') + '"></i>';
+    if(chooserOffered) dots += '<i class="' + (chooserActive ? 'now' : 'done') + '"></i>';
+    for(var i = 0; i < WALL_STEP; i++){
+      dots += '<i class="' + (chooserActive ? '' : (i < cur ? 'done' : i === cur ? 'now' : '')) + '"></i>';
     }
-    progressEl.innerHTML = cur < coreCount ? dots : '';
+    progressEl.innerHTML = (chooserActive || cur < WALL_STEP) ? dots : '';
   }
   function render(){
+    chooserActive = false;
     SCREEN_RENDERERS[cur](screenEl);
     renderProgress();
     screenEl.scrollTop = 0;
     window.scrollTo(0, 0);
-    track('wizard_step_viewed', { step: cur + 1 });
+    // Byte-stable step analytics — see STEP_ANALYTICS's own comment.
+    var stepNo = STEP_ANALYTICS[cur];
+    if(stepNo !== null) track('wizard_step_viewed', { step: stepNo });
+    else track('wizard_recap_viewed', {});
   }
   function goToStep(n){
     if(n < 0 || n >= SCREEN_RENDERERS.length) return;
@@ -2523,11 +2706,15 @@
     // An auto-advance armed on the step being left must never fire into
     // the screen Back is about to show.
     cancelAutoAdvance();
-    // Leaving the wall (the only screen with an editable recap) releases
-    // a pinned hand-edit: the visitor is going back to change the chips,
-    // so the next wall visit recomputes the recap fresh from them —
-    // exactly the pre-redesign behavior. See storyEditedByUser's comment.
-    storyEditedByUser = false;
+    // On the chooser itself, Back leaves the wizard for the welcome
+    // screen — same exit the first step used to own.
+    if(chooserActive){ location.href = 'index.html'; return; }
+    // Leaving the RECAP step backwards releases a pinned hand-edit: the
+    // visitor is going back to change the dream's content, so the next
+    // recap visit recomputes fresh from it. A Back from the WALL to the
+    // recap deliberately does NOT clear — nothing upstream changed, the
+    // edit stands. See storyEditedByUser's comment.
+    if(cur === RECAP_STEP) storyEditedByUser = false;
     // Invalidates any in-flight (or not-yet-acted-on) wall attempt the
     // moment the user navigates away via Back -- see signupAttemptToken's
     // own comment above. Bumping only on the wall's own submit click
@@ -2558,6 +2745,14 @@
     // the pre-wall behavior).
     pendingGenerationToken++;
     pendingGenerationComparisonKey = null;
+    // Chooser-aware Back: the first screen this visitor actually SAW
+    // comes back — Subject's Back returns to the chooser when one was
+    // offered (else index.html, as always), and a write-mode visitor's
+    // Back from the free-text step returns to the chooser too (they
+    // never saw Subject..Style, so stepping into those would be a screen
+    // they don't recognize; picking Build from the chooser afterwards
+    // walks them forward normally).
+    if(chooserOffered && (cur === 0 || (entryMode === 'write' && cur === FREETEXT_STEP))){ showChooser(); return; }
     if(cur > 0){ goToStep(cur - 1); return; }
     location.href = 'index.html';
   });
@@ -2576,6 +2771,15 @@
       // savedAt age check — this is the cheaper, more direct half of the
       // same guarantee).
       clearPersistedWizardState();
+      // Fresh entries (Get Started / direct) meet the entry chooser
+      // first — founder round 8. A ?resume=1 arrival (funnel-style
+      // handoff — not a wizard.html path today, excluded defensively)
+      // skips it: funnel users already chose their mode funnel-side.
+      if(getParam('resume') !== '1'){
+        chooserOffered = true;
+        showChooser();
+        return;
+      }
       render();
       return;
     }

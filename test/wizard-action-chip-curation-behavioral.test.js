@@ -77,6 +77,8 @@ async function safeGoto(page, url) {
 /** Advances wizard.html from the very start through to Step 3 (Action), leaving the visitor sitting on it. */
 async function reachActionStep(page) {
   await safeGoto(page, baseUrl + '/wizard.html');
+  // Round 8: fresh arrivals meet the entry chooser first — commit Build.
+  await page.click('#entry-mode-row [data-entry-mode="build"]');
   await page.waitForSelector('[data-subj-other="none"]');
   await page.click('[data-subj-other="none"]');
   await page.click('#fn-subject-continue');

@@ -570,6 +570,7 @@ test('wizard.html character sheet: tap-outside closes, drag-dismiss/snap-back bo
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
     await page.waitForSelector('#subject-chip-row');
     await page.waitForSelector('#subj-add-other');
 
@@ -643,15 +644,13 @@ test('wizard.html character sheet ("Me"): a rapid second tap at the same spot (~
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    // Layout-B: the Me row itself stages inline (no sheet on tap --
-    // founder 08-04 ruling); the Me SHEET now opens via the staged row's
-    // edit pencil, so that pencil tap is where the rapid-re-tap
-    // protection has to hold for "Me".
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    // Round 8: tapping the Me row opens the character sheet directly
+    // (self mode, photo option included) -- so the Me row tap itself is
+    // where the rapid-re-tap protection has to hold for "Me".
     await page.waitForSelector('#subj-me-row');
-    await page.click('#subj-me-row');
-    await page.waitForSelector('.char-chip[data-char-select] .chip-edit-area');
 
-    await tapTwiceRapidly(page, '.char-chip[data-char-select] .chip-edit-area', 30);
+    await tapTwiceRapidly(page, '#subj-me-row', 30);
     await page.waitForTimeout(400);
     assert.equal(await page.locator('#sheet-character-overlay.open').count(), 1, 'the sheet must still be open after a rapid re-tap landing on its own just-opened backdrop -- this is the exact founder-reported "sheet never opens" failure mode');
   } finally {
@@ -666,6 +665,7 @@ test('wizard.html character sheet ("Someone I know"): same rapid-re-tap protecti
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
     await page.waitForSelector('#subj-add-other');
 
     await tapTwiceRapidly(page, '#subj-add-other', 25);
@@ -683,10 +683,7 @@ test('wizard.html character sheet: a genuine tap-outside at a DIFFERENT position
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    // Layout-B: the Me row stages inline and no longer opens the sheet on
-    // tap (founder 08-04 ruling) -- "#subj-add-other" is the step's
-    // remaining direct tap-to-open-sheet affordance, which is all this
-    // dismissal test needs.
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
     await page.waitForSelector('#subj-add-other');
     await page.click('#subj-add-other');
     // No settle wait -- dismiss immediately (same instant the .open class
@@ -709,8 +706,7 @@ test('wizard.html character sheet: a genuine tap-outside well after opening stil
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    // Layout-B: the sheet's direct tap-open lives on #subj-add-other now
-    // (the Me row stages inline) -- see the test above.
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
     await page.waitForSelector('#subj-add-other');
     await page.click('#subj-add-other');
     await waitForSheetSettled(page, '#sheet-character-overlay');
@@ -747,19 +743,17 @@ test('wizard.html character sheet: opened via a normal (non-adversarial) tap, sa
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
     await page.waitForSelector('#subject-other-row [data-subj-other="stranger"]');
 
     // Select "A stranger" FIRST (an ordinary tap, no character sheet involved).
     await page.click('#subject-other-row [data-subj-other="stranger"]');
     assert.equal(await page.locator('#subject-other-row [data-subj-other="stranger"]').evaluate(function (el) { return el.classList.contains('sel'); }), true);
 
-    // Layout-B: tapping the Me row stages + selects it inline (no sheet,
-    // founder 08-04 ruling); the sheet is still reachable via the row's
-    // edit pencil -- open it there with a single, ordinary tap (not the
-    // rapid-re-tap pattern the 75ob70 tests above exercise), fill in a
-    // description, and save.
+    // Round 8: tapping the Me row selects it AND opens the sheet directly
+    // (single, ordinary tap -- not the rapid-re-tap pattern the 75ob70
+    // tests above exercise); fill in a description and save.
     await page.click('#subj-me-row');
-    await page.click('.char-chip[data-char-select] .chip-edit-area');
     await waitForSheetSettled(page, '#sheet-character-overlay');
     await page.fill('#char-desc-input', 'a woman in her 40s with short brown hair');
     await page.click('#char-save-btn');
@@ -1092,6 +1086,7 @@ test('wizard.html character sheet: #app stays capped and the sheet still has a c
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
+    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
     await page.waitForSelector('#subject-chip-row');
 
     await inflateContentTallerThanViewport(page, '#fnScreen');
@@ -1102,7 +1097,17 @@ test('wizard.html character sheet: #app stays capped and the sheet still has a c
     await waitForSheetSettled(page, '#sheet-character-overlay');
     var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
     assert.ok(box.y > 0 && box.y < 844, 'the character sheet must render within the real viewport (y between 0 and 844), got y=' + box.y + ' -- if this is a large negative number, the sheet is STILL nested inside #fnScreen\'s own scrollable box rather than mounted directly on #app');
-    await page.mouse.click(box.x + box.width / 2, Math.max(1, box.y - 10));
+    // Dismiss tap at a LEFT-EDGE x, not the sheet's center: every prior
+    // click in this flow (chooser row, #subj-add-other) lands at the
+    // rows' shared center x, and Playwright's auto-scroll can leave the
+    // trigger row's click point within ~48px of the sheet's top edge --
+    // where a center-x dismiss tap would be (correctly!) swallowed by
+    // js/sheet-dismiss.js's same-POSITION rapid-re-tap guard (75ob70).
+    // The x-offset makes this a genuinely different-position tap, which
+    // is what "a real user deliberately tapping the backdrop" means for
+    // this test; the guard's own swallow behavior has its dedicated
+    // coverage in section 7b.
+    await page.mouse.click(box.x + 24, Math.max(1, box.y - 10));
     await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
   } finally {
     await context.close();
