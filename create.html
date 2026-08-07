@@ -947,6 +947,29 @@
   });
 
   /**
+   * Entry-chooser analytics (founder ask, 2026-08-07, routed via
+   * Manager onto the wizard-layout-b branch): ONE event per committed
+   * chooser choice, so the %-split across Build/Write/Record and the
+   * signup rate per mode are measurable. Fired from each choice pill's
+   * OWN click handler below — once per tap, before the Layout-B flash
+   * delay (the tap IS the commitment; the delay is presentation).
+   * Deep-link paths that reuse these handlers via a programmatic
+   * .click() (?mode=/?write= handling, the record-blocked panel's
+   * "Write it instead") fire it too — deliberately, they are real mode
+   * entries; the one path that calls startRecordingUI() directly
+   * WITHOUT going through #choice-record's handler stays untracked by
+   * design (no restructuring for analytics). Same no-throw guard as
+   * every other capture site in this codebase (wizard.html's track,
+   * js/comment-sheet.js). This event is the single sanctioned addition
+   * on the otherwise analytics-frozen Layout-B branch.
+   */
+  function track(name, props){
+    if(window.posthog && typeof window.posthog.capture === 'function'){
+      try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the page */ }
+    }
+  }
+
+  /**
    * Layout-B (the founder-approved wizard redesign's entry-chooser
    * grammar, tracker item for-product-founder-picked-layout-b-flo--
    * lks7mj): a REAL tap on a chooser pill paints it selected for ~260ms
@@ -971,6 +994,7 @@
   }
 
   document.getElementById('choice-write').addEventListener('click', function(e){
+    track('wizard_entry_mode_chosen', { mode: 'write', surface: 'create' });
     choicePillFlashThen(e, function(){
       moveAdvSectionTo('create-write', 'write-spacer');
       selectEl.style.display = 'none';
@@ -1157,6 +1181,7 @@
     });
   }
   document.getElementById('choice-record').addEventListener('click', function(e){
+    track('wizard_entry_mode_chosen', { mode: 'record', surface: 'create' });
     // Selected-state paint only — NO 260ms delay, unlike Build/Write
     // above: startRecordingUI calls getUserMedia, which must run inside
     // the original user gesture (see choicePillFlashThen's doc comment).
@@ -1710,6 +1735,7 @@
   }
 
   document.getElementById('choice-build').addEventListener('click', function(e){
+    track('wizard_entry_mode_chosen', { mode: 'build', surface: 'create' });
     choicePillFlashThen(e, function(){
       selectEl.style.display = 'none';
       buildEl.style.display = 'flex';

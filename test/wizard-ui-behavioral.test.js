@@ -1547,3 +1547,61 @@ test('wizard.html Layout-B wall: the recap textarea is genuinely editable — th
     await page.close();
   }
 });
+
+// ===========================================================================
+// Entry-chooser mode analytics (founder ask 2026-08-07, routed onto the
+// Layout-B branch): 'wizard_entry_mode_chosen' { mode, surface:'create' }
+// fires ONCE per committed chooser tap on create.html's Build/Write/Record
+// pills — the single sanctioned event addition on this otherwise
+// analytics-frozen branch. Same PostHog-stub-queue read as
+// test/phase1-product-events-behavioral.test.js (blockThirdParty aborts
+// the real PostHog script, so captures stay queued on the pre-init stub).
+// ===========================================================================
+
+/** Same posthog stub-queue read as test/phase1-product-events-behavioral.test.js's readPostHogCaptureCalls — see that file's header for why this beats a monkeypatch. */
+function readEntryModeEvents(page) {
+  return page.evaluate(function () {
+    var queue = (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];
+    return queue.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'wizard_entry_mode_chosen'; })
+      .map(function (entry) { return entry[2]; });
+  });
+}
+
+test('create.html entry chooser: each pill tap fires wizard_entry_mode_chosen exactly once with its own mode and surface:"create" — Build, Write, and Record each', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await safeGoto(page, baseUrl + '/login.html');
+    await page.evaluate(function () {
+      var state = { user: { handle: '@modeevent', username: 'modeevent' }, accounts: { modeevent: { password: 'testpass1', email: 'modeevent@example.com' } }, dreams: [], draft: {}, charactersByUser: {}, likedIds: {} };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+    });
+
+    // Build — a real tap; the event must fire once, immediately (before
+    // the Layout-B flash delay resolves, since the tap IS the choice).
+    await safeGoto(page, baseUrl + '/create.html');
+    await page.click('#choice-build');
+    var buildEvents = await readEntryModeEvents(page);
+    assert.equal(buildEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per Build tap');
+    assert.deepEqual(buildEvents[0], { mode: 'build', surface: 'create' });
+
+    // Write — fresh page load (fresh stub queue), same shape.
+    await safeGoto(page, baseUrl + '/create.html');
+    await page.click('#choice-write');
+    var writeEvents = await readEntryModeEvents(page);
+    assert.equal(writeEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per Write tap');
+    assert.deepEqual(writeEvents[0], { mode: 'write', surface: 'create' });
+
+    // Record — the event fires synchronously in the tap handler, BEFORE
+    // startRecordingUI's getUserMedia (which may fail in headless — the
+    // choice was still made and must still count).
+    await safeGoto(page, baseUrl + '/create.html');
+    await page.click('#choice-record');
+    var recordEvents = await readEntryModeEvents(page);
+    assert.equal(recordEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per Record tap');
+    assert.deepEqual(recordEvents[0], { mode: 'record', surface: 'create' });
+  } finally {
+    await page.close();
+  }
+});
