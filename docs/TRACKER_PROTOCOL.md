@@ -83,3 +83,15 @@ edit involved), so an unflagged founder-gated item is invisible to the
 founder BY CONSTRUCTION — three finished PRs sat unseen for a day
 because this depended on hand-curation; it no longer does. Clear the
 flag the moment the founder answers (stale flags destroy the signal).
+
+## 6. [for ron] items are written in founder language (added 2026-08-07, founder complaint)
+
+The founder read his live queue and could not understand half of it —
+worker-facing walls of text ("very long and complex... I have no idea
+what this means"). Standing rule: an item flagged `waitingFor: "ron"`
+has a `detail` of AT MOST ~3 plain sentences: what this is, what's on
+the line, and the ONE action/decision asked of him (with the exact
+reply that unblocks). All engineering context, history, and caveats go
+in COMMENTS, never the detail — the founder Board renders the detail
+verbatim. If you can't state the ask in 3 plain sentences, the item is
+not ready to be flagged to him.
