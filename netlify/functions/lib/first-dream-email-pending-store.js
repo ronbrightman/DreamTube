@@ -3,10 +3,13 @@
 // Durable "waiting on a captured thumbnail before sending the automatic
 // first-dream retention email" queue — tracker item
 // for-product-email-redesign-unsubscribe-l-16ysmp's founder-approved
-// follow-up (2026-08-03/04): "wait up to 3 MINUTES for the captured
-// image; if it exists, send with it; if not, SEND ANYWAY at the 3-minute
-// mark — so the no-thumbnail rendering survives as the fallback template,
-// not deleted, just never sent before the 3-min window expires."
+// follow-up, as amended by the founder's 2026-08-08 rule ("do NOT send the
+// email at all until the thumbnail is available"): wait for the captured
+// image; if it lands within the window, send with it; if it NEVER lands,
+// DROP the email entirely rather than sending a thumbnail-less one — see
+// send-pending-first-dream-emails.js's "DROP, NOT SEND-ANYWAY" header note
+// for the full reasoning (the old "SEND ANYWAY at the 3-minute mark" flat-
+// color fallback is gone — it was the source of the founder's bare email).
 //
 // WHY THIS EXISTS: mark-generation-completed.js's automatic send used to
 // call lib/first-dream-email-sender.js's sendIfEligible SYNCHRONOUSLY,
@@ -28,8 +31,9 @@
 // feature: mark-generation-completed.js now just enqueues a pending
 // record here (see markPending below); send-pending-first-dream-
 // emails.js's scheduled scanAndSend is the other half that actually
-// decides, on every run, whether to send now (thumbnail landed) or wait
-// (deadline not yet reached) or send anyway (deadline reached).
+// decides, on every run, whether to send now (thumbnail landed), wait
+// (still within the give-up window), or drop (window elapsed, no thumbnail
+// ever synced — never a thumbnail-less send).
 //
 // HOW THE THUMBNAIL IS FOUND, WITH NO CHANGE TO ANY CLIENT CONTRACT: this
 // store deliberately carries NO thumbnail/dreamId field of its own —
@@ -71,8 +75,8 @@
 // deadline.
 //
 // CLEANUP: send-pending-first-dream-emails.js's scanAndSend removes a
-// record the moment it decides to act on it (send with image, or send
-// the fallback) — see that file's own header comment. A record that's
+// record the moment it decides to act on it (send with image, or drop
+// after the give-up window) — see that file's own header comment. A record that's
 // never removed (e.g. a scan's own removePending call failing) is a
 // single small, harmless leftover, same "negligible storage, no TTL
 // needed" acceptance lib/rate-limit.js's/generation-completion-store.js's

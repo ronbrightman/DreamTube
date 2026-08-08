@@ -6420,8 +6420,14 @@
             // first-qr9fbj) -- whatever this dream's OWN imageUrl already
             // is at the moment this fires, which is usually still null
             // (see saveThumbnailBestEffort below's own doc comment on the
-            // race this loses most of the time) -- optional/cosmetic, see
-            // lib/first-dream-email-sender.js's "REAL THUMBNAIL" comment.
+            // race this loses most of the time). As of the founder's
+            // 2026-08-08 thumbnail-gate rule the server now DEFERS rather
+            // than sends when this is null (see lib/first-dream-email-
+            // sender.js's "THUMBNAIL-GATED SEND" header note) -- so this
+            // client-triggered call is usually a no-op that leaves the
+            // real send to the thumbnail-waiting scheduled path, and only
+            // wins the send outright in the rarer case where the capture
+            // has already synced by the time this fires.
             imageUrl: dream.imageUrl || null
           })
         }).catch(function () { /* best-effort, must never break the app */ });

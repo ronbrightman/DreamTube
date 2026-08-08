@@ -52,8 +52,10 @@
 // own internal contract — this function itself returns real, honest
 // success/failure): js/store.js's saveThumbnailBestEffort never surfaces
 // a failure here to the user — a rejected/failed upload just means this
-// dream keeps no imageUrl, and the retention email keeps using the flat-
-// color fallback (see lib/first-dream-email-sender.js's buildHtml).
+// dream keeps no imageUrl, and (per the founder's 2026-08-08 thumbnail-gate
+// rule — see lib/first-dream-email-sender.js's "THUMBNAIL-GATED SEND"
+// header note) the automatic first-dream retention email simply never goes
+// out for that dream rather than sending a thumbnail-less one.
 //
 // Error codes (local to this small function, same bare-number-scheme
 // convention as dream-webhook.js's/send-first-dream-email.js's own small

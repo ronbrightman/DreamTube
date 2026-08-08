@@ -5,6 +5,11 @@
 // `Idempotency-Key` header lib/first-dream-email-sender.js's `sendIfEligible`
 // now sends on every outbound Resend call.
 //
+// NOTE: every sendIfEligible call here supplies an `imageUrl` -- since the
+// founder's 08-08 thumbnail-gate rule, the sender defers (never reaches the
+// Resend call) without one, and these tests are specifically about the
+// Idempotency-Key on the REAL outbound Resend call.
+//
 // WHY A SEPARATE FILE rather than folding into
 // test/automatic-first-dream-email.test.js or test/first-dream-email-store
 // .test.js: this specifically has to reproduce the real incident's own
@@ -110,6 +115,7 @@ test('DEGRADED-CAS REPRODUCTION: three send attempts for the SAME account, each 
         username: 'triplesenduser',
         email: 'triplesenduser@example.com',
         dreamId: 'dream-' + i,
+        imageUrl: 'https://fal.media/files/thumb.jpg',
         auto: true
       });
       assert.equal(result.sent, true, 'test setup: each of the 3 attempts must have genuinely reached (and been accepted by) the Resend call path -- otherwise this isn\'t reproducing the incident at all');
@@ -137,10 +143,10 @@ test('a DIFFERENT account never shares a key with another account\'s send -- no 
   var sender = require('../netlify/functions/lib/first-dream-email-sender');
 
   await sender.sendIfEligible(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }), {
-    username: 'accountone', email: 'accountone@example.com', dreamId: 'dream-a'
+    username: 'accountone', email: 'accountone@example.com', dreamId: 'dream-a', imageUrl: 'https://fal.media/files/thumb.jpg'
   });
   await sender.sendIfEligible(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }), {
-    username: 'accounttwo', email: 'accounttwo@example.com', dreamId: 'dream-b'
+    username: 'accounttwo', email: 'accounttwo@example.com', dreamId: 'dream-b', imageUrl: 'https://fal.media/files/thumb.jpg'
   });
 
   assert.equal(resendCalls.length, 2);
@@ -158,10 +164,10 @@ test('the key is stable across username case/whitespace variance, matching norma
 
   try {
     await sender.sendIfEligible(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }), {
-      username: 'CaseVariant', email: 'casevariant@example.com', dreamId: 'dream-1'
+      username: 'CaseVariant', email: 'casevariant@example.com', dreamId: 'dream-1', imageUrl: 'https://fal.media/files/thumb.jpg'
     });
     await sender.sendIfEligible(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }), {
-      username: '  casevariant  ', email: 'casevariant@example.com', dreamId: 'dream-2'
+      username: '  casevariant  ', email: 'casevariant@example.com', dreamId: 'dream-2', imageUrl: 'https://fal.media/files/thumb.jpg'
     });
   } finally {
     restore();
@@ -178,10 +184,10 @@ test('a genuinely different dreamId for the SAME account still computes the SAME
 
   try {
     await sender.sendIfEligible(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }), {
-      username: 'perdreamuser', email: 'perdreamuser@example.com', dreamId: 'dream-alpha'
+      username: 'perdreamuser', email: 'perdreamuser@example.com', dreamId: 'dream-alpha', imageUrl: 'https://fal.media/files/thumb.jpg'
     });
     await sender.sendIfEligible(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }), {
-      username: 'perdreamuser', email: 'perdreamuser@example.com', dreamId: 'dream-beta'
+      username: 'perdreamuser', email: 'perdreamuser@example.com', dreamId: 'dream-beta', imageUrl: 'https://fal.media/files/thumb.jpg'
     });
   } finally {
     restore();
@@ -196,10 +202,10 @@ test('WITHOUT the forced-guard bypass, the real CAS guard alone already stops a 
   var sender = require('../netlify/functions/lib/first-dream-email-sender');
 
   var first = await sender.sendIfEligible(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }), {
-    username: 'normaluser', email: 'normaluser@example.com', dreamId: 'dream-1'
+    username: 'normaluser', email: 'normaluser@example.com', dreamId: 'dream-1', imageUrl: 'https://fal.media/files/thumb.jpg'
   });
   var second = await sender.sendIfEligible(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }), {
-    username: 'normaluser', email: 'normaluser@example.com', dreamId: 'dream-2'
+    username: 'normaluser', email: 'normaluser@example.com', dreamId: 'dream-2', imageUrl: 'https://fal.media/files/thumb.jpg'
   });
 
   assert.equal(first.sent, true);

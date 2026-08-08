@@ -22,31 +22,48 @@
 //   2. If that dream exists AND already has a real `imageUrl` (the
 //      client's own saveThumbnailBestEffort captured and synced it) —
 //      SEND NOW, with the real thumbnail, and dequeue.
-//   3. Otherwise, if `THUMBNAIL_WAIT_MS` (3 minutes — the founder's own
-//      explicit figure: "wait up to 3 MINUTES for the captured image...
-//      if not, SEND ANYWAY at the 3-minute mark") has elapsed since
-//      `record.triggeredAt` — SEND ANYWAY, using
-//      lib/first-dream-email-sender.js's existing no-thumbnail flat-color
-//      fallback template (never deleted — this is the one real path that
-//      still reaches it), and dequeue.
+//   3. Otherwise, if `GIVE_UP_AFTER_MS` has elapsed since
+//      `record.triggeredAt` — DROP it (dequeue, send NOTHING) and move on.
 //   4. Otherwise — still within the window, no thumbnail yet — leave it
 //      enqueued for a later run to re-check.
+//
+// DROP, NOT SEND-ANYWAY (founder rule 2026-08-08 — "do NOT send the email
+// at all until the thumbnail is available"): step 3 used to SEND ANYWAY at
+// the 3-minute mark, using lib/first-dream-email-sender.js's flat-color
+// fallback banner. That fallback is exactly what produced the founder's
+// thumbnail-less "your dream is ready" email, so the rule changed: never
+// send this email without a real thumbnail. Per Manager's steer ("prefer a
+// short delayed retry; only after N attempts, either send without or drop
+// — flag which you chose") this scan now RETRIES every minute for a longer
+// window and then, if a thumbnail still never lands, DROPS rather than
+// sends. Drop (not send-without) is the deliberate choice: the founder's
+// rule is absolute, and sending-without-after-a-timeout would just
+// reproduce the exact thumbnail-less email being fixed, only later. The
+// window is extended past the old 3 minutes precisely BECAUSE the tail is
+// now a hard drop (a lost retention email) rather than a degraded send, so
+// a slow-but-real thumbnail sync gets more chances before we give up. The
+// only accounts that ever hit the drop are those whose thumbnail never
+// syncs at all within the window (client never reached result.html,
+// capture failed, sync never landed) — a genuine edge, and a dropped email
+// is strictly better there than a bare one. lib/first-dream-email-
+// sender.js's own thumbnail gate is the belt-and-suspenders backstop: even
+// if this scan ever called it without an imageUrl, it would defer rather
+// than send bare.
 //
 // CADENCE: every minute (`* * * * *`). This is finer-grained than every
 // other scheduled function in this codebase (send-daily-claim-pushes.js's
 // @hourly, reconcile-fal-cost.js's @daily, send-whatsapp-morning-
-// capture.js's once-daily) because the founder's own bound here is
-// MINUTES, not hours — a coarser cadence would either delay a genuinely-
-// already-available thumbnail's send by that same coarser margin (missing
-// "send with it" as soon as it exists) or overshoot the 3-minute deadline
-// by the same margin. Every-minute keeps both errors bounded to roughly
-// the sweep interval itself, the same "cadence picked against the bound
-// it exists to serve" reasoning both-domain-smoke.js's own header comment
-// documents for its own 4-hour interval. At this app's current real
-// traffic (see FOUNDER_PRINCIPLES.md's own framing elsewhere in this
-// codebase) the store this scans is always small — never a real cost or
-// latency concern — see lib/first-dream-email-pending-store.js's own
-// header comment on why it never accumulates a backlog.
+// capture.js's once-daily) because the bound here is MINUTES, not hours —
+// a coarser cadence would delay a genuinely-already-available thumbnail's
+// send by that same coarser margin (missing "send with it" as soon as it
+// exists). Every-minute keeps that error bounded to roughly the sweep
+// interval itself, the same "cadence picked against the bound it exists to
+// serve" reasoning both-domain-smoke.js's own header comment documents for
+// its own 4-hour interval. At this app's current real traffic (see
+// FOUNDER_PRINCIPLES.md's own framing elsewhere in this codebase) the store
+// this scans is always small — never a real cost or latency concern — see
+// lib/first-dream-email-pending-store.js's own header comment on why it
+// never accumulates a backlog.
 //
 // SAFE UNDER RE-SCAN / DOUBLE-FIRE: this file makes its own "send now vs.
 // wait" decision purely from what it reads (no dedup marker of its own
@@ -65,17 +82,16 @@ var pendingStore = require('./lib/first-dream-email-pending-store');
 var dreamStore = require('./lib/dream-store');
 var firstDreamEmailSender = require('./lib/first-dream-email-sender');
 
-// The founder's own explicit figure (tracker item
-// for-product-email-redesign-unsubscribe-l-16ysmp, 2026-08-03 final
-// clarification) — "wait up to 3 MINUTES for the captured image... if
-// not, SEND ANYWAY at the 3-minute mark". Same numeric ballpark this
-// codebase already uses elsewhere for a bounded real-world wait
-// (js/store.js's own INTERP_AUDIO_MAX_POLL_MS is also 3 minutes, for an
-// unrelated feature) — not reused from there (this is a genuinely
-// separate concern, server-side vs. client-side), just noted as
-// consistent with this app's own existing sense of "a reasonable bounded
-// wait" elsewhere.
-var THUMBNAIL_WAIT_MS = 3 * 60 * 1000;
+// How long to keep retrying for a thumbnail before GIVING UP (dropping the
+// email entirely — never sending it bare). Extended from the old 3-minute
+// "send anyway" deadline because the tail behaviour changed from a degraded
+// send to a hard drop (see this file's "DROP, NOT SEND-ANYWAY" header
+// note): a slow-but-real thumbnail sync now costs a lost retention email if
+// we give up too early, so it's worth waiting longer to catch it. 15
+// minutes — comfortably past the seconds-scale window a real
+// result.html-reached capture+sync takes, so anything still missing by then
+// almost certainly never synced at all.
+var GIVE_UP_AFTER_MS = 15 * 60 * 1000;
 
 /** Finds the private dream (if any) whose sourceOperationName matches — see this file's header comment step 1. */
 function findDreamForOperation(dreams, operationName) {
@@ -98,7 +114,7 @@ async function scanAndSend(event) {
 
   var scanned = 0;
   var sentWithImage = 0;
-  var sentFallback = 0;
+  var droppedNoThumbnail = 0;
   var stillWaiting = 0;
 
   for (var i = 0; i < operationNames.length; i++) {
@@ -125,22 +141,19 @@ async function scanAndSend(event) {
     }
 
     var elapsedMs = Date.now() - (record.triggeredAt || 0);
-    if (elapsedMs >= THUMBNAIL_WAIT_MS) {
-      await firstDreamEmailSender.sendIfEligible(event, {
-        username: record.username,
-        email: record.email,
-        dreamId: dream ? dream.id : null,
-        auto: true
-      });
+    if (elapsedMs >= GIVE_UP_AFTER_MS) {
+      // Give-up window elapsed with no thumbnail ever synced — DROP it,
+      // never send a thumbnail-less email (see this file's "DROP, NOT
+      // SEND-ANYWAY" header note). Just dequeue; no send at all.
       await pendingStore.removePending(event, operationName);
-      sentFallback++;
+      droppedNoThumbnail++;
       continue;
     }
 
     stillWaiting++;
   }
 
-  return { scanned: scanned, sentWithImage: sentWithImage, sentFallback: sentFallback, stillWaiting: stillWaiting };
+  return { scanned: scanned, sentWithImage: sentWithImage, droppedNoThumbnail: droppedNoThumbnail, stillWaiting: stillWaiting };
 }
 
 exports.handler = schedule('* * * * *', async function (event) {
@@ -148,7 +161,7 @@ exports.handler = schedule('* * * * *', async function (event) {
     var result = await scanAndSend(event);
     console.log('send-pending-first-dream-emails: scanned ' + result.scanned
       + ', sentWithImage ' + result.sentWithImage
-      + ', sentFallback ' + result.sentFallback
+      + ', droppedNoThumbnail ' + result.droppedNoThumbnail
       + ', stillWaiting ' + result.stillWaiting);
   } catch (e) {
     // Best-effort, same "never let this surface as a hard failure"
@@ -164,4 +177,4 @@ exports.handler = schedule('* * * * *', async function (event) {
 
 // Exposed for direct unit testing (test/send-pending-first-dream-emails.test.js).
 exports.scanAndSend = scanAndSend;
-exports.THUMBNAIL_WAIT_MS = THUMBNAIL_WAIT_MS;
+exports.GIVE_UP_AFTER_MS = GIVE_UP_AFTER_MS;
