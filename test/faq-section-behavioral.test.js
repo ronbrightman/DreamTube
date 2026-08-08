@@ -169,7 +169,7 @@ test('profile.html Settings: clicking a FAQ question reveals its own answer with
     // Opening the second item leaves the first one open too (independent, not single-select).
     await secondItem.locator('.faq-question').click();
     await page.waitForSelector('#faq-list .faq-item[data-faq-index="1"] .faq-answer', { state: 'visible' });
-    assert.match(await secondItem.locator('.faq-answer').textContent(), /320 free/);
+    assert.match(await secondItem.locator('.faq-answer').textContent(), /220 free/);
     assert.equal(await firstItem.locator('.faq-answer').isVisible(), true, 'opening a second item must not close the first');
 
     // Tapping the first question again collapses just that one.

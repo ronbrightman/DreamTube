@@ -1,6 +1,6 @@
 // netlify/functions/claim-install-bonus.js
 //
-// POST { email } -> the "Make DreamTube yours" verified-install +100 token
+// POST { email } -> the "Make DreamTube yours" verified-install +20 token
 // bonus (tracker item for-product-build-ship-founder-approved--9ta1j0,
 // "Home round 4" — founder-approved home-mock5-x7q4.html's Make-it-yours
 // setup card). Grants ONCE per account, ever, via lib/entitlements.js's
@@ -16,8 +16,8 @@
 // checkbox. This endpoint does NOT re-verify that signal server-side (there
 // is nothing server-observable about a client's display-mode) — per the
 // tracker item's own explicit call: "client-attested is an accepted signal
-// at this reward size" (+100 tokens, the same order of magnitude as a
-// single daily claim). The real anti-abuse guard here is the SAME one
+// at this reward size" (+20 tokens, the same as a single daily claim). The
+// real anti-abuse guard here is the SAME one
 // FIRST_CLAIM_BONUS_AMOUNT already relies on: this can only ever pay out
 // once per account, ever, so the worst a scripted client can do is claim it
 // once early — never repeatedly.
@@ -61,7 +61,10 @@ var entitlements = require('./lib/entitlements');
 var rateLimit = require('./lib/rate-limit');
 
 var MAX_CLAIMS_PER_IP_PER_DAY_DEFAULT = 20;
-var INSTALL_BONUS_AMOUNT = 100;
+// 20 tokens (2026-08-08 founder-directed economy retune — down from 100),
+// bringing the add-to-home-screen install bonus into line with the
+// verify-email bonus and a normal daily claim.
+var INSTALL_BONUS_AMOUNT = 20;
 var ACHIEVEMENT_ID = 'home_install_verified';
 
 exports.handler = async function (event) {

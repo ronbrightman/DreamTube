@@ -4327,7 +4327,10 @@
      *                     for-product-funnel-ending-v2-founder-ins-tfuu0q's
      *                     combined ritual-module state (home.html:
      *                     "🔥 1 night" / "Your streak starts tonight" +
-     *                     the distinct +100 first-claim bonus) keys off
+     *                     the first-claim bonus eyebrow, shown only when the
+     *                     server's first-claim amount exceeds the normal 20 —
+     *                     as of the 2026-08-08 retune it equals 20, so the
+     *                     eyebrow stays hidden) keys off
      *                     `isFirstEverNight && loggedToday` — deliberately
      *                     a SEPARATE flag from hasEverLogged (which is also
      *                     true tonight, but stays true forever afterward)
@@ -5956,7 +5959,7 @@
     /**
      * Per-account "Make DreamTube yours" install-bonus claimed flag
      * (tracker item for-product-build-ship-founder-approved--9ta1j0, "Home
-     * round 4"). The real, once-ever grant of the +100 token reward lives
+     * round 4"). The real, once-ever grant of the +20 token reward lives
      * server-side (claim-install-bonus.js -> lib/entitlements.js's
      * applyAchievementGrant, the SAME idempotent once-per-account-per-id
      * marker pattern FIRST_CLAIM_BONUS_AMOUNT/the achievement ledger
@@ -5987,7 +5990,7 @@
     },
 
     /**
-     * Claims the "Make DreamTube yours" verified-install +100 token bonus
+     * Claims the "Make DreamTube yours" verified-install +20 token bonus
      * — thin wrapper around POST claim-install-bonus.js, same shape as
      * claimDailyTokens above. The server enforces the real once-per-account
      * grant (lib/entitlements.js's applyAchievementGrant); this call is
@@ -6259,8 +6262,8 @@
     /**
      * Reads the signed-in account's current token balance — see
      * netlify/functions/lib/entitlements.js's getTokenStatus for the full
-     * mechanism (320 on first-ever read; the daily grant — 100 on an
-     * account's first-ever claim ever, 20 on every claim after that, see
+     * mechanism (220 on first-ever read; the daily grant — 20 per claim,
+     * including the first-ever claim as of the 2026-08-08 retune, see
      * FIRST_CLAIM_BONUS_AMOUNT's own doc comment — must be actively
      * CLAIMED via claimDailyTokens/claim-daily-tokens.js, never applied
      * lazily by this read — see that file's 2026-07-28 "daily token claim"

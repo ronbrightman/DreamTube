@@ -634,7 +634,7 @@ async function callVeoDirect(prompt, apiKey) {
 //                                     the old E108/E111 subscription-paywall gate this replaces: that
 //                                     one stayed default-off until a real Stripe checkout existed,
 //                                     because being entitled there required having actually paid.
-//                                     Every token anyone can spend is either free-earned (320 on
+//                                     Every token anyone can spend is either free-earned (220 on
 //                                     first read of a never-before-seen email, +20 every 24h — see
 //                                     getTokenStatus) or purchased via shop.html's token packs (live
 //                                     via Dodo Payments — see create-checkout-session-dodo.js /

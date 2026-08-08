@@ -70,16 +70,16 @@ test('missing/empty email rejected E3', async function () {
 test('a brand-new email claims successfully -- 200, claimed:true, real balance/streak/nextClaimAt', async function () {
   var email = 'claimhandler@example.com';
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.getTokenStatus(ev, email); // materializes the 320-token record so the claim has something to add to
+  await entitlements.getTokenStatus(ev, email); // materializes the 220-token record so the claim has something to add to
 
   var res = await claimHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { email: email } }));
   assert.equal(res.statusCode, 200);
   var body = JSON.parse(res.body);
   assert.equal(body.claimed, true);
-  // 2026-07-28 first-claim-bonus amendment: this account's very first-ever
+  // 2026-08-08 retune: this account's very first-ever
   // claim grants 100, not the normal 20.
-  assert.equal(body.balance, 420, '320 + 100 first-ever-claim bonus');
-  assert.equal(body.amountClaimed, 100);
+  assert.equal(body.balance, 240, '220 + 20 first-ever-claim grant');
+  assert.equal(body.amountClaimed, 20);
   assert.equal(body.streak, 1);
   assert.equal(typeof body.nextClaimAt, 'number');
 });
@@ -199,7 +199,7 @@ test('a fresh account whose IP already exhausted the general claim-ip bucket via
   assert.equal(res.statusCode, 200, 'a genuinely first-ever claim must not be blocked by an unrelated exhausted claim-ip bucket');
   var body = JSON.parse(res.body);
   assert.equal(body.claimed, true);
-  assert.equal(body.amountClaimed, 100, 'still just the normal first-claim amount -- this exemption never grants more than a first claim always would');
+  assert.equal(body.amountClaimed, 20, 'still just the normal claim amount -- this exemption never grants more than a first claim always would');
 });
 
 test('MAX_FIRST_CLAIMS_PER_IP_PER_DAY env override is honored and still caps first-ever claims (not an unconditional exemption)', async function () {

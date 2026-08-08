@@ -102,16 +102,16 @@
 // an edit/regenerate, or a style change — all three already funnel through
 // the same generate-video.js call site, see that file; a cheaper 10-token
 // image generation was added later, see generate-image.js). Balance is
-// earned partly for free and partly by claiming: 320 on first read of a
+// earned partly for free and partly by claiming: 220 on first read of a
 // never-before-seen email (the funnel's free onboarding video (100) plus
-// one additional day-1 video (100) plus 2 images (20), plus a further
-// +100 headroom — 2026-08-01 founder-directed bump, tracker xostu6), plus a
-// further +20/day the user must actively CLAIM (claim-daily-tokens.js) —
-// EXCEPT the account's first-ever claim ever, which grants +100 instead
-// (2026-07-28 founder amendment — "enough to make more videos on the
-// second day" — see FIRST_CLAIM_BONUS_AMOUNT's own doc comment below for
-// the full reasoning and why this is keyed off a once-only firstClaimAt
-// marker, not a streak day). This REPLACES the old lazy background +20/24h drip entirely (2026-07-28,
+// one additional day-1 video (100) plus 2 images (20) — 2026-08-08
+// founder-directed retune, down from the earlier 320 that carried a further
+// +100 headroom, tracker xostu6, since removed), plus a further +20/day the
+// user must actively CLAIM (claim-daily-tokens.js). The first-ever claim
+// grants the same +20 as every subsequent claim (the larger first-claim
+// bonus was retired in the same 2026-08-08 retune — see
+// FIRST_CLAIM_BONUS_AMOUNT's own doc comment below, which now equals the
+// normal DAILY_CLAIM_AMOUNT). This REPLACES the old lazy background +20/24h drip entirely (2026-07-28,
 // "daily token claim", founder decision, replacing part of "Token Economy
 // C"). The old drip (and its ≥200 grant ceiling — see the retired
 // GRANT_CEILING) auto-materialized tokens on any read with nothing for the
@@ -134,7 +134,7 @@
 // default-off until real Stripe checkout existed — being entitled there
 // required having actually paid, so gating on it before a checkout flow
 // existed would have hard-blocked everyone. This model can never fully
-// block anyone (the 320-token signup grant plus a daily claim guarantee
+// block anyone (the 220-token signup grant plus a daily claim guarantee
 // continued access), it just rate-limits free usage to a sustainable
 // level, now gated behind an active tap rather than a silent drip. See
 // generate-video.js's E112 doc block and AGENT_POLICY.md for the full
@@ -363,13 +363,15 @@ async function setEntitlement(event, email, patch) {
   return record;
 }
 
-// 320 initial = free funnel video (100) + one additional day-1 video (100)
-// + 2 images (20) + a further +100 headroom (2026-08-01 founder-directed
-// bump, tracker xostu6 — "add 100 tokens to the base balance of every new
-// user so they get some more capabilities") — unchanged by the
-// daily-claim switch (2026-07-28), see the doc block at the top of this
-// file for the full retune history.
-var INITIAL_GRANT = 320;
+// 220 initial signup grant (2026-08-08 founder-directed economy retune —
+// down from 320). Covers the free funnel video (100) + one additional
+// day-1 video (100) + 2 images (20); the extra +100 headroom added on
+// 2026-08-01 (tracker xostu6) was pulled back out in this retune. EXISTING
+// balances are never rewritten by changing this constant — it only sets the
+// amount a brand-new email is seeded with on its first-ever read (see
+// syncTokens' `!record.tokens` branch); every already-materialized record
+// keeps whatever balance it already had.
+var INITIAL_GRANT = 220;
 
 // The daily-claim mechanism (claim-daily-tokens.js) — replaces the old
 // DAILY_GRANT_AMOUNT/GRANT_CEILING/GRANT_INTERVAL_MS lazy-drip trio
@@ -401,14 +403,17 @@ var CLAIM_COOLDOWN_MS = 20 * 60 * 60 * 1000;
 var STREAK_CONTINUITY_MS = 48 * 60 * 60 * 1000;
 var DAILY_CLAIM_AMOUNT = 20;
 
-// FIRST_CLAIM_BONUS_AMOUNT (2026-07-28, founder-approved economy amendment,
-// tracker item for-product-daily-claim-bugs-founder-rea-kei2ub, relayed via
-// Manager): the account's FIRST-EVER successful daily claim grants 100
-// tokens instead of the usual 20 — founder's own words, "I want users to
-// have enough to make more videos on the second day so let's make the free
-// tokens on the second day be 100". A returning day-2 user who claims for
-// the very first time can then afford another full video (100 tokens) on
-// top of whatever they still have left from the 320-token signup grant.
+// FIRST_CLAIM_BONUS_AMOUNT (2026-08-08 founder-directed economy retune —
+// down from 100 to 20, matching the normal DAILY_CLAIM_AMOUNT): the bigger
+// first-claim bonus is effectively RETIRED — the account's first-ever
+// successful daily claim now grants the same 20 as every subsequent claim.
+// (Originally introduced 2026-07-28, tracker item
+// for-product-daily-claim-bugs-founder-rea-kei2ub, granting 100 on the
+// first claim; the founder pulled it back to 20 in the 2026-08-08 retune.)
+// The constant is kept (rather than deleted) so getTokenStatus' and
+// claimDailyTokens' first-claim-vs-normal-claim projection logic stays
+// intact and reads a single named value — it simply now equals
+// DAILY_CLAIM_AMOUNT.
 //
 // Deliberately a CLAIM-COUNT/`firstClaimAt` rule, NOT a streak-day-2 rule:
 // a streak-based "day 2 of a streak gets 100" would re-grant the bonus
@@ -425,7 +430,15 @@ var DAILY_CLAIM_AMOUNT = 20;
 // class documented in tracker item
 // recurring-bug-class-hardcoded-daily-gran-h6swgy).
 //
-// Abuse exposure (CORRECTED 2026-08-05, round 3 of tracker item
+// Abuse exposure — LARGELY MOOT as of the 2026-08-08 retune: with
+// FIRST_CLAIM_BONUS_AMOUNT now equal to DAILY_CLAIM_AMOUNT (both 20), a
+// first-ever claim grants no more than any ordinary claim, so the "extra
+// delta a disposable email is worth over a normal claim" this section
+// analyzes is now zero. The analysis below is retained for history (and in
+// case a larger first-claim bonus is ever reinstated); its "+80 delta" /
+// "100 tokens" figures describe the pre-retune 100-vs-20 gap, not today's.
+//
+// (CORRECTED 2026-08-05, round 3 of tracker item
 // for-product-p1-urgent-fresh-signup-can-d-qhrrqy — a prior version of
 // this comment claimed the one-time +80 delta was bounded by the SAME
 // per-IP cap that guards the 320-token signup grant
@@ -455,7 +468,7 @@ var DAILY_CLAIM_AMOUNT = 20;
 // capping the rate-limit ceiling downstream) is a real, still-open
 // follow-up, not something this comment or the round-3 ceiling fix
 // claims to have done.
-var FIRST_CLAIM_BONUS_AMOUNT = 100;
+var FIRST_CLAIM_BONUS_AMOUNT = 20;
 
 // Email-verification bonus (founder-authorized 2026-08-08: "maybe also
 // give 20 tokens for verifying email", surfaced on home.html's
@@ -554,7 +567,7 @@ effectiveConfig.logEffectiveConfigOnce('entitlements', [
  * in this function or file — it has no effect on the daily claim,
  * spendTokens, addTokens, or (critically) the E112/E412 balance-threshold
  * check itself, which callers apply completely independently of this — a
- * bypassed IP still gets exactly INITIAL_GRANT (320) tokens, no more, same
+ * bypassed IP still gets exactly INITIAL_GRANT (220) tokens, no more, same
  * as any other brand-new email that simply wasn't IP-capped.
  *
  * Return value used to also carry a `justSeeded` flag (2026-07-29, tracker
@@ -779,7 +792,7 @@ async function syncTokens(event, email, opts) {
 }
 
 /**
- * Reads this email's current token status, applying the one-time 320-token
+ * Reads this email's current token status, applying the one-time 220-token
  * first-ever-read grant if needed (see syncTokens above) — the daily +20 is
  * a separate, explicit CLAIM (claimDailyTokens below), never applied
  * lazily by this read. Returns
@@ -2547,6 +2560,34 @@ async function applyAchievementGrantOnce(event, email, achievementId, grantSpec)
  * semantics as account-store.js's deleteAccount and
  * @netlify/blobs' own store.delete().
  */
+/**
+ * Deletes ONE outer (email, achievementId) grant marker from
+ * ACHIEVEMENT_GRANTS_STORE_NAME — the delete twin of the marker
+ * applyAchievementGrant writes. Owner-only reset-tool use
+ * (admin-reset-account-markers.js): after a founder's test account is
+ * deleted, its entitlement RECORD is gone (so the inner `achievements`
+ * ledger goes with it), but this lets the reset tool ALSO clear the outer
+ * dedup marker for a specifically-named achievement so a re-signup can
+ * genuinely re-earn that bonus from scratch. Best-effort/idempotent —
+ * deleting a missing marker is a safe no-op, matching deleteEntitlement's
+ * own marker-cleanup posture. Deliberately NOT called by any normal user
+ * flow (delete-account.js only reaches deleteEntitlement, which clears
+ * markers off a still-present record's own ledger) — a real user must never
+ * get a fresh-start re-grant, which is exactly the farm this endpoint's
+ * owner gate exists to keep to the founder alone.
+ */
+async function deleteAchievementGrantMarker(event, email, achievementId) {
+  var key = normalizeEmail(email);
+  if (!key || !validateAchievementId(achievementId)) return { ok: false };
+  connectLambda(event);
+  try {
+    await achievementGrantsStore().delete(achievementGrantMarkerKey(key, achievementId));
+  } catch (e) {
+    // Best-effort — see this function's own doc comment.
+  }
+  return { ok: true };
+}
+
 async function deleteEntitlement(event, email) {
   var key = normalizeEmail(email);
   if (!key) return { ok: false, error: 'email_required' };
@@ -2599,6 +2640,7 @@ module.exports = {
   forgetRefundedJobId,
   applyAchievementGrant,
   applyAchievementGrantOnce,
+  deleteAchievementGrantMarker,
   deleteEntitlement,
   // Exported so callers that need the live values (get-token-status.js's
   // no-email fast path, which never reaches getTokenStatus itself — see
