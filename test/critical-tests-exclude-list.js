@@ -83,14 +83,13 @@
 //      status, sw-fetch-handler, media-file-functions, poll-until-done-
 //      network-retry-behavioral, both-domain-smoke).
 //   8. Narrow generation-variant/style-toggle UI tests that explicitly
-//      state zero real fal.ai cost in their own header and don't touch
-//      a rate limit, a charge decision, real user data, or a documented
-//      incident (image-generation-style-toggle-behavioral, image-
-//      generation-turn-into-video-behavioral, music-bed-behavioral,
-//      result-image-render-behavioral, interp-voice-behavioral, interp-
-//      voice-captions, interpreter-personas, sage-during-generation-
-//      behavioral, content-block-panel-behavioral, create-record-inapp-
-//      webview-guard-behavioral, dream-thumbnail-capture-behavioral,
+//      state zero real fal.ai cost in their own header AND don't touch
+//      a rate limit, a charge decision, real user data, a cross-account
+//      isolation guard, or a documented incident ANYWHERE in the file
+//      body -- not just its dominant scenario (image-generation-style-
+//      toggle-behavioral, music-bed-behavioral, interp-voice-behavioral,
+//      interp-voice-captions, interpreter-personas, content-block-panel-
+//      behavioral, create-record-inapp-webview-guard-behavioral,
 //      explore-avatar-fallback-behavioral, feed-windowing-behavioral,
 //      forming-veil-nebula-behavioral, home-webview-escape-behavioral,
 //      install-first-door-behavioral, profile-me-character-behavioral,
@@ -98,30 +97,59 @@
 //      retention-email-first-video-behavioral, scroll-lock-behavioral,
 //      sheet-dismiss-behavioral, a2hs-install-nudge-journey-behavioral,
 //      pwa-stage0-behavioral, pwa-sw-update-behavioral, pwa-version-
-//      fallback-behavioral, transcript-text-review-behavioral, verify-
-//      email-settings-row-behavioral, media-library-page -- this last
-//      one is ALSO the repo's one documented pre-existing full-suite-
-//      load flake, unrelated to this branch).
-//      "Zero real fal.ai cost" alone is NOT sufficient to exclude a file
-//      -- rounds 4 and 5 both found files correctly zero-cost but
-//      mischaracterized here anyway, each the SOLE coverage for a real
-//      bug or documented incident with nothing to do with generation
-//      cost. NOT in this category, all promoted to critical-tier:
-//      email-public-origin.test.js (round 4 -- regression test for a
-//      documented past production incident, broken image/unsubscribe-
-//      link URLs in retention emails, tracker for-product-bug-two-
-//      blank-square-emails--3fvxvc); mood-music-bed-behavioral.test.js
-//      (round 5 -- sole test proving a dream's mood field actually
-//      reaches the wire on cross-device sync, after a real silent-data-
-//      loss regression found reviewing this same branch); result-
-//      thumbnail-crossorigin-capture-behavioral.test.js (round 5 --
-//      root-cause regression test for a founder-confirmed real
-//      production incident, "never once received a real thumbnail" in
-//      retention emails, tracker for-product-p1-regression-evidence-
-//      found-7lbwkx); notify-likes-badge-behavioral.test.js (found in
-//      the same pass -- a real cross-account badge-count leak on
-//      account switch, same class as logout-clears-pendingjob-
-//      behavioral.test.js's already-critical cross-account leak fix).
+//      fallback-behavioral, verify-email-settings-row-behavioral,
+//      media-library-page -- this last one is ALSO the repo's one
+//      documented pre-existing full-suite-load flake, unrelated to this
+//      branch; interp-analytics-behavioral -- a pure CSS-painting-order
+//      cosmetic bug, portrait fallback overlapping a real successful
+//      image load; home-day0-dream-card-behavioral -- day-0 vs.
+//      returning-user UI framing, not data/security).
+//      "Zero real fal.ai cost" alone is NEVER sufficient to exclude a
+//      file -- rounds 4, 5, and 6 each found files correctly zero-cost
+//      but mischaracterized here anyway, each carrying a late-appended
+//      block (a "review finding" / "SECOND review round" / "root cause"
+//      / "founder-confirmed" / "persistence-race" comment) that guards
+//      something real and unrelated to generation cost, missed because
+//      classification leaned on the file's DOMINANT scenario rather
+//      than scanning every test block. NOT in this category, all
+//      promoted to critical-tier: email-public-origin.test.js (round 4
+//      -- regression test for a documented past production incident,
+//      broken image/unsubscribe-link URLs in retention emails, tracker
+//      for-product-bug-two-blank-square-emails--3fvxvc); mood-music-
+//      bed-behavioral.test.js (round 5 -- sole test proving a dream's
+//      mood field actually reaches the wire on cross-device sync, after
+//      a real silent-data-loss regression found reviewing this same
+//      branch); result-thumbnail-crossorigin-capture-behavioral.test.js
+//      (round 5 -- root-cause regression test for a founder-confirmed
+//      real production incident, "never once received a real
+//      thumbnail" in retention emails, tracker for-product-p1-
+//      regression-evidence-found-7lbwkx); notify-likes-badge-
+//      behavioral.test.js (round 5, found independently -- a real
+//      cross-account badge-count leak on account switch, same class as
+//      logout-clears-pendingjob-behavioral.test.js's already-critical
+//      leak fix); image-generation-turn-into-video-behavioral.test.js
+//      (round 6 -- sole coverage for an ownership guard preventing one
+//      account from spending its own tokens to turn ANOTHER account's
+//      shared-browser dream into a video, tracker for-product-terms-
+//      republish-license-per--fhpcxk); result-image-render-
+//      behavioral.test.js (round 6 -- the founder-hit 2026-08-08 "black
+//      blank square" incident, an image dream whose imageUrl was set
+//      but silently failed to render with no error shown);
+//      sage-during-generation-behavioral.test.js (round 6 -- a
+//      persistence-race fix where an in-flight reading/TTS track could
+//      be silently dropped and real TTS spend wasted, independent-
+//      review finding); dream-thumbnail-capture-behavioral.test.js
+//      (round 6 -- cross-account ownership guards preventing one
+//      account's browser session from writing a captured thumbnail
+//      onto another account's dream record); support-feedback.test.js
+//      (found independently, same pass -- a real duplicate-write bug in
+//      appendMessage's retry loop, a false-negative verify-read could
+//      double-land the same support message, same CAS-idempotency class
+//      as the already-critical first-dream-email-store.test.js);
+//      support-feedback-behavioral.test.js (same pass -- a stale
+//      abandoned-compose-session write must not clobber a new session
+//      the user has switched to, same class as the already-critical
+//      identitySheetToken/charSheetToken session-scoping fixes).
 //
 // HOW A NEW TEST FILE GETS CLASSIFIED (do this when adding one): by
 // DEFAULT it's already in the critical tier -- do nothing. Only add it
@@ -159,7 +187,6 @@ module.exports = [
   "content-block-panel-behavioral.test.js",
   "create-record-inapp-webview-guard-behavioral.test.js",
   "deploy-log-store.test.js",
-  "dream-thumbnail-capture-behavioral.test.js",
   "effective-config-logging.test.js",
   "email-verify-sheet-behavioral.test.js",
   "explore-avatar-fallback-behavioral.test.js",
@@ -176,7 +203,6 @@ module.exports = [
   "home-mky-copy-behavioral.test.js",
   "home-webview-escape-behavioral.test.js",
   "image-generation-style-toggle-behavioral.test.js",
-  "image-generation-turn-into-video-behavioral.test.js",
   "install-first-door-behavioral.test.js",
   "interp-analytics-behavioral.test.js",
   "interp-voice-behavioral.test.js",
@@ -201,11 +227,9 @@ module.exports = [
   "pwa-stage0-behavioral.test.js",
   "pwa-sw-update-behavioral.test.js",
   "pwa-version-fallback-behavioral.test.js",
-  "result-image-render-behavioral.test.js",
   "result-play-intent-behavioral.test.js",
   "result-scroll-lock-behavioral.test.js",
   "retention-email-first-video-behavioral.test.js",
-  "sage-during-generation-behavioral.test.js",
   "save-whatsapp-number.test.js",
   "scroll-lock-behavioral.test.js",
   "send-whatsapp-morning-capture.test.js",
@@ -213,8 +237,6 @@ module.exports = [
   "sheet-dismiss-behavioral.test.js",
   "smoke-status-store.test.js",
   "sound-nudge-behavioral.test.js",
-  "support-feedback-behavioral.test.js",
-  "support-feedback.test.js",
   "sw-fetch-handler.test.js",
   "tracker-behavioral.test.js",
   "tracker-comments-behavioral.test.js",
@@ -222,7 +244,6 @@ module.exports = [
   "tracker-speak-behavioral.test.js",
   "tracker-waiting-for-behavioral.test.js",
   "tracker.test.js",
-  "transcript-text-review-behavioral.test.js",
   "verify-email-settings-row-behavioral.test.js",
   "whatsapp-morning-capture-opt-in-behavioral.test.js"
 ];
