@@ -128,9 +128,11 @@ button:disabled{opacity:.5}
       } while (cursor);
 
       progress.className = 'progress';
-      document.getElementById('verdict').innerHTML = totals.failed === 0
-        ? '<span class="ok">✔ Sweep complete — nothing was lost.</span>'
-        : '<span class="bad">✘ Sweep complete — ' + totals.failed + ' item(s) could not be recovered.</span>';
+      var verdictEl = document.getElementById('verdict');
+      verdictEl.className = totals.failed === 0 ? 'ok' : 'bad';
+      verdictEl.textContent = totals.failed === 0
+        ? '✔ Sweep complete — nothing was lost.'
+        : '✘ Sweep complete — ' + totals.failed + ' item(s) could not be recovered.';
       document.getElementById('recovered').textContent = totals.rehosted;
       document.getElementById('durable').textContent = totals.alreadyDurable;
       document.getElementById('lost').textContent = totals.failed;

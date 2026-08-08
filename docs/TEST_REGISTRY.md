@@ -203,6 +203,12 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 
 ## Last reconciled
 
+2026-08-08, alongside tracker item `for-product-close-the-recovery-backfill--9chzb4`:
+extended the "Media library page + backfill sweep" row to cover the new
+`admin-recovery-sweep.html` (a dedicated one-tap runner for the existing
+`admin-backfill-media-rehost.js` sweep, mirroring `audit-x7q4.html`'s
+auth/UX shape) and its new test file, `test/admin-recovery-sweep-page.test.js`.
+
 2026-08-04, alongside tracker item `for-product-founder-08-04-evening-music--jfjco0`
 (mood-keyed music beds): added the mood-keyed-bed row above covering the
 `dream.mood` persistence fix (the wizard's Mood answer used to reach the
