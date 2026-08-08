@@ -200,7 +200,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 /* One long scroll — content scrolls BEHIND the overlaid night dock. 20px
    side gutters (memo's global rule); bottom padding reserves the dock's
    own footprint via the shared --nav-clearance token. */
-.home-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 20px calc(var(--nav-clearance) + 32px); }
+.home-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 20px calc(var(--nav-clearance) + 76px); }/* bottom pad bumped 32->76 so the Tonight-dream quiet action row (Post/Make another/Edit/Delete) clears the night dock instead of hiding behind it (founder 08-08) */
 
 /* ===== hero card DNA (the approved result-mock's treatment, radius 24) ===== */
 .hero-card{
