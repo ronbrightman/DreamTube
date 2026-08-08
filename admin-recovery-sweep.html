@@ -1,0 +1,150 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>DreamTube — Recovery Sweep</title>
+<!-- Owner-only one-tap runner for admin-backfill-media-rehost.js -- the
+     video/image recovery-backfill sweep, tracker item
+     for-product-close-the-recovery-backfill--9chzb4 ("CLOSE the recovery
+     backfill... run sweep to completion, recover what is recoverable,
+     one-line closure"). Exists for the same reason audit-x7q4.html does
+     (that file's own header comment, Board rule 08-03): the endpoint needs
+     the founder's real password at call time, which no agent sandbox
+     holds, so he needs a page he can tap through himself instead of a
+     curl command dictated to him. Manager's own comment on the tracker
+     item spelled this out directly: "Build the standing pattern instead:
+     a password-gated owner-page button (admin.html style) that runs the
+     sweep and shows recovered/durable/lost counts."
+
+     NOT a duplicate of media-library-x7q4.html's existing "Run backfill
+     sweep" button (verified by reading that page in full before building
+     this one) -- that button hits the SAME endpoint but is buried inside a
+     media-browsing page, gates on a username+password pair (matching that
+     page's higher-sensitivity per-account browsing), and only logs each
+     page's own numbers to a scrolling text panel with no final
+     accumulated total. This page is the dedicated "close this project"
+     tool the tracker item actually asked for: hardcoded to the one owner
+     account (mirroring audit-x7q4.html's own auth shape, not
+     media-library's, since this tool only ever runs against the single
+     owner account, never an arbitrary username), and its whole job is
+     running the sweep to done:true and showing one clear final summary in
+     recovered/already-durable/lost language. Both pages remain safe to run
+     interchangeably -- the sweep is fully idempotent (see
+     admin-backfill-media-rehost.js's own header comment).
+
+     Password goes browser -> our own Netlify function only (verifyLogin),
+     never stored. Pages through nextCursor automatically -- accounts phase
+     then feed phase -- until done:true, accumulating totals across every
+     page rather than showing just the last page's numbers. -->
+<style>
+html{background:#0c0a1a}body{font-family:system-ui,sans-serif;color:#eae7fb;margin:0;padding:18px 14px 60px;max-width:560px;margin-inline:auto;font-size:14px;line-height:1.5}
+h1{font-size:19px;font-weight:800;color:#fff;margin:2px 0 4px}
+.sub{color:#a49dc4;font-size:12.5px;margin:0 0 16px}
+label{display:block;font-size:12px;font-weight:700;color:#a49dc4;margin:12px 0 4px}
+input{width:100%;box-sizing:border-box;background:#161327;border:1px solid rgba(157,144,255,.35);border-radius:10px;color:#fff;font-size:15px;padding:10px 12px}
+button{margin-top:16px;width:100%;background:#6d5df6;color:#fff;font-weight:800;font-size:15px;border:0;border-radius:10px;padding:12px;cursor:pointer}
+button:disabled{opacity:.5}
+.progress{margin-top:14px;color:#a49dc4;font-size:12.5px;display:none}
+.progress.show{display:block}
+.out{margin-top:18px;background:#161327;border:1px solid rgba(157,144,255,.22);border-radius:12px;padding:12px 14px;display:none}
+.out.show{display:block}
+.ok{color:#8ee6c2;font-weight:800}.bad{color:#ff8a96;font-weight:800}
+.row{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:13.5px}
+.row b{color:#fff}
+.err{color:#ff8a96;margin-top:12px;font-weight:700;display:none}
+</style></head><body>
+<h1>🩹 Recovery Sweep</h1>
+<div class="sub">Runs the video/image recovery backfill to completion: re-hosts any dream still only on fal (video or image) into our own storage so it can't expire. Safe to re-run — anything already durably hosted is left untouched. Your password goes only to DreamTube's own login check, never stored.</div>
+
+<label for="pw">Your DreamTube password</label>
+<input id="pw" type="password" autocomplete="current-password">
+<button id="run">Run the sweep</button>
+<div class="err" id="err"></div>
+<div class="progress" id="progress"></div>
+
+<div class="out" id="out">
+  <div id="verdict"></div>
+  <div class="row"><span>Recovered (re-hosted)</span><b id="recovered"></b></div>
+  <div class="row"><span>Already durable (fine as-is)</span><b id="durable"></b></div>
+  <div class="row"><span>Lost (failed to recover)</span><b id="lost"></b></div>
+  <div class="row"><span>Skipped (no media on record)</span><b id="skipped"></b></div>
+  <div class="row"><span>Accounts scanned</span><b id="accounts"></b></div>
+  <div class="row"><span>Media items scanned</span><b id="items"></b></div>
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById('run');
+  var err = document.getElementById('err');
+  var progress = document.getElementById('progress');
+
+  // Same small-number scheme as every sibling admin-*.js file (see this
+  // endpoint's own header comment) -- mapped to plain human copy the
+  // founder can act on without opening the function source.
+  function friendlyError(message) {
+    if (message.indexOf('E5') === 0) return 'Wrong password (or this account is not the owner account).';
+    if (message.indexOf('E6') === 0) return 'Rate limited — too many sweep calls today, try again tomorrow.';
+    if (message.indexOf('E4') === 0) return 'Missing password.';
+    if (message.indexOf('E2') === 0) return 'Server isn’t configured with an owner email — this is a deploy problem, not a password problem.';
+    if (message.indexOf('E3') === 0) return 'The server didn’t understand the request (invalid JSON) — try again.';
+    if (message.indexOf('E7') === 0) return 'Internal paging error — try again.';
+    if (message.indexOf('E1') === 0) return 'Internal request error — try again.';
+    return 'Failed: ' + message;
+  }
+
+  btn.addEventListener('click', async function () {
+    var pw = document.getElementById('pw').value;
+    err.style.display = 'none';
+    err.textContent = '';
+    if (!pw) { err.textContent = 'Enter your password first.'; err.style.display = 'block'; return; }
+
+    btn.disabled = true; btn.textContent = 'Running…';
+    document.getElementById('out').className = 'out';
+    progress.className = 'progress show';
+
+    var totals = { scannedAccounts: 0, scannedMediaItems: 0, rehosted: 0, alreadyDurable: 0, skippedNoMedia: 0, failed: 0 };
+    var cursor;
+    var page = 0;
+
+    try {
+      do {
+        page++;
+        var body = { usernameOrEmail: 'ronbrightman@gmail.com', password: pw };
+        if (cursor !== undefined) body.cursor = cursor;
+        var res = await fetch('/.netlify/functions/admin-backfill-media-rehost', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        });
+        var data = await res.json();
+        if (!res.ok || !data.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+
+        totals.scannedAccounts += data.scannedAccounts || 0;
+        totals.scannedMediaItems += data.scannedMediaItems || 0;
+        totals.rehosted += data.rehosted || 0;
+        totals.alreadyDurable += data.alreadyDurable || 0;
+        totals.skippedNoMedia += data.skippedNoMedia || 0;
+        totals.failed += data.failed || 0;
+
+        var phaseLabel = data.phase === 'feed' ? 'shared feed' : 'accounts';
+        progress.textContent = 'Page ' + page + ' (' + phaseLabel + ' phase)… ' + totals.scannedAccounts + ' account(s) scanned so far, ' + totals.rehosted + ' recovered so far.';
+        btn.textContent = 'Running… (page ' + page + ')';
+
+        cursor = data.done ? null : data.nextCursor;
+      } while (cursor);
+
+      progress.className = 'progress';
+      document.getElementById('verdict').innerHTML = totals.failed === 0
+        ? '<span class="ok">✔ Sweep complete — nothing was lost.</span>'
+        : '<span class="bad">✘ Sweep complete — ' + totals.failed + ' item(s) could not be recovered.</span>';
+      document.getElementById('recovered').textContent = totals.rehosted;
+      document.getElementById('durable').textContent = totals.alreadyDurable;
+      document.getElementById('lost').textContent = totals.failed;
+      document.getElementById('skipped').textContent = totals.skippedNoMedia;
+      document.getElementById('accounts').textContent = totals.scannedAccounts;
+      document.getElementById('items').textContent = totals.scannedMediaItems;
+      document.getElementById('out').className = 'out show';
+    } catch (e) {
+      progress.className = 'progress';
+      err.textContent = friendlyError(e.message);
+      err.style.display = 'block';
+    }
+    btn.disabled = false; btn.textContent = 'Run the sweep';
+  });
+})();
+</script>
+</body></html>
