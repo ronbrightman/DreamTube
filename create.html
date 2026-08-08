@@ -240,7 +240,7 @@
          here — this app's whole premise. Do not remove this class thinking it's unused/dead;
          removing it would let raw dream text into replay recordings by default. -->
     <textarea class="field ph-no-capture" id="dream-text" dir="auto" placeholder="I was flying over a city made of glass..."></textarea>
-    <div class="char-count" id="char-count">0 characters</div>
+    <div class="char-count" id="char-count">0 / 50 words</div>
     <div class="err-text" id="dream-text-error" style="display:none;"></div>
 
     <div class="adv-section" id="adv-section">
@@ -997,15 +997,37 @@
     return (plausible.length / words.length) < 0.5;
   }
 
+  // Founder cap (2026-08-08): a dream renders as a single ~8s Veo scene, so an
+  // extremely long dream can't actually be represented on screen. Cap the
+  // free-text input at ~50 words. Longer, multi-scene videos priced at more
+  // coins are a parked future feature (tracker item
+  // "longer-videos-multi-scene-2-scenes-dream"). Enforced on the two free-text
+  // surfaces — Write (#dream-text) and the Record transcript (#transcript-text);
+  // the chip Build flow is short by construction.
+  var WORD_LIMIT = 50;
+  var WORD_LIMIT_MESSAGE = 'Keep your dream to about ' + WORD_LIMIT + ' words — it becomes one short scene. Longer multi-scene videos are coming soon.';
+  function countWords(s){
+    var t = (s || '').trim();
+    return t ? t.split(/\s+/).filter(Boolean).length : 0;
+  }
+
   function updateCharCount(){
-    var n = textArea.value.length;
-    charCount.textContent = n + ' character' + (n===1?'':'s');
+    var val = textArea.value;
+    var n = val.length;
+    var w = countWords(val);
+    charCount.textContent = w + ' / ' + WORD_LIMIT + ' words';
+    charCount.classList.toggle('over-limit', w > WORD_LIMIT);
     if(n < 8){
       writeContinue.disabled = true;
       hideError('dream-text-error');
       return;
     }
-    if(looksLikeGibberish(textArea.value.trim())){
+    if(w > WORD_LIMIT){
+      writeContinue.disabled = true;
+      showError('dream-text-error', WORD_LIMIT_MESSAGE);
+      return;
+    }
+    if(looksLikeGibberish(val.trim())){
       writeContinue.disabled = true;
       showError('dream-text-error', "That doesn't look like a real dream description yet — try describing what happened.");
     } else {
@@ -2152,6 +2174,10 @@
     var edited = transcriptTextArea.value.trim();
     if(!edited){
       showError('transcript-error', 'Type something before continuing — or re-record.');
+      return;
+    }
+    if(countWords(edited) > WORD_LIMIT){
+      showError('transcript-error', WORD_LIMIT_MESSAGE);
       return;
     }
     // storyText -- same "already the human dream description, verbatim"
