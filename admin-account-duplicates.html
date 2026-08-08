@@ -1,0 +1,133 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>DreamTube — Duplicate-Account Check</title>
+<!-- Owner-only runner for admin-diagnose-account-duplicates.js -- the
+     settling diagnostic for the email-dedup investigation (tracker items
+     for-product-urgent-email-dedup-integrity-iys5fb /
+     for-ron-run-the-duplicate-account-check--ypmr7r). Same reason
+     admin-recovery-sweep.html exists (see that file's header): the endpoint
+     needs the founder's real password at call time, which no agent sandbox
+     holds, so he needs a page he can tap through instead of a dictated
+     curl. Password goes browser -> our own verifyLogin only, never stored.
+     Pre-filled with the three accounts that got the most first-dream emails
+     (moreecemiller 4, dtsexton18 4, demiaharchie49 3) -- editable. -->
+<style>
+html{background:#0c0a1a}body{font-family:system-ui,sans-serif;color:#eae7fb;margin:0;padding:18px 14px 60px;max-width:620px;margin-inline:auto;font-size:14px;line-height:1.5}
+h1{font-size:19px;font-weight:800;color:#fff;margin:2px 0 4px}
+.sub{color:#a49dc4;font-size:12.5px;margin:0 0 16px}
+label{display:block;font-size:12px;font-weight:700;color:#a49dc4;margin:12px 0 4px}
+input,textarea{width:100%;box-sizing:border-box;background:#161327;border:1px solid rgba(157,144,255,.35);border-radius:10px;color:#fff;font-size:15px;padding:10px 12px;font-family:inherit}
+textarea{min-height:92px;resize:vertical;line-height:1.6}
+button{margin-top:16px;width:100%;background:#6d5df6;color:#fff;font-weight:800;font-size:15px;border:0;border-radius:10px;padding:12px;cursor:pointer}
+button:disabled{opacity:.5}
+.progress{margin-top:14px;color:#a49dc4;font-size:12.5px;display:none}
+.progress.show{display:block}
+.out{margin-top:18px;background:#161327;border:1px solid rgba(157,144,255,.22);border-radius:12px;padding:12px 14px;display:none}
+.out.show{display:block}
+.verdict{font-weight:800;font-size:14.5px;margin-bottom:10px;line-height:1.45}
+.ok{color:#8ee6c2}.bad{color:#ff8a96}.warn{color:#ffcf7a}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+th,td{text-align:left;padding:6px 6px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top}
+th{color:#a49dc4;font-weight:700}
+td b{color:#fff}
+.dup-yes{color:#8ee6c2;font-weight:800}.dup-no{color:#ffcf7a;font-weight:800}.dup-na{color:#7a7597}
+.err{color:#ff8a96;margin-top:12px;font-weight:700;display:none}
+</style></head><body>
+<h1>🔍 Duplicate-Account Check</h1>
+<div class="sub">Settles the email-dedup question: did the same account get 2–4 first-dream emails (a real bug), or were those emails to <em>different accounts sharing one inbox</em> (dedup is fine)? For each username it reports whether a distinct account exists, its on-file email, and whether that email actually points at a <em>different</em> account — the direct evidence of a shared inbox. Reads account metadata only (username, email, dates) — no dream content, no tokens, no passwords. Your password goes only to DreamTube's own login check, never stored.</div>
+
+<label for="pw">Your DreamTube password</label>
+<input id="pw" type="password" autocomplete="current-password">
+<label for="names">Usernames to check (one per line, up to 20)</label>
+<textarea id="names">moreecemiller
+dtsexton18
+demiaharchie49</textarea>
+<button id="run">Run the check</button>
+<div class="err" id="err"></div>
+<div class="progress" id="progress"></div>
+
+<div class="out" id="out">
+  <div class="verdict" id="verdict"></div>
+  <table id="tbl">
+    <thead><tr><th>Username</th><th>Exists</th><th>On-file email</th><th>Email points to</th><th>Shared inbox?</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<script>
+(function () {
+  var btn = document.getElementById('run');
+  var err = document.getElementById('err');
+  var progress = document.getElementById('progress');
+
+  function friendlyError(message) {
+    if (message.indexOf('E5') === 0) return 'Wrong password (or this account is not the owner account).';
+    if (message.indexOf('E6') === 0) return 'Rate limited — too many checks today, try again tomorrow.';
+    if (message.indexOf('E7') === 0) return 'Give 1–20 usernames, one per line.';
+    if (message.indexOf('E4') === 0) return 'Missing password or usernames.';
+    if (message.indexOf('E2') === 0) return 'Server isn’t configured with an owner email — a deploy problem, not a password one.';
+    if (message.indexOf('E3') === 0) return 'The server didn’t understand the request — try again.';
+    if (message.indexOf('E1') === 0) return 'Internal request error — try again.';
+    return 'Failed: ' + message;
+  }
+
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+  btn.addEventListener('click', async function () {
+    var pw = document.getElementById('pw').value;
+    var names = document.getElementById('names').value.split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+    err.style.display = 'none'; err.textContent = '';
+    if (!pw) { err.textContent = 'Enter your password first.'; err.style.display = 'block'; return; }
+    if (!names.length) { err.textContent = 'Enter at least one username.'; err.style.display = 'block'; return; }
+
+    btn.disabled = true; btn.textContent = 'Checking…';
+    document.getElementById('out').className = 'out';
+    progress.className = 'progress show'; progress.textContent = 'Checking ' + names.length + ' account(s)…';
+
+    try {
+      var res = await fetch('/.netlify/functions/admin-diagnose-account-duplicates', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernameOrEmail: 'ronbrightman@gmail.com', password: pw, usernames: names })
+      });
+      var data = await res.json();
+      if (!res.ok || !data.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+
+      progress.className = 'progress';
+      var results = data.results || [];
+      var tbody = document.getElementById('tbody');
+      tbody.innerHTML = results.map(function(r){
+        var dupCell = !r.exists ? '<span class="dup-na">—</span>'
+          : (r.likelyDuplicate ? '<span class="dup-yes">YES — shared</span>' : '<span class="dup-no">no (sole owner)</span>');
+        return '<tr><td><b>' + esc(r.requestedUsername) + '</b></td>' +
+          '<td>' + (r.exists ? 'yes' : '<span class="dup-na">no</span>') + '</td>' +
+          '<td>' + esc(r.email || '—') + '</td>' +
+          '<td>' + esc(r.emailIndexTarget || '—') + '</td>' +
+          '<td>' + dupCell + '</td></tr>';
+      }).join('');
+
+      // Verdict: any "shared inbox" hit means the multi-sends went to DISTINCT
+      // accounts sharing an inbox -> the once-ever dedup is fine, the fix is
+      // event taxonomy. If none share (each is the sole owner of its email),
+      // a single account got multiple copies -> a real dedup/CAS bug.
+      var existing = results.filter(function(r){ return r.exists && r.email; });
+      var shared = existing.filter(function(r){ return r.likelyDuplicate; });
+      var vEl = document.getElementById('verdict');
+      if (!existing.length) {
+        vEl.className = 'verdict warn';
+        vEl.textContent = '⚠ None of these usernames resolved to an account with an on-file email — check the spellings.';
+      } else if (shared.length) {
+        vEl.className = 'verdict ok';
+        vEl.textContent = '✔ Duplicate accounts sharing an inbox confirmed (' + shared.length + ' of ' + existing.length + '). The multiple emails went to DISTINCT accounts on one inbox — the once-ever dedup is working. Real fix: event taxonomy (distinct event names per email type), not the CAS.';
+      } else {
+        vEl.className = 'verdict bad';
+        vEl.textContent = '✘ No shared-inbox duplicates found — each of these usernames solely owns its email, so a SINGLE account received multiple copies. That points to a real dedup/CAS bug to fix.';
+      }
+      document.getElementById('out').className = 'out show';
+    } catch (e) {
+      progress.className = 'progress';
+      err.textContent = friendlyError(e.message);
+      err.style.display = 'block';
+    }
+    btn.disabled = false; btn.textContent = 'Run the check';
+  });
+})();
+</script>
+</body></html>
