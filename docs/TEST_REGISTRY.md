@@ -221,7 +221,7 @@ separate/duplicated set of tests:
   regardless of tier) — it's the safety net that catches everything the
   fast tier intentionally skips.
 - **`npm run test:critical`** (`scripts/run-critical-tests.js`,
-  driven by `test/critical-tests-exclude-list.js`) — a fast subset (179
+  driven by `test/critical-tests-exclude-list.js`) — a fast subset (180
   of 255 files as of this pass) meant to run on every build/PR before
   the full sweep gets a turn. Fails loudly if the exclude list ever
   references a deleted/renamed file, so it can't silently go stale.

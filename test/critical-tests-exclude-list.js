@@ -184,7 +184,17 @@
 //      character" and "an empty description must never trigger a real
 //      (or mocked) generation call", neither guard covered by
 //      generate-avatar.test.js (server-side function tests only, no
-//      client-wiring coverage) or any other file).
+//      client-wiring coverage) or any other file); music-bed-
+//      behavioral.test.js (round 9 -- carries the sole BROWSER/DOM-level
+//      regression test for a same-day "2026-08-08 founder repro -- a
+//      video dream must never be silent" incident (js/music-bed.js's
+//      tier-3 default-bed fallback): asserts result.html's actual
+//      #result-music-bed element resolves to the real default bed for an
+//      unknown-style dream. NOT fully redundant with the already-
+//      critical mood-music-bed-behavioral.test.js, which only tests the
+//      pure MusicBed.urlForDream resolver at the Node level, never
+//      launches a browser, and would not catch a regression in
+//      result.html's own wiring script).
 //
 // HOW A NEW TEST FILE GETS CLASSIFIED (do this when adding one): by
 // DEFAULT it's already in the critical tier -- do nothing. Only add it
@@ -245,7 +255,6 @@ module.exports = [
   "media-file-functions.test.js",
   "media-library-page.test.js",
   "meta-capi-behavioral.test.js",
-  "music-bed-behavioral.test.js",
   "phase1-product-events-behavioral.test.js",
   "poll-until-done-network-retry-behavioral.test.js",
   "posthog-capture.test.js",
