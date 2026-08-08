@@ -848,6 +848,7 @@
       introEl: document.getElementById('itp-voice-intro'),
       introAudioEl: document.getElementById('itp-voice-intro-audio'),
       dreamEl: document.getElementById('itp-voice-dream-video'),
+      loadingEl: document.getElementById('itp-voice-loading'),
       capEl: document.getElementById('itp-voice-caption'),
       tapOverlay: document.getElementById('itp-voice-tap-overlay'),
       tapLabelEl: document.getElementById('itp-voice-tap-label'),
@@ -876,6 +877,22 @@
     };
     session.primedAudioEl = null;
     voiceState = vs;
+
+    // Hide the buffering spinner once the dream video can actually paint a
+    // frame (or on error / a non-playable image-only dream) so the stage
+    // never sits as a black box while the video loads (founder 08-08).
+    if (vs.loadingEl) {
+      var hideLoading = function () { if (vs.loadingEl) { vs.loadingEl.style.display = 'none'; } };
+      if (vs.dreamEl && vs.dreamEl.tagName === 'VIDEO' && vs.dreamEl.getAttribute('src')) {
+        if (vs.dreamEl.readyState >= 2) hideLoading();
+        else {
+          vs.dreamEl.addEventListener('loadeddata', hideLoading, { once: true });
+          vs.dreamEl.addEventListener('error', hideLoading, { once: true });
+        }
+      } else {
+        hideLoading();
+      }
+    }
 
     if (!savedEntry) requestVoiceAudio(vs, persona);
 
@@ -1392,6 +1409,13 @@
         ? '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" muted src="' + esc(persona.introClipUrl) + '"></video>' +
           '<audio id="itp-voice-intro-audio" preload="auto" src="' + esc(persona.introVoiceUrl) + '" style="display:none"></audio>'
         : '') +
+      // Loading spinner over the black stage while the dream video buffers
+      // (founder 08-08: "video still loading shows black area — show
+      // loading"). Visible by default when there's a video to load; the
+      // dream-video's loadeddata/error/an image-only dream removes it (see
+      // setupVoiceStage's wiring). No media at all = plain backdrop, no
+      // spinner.
+      (dreamMediaUrl ? '<div class="itp-voice-loading" id="itp-voice-loading"><span class="itp-voice-spinner" aria-label="Loading your dream"></span></div>' : '') +
       '<div class="itp-voice-caption" id="itp-voice-caption"></div>' +
       '<div class="itp-voice-tap-overlay off" id="itp-voice-tap-overlay">' +
       '<div class="itp-voice-tap-btn"><span class="icon">' + Icons.play + '</span></div>' +
