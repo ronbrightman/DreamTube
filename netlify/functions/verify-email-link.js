@@ -73,6 +73,7 @@
 var emailVerificationStore = require('./lib/email-verification-store');
 var accountStore = require('./lib/account-store');
 var sessionTransferToken = require('./lib/session-transfer-token');
+var entitlements = require('./lib/entitlements');
 
 var REDIRECT_PATH_RE = /^\/(?!\/)/;
 var REDIRECT_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
@@ -117,7 +118,33 @@ exports.handler = async function (event) {
     return redirect(event, destination, { verify_error: 'E3: invalid_or_expired' });
   }
 
-  await accountStore.markEmailVerified(event, resolved.username);
+  var marked = await accountStore.markEmailVerified(event, resolved.username);
+
+  // +20 email-verification bonus — the implicit-verification half of the
+  // same grant verify-email-code.js makes explicitly (one shared
+  // achievement id, entitlements.EMAIL_VERIFIED_ACHIEVEMENT_ID, so the two
+  // paths can only ever credit ONCE between them; see that endpoint's
+  // fuller comment for the flip-gating + replay reasoning). Fully silent
+  // here: this handler is a browser redirect target that must 302 onward
+  // on every outcome (see header comment), so there is no JSON response to
+  // carry the grant result — the home page's bonus row and balance simply
+  // reflect it on landing. Best-effort for the same reason: a grant
+  // bookkeeping failure must never break a human's email-link click.
+  // Rate limiting per applyAchievementGrant's caller contract: the mailed
+  // single-use token IS the gate — the grant is unreachable without
+  // dereferencing a token only the real inbox owner ever held.
+  if (marked.ok && marked.changed && marked.record && marked.record.email) {
+    try {
+      await entitlements.applyAchievementGrant(
+        event,
+        marked.record.email,
+        entitlements.EMAIL_VERIFIED_ACHIEVEMENT_ID,
+        { type: 'tokens', amount: entitlements.EMAIL_VERIFIED_BONUS_AMOUNT }
+      );
+    } catch (e) {
+      // Exhaustion only — the verification + redirect must proceed regardless.
+    }
+  }
 
   // See header comment's "SESSION ON SUCCESS" section — this is what lets
   // the mailed link actually complete a login for an account that had NO

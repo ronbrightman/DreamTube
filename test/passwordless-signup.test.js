@@ -654,3 +654,114 @@ test('create-checkout-session-dodo: an email with no account on file at all is n
     assert.equal(res.statusCode, 200);
   });
 });
+
+// ===== +20 email-verification bonus (founder-authorized 2026-08-08) =====
+// Both verification success paths (the explicit code and the implicit
+// link) grant entitlements.EMAIL_VERIFIED_BONUS_AMOUNT exactly once per
+// account, via applyAchievementGrant's once-ever marker under the shared
+// EMAIL_VERIFIED_ACHIEVEMENT_ID. The two-phase marker mechanism itself has
+// its dedicated concurrency coverage in test/entitlements-achievements.
+// test.js — these tests cover the WIRING: the grant fires on a genuine
+// flip, reports itself on the code path's response, cannot fire twice
+// (replay via a direct second grant call — the endpoints themselves are
+// structurally single-shot, since codes/links are consumed on use and
+// resend-verification-code refuses verified accounts), and an
+// already-verified account gets nothing. NOTE on ceilings: the token
+// economy deliberately has NO balance ceiling since the Economy C retune
+// (see entitlements.js's "No ceiling of any kind" comment) — there is no
+// cap for this grant to respect, same as every other grant.
+
+async function getBalance(email) {
+  var entitlements = require('../netlify/functions/lib/entitlements');
+  var status = await entitlements.getTokenStatus(fakeEvent({ method: 'POST' }), email);
+  return status.balance;
+}
+
+test('verify-email-code: a genuine verification grants +20 exactly once — reported on the response as bonus:{granted,amount,balance}, landed on the entitlement, and a replayed grant for the same account is a recorded no-op', async function () {
+  var entitlements = require('../netlify/functions/lib/entitlements');
+  var signup = await signUpPasswordless('bonus-code@example.com');
+
+  // Fix the baseline BEFORE verifying (first getTokenStatus initializes
+  // the record with the signup grant).
+  var before = await getBalance('bonus-code@example.com');
+
+  var sentCalls = await withEnv({ RESEND_API_KEY: RESEND_KEY }, async function () {
+    var calls = installFetchSpy(true);
+    var handler = require('../netlify/functions/resend-verification-code').handler;
+    await handler(reqEvent({ body: { authToken: signup.authToken } }));
+    return calls;
+  });
+  var code = /(\d{6})/.exec(sentCalls[0].body.html)[1];
+
+  var verifyHandler = require('../netlify/functions/verify-email-code').handler;
+  var res = await verifyHandler(reqEvent({ body: { authToken: signup.authToken, code: code } }));
+  assert.equal(res.statusCode, 200);
+  var body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.bonus.granted, true, 'the verify response must report the grant landing — the client never guesses');
+  assert.equal(body.bonus.amount, entitlements.EMAIL_VERIFIED_BONUS_AMOUNT);
+  assert.equal(body.bonus.balance, before + entitlements.EMAIL_VERIFIED_BONUS_AMOUNT, 'the response carries the post-grant balance');
+
+  var after = await getBalance('bonus-code@example.com');
+  assert.equal(after, before + entitlements.EMAIL_VERIFIED_BONUS_AMOUNT, 'exactly +20 on the entitlement record');
+
+  // REPLAY: the endpoints are single-shot by construction (code consumed,
+  // resend refuses verified accounts — asserted in the already-verified
+  // test below), so exercise the guard the way a replay would actually
+  // reach it: a second grant call for the same (email, id) pair must be a
+  // recorded no-op against the committed marker.
+  var replay = await entitlements.applyAchievementGrant(
+    fakeEvent({ method: 'POST' }), 'bonus-code@example.com',
+    entitlements.EMAIL_VERIFIED_ACHIEVEMENT_ID,
+    { type: 'tokens', amount: entitlements.EMAIL_VERIFIED_BONUS_AMOUNT }
+  );
+  assert.equal(replay.granted, false, 'the once-ever marker must swallow a replay');
+  assert.equal(await getBalance('bonus-code@example.com'), after, 'balance untouched by the replay');
+});
+
+test('verify-email-link: the implicit link click grants the SAME once-ever +20 (shared achievement id with the code path), and a second click of a consumed link neither re-verifies nor re-grants', async function () {
+  var entitlements = require('../netlify/functions/lib/entitlements');
+  var signup = await signUpPasswordless('bonus-link@example.com');
+  var before = await getBalance('bonus-link@example.com');
+  var record = await readCodeFromStore(signup.username);
+
+  var handler = require('../netlify/functions/verify-email-link').handler;
+  var res = await handler(fakeEvent({ method: 'GET', query: { token: record.linkToken } }));
+  assert.equal(res.statusCode, 302);
+  assert.match(res.headers.Location, /verified=1/);
+  assert.equal(await getBalance('bonus-link@example.com'), before + entitlements.EMAIL_VERIFIED_BONUS_AMOUNT, 'the link path must land the same +20');
+
+  // Second click: the token was consumed on success — invalid now, still
+  // a graceful 302 (browser-facing), and no double grant.
+  var res2 = await handler(fakeEvent({ method: 'GET', query: { token: record.linkToken } }));
+  assert.equal(res2.statusCode, 302);
+  assert.match(res2.headers.Location, /verify_error/);
+  assert.equal(await getBalance('bonus-link@example.com'), before + entitlements.EMAIL_VERIFIED_BONUS_AMOUNT, 'a replayed link click grants nothing');
+});
+
+test('email-verification bonus: an ALREADY-verified account gets nothing — markEmailVerified reports changed:false, and resend-verification-code refuses to mint a fresh code at all', async function () {
+  var accountStore = require('../netlify/functions/lib/account-store');
+  var signup = await signUpPasswordless('bonus-preverified@example.com');
+
+  // Verify once (link path — either path flips the flag).
+  var record = await readCodeFromStore(signup.username);
+  var linkHandler = require('../netlify/functions/verify-email-link').handler;
+  await linkHandler(fakeEvent({ method: 'GET', query: { token: record.linkToken } }));
+  var balanceAfterFirst = await getBalance('bonus-preverified@example.com');
+
+  // A repeat flip attempt is a changed:false no-op — the flip-gate the
+  // endpoints key the grant on.
+  var again = await accountStore.markEmailVerified(fakeEvent({ method: 'POST' }), signup.username);
+  assert.equal(again.ok, true);
+  assert.equal(again.changed, false, 'markEmailVerified must report that nothing flipped for an already-verified account');
+
+  // And the code path cannot even be re-entered: resend refuses.
+  var resent = await withEnv({ RESEND_API_KEY: RESEND_KEY }, async function () {
+    installFetchSpy(true);
+    var handler = require('../netlify/functions/resend-verification-code').handler;
+    var r = await handler(reqEvent({ body: { authToken: signup.authToken } }));
+    return JSON.parse(r.body);
+  });
+  assert.equal(resent.skipped, 'already_verified');
+  assert.equal(await getBalance('bonus-preverified@example.com'), balanceAfterFirst, 'no second grant by any route');
+});

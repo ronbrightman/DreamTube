@@ -642,11 +642,17 @@ async function markEmailVerified(event, username) {
 
   var record = await s.get('u:' + key, { type: 'json' });
   if (!record) return { ok: false, error: 'not_found' };
-  if (record.emailVerified === true) return { ok: true, record: record }; // already verified — no-op
+  // `changed` tells the caller whether THIS call actually flipped the flag
+  // (vs. an already-verified no-op) — the email-verification bonus
+  // (entitlements.EMAIL_VERIFIED_ACHIEVEMENT_ID) keys on a genuine flip so
+  // a pre-bonus-era verified account re-running a verification never
+  // triggers a fresh grant; applyAchievementGrant's own once-ever marker
+  // backstops it regardless.
+  if (record.emailVerified === true) return { ok: true, record: record, changed: false }; // already verified — no-op
 
   var updated = Object.assign({}, record, { emailVerified: true, updatedAt: Date.now() });
   await s.setJSON('u:' + key, updated);
-  return { ok: true, record: updated };
+  return { ok: true, record: updated, changed: true };
 }
 
 /**

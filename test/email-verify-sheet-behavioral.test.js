@@ -260,3 +260,166 @@ test('email-verify-sheet: the on-open auto-send fires ONCE per page load — dis
     await context.close();
   }
 });
+
+// ===========================================================================
+// +20 email-verification bonus (founder-authorized 2026-08-08): home.html's
+// Make-it-yours card gains a "Verify your email · +20" row, and the sheet's
+// done view celebrates the grant when (and only when) the server says it
+// landed. Server-side grant coverage lives in test/passwordless-signup.
+// test.js; these tests cover the client surfaces.
+// ===========================================================================
+
+test('verify bonus: the sheet\'s done view shows "+20 tokens added" when the verify response carries bonus.granted, and NO bonus line when it doesn\'t', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    await seedHomeUser(page, { emailVerified: false, password: null });
+
+    await page.route('**/.netlify/functions/verify-email-code', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, bonus: { granted: true, amount: 20, balance: 340 } }) });
+    });
+    await page.waitForSelector('#email-verify-sheet-overlay.open', { timeout: 4000 });
+    await page.fill('#email-verify-code-input', '123456');
+    await page.click('#email-verify-submit-btn');
+    await page.waitForSelector('#email-verify-sheet-done', { state: 'visible', timeout: 4000 });
+    assert.equal(await page.locator('#email-verify-bonus-line').isVisible(), true, 'the +20 line must show when the server reported the grant');
+    assert.match(await page.locator('#email-verify-bonus-line').textContent(), /\+20 tokens added/);
+  } finally {
+    await context.close();
+  }
+
+  // Second pass: a response with NO grant (already granted / legacy shape)
+  // must not celebrate anything.
+  var context2 = await browser.newContext();
+  try {
+    var page2 = await context2.newPage();
+    await blockThirdParty(page2);
+    await mockTokenStatus(page2);
+    await seedHomeUser(page2, { emailVerified: false, password: null });
+    await page2.route('**/.netlify/functions/verify-email-code', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+    });
+    await page2.waitForSelector('#email-verify-sheet-overlay.open', { timeout: 4000 });
+    await page2.fill('#email-verify-code-input', '123456');
+    await page2.click('#email-verify-submit-btn');
+    await page2.waitForSelector('#email-verify-sheet-done', { state: 'visible', timeout: 4000 });
+    assert.equal(await page2.locator('#email-verify-bonus-line').isVisible(), false, 'no server-confirmed grant, no celebration — the client never guesses');
+  } finally {
+    await context2.close();
+  }
+});
+
+test('verify bonus row: visible with the +20 chip for an unverified signed-in account, hidden entirely for a verified one; tapping it opens the verify sheet (source: bonus_row)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    // presetSessionMarker stops the next-visit auto-offer so the ROW is
+    // what opens the sheet here.
+    await seedHomeUser(page, { emailVerified: false, password: null, presetSessionMarker: true });
+
+    await page.waitForSelector('#mky-item-verify:not([hidden])', { timeout: 4000 });
+    assert.match(await page.locator('#mky-verify-chip').textContent(), /\+20/, 'the row must carry the +20 chip');
+    assert.equal(await page.locator('#email-verify-sheet-overlay.open').count(), 0, 'sanity: sheet not open before the tap');
+
+    await page.click('#mky-verify-row');
+    await page.waitForSelector('#email-verify-sheet-overlay.open', { timeout: 4000 });
+  } finally {
+    await context.close();
+  }
+
+  var context2 = await browser.newContext();
+  try {
+    var page2 = await context2.newPage();
+    await blockThirdParty(page2);
+    await mockTokenStatus(page2);
+    await seedHomeUser(page2, { emailVerified: true, password: null });
+    await page2.waitForSelector('#mky', { timeout: 4000 });
+    var hidden = await page2.evaluate(function () { return document.getElementById('mky-item-verify').hidden; });
+    assert.equal(hidden, true, 'a verified account must never see the row');
+  } finally {
+    await context2.close();
+  }
+});
+
+test('verify bonus row: after an in-sheet verification the row flips to its ✓ state (chip retired), the balance re-fetches, and the toast reports the server-confirmed +20', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var tokenStatusCalls = 0;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      tokenStatusCalls++;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: tokenStatusCalls > 1 ? 340 : 320, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 1 }) });
+    });
+    await seedHomeUser(page, { emailVerified: false, password: null, presetSessionMarker: true });
+
+    await page.route('**/.netlify/functions/verify-email-code', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, bonus: { granted: true, amount: 20, balance: 340 } }) });
+    });
+    await page.waitForSelector('#mky-item-verify:not([hidden])', { timeout: 4000 });
+    var callsBeforeVerify = tokenStatusCalls;
+
+    await page.click('#mky-verify-row');
+    await page.waitForSelector('#email-verify-sheet-overlay.open', { timeout: 4000 });
+    await page.fill('#email-verify-code-input', '123456');
+    await page.click('#email-verify-submit-btn');
+    await page.waitForSelector('#email-verify-sheet-done', { state: 'visible', timeout: 4000 });
+
+    // Row flipped: ✓ shown, +20 chip retired, row still present this view.
+    await page.waitForFunction(function () {
+      return !document.getElementById('mky-verify-check').hidden;
+    }, null, { timeout: 4000 });
+    assert.equal(await page.evaluate(function () { return document.getElementById('mky-item-verify').hidden; }), false, 'the row stays visible in its done state for this page view');
+    assert.equal(await page.evaluate(function () { return document.getElementById('mky-verify-chip').hidden; }), true, 'the +20 ask retires once earned');
+    // Balance re-fetched off the verified event (the check ✓ above only
+    // renders from that same event handler, so the refresh call has
+    // already been issued by the time we get here).
+    assert.ok(tokenStatusCalls > callsBeforeVerify, 'the balance must re-fetch after verification (got ' + tokenStatusCalls + ' calls)');
+  } finally {
+    await context.close();
+  }
+});
+
+test('verify bonus row: an install-claimed-on-an-earlier-visit account with an UNVERIFIED email keeps the Make-it-yours card, shrunk to just the verify row (the install machinery stays retired)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
+    await page.evaluate(function () {
+      var state = {
+        user: { handle: '@shrunkcard', username: 'shrunkcard', authToken: 'fake-auth-token' },
+        accounts: { shrunkcard: { password: null, email: 'shrunkcard@example.com', emailVerified: false, installBonusClaimed: true } },
+        dreams: [], draft: {}
+      };
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+      sessionStorage.setItem('dreamtube_email_verify_sheet_shown', '1');
+    });
+    await page.goto(baseUrl + '/home.html', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#mky-item-verify:not([hidden])', { timeout: 4000 });
+    var state = await page.evaluate(function () {
+      return {
+        sectionShown: document.getElementById('mky').style.display !== 'none',
+        installHidden: document.getElementById('mky-item-install').hidden,
+        rewardHidden: document.getElementById('mky-reward-line').hidden,
+        claimHidden: document.getElementById('mky-claim').hidden
+      };
+    });
+    assert.equal(state.sectionShown, true, 'the card must stay for the still-earnable email bonus');
+    assert.equal(state.installHidden, true, 'the spent install machinery must stay retired');
+    assert.equal(state.rewardHidden, true);
+    assert.equal(state.claimHidden, true);
+  } finally {
+    await context.close();
+  }
+});
