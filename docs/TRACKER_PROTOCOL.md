@@ -95,3 +95,28 @@ reply that unblocks). All engineering context, history, and caveats go
 in COMMENTS, never the detail — the founder Board renders the detail
 verbatim. If you can't state the ask in 3 plain sentences, the item is
 not ready to be flagged to him.
+
+## 7. Approved designs travel as artifacts, never as descriptions (added 2026-08-08, founder escalation)
+
+The funnel restyle shipped looking materially different from the mock the
+founder approved through seven rounds — because the spec crossed the
+repo boundary as a POINTER ("adopt the visual language, see the live
+wizard") while the approved mock file itself had been deleted as cleanup,
+and no one compared the built screens to the mock before the founder saw
+them. Standing rules:
+
+1. **Founder-approved mocks are permanent reference artifacts.** They are
+   never deleted; they live in `design-reference/` in the repo that owns
+   the approval (the Layout-B wizard mock is there now). A cleanup pass
+   may remove a mock from user-facing paths, never from the repo.
+2. **Cross-repo design work links the artifact + its behavior list.** Any
+   item asking another session to replicate an approved design MUST link
+   the mock file and enumerate its interaction behaviors (auto-advance
+   rules, conditional reveals, one-screen constraints, etc.). "Same look
+   as X" is not a spec.
+3. **Side-by-side before ship, no exceptions.** Whoever replicates an
+   approved design — in any repo, under any deploy policy, even with a
+   founder "ship it" — produces a same-viewport side-by-side (approved
+   mock vs built screens) and checks every listed behavior BEFORE the
+   founder can encounter it live. The coordinator (Manager) owns
+   verifying conformance when the work crosses sessions.
