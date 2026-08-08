@@ -393,6 +393,21 @@ var DAILY_CLAIM_AMOUNT = 20;
 // claims to have done.
 var FIRST_CLAIM_BONUS_AMOUNT = 100;
 
+// Email-verification bonus (founder-authorized 2026-08-08: "maybe also
+// give 20 tokens for verifying email", surfaced on home.html's
+// bonus-tokens card). Granted via applyAchievementGrant — this pair is
+// that mechanism's first real user-facing wiring (its own doc block below
+// anticipated exactly this). Defined HERE, not per-endpoint, because TWO
+// verification success paths must grant against the SAME once-ever marker
+// (verify-email-code.js's explicit code and verify-email-link.js's
+// implicit link click — a per-file copy of the id would let the two
+// silently drift and double-grant). 20 tokens; no ceiling applies — the
+// token economy has had no balance ceiling since the Economy C retune
+// (see the "No ceiling of any kind" comment above), same as every other
+// grant.
+var EMAIL_VERIFIED_ACHIEVEMENT_ID = 'email_verified_bonus';
+var EMAIL_VERIFIED_BONUS_AMOUNT = 20;
+
 // Per-IP daily cap on brand-new-email token initializations — see
 // AGENT_POLICY.md / the founder's token-economy spec for the abuse vector:
 // js/store.js's signup() is 100% client-side (localStorage only, confirmed
@@ -2627,6 +2642,8 @@ module.exports = {
   INITIAL_GRANT,
   DAILY_CLAIM_AMOUNT,
   FIRST_CLAIM_BONUS_AMOUNT,
+  EMAIL_VERIFIED_ACHIEVEMENT_ID,
+  EMAIL_VERIFIED_BONUS_AMOUNT,
   CLAIM_COOLDOWN_MS,
   STREAK_CONTINUITY_MS
 };

@@ -79,6 +79,11 @@
       '  </div>' +
       '  <div id="email-verify-sheet-done" style="display:none; text-align:center;">' +
       '    <div class="sheet-title">You\'re verified</div>' +
+      // Shown only when the verify response says the +20 verification
+      // bonus actually landed (verify-email-code.js's `bonus.granted` —
+      // server-confirmed, never guessed client-side; founder-authorized
+      // 08-08, surfaced with home.html's bonus-tokens card).
+      '    <div id="email-verify-bonus-line" style="display:none; font-size:14px; font-weight:800; color:var(--text-primary); margin-bottom:8px;"></div>' +
       '    <div style="font-size:13.5px; color:var(--text-muted); line-height:1.5; margin-bottom:16px;">Thanks — your email is confirmed.</div>' +
       '    <button type="button" class="btn btn-secondary btn-block" id="email-verify-done-close-btn">Close</button>' +
       '  </div>' +
@@ -170,8 +175,22 @@
         return;
       }
       trackLocal('email_verified', { method: 'code' });
+      var bonusLine = document.getElementById('email-verify-bonus-line');
+      if (result.bonus && result.bonus.granted) {
+        bonusLine.textContent = '+' + (result.bonus.amount || 20) + ' tokens added';
+        bonusLine.style.display = 'block';
+      } else {
+        bonusLine.style.display = 'none';
+      }
       document.getElementById('email-verify-sheet-form').style.display = 'none';
       document.getElementById('email-verify-sheet-done').style.display = 'block';
+      // Lets whatever page hosts this sheet react (home.html's bonus row
+      // flips + balance refresh) without the sheet knowing its host —
+      // same window-event convention as 'dreamtube:install-capability-
+      // changed' (js/pwa.js).
+      try {
+        window.dispatchEvent(new CustomEvent('dreamtube:email-verified', { detail: { bonus: result.bonus || null } }));
+      } catch (e) { /* CustomEvent is universal in this app's supported browsers -- belt only */ }
     });
   }
 

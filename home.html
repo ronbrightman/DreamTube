@@ -736,6 +736,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 .mky-row .done-check{ color:var(--home-ok); font-weight:800; margin-left:6px; }
 .mky-row .chev svg{ transition:transform .2s ease; }
 .mky-item.open .mky-row .chev svg{ transform:rotate(90deg); }
+/* The +20 chip on the email-verification bonus row — same gold voice as
+   the card's .mky-reward.gold line, sized as a row-trailing badge. */
+.mky-bonus-chip{
+  display:inline-flex; align-items:center; gap:4px; flex:none;
+  font:800 12px var(--font-body); color:var(--home-warn); /* the card's own .gold voice */
+  border:1px solid rgba(232,196,106,.45); border-radius:99px; padding:3px 9px;
+}
+.mky-bonus-chip .tok-ico svg{ width:12px; height:12px; }
 .mky-exp{
   overflow:hidden; max-height:0; opacity:0;
   transition:max-height .28s ease, opacity .2s ease;
@@ -1141,8 +1149,27 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
               </button>
               <div class="mky-exp" id="mky-bookmark-exp"></div>
             </div>
+            <!-- Email-verification bonus row (founder 08-08: "keep it on
+                 the section that has the bonus tokens... maybe also give
+                 20 tokens for verifying email" — this REPLACED the earlier
+                 hook-it-to-Post idea, which he rejected; posting stays
+                 friction-free and the publish/E8 gate is untouched).
+                 Visible only while the signed-in account is unverified;
+                 tap opens js/email-verify-sheet.js (which auto-sends the
+                 code); the sheet's 'dreamtube:email-verified' event flips
+                 this row to its done-check state and refreshes the
+                 balance. Server side: verify-email-code.js /
+                 verify-email-link.js grant +20 once-ever via
+                 entitlements.EMAIL_VERIFIED_ACHIEVEMENT_ID. -->
+            <div class="mky-item" id="mky-item-verify" hidden>
+              <button type="button" class="mky-row" id="mky-verify-row">
+                <i class="qicon">✉️</i>
+                <span class="qlabel">Verify your email<span class="done-check" id="mky-verify-check" hidden>✓</span></span>
+                <span class="mky-bonus-chip" id="mky-verify-chip">+20 <span class="tok-ico" id="mky-verify-tok" aria-hidden="true"></span></span>
+              </button>
+            </div>
           </div>
-          <div class="mky-reward gold">Add DreamTube to your home screen, then open it from the new icon — that first open unlocks +100 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
+          <div class="mky-reward gold" id="mky-reward-line">Add DreamTube to your home screen, then open it from the new icon — that first open unlocks +100 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
           <button type="button" class="mky-claim" id="mky-claim" disabled></button>
         </div>
         <div id="mky-done" hidden>
@@ -2539,15 +2566,55 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       : '<div class="mky-step"><b>In Chrome:</b> tap ⋮ → <b>☆ (star)</b> to bookmark. On a computer: <b>⌘D / Ctrl+D</b>.</div>';
   }
 
+  // Email-verification bonus row state (founder 08-08 — see the row's own
+  // markup comment). `mkyVerifyJustDone` keeps the row visible in its
+  // ✓-claimed state for the page view where verification happened (same
+  // rhythm as the install claim's own just-claimed done view); on a LATER
+  // visit a verified account simply doesn't get the row at all.
+  var mkyVerifyJustDone = false;
+  function verifyBonusRowApplicable(){
+    // home.html is login-gated at the top of this script, so "signed in"
+    // is a given here — the row applies while the account is unverified.
+    return !!(window.DreamStore && typeof DreamStore.getAccountEmailVerified === 'function' && !DreamStore.getAccountEmailVerified());
+  }
+  function renderVerifyRow(){
+    var item = document.getElementById('mky-item-verify');
+    var applicable = verifyBonusRowApplicable() || mkyVerifyJustDone;
+    item.hidden = !applicable;
+    if(!applicable) return;
+    document.getElementById('mky-verify-tok').innerHTML = window.Icons ? Icons.token : '';
+    document.getElementById('mky-verify-check').hidden = !mkyVerifyJustDone;
+    document.getElementById('mky-verify-chip').hidden = mkyVerifyJustDone; // earned — the ✓ takes over from the +20 ask
+  }
+
   function refreshMky(){
     var section = document.getElementById('mky');
     if(mkyClaimedAtLoad && !mkyJustClaimed){
-      section.style.display = 'none'; // "This card says goodbye" -- gone entirely on a later visit
+      // Install bonus already claimed on an earlier visit. Pre-08-08 this
+      // hid the whole card ("This card says goodbye") — but the email-
+      // verification bonus lives on this same card now, so an unverified
+      // account keeps the card, shrunk to JUST that row (the install
+      // machinery below stays hidden: its bonus is spent). Verified +
+      // install-claimed = the original goodbye, unchanged.
+      if(!(verifyBonusRowApplicable() || mkyVerifyJustDone)){
+        section.style.display = 'none';
+        return;
+      }
+      section.style.display = '';
+      document.getElementById('mky-live').hidden = false;
+      document.getElementById('mky-done').hidden = true;
+      document.getElementById('mky-item-install').hidden = true;
+      document.getElementById('mky-item-copy').hidden = true;
+      document.getElementById('mky-item-bookmark').hidden = true;
+      document.getElementById('mky-reward-line').hidden = true;
+      document.getElementById('mky-claim').hidden = true;
+      renderVerifyRow();
       return;
     }
     section.style.display = '';
     document.getElementById('mky-live').hidden = mkyJustClaimed;
     document.getElementById('mky-done').hidden = !mkyJustClaimed;
+    renderVerifyRow();
     if(mkyJustClaimed) return;
 
     var installed = !!(window.DreamStore && DreamStore.getInstallVerified());
@@ -2579,6 +2646,24 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   document.getElementById('mky-bookmark-row').addEventListener('click', function(){
     toggleMky('bookmark');
     track('home_mky_row_tapped', { row: 'bookmark' });
+  });
+  document.getElementById('mky-verify-row').addEventListener('click', function(){
+    if(mkyVerifyJustDone || !verifyBonusRowApplicable()) return; // already earned -- the ✓ row is inert
+    track('home_mky_row_tapped', { row: 'verify_email' });
+    if(window.EmailVerifySheet) EmailVerifySheet.show({ source: 'bonus_row' });
+  });
+  // The verify sheet announces success via this window event (see
+  // js/email-verify-sheet.js) — flip the row to its ✓ state, celebrate the
+  // +20 only when the SERVER said the grant landed, and refresh the
+  // balance so the Vault chip reflects it without a reload.
+  window.addEventListener('dreamtube:email-verified', function(ev){
+    mkyVerifyJustDone = true;
+    refreshMky();
+    var bonus = ev && ev.detail && ev.detail.bonus;
+    if(bonus && bonus.granted){
+      showToast('+' + (bonus.amount || 20) + ' tokens added to your Vault');
+    }
+    refreshTokenStatus(false);
   });
   document.getElementById('mky-claim').addEventListener('click', function(){
     if(this.disabled) return;

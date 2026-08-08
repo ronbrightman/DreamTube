@@ -44,6 +44,7 @@
 var accountAuthToken = require('./lib/account-auth-token');
 var accountStore = require('./lib/account-store');
 var emailVerificationStore = require('./lib/email-verification-store');
+var entitlements = require('./lib/entitlements');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -78,6 +79,49 @@ exports.handler = async function (event) {
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: code2 }) };
   }
 
-  await accountStore.markEmailVerified(event, auth.username);
-  return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+  var marked = await accountStore.markEmailVerified(event, auth.username);
+
+  // ===== +20 email-verification bonus (founder-authorized 2026-08-08,
+  // surfaced on home.html's bonus-tokens card) =====
+  // Granted only when THIS verification actually flipped the flag
+  // (marked.changed — see markEmailVerified's own comment), through
+  // entitlements.applyAchievementGrant's once-ever per-(email, id) marker
+  // — the same idempotent two-phase machinery claim-install-bonus.js uses,
+  // so a replayed/concurrent verify can never double-credit even if
+  // `changed` somehow reported true twice under a stale read (this
+  // codebase's Blobs have no read-your-write guarantee — the marker, not
+  // this flag, is the real guard). verify-email-link.js grants against the
+  // SAME achievement id, so whichever path verifies first wins the one
+  // grant and the other is a recorded no-op.
+  //
+  // Rate limiting (applyAchievementGrant's doc block requires callers to
+  // bound scripted hammering): this endpoint is already double-gated
+  // before the grant is reachable — a verified authToken (E4) proves the
+  // caller acts as this account, and email-verification-store's
+  // MAX_CODE_ATTEMPTS (E7) bounds code guessing — and the achievement id
+  // is a fixed server-side constant, never client input, so there is no
+  // "many different ids/accounts" surface left for an extra IP bucket to
+  // bound.
+  //
+  // The grant is BEST-EFFORT relative to the verification itself: the
+  // account IS verified at this point, and that must never be reported as
+  // a failure because bonus bookkeeping hiccuped — a thrown exhaustion
+  // (applyAchievementGrant only throws on genuine Blobs-retry exhaustion)
+  // degrades to bonus:{granted:false} on an otherwise-ok response. The
+  // client shows the +20 celebration only when the server says it landed.
+  var bonus = { granted: false, amount: entitlements.EMAIL_VERIFIED_BONUS_AMOUNT };
+  if (marked.ok && marked.changed && marked.record && marked.record.email) {
+    try {
+      var grant = await entitlements.applyAchievementGrant(
+        event,
+        marked.record.email,
+        entitlements.EMAIL_VERIFIED_ACHIEVEMENT_ID,
+        { type: 'tokens', amount: entitlements.EMAIL_VERIFIED_BONUS_AMOUNT }
+      );
+      bonus = { granted: !!grant.granted, amount: entitlements.EMAIL_VERIFIED_BONUS_AMOUNT, balance: grant.balance };
+    } catch (e) {
+      // Exhaustion only — verification stands, bonus just isn't confirmed.
+    }
+  }
+  return { statusCode: 200, body: JSON.stringify({ ok: true, bonus: bonus }) };
 };

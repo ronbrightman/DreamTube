@@ -3910,7 +3910,12 @@
           var key = state.user.username.toLowerCase();
           if (state.accounts[key]) state.accounts[key].emailVerified = true;
           persist();
-          return { ok: true };
+          // bonus: the server's +20 verification-grant result
+          // (verify-email-code.js — { granted, amount, balance? }), passed
+          // through verbatim so the sheet/home can celebrate exactly when
+          // the server says the grant landed, never by guessing. Absent on
+          // pre-bonus responses — callers must null-check.
+          return { ok: true, bonus: data.bonus || null };
         }
         var err = (data && data.error) || '';
         if (err.indexOf('too_many_attempts') !== -1) return { ok: false, error: 'Too many tries — request a fresh code and try again.' };
