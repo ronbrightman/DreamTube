@@ -53,7 +53,11 @@
 //      (posthog-capture, posthog-identity-merge-behavioral,
 //      posthog-test-traffic-tagging-behavioral, phase1-product-events-
 //      behavioral, funnel-distinct-id-behavioral, meta-capi-behavioral,
-//      founder-alias-exclusion-behavioral, interp-analytics-behavioral).
+//      founder-alias-exclusion-behavioral). NOT interp-analytics-
+//      behavioral.test.js -- see round 7 promotion note under category 8
+//      below; that file's analytics-plumbing tests are real, but a
+//      separate block in the same file is a real privacy guard, so the
+//      whole file stays in the critical tier.
 //      Note: meta-capi.test.js (singular, the actual CAPI call including
 //      its own access-token-leak-prevention test) is NOT here -- that's
 //      a real credential-leak boundary, stays in the fast tier.
@@ -87,8 +91,8 @@
 //      a rate limit, a charge decision, real user data, a cross-account
 //      isolation guard, or a documented incident ANYWHERE in the file
 //      body -- not just its dominant scenario (image-generation-style-
-//      toggle-behavioral, music-bed-behavioral, interp-voice-behavioral,
-//      interp-voice-captions, interpreter-personas, content-block-panel-
+//      toggle-behavioral, music-bed-behavioral, interp-voice-captions,
+//      interpreter-personas, content-block-panel-
 //      behavioral, create-record-inapp-webview-guard-behavioral,
 //      explore-avatar-fallback-behavioral, feed-windowing-behavioral,
 //      forming-veil-nebula-behavioral, home-webview-escape-behavioral,
@@ -100,9 +104,7 @@
 //      fallback-behavioral, verify-email-settings-row-behavioral,
 //      media-library-page -- this last one is ALSO the repo's one
 //      documented pre-existing full-suite-load flake, unrelated to this
-//      branch; interp-analytics-behavioral -- a pure CSS-painting-order
-//      cosmetic bug, portrait fallback overlapping a real successful
-//      image load; home-day0-dream-card-behavioral -- day-0 vs.
+//      branch; home-day0-dream-card-behavioral -- day-0 vs.
 //      returning-user UI framing, not data/security).
 //      "Zero real fal.ai cost" alone is NEVER sufficient to exclude a
 //      file -- rounds 4, 5, and 6 each found files correctly zero-cost
@@ -149,7 +151,33 @@
 //      support-feedback-behavioral.test.js (same pass -- a stale
 //      abandoned-compose-session write must not clobber a new session
 //      the user has switched to, same class as the already-critical
-//      identitySheetToken/charSheetToken session-scoping fixes).
+//      identitySheetToken/charSheetToken session-scoping fixes);
+//      interp-analytics-behavioral.test.js (round 7 -- alongside its
+//      cosmetic CSS-painting-order fix, this file carries the SOLE
+//      coverage for "a published dream's interpretations map is NEVER
+//      included in the publish-dream payload" -- a real private-reading-
+//      never-leaks-to-the-shared-feed guarantee, missed because
+//      classification leaned on the file's one flagged CSS bug rather
+//      than reading the whole file); interp-voice-behavioral.test.js
+//      (round 7 -- the undetected direct sibling of the already-critical
+//      sage-during-generation-behavioral.test.js: same Speaking Sage
+//      real-paid-TTS feature (fal.ai/ElevenLabs), same duplicate-
+//      listener bug class, with its own exact-count assertions guarding
+//      against double-firing a real TTS regenerate call and double-
+//      counting interp_voice_play/interp_voice_complete telemetry --
+//      lesson generalized: when a file is promoted for a bug class,
+//      always also check its named siblings in the same feature, not
+//      just files a keyword sweep happens to hit); avatar-describe-
+//      behavioral.test.js (round 7, found independently applying the
+//      review's own marker sweep with a different term set -- this file
+//      was never named in any of the 8 categories above in the first
+//      place, and its dominant scenario IS a real fal.ai paid call
+//      (generate-avatar.js, flux/schnell) -- it's the SOLE coverage for
+//      "generate-avatar.js must never be called for a non-self
+//      character" and "an empty description must never trigger a real
+//      (or mocked) generation call", neither guard covered by
+//      generate-avatar.test.js (server-side function tests only, no
+//      client-wiring coverage) or any other file).
 //
 // HOW A NEW TEST FILE GETS CLASSIFIED (do this when adding one): by
 // DEFAULT it's already in the critical tier -- do nothing. Only add it
@@ -179,7 +207,6 @@ module.exports = [
   "assemble-instagram-tiktok-postpack.test.js",
   "audio-toggle-behavioral.test.js",
   "audit-lost-generations-page.test.js",
-  "avatar-describe-behavioral.test.js",
   "barA-nav-rollout-behavioral.test.js",
   "both-domain-smoke.test.js",
   "chamber-dream-strip-behavioral.test.js",
@@ -204,8 +231,6 @@ module.exports = [
   "home-webview-escape-behavioral.test.js",
   "image-generation-style-toggle-behavioral.test.js",
   "install-first-door-behavioral.test.js",
-  "interp-analytics-behavioral.test.js",
-  "interp-voice-behavioral.test.js",
   "interp-voice-captions.test.js",
   "interpreter-personas.test.js",
   "legal-pages-behavioral.test.js",
