@@ -222,6 +222,144 @@ test('add-comment: rate limiting -- MAX_COMMENTS_PER_ACCOUNT_PER_DAY rejects fur
   }
 });
 
+// ===== THREADING (parentId, one level deep -- tracker item
+// for-product-founder-go-08-07-add-threadi-zb3j26) =====
+
+test('add-comment: a reply with a valid parentId is stored with parentId set, and top-level comments default to parentId:null', async function () {
+  await seedFeed([makeDream({ id: 'd1' })]);
+  var handler = require('../netlify/functions/add-comment').handler;
+  var topRes = await handler(await postEventFor('luna', { dreamId: 'd1', handle: '@luna', text: 'top level' }));
+  var topBody = JSON.parse(topRes.body);
+  assert.equal(topBody.comment.parentId, null, 'a plain top-level post must have parentId:null, not undefined/missing');
+
+  var replyRes = await handler(await postEventFor('otheruser', { dreamId: 'd1', handle: '@otheruser', text: 'a reply', parentId: topBody.comment.id }));
+  var replyBody = JSON.parse(replyRes.body);
+  assert.equal(replyRes.statusCode, 200);
+  assert.equal(replyBody.ok, true);
+  assert.equal(replyBody.comment.parentId, topBody.comment.id);
+  assert.equal(replyBody.commentCount, 2, 'commentCount is the WHOLE tree -- top-level + reply');
+
+  var stored = await commentStore.getComments(fakeEvent({ method: 'GET' }), 'd1');
+  assert.equal(stored.length, 2, 'both rows land in the SAME flat per-dream list');
+});
+
+test('add-comment: parentId naming a comment that does not exist on this dream -> 400 E11', async function () {
+  await seedFeed([makeDream({ id: 'd1' })]);
+  var handler = require('../netlify/functions/add-comment').handler;
+  var res = await handler(await postEventFor('luna', { dreamId: 'd1', handle: '@luna', text: 'orphan reply', parentId: 'no-such-comment' }));
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error, 'E11: parent_comment_not_found');
+  var stored = await commentStore.getComments(fakeEvent({ method: 'GET' }), 'd1');
+  assert.equal(stored.length, 0, 'a rejected reply must not be written');
+});
+
+test('add-comment: parentId naming a comment that exists but on a DIFFERENT dream -> 400 E11 (no cross-dream id space)', async function () {
+  await seedFeed([makeDream({ id: 'd1' }), makeDream({ id: 'd2' })]);
+  var handler = require('../netlify/functions/add-comment').handler;
+  var otherDreamComment = await handler(await postEventFor('luna', { dreamId: 'd2', handle: '@luna', text: 'lives on d2' }));
+  var otherDreamCommentId = JSON.parse(otherDreamComment.body).comment.id;
+
+  var res = await handler(await postEventFor('luna', { dreamId: 'd1', handle: '@luna', text: 'cross-dream reply attempt', parentId: otherDreamCommentId }));
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error, 'E11: parent_comment_not_found');
+});
+
+test('SECURITY/THREADING: add-comment: a reply-to-a-reply is REJECTED (one-level-deep limit), not silently flattened -> 400 E12, and nothing is written', async function () {
+  await seedFeed([makeDream({ id: 'd1' })]);
+  var handler = require('../netlify/functions/add-comment').handler;
+  var topRes = await handler(await postEventFor('luna', { dreamId: 'd1', handle: '@luna', text: 'top level' }));
+  var topId = JSON.parse(topRes.body).comment.id;
+  var replyRes = await handler(await postEventFor('otheruser', { dreamId: 'd1', handle: '@otheruser', text: 'a reply', parentId: topId }));
+  var replyId = JSON.parse(replyRes.body).comment.id;
+
+  var res = await handler(await postEventFor('thirduser', { dreamId: 'd1', handle: '@thirduser', text: 'reply to the reply', parentId: replyId }));
+  assert.equal(res.statusCode, 400);
+  assert.equal(JSON.parse(res.body).error, 'E12: reply_to_reply_not_allowed');
+
+  var stored = await commentStore.getComments(fakeEvent({ method: 'GET' }), 'd1');
+  assert.equal(stored.length, 2, 'the rejected reply-to-a-reply must not have been written -- only the original top-level + its one reply exist');
+});
+
+test('add-comment: an empty-string parentId is treated the same as omitting it entirely -- a plain top-level post', async function () {
+  await seedFeed([makeDream({ id: 'd1' })]);
+  var handler = require('../netlify/functions/add-comment').handler;
+  var res = await handler(await postEventFor('luna', { dreamId: 'd1', handle: '@luna', text: 'hi', parentId: '' }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).comment.parentId, null);
+});
+
+test('DELETE CASCADE: deleting a top-level comment also deletes its replies in the SAME request, and decrements commentCount by the total removed', async function () {
+  await seedFeed([makeDream({ id: 'd1', ownerHandle: '@dreamowner' })]);
+  var addHandler = require('../netlify/functions/add-comment').handler;
+  var topRes = await addHandler(await postEventFor('commenter', { dreamId: 'd1', handle: '@commenter', text: 'top level' }));
+  var topId = JSON.parse(topRes.body).comment.id;
+  await addHandler(await postEventFor('replier1', { dreamId: 'd1', handle: '@replier1', text: 'reply one', parentId: topId }));
+  await addHandler(await postEventFor('replier2', { dreamId: 'd1', handle: '@replier2', text: 'reply two', parentId: topId }));
+  // An unrelated top-level comment must survive the cascade untouched.
+  var unrelatedRes = await addHandler(await postEventFor('bystander', { dreamId: 'd1', handle: '@bystander', text: 'unrelated' }));
+  var unrelatedId = JSON.parse(unrelatedRes.body).comment.id;
+
+  var beforeDelete = await commentStore.getComments(fakeEvent({ method: 'GET' }), 'd1');
+  assert.equal(beforeDelete.length, 4, 'top level + 2 replies + 1 unrelated');
+
+  var deleteHandler = require('../netlify/functions/delete-comment').handler;
+  var token = await accountAuthToken.mintToken(fakeEvent({ method: 'POST' }), 'commenter');
+  var res = await deleteHandler(fakeEvent({ method: 'POST', body: { dreamId: 'd1', commentId: topId, authToken: token } }));
+  assert.equal(res.statusCode, 200);
+  var body = JSON.parse(res.body);
+  assert.equal(body.ok, true);
+  assert.equal(body.commentCount, 1, 'started at 4, cascaded delete removed 3 (top-level + 2 replies), leaving 1 (the unrelated comment)');
+
+  var remaining = await commentStore.getComments(fakeEvent({ method: 'GET' }), 'd1');
+  assert.equal(remaining.length, 1);
+  assert.equal(remaining[0].id, unrelatedId, 'the unrelated top-level comment must survive the cascade untouched');
+});
+
+test('DELETE, no cascade: deleting a single REPLY only removes that one row -- its sibling reply and parent are untouched', async function () {
+  await seedFeed([makeDream({ id: 'd1' })]);
+  var addHandler = require('../netlify/functions/add-comment').handler;
+  var topRes = await addHandler(await postEventFor('commenter', { dreamId: 'd1', handle: '@commenter', text: 'top level' }));
+  var topId = JSON.parse(topRes.body).comment.id;
+  var reply1Res = await addHandler(await postEventFor('replier1', { dreamId: 'd1', handle: '@replier1', text: 'reply one', parentId: topId }));
+  var reply1Id = JSON.parse(reply1Res.body).comment.id;
+  await addHandler(await postEventFor('replier2', { dreamId: 'd1', handle: '@replier2', text: 'reply two', parentId: topId }));
+
+  var deleteHandler = require('../netlify/functions/delete-comment').handler;
+  var token = await accountAuthToken.mintToken(fakeEvent({ method: 'POST' }), 'replier1');
+  var res = await deleteHandler(fakeEvent({ method: 'POST', body: { dreamId: 'd1', commentId: reply1Id, authToken: token } }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).commentCount, 2, 'only 1 row removed -- top-level + the surviving reply remain');
+
+  var remaining = await commentStore.getComments(fakeEvent({ method: 'GET' }), 'd1');
+  assert.equal(remaining.length, 2);
+  assert.ok(remaining.some(function (c) { return c.id === topId; }), 'the parent comment must survive deleting one of its replies');
+  assert.ok(!remaining.some(function (c) { return c.id === reply1Id; }), 'the deleted reply itself must be gone');
+});
+
+test('DELETE CASCADE PERMISSION: the DREAM OWNER deleting a top-level comment cascades its replies even though the owner authored none of them', async function () {
+  await seedFeed([makeDream({ id: 'd1', ownerHandle: '@dreamowner' })]);
+  var addHandler = require('../netlify/functions/add-comment').handler;
+  var topRes = await addHandler(await postEventFor('rudecommenter', { dreamId: 'd1', handle: '@rudecommenter', text: 'rude top-level comment' }));
+  var topId = JSON.parse(topRes.body).comment.id;
+  await addHandler(await postEventFor('innocentreplier', { dreamId: 'd1', handle: '@innocentreplier', text: 'an innocent reply', parentId: topId }));
+
+  var deleteHandler = require('../netlify/functions/delete-comment').handler;
+  var token = await accountAuthToken.mintToken(fakeEvent({ method: 'POST' }), 'dreamowner');
+  var res = await deleteHandler(fakeEvent({ method: 'POST', body: { dreamId: 'd1', commentId: topId, authToken: token } }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).commentCount, 0, 'both the top-level comment and the innocent reply are gone -- cascade does not re-check permission per reply author');
+});
+
+test('lib/comment-store.js deleteComments (plural): removes multiple ids in one write, leaving unrelated ids untouched', async function () {
+  var event = fakeEvent({ method: 'GET' });
+  await commentStore.addComment(event, 'd1', { id: 'c1', handle: '@a', text: 'one', parentId: null, createdAt: new Date().toISOString() });
+  await commentStore.addComment(event, 'd1', { id: 'c2', handle: '@b', text: 'two', parentId: 'c1', createdAt: new Date().toISOString() });
+  await commentStore.addComment(event, 'd1', { id: 'c3', handle: '@c', text: 'three', parentId: null, createdAt: new Date().toISOString() });
+  await commentStore.deleteComments(event, 'd1', ['c1', 'c2']);
+  var remaining = await commentStore.getComments(event, 'd1');
+  assert.deepEqual(remaining.map(function (c) { return c.id; }), ['c3']);
+});
+
 // ===== XSS negative-proof (server side -- the client-side esc() coverage
 // lives in test/comment-sheet-behavioral.test.js) =====
 

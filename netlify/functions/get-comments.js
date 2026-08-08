@@ -1,7 +1,7 @@
 // netlify/functions/get-comments.js
 //
-// GET ?dreamId=<id> -> { comments: [{ id, handle, text, createdAt }, ...] }
-// (newest-first)
+// GET ?dreamId=<id> -> { comments: [{ id, handle, text, parentId, createdAt }, ...] }
+// (newest-first, FLAT -- see THREADING below)
 //
 // Public, no-auth read half of Social Layer v2 slice 2 ("comments" —
 // docs/SOCIAL_LAYER_V2_DESIGN.md, tracker item
@@ -10,9 +10,25 @@
 // required (comments are public content on an already-public dream, same
 // posture as every other read in this app's Explore/u.html surface).
 //
+// THREADING (one level deep, tracker item
+// for-product-founder-go-08-07-add-threadi-zb3j26): the response shape is
+// UNCHANGED by threading -- still one flat array, `parentId` just rides
+// along on each comment (null for top-level, the parent's id for a reply).
+// Deliberately NOT restructured into a nested `{ comment, replies: [...] }`
+// tree here: flat + parentId is the same "opaque additive field, no schema
+// rewrite" choice lib/moderation-store.js's own `targetType` addition made
+// (see lib/comment-store.js's own header comment for that precedent) --
+// grouping replies under their parent is cheap, one-pass client work
+// (js/comment-sheet.js does it at render time), while a nested response
+// shape would mean this function doing that grouping AND every consumer
+// agreeing on one nesting convention up front. Ordering is still a single
+// newest-first pass over the whole array (comment-store.js's own append
+// order, reversed) -- the client's own grouping-by-parentId naturally
+// preserves "newest-first among siblings" at both levels, since filtering
+// a newest-first array by a predicate can't reorder what it keeps.
+//
 // Deliberately returns the FULL list every time, no pagination — matches
-// the design doc's own MVP scope (flat comments, no threading) and this
-// app's per-dream comment volume, which is expected to stay small; add
+// this app's per-dream comment volume, which is expected to stay small; add
 // pagination later if a dream's comment count ever makes this a real cost
 // concern (same "worth reconsidering later" posture this codebase already
 // takes with several other unbounded-for-now reads).

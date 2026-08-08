@@ -1,6 +1,6 @@
 // netlify/functions/add-comment.js
 //
-// POST { dreamId, handle, authToken, text } -> { ok:true, comment, commentCount } | { ok:false, error }
+// POST { dreamId, handle, authToken, text, parentId? } -> { ok:true, comment, commentCount } | { ok:false, error }
 //
 // Auth-gated write half of Social Layer v2 slice 2 ("comments" —
 // docs/SOCIAL_LAYER_V2_DESIGN.md, tracker item
@@ -43,6 +43,27 @@
 // content) and this function simply returns commentCount: null rather than
 // failing the whole request over a denormalized read-optimization.
 //
+// THREADING, one level deep (tracker item
+// for-product-founder-go-08-07-add-threadi-zb3j26 — reply-to-comment on top
+// of slice 2's flat comments): `parentId` is optional. When present it must
+// name a comment that (a) already exists on THIS SAME dreamId's own comment
+// list, and (b) is itself top-level (its own parentId is null/absent) —
+// both checked against a fresh read of comment-store.js's real current
+// list, never trusted from the client. A reply-to-a-reply is REJECTED
+// (E12), not silently flattened to the same top-level parent — rejecting is
+// the simpler of the two options the tracker item explicitly left open, and
+// js/comment-sheet.js's own client-side guard (no Reply action rendered on
+// a reply row) means a real client should never even trigger E12 in
+// practice; server enforcement exists purely against a hostile/non-standard
+// client. A parentId naming a comment that exists but on a DIFFERENT dream
+// is also rejected — E11 covers both "no such id at all" and "exists, just
+// not on this dream", since the lookup is scoped to this dreamId's own list
+// from the start (see comment-store.js's own per-dream-record storage
+// shape) — there's no cross-dream id space to accidentally match into.
+// Stored on the comment record as `parentId: <id>|null` — see
+// lib/comment-store.js's own header comment for the additive-field
+// precedent (lib/moderation-store.js's `targetType`) this follows.
+//
 // Error codes (local to this function, same small-number-scheme reasoning
 // as sync-profile.js):
 //   E1 method_not_allowed
@@ -57,6 +78,10 @@
 //   E9 owner_mismatch            — the verified token's username doesn't
 //                                    match the request's claimed handle
 //   E10 rate_limited             — MAX_COMMENTS_PER_ACCOUNT_PER_DAY exceeded (429)
+//   E11 parent_comment_not_found — parentId given but no such comment exists
+//                                    on this dreamId's own comment list
+//   E12 reply_to_reply_not_allowed — parentId names a comment that is
+//                                    itself a reply (one-level-deep limit)
 
 var { connectLambda } = require('@netlify/blobs');
 var crypto = require('crypto');
@@ -127,15 +152,34 @@ exports.handler = async function (event) {
     return { statusCode: 429, body: JSON.stringify({ error: 'E10: rate_limited' }) };
   }
 
-  var comment = {
-    id: crypto.randomBytes(8).toString('hex'),
-    handle: handle,
-    text: text,
-    createdAt: new Date().toISOString()
-  };
+  var parentId = (typeof payload.parentId === 'string' ? payload.parentId : '').trim() || null;
 
   try {
     connectLambda(event);
+
+    // See this file's own THREADING header comment for the full "why" of
+    // both checks below -- done here, right before persisting, so a request
+    // that was always going to fail an earlier (cheaper) gate never pays
+    // for this store read.
+    if (parentId) {
+      var existingComments = await commentStore.getComments(event, dreamId);
+      var parent = existingComments.filter(function (c) { return c.id === parentId; })[0];
+      if (!parent) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'E11: parent_comment_not_found' }) };
+      }
+      if (parent.parentId) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'E12: reply_to_reply_not_allowed' }) };
+      }
+    }
+
+    var comment = {
+      id: crypto.randomBytes(8).toString('hex'),
+      handle: handle,
+      text: text,
+      parentId: parentId,
+      createdAt: new Date().toISOString()
+    };
+
     await commentStore.addComment(event, dreamId, comment);
     var newCount = await feedCommentCount.adjustCommentCount(event, dreamId, 1);
     return { statusCode: 200, body: JSON.stringify({ ok: true, comment: comment, commentCount: newCount }) };
