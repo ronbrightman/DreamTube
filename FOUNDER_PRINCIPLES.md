@@ -16,6 +16,18 @@ tight (curate, don't dump).
 
 ## How Ron operates (the meta)
 
+- **He dictates — read his messages phonetically (standing rule, his
+  "always", 2026-08-08).** Ron usually speaks his messages through
+  transcription, so expect sound-alike substitutions, wrong capitals, and
+  stray/missing punctuation. Confirmed real examples: "headset" = ad set,
+  "final" = funnel, "Luke" = look, "Justin parallel" = "just in parallel".
+  When a word seems out of place, map it to the nearest-sounding DreamTube
+  term (funnel, ad set, wizard, Netlify, Dodo, recap, wall...) and read the
+  sentence again before reacting. If two phonetic readings would lead to
+  materially different actions, ask one cheap clarifying question instead
+  of guessing expensive work into the wrong one. Never treat odd casing,
+  dots, or grammar in his messages as meaningful.
+
 - **He makes the judgment calls; the agent does the building and grinding.**
   Founder-only: money, vendors, legal/compliance, opening accounts, pasting
   keys, design/product *vision*, and "does this match what I want" gut-checks.
