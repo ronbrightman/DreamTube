@@ -430,8 +430,8 @@
     if(!dreams.length){
       var emptyEl = document.getElementById('u-dreams-empty');
       emptyEl.innerHTML = isOwner
-        ? "You haven't published any dreams yet."
-        : esc(displayNameForCopy) + " hasn't published any dreams yet.";
+        ? "You haven't posted any dreams yet."
+        : esc(displayNameForCopy) + " hasn't posted any dreams yet.";
       emptyEl.style.display = 'block';
       return;
     }
@@ -508,11 +508,11 @@
         // per design doc's own "state C" spec. A visitor never sees the
         // device-local number at all — it's meaningless for anyone but
         // the owner's own current device.
-        var publishedLabel = data.publishedCount + (data.publishedCount === 1 ? ' dream published' : ' dreams published');
+        var publishedLabel = data.publishedCount + (data.publishedCount === 1 ? ' dream posted' : ' dreams posted');
         var statsEl = document.getElementById('u-stats');
         if(isOwner){
           var createdOnDevice = DreamStore.getMyDreams().length;
-          statsEl.innerHTML = '<b>' + data.publishedCount + '</b> published · <b>' + createdOnDevice + '</b> created on this device';
+          statsEl.innerHTML = '<b>' + data.publishedCount + '</b> posted · <b>' + createdOnDevice + '</b> created on this device';
         } else {
           statsEl.textContent = publishedLabel;
         }

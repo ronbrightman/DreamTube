@@ -153,7 +153,7 @@ test('u.html: a loaded profile renders identity (name/bio/avatar fallback), the 
     var bio = await page.textContent('#u-bio');
     assert.equal(bio, 'I dream in cinematic blue.');
     var stats = await page.textContent('#u-stats');
-    assert.match(stats, /1 dream published/);
+    assert.match(stats, /1 dream posted/);
 
     // No avatarDataUrl on this profile record -> deterministic colored
     // fallback, never a blank/broken <img>.
@@ -359,7 +359,7 @@ test('u.html: owner preview (viewer===handle) shows the PUBLIC/PRIVATE toggle an
     assert.equal(toggleVisible, true, 'the owner previewing their own public page must see the toggle');
 
     var stats = await page.textContent('#u-stats');
-    assert.match(stats, /1.*published/);
+    assert.match(stats, /1.*posted/);
     assert.match(stats, /created on this device/);
 
     await page.click('#u-visibility-row [data-visibility="private"]');
@@ -406,7 +406,7 @@ test('u.html: zero-dreams empty state reads differently for a visitor vs. the ow
     await safeGoto(visitorPage, baseUrl + '/u.html?handle=luna');
     await visitorPage.waitForSelector('#u-dreams-empty', { state: 'visible', timeout: 5000 });
     var visitorText = await visitorPage.textContent('#u-dreams-empty');
-    assert.match(visitorText, /Luna hasn't published/);
+    assert.match(visitorText, /Luna hasn't posted/);
   } finally {
     await context.close();
   }

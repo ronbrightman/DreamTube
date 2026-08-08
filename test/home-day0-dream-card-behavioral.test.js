@@ -215,7 +215,7 @@ test('home.html day-0 card: forming state shows the shimmer/arc/caption veil, th
     var quietButtons = await page.locator('#d0-quiet .quietlink').all();
     assert.equal(quietButtons.length, 4, 'Publish / Make another / Edit / Delete -- same set as result.html\'s own quiet row');
     var labels = await page.locator('#d0-quiet .quietlink').allTextContents();
-    assert.deepEqual(labels.map(function (l) { return l.trim(); }), ['Publish', 'Make another', 'Edit', 'Delete'], 'same order as result.html\'s own quiet row');
+    assert.deepEqual(labels.map(function (l) { return l.trim(); }), ['Post', 'Make another', 'Edit', 'Delete'], 'same order as result.html\'s own quiet row');
     for (var i = 0; i < quietButtons.length; i++) {
       assert.equal(await quietButtons[i].isDisabled(), true, 'every quiet-row action must be disabled while forming, not just visually muted');
     }

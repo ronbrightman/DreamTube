@@ -530,7 +530,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
            tracker.html's for-product-result-quiet-row-v5-founder--4dnf5u —
            never red/emphasized label text. -->
       <div class="result-quiet-links quietrow">
-        <button class="result-quiet-link quietlink" id="publish-btn" title="Publish to Explore"><span class="icon" id="publish-icon"></span>Publish</button>
+        <button class="result-quiet-link quietlink" id="publish-btn" title="Post to Explore"><span class="icon" id="publish-icon"></span>Post</button>
         <button class="result-quiet-link quietlink" id="make-another-btn"><span class="icon" id="make-another-icon"></span>Make another</button>
         <button class="result-quiet-link quietlink" id="open-edit-sheet" title="Edit Dream"><span class="icon" id="edit-icon"></span>Edit</button>
         <button class="result-quiet-link quietlink danger" id="delete-btn" title="Delete this dream"><span class="icon" id="delete-icon"></span>Delete</button>
@@ -766,11 +766,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
   <div class="modal-overlay" id="modal-publish">
     <div class="modal-card">
-      <div class="modal-title">Publish this dream?</div>
+      <div class="modal-title">Post this dream?</div>
       <div class="modal-body">It'll be visible to everyone in Explore — think of it as sharing, not just saving.</div>
       <div class="modal-row">
         <button class="btn btn-ghost" style="flex:1;" id="publish-cancel">Cancel</button>
-        <button class="btn btn-warm" style="flex:1;" id="publish-confirm">Publish</button>
+        <button class="btn btn-warm" style="flex:1;" id="publish-confirm">Post</button>
       </div>
       <!-- Passive, non-interactive line directly under the Publish button --
            this IS where the actual publish action lives (the quiet-link
@@ -782,7 +782,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
            republish-license-per--fhpcxk). The real, discoverable opt-OUT
            lives in the Edit sheet's "Feature on DreamTube's channels"
            toggle instead -- see #feature-toggle-row above. -->
-      <div class="modal-fine" id="modal-publish-fine">Publishing makes your dream public and may feature it on DreamTube's channels.</div>
+      <div class="modal-fine" id="modal-publish-fine">Posting makes your dream public and may feature it on DreamTube's channels.</div>
     </div>
   </div>
 
@@ -1458,9 +1458,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       pubBtn.classList.add('livelink');
       pubBtn.title = 'View on Explore';
     } else {
-      pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span>Publish';
+      pubBtn.innerHTML = '<span class="icon" id="publish-icon">' + Icons.globe + '</span>Post';
       pubBtn.classList.remove('livelink');
-      pubBtn.title = 'Publish to Explore';
+      pubBtn.title = 'Post to Explore';
     }
     pubBtn.disabled = false;
     // Owner-only actions (see the isMyDream ownership-gate comment above) --
@@ -2726,7 +2726,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       shareAfterPublish = false;
       doShare();
     } else {
-      showToast('Published to Explore');
+      showToast('Posted to Explore');
     }
   });
   // State-tag tap: reverts a published dream to private -- the mock's own

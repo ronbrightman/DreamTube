@@ -896,7 +896,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         <p class="dreamquote" id="d0-quote" dir="auto"></p>
 
         <div class="quietrow waiting" id="d0-quiet">
-          <button type="button" class="quietlink" id="d0-publish" disabled title="Publish to Explore"><span class="icon" id="d0-publish-icon"></span><span id="d0-publish-label">Publish</span></button>
+          <button type="button" class="quietlink" id="d0-publish" disabled title="Post to Explore"><span class="icon" id="d0-publish-icon"></span><span id="d0-publish-label">Post</span></button>
           <button type="button" class="quietlink" id="d0-make-another" disabled><span class="icon" id="d0-make-another-icon"></span>Make another</button>
           <button type="button" class="quietlink" id="d0-edit" disabled title="Edit Dream"><span class="icon" id="d0-edit-icon"></span>Edit</button>
           <button type="button" class="quietlink danger" id="d0-delete" disabled title="Delete this dream"><span class="icon" id="d0-delete-icon"></span>Delete</button>
@@ -1097,7 +1097,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
            whenever there's nothing unpublished. -->
       <section class="sect" id="unpub" data-card="considerpublishing" style="display:none;">
         <div class="sect-head">
-          <h2>Consider publishing a dream</h2>
+          <h2>Consider posting a dream</h2>
         </div>
         <div class="dreams-row" id="unpub-row"></div>
       </section>
@@ -1565,9 +1565,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       pubBtn.title = 'View on Explore';
     } else {
       pubIcon.innerHTML = window.Icons ? Icons.globe : '';
-      pubLabel.textContent = 'Publish';
+      pubLabel.textContent = 'Post';
       pubBtn.classList.remove('livelink');
-      pubBtn.title = 'Publish to Explore';
+      pubBtn.title = 'Post to Explore';
     }
   }
   // ===== The approved multi-dream badge (tracker item for-product-build-
@@ -2378,7 +2378,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     { id:'t7', cat:'DreamTube', text:'Watching other people’s dreams in Explore often unlocks your own recall.' },
     { id:'t8', cat:'DreamTube', text:'Add DreamTube to your home screen for one-tap capture before the dream fades.' },
     { id:'t9', cat:'Why it matters', text:'Dreams are how your unconscious speaks — reading them over time shows you patterns you’d never notice awake.' },
-    { id:'t10', cat:'DreamTube', text:'Publish a dream you love — it lives beyond your device, and likes will find it.' }
+    { id:'t10', cat:'DreamTube', text:'Post a dream you love — it lives beyond your device, and likes will find it.' }
   ];
   var TIP_IDS = TIPS.map(function(t){ return t.id; });
   function tipById(id){

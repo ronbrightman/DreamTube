@@ -286,7 +286,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         <div class="profile-avatar-edit-badge" id="profile-avatar-edit-badge"></div>
       </div>
       <div class="profile-name" id="profile-handle" title="Edit your profile">you</div>
-      <div class="profile-stats"><b id="stat-created">0</b> created on this device · <b id="stat-shared">0</b> published</div>
+      <div class="profile-stats"><b id="stat-created">0</b> created on this device · <b id="stat-shared">0</b> posted</div>
       <!-- PUBLIC/PRIVATE segmented toggle (Social Layer v2 slice 1, "state C"
            in docs/SOCIAL_LAYER_V2_DESIGN.md): this IS the private view — the
            toggle is a pure navigation control, not a stored preference.
@@ -540,7 +540,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
               <span>Is my dream public or private?</span>
               <span class="icon faq-chevron"></span>
             </div>
-            <div class="faq-answer">Private by default. You choose if and when to publish a dream to Explore, where other users can see it.</div>
+            <div class="faq-answer">Private by default. You choose if and when to post a dream to Explore, where other users can see it.</div>
           </div>
           <div class="faq-item" data-faq-index="8">
             <div class="faq-question">
@@ -758,7 +758,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
       <div class="modal-body">
         This is permanent and can't be undone. Deleting your account removes, from DreamTube's systems:
         <ul style="margin:8px 0 0; padding-left:18px; line-height:1.6;">
-          <li>Every dream you've created — private and published</li>
+          <li>Every dream you've created — private and posted</li>
           <li>Your saved characters</li>
           <li>Your token balance</li>
         </ul>
@@ -1272,7 +1272,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
       document.getElementById('profile-lists').style.display = 'block';
       document.getElementById('shared-grid').innerHTML = shared.length
         ? shared.map(vcardHTML).join('')
-        : '<div class="grid-empty">Nothing shared yet — publish a dream from its result page.</div>';
+        : '<div class="grid-empty">Nothing shared yet — post a dream from its result page.</div>';
       // The placeholders ARE the private grid's empty state — they say
       // "here's what's next" where a flat "no private dreams" line used to
       // say nothing useful, so there's no separate text note anymore.

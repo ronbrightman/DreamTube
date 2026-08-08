@@ -911,7 +911,7 @@ test('result.html ritual-card rebuild: Fresh (Private) vs Published visual state
       return el && !el.classList.contains('pub');
     }, null, { timeout: 5000 });
     assert.equal((await page.textContent('#result-privacy-tag')).trim(), 'Private');
-    assert.match(await page.textContent('#publish-btn'), /Publish/);
+    assert.match(await page.textContent('#publish-btn'), /Post/);
 
     // Tapping the tag while already private is a no-op (nothing to revert).
     var dreamsAfter = await page.evaluate(function (id) {
@@ -939,7 +939,7 @@ test('result.html ritual-card rebuild: Publish still opens the publish confirmat
     await page.click('#publish-confirm');
     await page.waitForFunction(function () {
       var t = document.getElementById('toast');
-      return t.classList.contains('show') && t.textContent === 'Published to Explore';
+      return t.classList.contains('show') && t.textContent === 'Posted to Explore';
     }, null, { timeout: 5000 });
 
     await page.click('#publish-btn'); // now "Live on Explore" -- navigates
