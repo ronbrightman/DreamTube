@@ -38,36 +38,10 @@
 //   E1 method_not_allowed
 
 var { connectLambda, getStore } = require('@netlify/blobs');
+var canonicalOrigin = require('./lib/site-origin');
 
 var FALLBACK_IMAGE_PATH = '/assets/logo-v4.png';
 var GENERIC_DESCRIPTION = 'Create your own AI dream video on DreamTube';
-
-// Used only when x-forwarded-host/host fails HOSTNAME_RE below -- this
-// function's own real production host, so a rejected/malformed header still
-// produces a working redirect/preview rather than an empty-host URL.
-//
-// Derived from Netlify's own built-in `URL` env var (every Netlify
-// Function gets this automatically -- the site's primary URL, e.g.
-// `https://dreamtube1.netlify.app` today) rather than a hardcoded literal,
-// so a future primary-domain switch (dreamtube1.netlify.app -> dreamtube.life)
-// updates this fallback with zero code change -- just Netlify's own site
-// settings. The literal below only ever fires if URL is unset (e.g. local
-// dev/tests), matching today's real production behavior exactly.
-var FALLBACK_HOST = (function () {
-  var siteUrl = process.env.URL;
-  if (siteUrl) {
-    try { return new URL(siteUrl).host; } catch (e) { /* fall through */ }
-  }
-  return 'dreamtube1.netlify.app';
-})();
-
-// Allow-list, not a block-list: a legitimate Host/X-Forwarded-Host header is
-// just a hostname (letters/digits/dots/hyphens) with an optional :port --
-// nothing else ever needs to appear there. Rejecting via this whitelist,
-// rather than trying to blocklist "\r\n and other bad stuff", is what keeps
-// this safe against CR/LF (header/response-splitting) or any other
-// control/special character without having to enumerate every dangerous one.
-var HOSTNAME_RE = /^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$/;
 
 function escapeHtml(str) {
   return String(str == null ? '' : str)
@@ -79,24 +53,15 @@ function escapeHtml(str) {
 }
 
 /**
- * Same `x-forwarded-host || host` pattern every other emailed/shared-link
- * function in this codebase uses (lib/dream-share-token.js,
- * request-password-reset.js, create-checkout-session-dodo.js) -- but this is
- * the first place in the app that also feeds the result RAW into a raw HTTP
- * response header (the `Location` header built by redirectTo(), below), not
- * just into escaped HTML/JSON/email-body content like those other call
- * sites. A host header containing `\r`/`\n` fed straight into a `Location`
- * header is a header/response-splitting (CRLF injection) surface, so unlike
- * those other call sites this one validates the header against HOSTNAME_RE
- * before trusting it, falling back to FALLBACK_HOST when it doesn't look
- * like a real hostname.
+ * The CANONICAL origin (lib/site-origin.js) -- never the request's own
+ * Host header, per the 08-08 canonical-domain rule documented there. This
+ * also feeds a raw HTTP `Location` header (redirectTo(), below): the old
+ * request-host derivation needed an allow-list here against CRLF
+ * header-splitting; the canonical resolver never consults any
+ * client-suppliable header at all, which closes that surface even harder.
  */
 function siteOrigin(event) {
-  var host = event.headers['x-forwarded-host'] || event.headers.host;
-  if (typeof host !== 'string' || !HOSTNAME_RE.test(host)) {
-    host = FALLBACK_HOST;
-  }
-  return 'https://' + host;
+  return canonicalOrigin.emailOrigin(event);
 }
 
 function redirectTo(location) {
@@ -108,9 +73,11 @@ function redirectTo(location) {
  * JSON.stringify only escapes quotes/backslashes/control chars per the JSON
  * spec, NOT `<` or `>` -- so a raw JSON.stringify(...) result can still
  * contain a literal `</script>` sequence that breaks out of the tag early.
- * canonicalUrl is built from siteOrigin(event), which is itself derived
- * directly from the client-suppliable x-forwarded-host/host request header
- * with zero escaping -- so this is a real injection vector, not just theory.
+ * canonicalUrl used to be built from the client-suppliable
+ * x-forwarded-host/host request header (a real injection vector); it is
+ * now always the canonical origin (lib/site-origin.js), but the id/token
+ * query params are still caller-supplied, so the escaping stays as the
+ * defense rather than an assumption about upstream inputs.
  * Escaping `<`/`>` alone is sufficient: the browser's HTML tokenizer looks
  * for a literal less-than sign followed by "/script" to end the tag, so
  * replacing every literal `<`/`>` with its \uXXXX JS escape (a JS engine

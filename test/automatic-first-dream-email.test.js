@@ -228,7 +228,7 @@ test('mark-generation-completed: a brand-new account\'s first verified video com
 
   assert.equal(spies.resendCalls.length, 1, 'expected exactly one automatic Resend send, with no client request to send-first-dream-email.js at all');
   assert.deepEqual(spies.resendCalls[0].body.to, ['autouser@example.com']);
-  assert.match(spies.resendCalls[0].body.html, /href="https:\/\/dreamtube1\.netlify\.app\/profile\.html"/, 'the automatic email must link to profile.html too');
+  assert.match(spies.resendCalls[0].body.html, /href="https:\/\/dreamtube\.life\/profile\.html"/, 'the automatic email must link to profile.html too');
   // REAL THUMBNAIL (tracker item for-product-dream-ready-email-real-first-
   // qr9fbj) -- no dream was ever synced server-side for this operationName
   // in this test (no client-side finalizeDream/dream-sync call happened),

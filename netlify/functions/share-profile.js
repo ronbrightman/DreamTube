@@ -43,6 +43,7 @@
 
 var { connectLambda, getStore } = require('@netlify/blobs');
 var profileStore = require('./lib/profile-store');
+var canonicalOrigin = require('./lib/site-origin');
 
 var FALLBACK_IMAGE_PATH = '/assets/logo-v4.png';
 
@@ -60,27 +61,13 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
-// Same allow-list header-splitting defense as share-dream.js's own
-// HOSTNAME_RE — see that file's header comment for the full "why an
-// allow-list, not a block-list" reasoning. Duplicated rather than shared
-// via a lib/ module: both files are small, self-contained, and this is
-// the only piece either would need from the other — not worth a new
-// shared module for two call sites.
-var FALLBACK_HOST = (function () {
-  var siteUrl = process.env.URL;
-  if (siteUrl) {
-    try { return new URL(siteUrl).host; } catch (e) { /* fall through */ }
-  }
-  return 'dreamtube1.netlify.app';
-})();
-var HOSTNAME_RE = /^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$/;
-
+// The CANONICAL origin (lib/site-origin.js) — never the request's own
+// Host header, per the 08-08 canonical-domain rule documented there. Same
+// reasoning as share-dream.js's siteOrigin, including why this is safe to
+// feed into a raw Location header: no client-suppliable input is
+// consulted at all.
 function siteOrigin(event) {
-  var host = event.headers['x-forwarded-host'] || event.headers.host;
-  if (typeof host !== 'string' || !HOSTNAME_RE.test(host)) {
-    host = FALLBACK_HOST;
-  }
-  return 'https://' + host;
+  return canonicalOrigin.emailOrigin(event);
 }
 
 function redirectTo(location) {

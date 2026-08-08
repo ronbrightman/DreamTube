@@ -37,6 +37,7 @@
 // (every caller here treats this as best-effort).
 
 var emailVerificationStore = require('./email-verification-store');
+var siteOrigin = require('./site-origin');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 // Deliberately duplicated from every other Resend-sending file in this
@@ -49,11 +50,9 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** `x-forwarded-host || host`, this codebase's existing convention (see facebook-oauth-callback.js's selfOrigin, request-password-reset.js). */
+/** The CANONICAL origin (lib/site-origin.js) -- never the request's own Host header, per the 08-08 canonical-domain rule documented there. This is an emailed link, so it must land on the origin holding (or minting, via the bt token) the user's session identity. */
 function selfOrigin(event) {
-  var headers = (event && event.headers) || {};
-  var host = headers['x-forwarded-host'] || headers.host || '';
-  return 'https://' + host;
+  return siteOrigin.emailOrigin(event);
 }
 
 function buildVerifyLinkUrl(event, linkToken) {

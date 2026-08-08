@@ -49,13 +49,13 @@ test('wrong method -> 405', async function () {
 test('missing handle -> 302 redirect to explore.html', async function () {
   var res = await handler(getEvent(null));
   assert.equal(res.statusCode, 302);
-  assert.equal(res.headers.Location, 'https://dreamtube1.netlify.app/explore.html');
+  assert.equal(res.headers.Location, 'https://dreamtube.life/explore.html');
 });
 
 test('a handle with neither a profile record nor any published dreams -> 302 redirect straight to u.html?handle=... (which renders its own not-found state)', async function () {
   var res = await handler(getEvent({ handle: 'nobody' }));
   assert.equal(res.statusCode, 302);
-  assert.equal(res.headers.Location, 'https://dreamtube1.netlify.app/u.html?handle=nobody');
+  assert.equal(res.headers.Location, 'https://dreamtube.life/u.html?handle=nobody');
 });
 
 test('a synced profile with published dreams -> real og:title/description/image, canonical og:url points at u.html', async function () {
@@ -68,7 +68,7 @@ test('a synced profile with published dreams -> real og:title/description/image,
   assert.match(res.body, /<meta property="og:title" content="@Luna&#39;s dreams on DreamTube">/);
   assert.match(res.body, /<meta property="og:description" content="2 dreams, turned into video\. Watch them — or create your own\.">/);
   assert.match(res.body, /<meta property="og:image" content="data:image\/jpeg;base64,AAA=">/);
-  assert.match(res.body, /<meta property="og:url" content="https:\/\/dreamtube1\.netlify\.app\/u\.html\?handle=Luna">/);
+  assert.match(res.body, /<meta property="og:url" content="https:\/\/dreamtube\.life\/u\.html\?handle=Luna">/);
 });
 
 test('singular "1 dream" phrasing when exactly one dream is published', async function () {
@@ -82,14 +82,14 @@ test('a dreamer with published dreams but no synced profile record falls back to
   var res = await handler(getEvent({ handle: 'nobio' }));
   assert.equal(res.statusCode, 200);
   assert.match(res.body, /<meta property="og:title" content="@nobio&#39;s dreams on DreamTube">/);
-  assert.match(res.body, /<meta property="og:image" content="https:\/\/dreamtube1\.netlify\.app\/assets\/logo-v4\.png">/);
+  assert.match(res.body, /<meta property="og:image" content="https:\/\/dreamtube\.life\/assets\/logo-v4\.png">/);
 });
 
 test('a synced profile with no avatar set (and no published dreams yet) still renders — profile-record-only counts as "something to show" — with the static branded fallback image', async function () {
   await profileStore.upsertProfile(getEvent(null), 'noavatar', { handle: '@noavatar', displayName: 'No Avatar', avatarDataUrl: null, bio: '' });
   var res = await handler(getEvent({ handle: 'noavatar' }));
   assert.equal(res.statusCode, 200);
-  assert.match(res.body, /<meta property="og:image" content="https:\/\/dreamtube1\.netlify\.app\/assets\/logo-v4\.png">/);
+  assert.match(res.body, /<meta property="og:image" content="https:\/\/dreamtube\.life\/assets\/logo-v4\.png">/);
   assert.match(res.body, /0 dreams, turned into video/);
 });
 
@@ -111,21 +111,21 @@ test('a displayName containing HTML is escaped in og:title/og:description, never
 test('human-visitor redirect: meta-refresh + JS location.replace both point at u.html?handle=...', async function () {
   await seedFeed([makeDream({ id: 'd1', ownerHandle: '@x' })]);
   var res = await handler(getEvent({ handle: 'x' }));
-  assert.match(res.body, /<meta http-equiv="refresh" content="0;url=https:\/\/dreamtube1\.netlify\.app\/u\.html\?handle=x">/);
-  assert.match(res.body, /location\.replace\("https:\/\/dreamtube1\.netlify\.app\/u\.html\?handle=x"\)/);
+  assert.match(res.body, /<meta http-equiv="refresh" content="0;url=https:\/\/dreamtube\.life\/u\.html\?handle=x">/);
+  assert.match(res.body, /location\.replace\("https:\/\/dreamtube\.life\/u\.html\?handle=x"\)/);
 });
 
-test('host header respected via x-forwarded-host, same pattern share-dream.js already established', async function () {
+test('x-forwarded-host is IGNORED -- og:url is always the canonical origin (08-08 canonical-domain rule, lib/site-origin.js)', async function () {
   await seedFeed([makeDream({ id: 'd1', ownerHandle: '@x' })]);
   var event = fakeEvent({ method: 'GET', query: { handle: 'x' }, headers: { host: 'wrong.example', 'x-forwarded-host': 'dreamtube1.netlify.app' } });
   var res = await handler(event);
-  assert.match(res.body, /<meta property="og:url" content="https:\/\/dreamtube1\.netlify\.app\/u\.html\?handle=x">/);
+  assert.match(res.body, /<meta property="og:url" content="https:\/\/dreamtube\.life\/u\.html\?handle=x">/);
 });
 
 test('a Blobs read failure degrades to a gentle redirect, never a raw 500', async function () {
   mockBlobs.setReadOverride('dreamtube-feed', function () { throw new Error('boom'); });
   var res = await handler(getEvent({ handle: 'whatever' }));
   assert.equal(res.statusCode, 302);
-  assert.equal(res.headers.Location, 'https://dreamtube1.netlify.app/u.html?handle=whatever');
+  assert.equal(res.headers.Location, 'https://dreamtube.life/u.html?handle=whatever');
   mockBlobs.clearReadOverride('dreamtube-feed');
 });

@@ -24,13 +24,13 @@ function fakeRequest(url) {
 
 test('video-file.mjs: 400 when key is missing', async function () {
   var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
-  var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file'));
+  var res = await videoFile(fakeRequest('https://dreamtube.life/.netlify/functions/video-file'));
   assert.equal(res.status, 400);
 });
 
 test('video-file.mjs: 404 for an unknown key', async function () {
   var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
-  var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file?key=nope'));
+  var res = await videoFile(fakeRequest('https://dreamtube.life/.netlify/functions/video-file?key=nope'));
   assert.equal(res.status, 404);
 });
 
@@ -43,20 +43,20 @@ test('video-file.mjs: a rehosted record (has sourceUrl) redirects to its source 
   await mediaRehost.rehostBestEffort({}, 'video', 'https://fal.media/x.mp4', 'vf-key-1');
 
   var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
-  var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file?key=vf-key-1'));
+  var res = await videoFile(fakeRequest('https://dreamtube.life/.netlify/functions/video-file?key=vf-key-1'));
   assert.equal(res.status, 302);
   assert.equal(res.headers.get('location'), 'https://fal.media/x.mp4');
 });
 
 test('image-file.mjs: 400 when key is missing', async function () {
   var imageFile = (await import('../netlify/functions/image-file.mjs')).default;
-  var res = await imageFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/image-file'));
+  var res = await imageFile(fakeRequest('https://dreamtube.life/.netlify/functions/image-file'));
   assert.equal(res.status, 400);
 });
 
 test('image-file.mjs: 404 for an unknown key', async function () {
   var imageFile = (await import('../netlify/functions/image-file.mjs')).default;
-  var res = await imageFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/image-file?key=nope'));
+  var res = await imageFile(fakeRequest('https://dreamtube.life/.netlify/functions/image-file?key=nope'));
   assert.equal(res.status, 404);
 });
 
@@ -69,7 +69,7 @@ test('image-file.mjs: a rehosted image (has sourceUrl) redirects to its source (
   await mediaRehost.rehostBestEffort({}, 'image', 'https://fal.media/x.png', 'if-key-1');
 
   var imageFile = (await import('../netlify/functions/image-file.mjs')).default;
-  var res = await imageFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/image-file?key=if-key-1'));
+  var res = await imageFile(fakeRequest('https://dreamtube.life/.netlify/functions/image-file?key=if-key-1'));
   assert.equal(res.status, 302);
 });
 
@@ -89,7 +89,7 @@ test('video-file.mjs: redirects to metadata.sourceUrl instead of streaming when 
   });
 
   var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
-  var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file?key=vf-big'));
+  var res = await videoFile(fakeRequest('https://dreamtube.life/.netlify/functions/video-file?key=vf-big'));
   assert.equal(res.status, 302);
   assert.equal(res.headers.get('location'), 'https://fal.media/big-source.mp4');
 });
@@ -102,7 +102,7 @@ test('video-file.mjs: an object at/under the ceiling with a sourceUrl now REDIRE
   });
 
   var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
-  var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file?key=vf-small'));
+  var res = await videoFile(fakeRequest('https://dreamtube.life/.netlify/functions/video-file?key=vf-small'));
   assert.equal(res.status, 302);
   assert.equal(res.headers.get('location'), 'https://fal.media/small-source.mp4');
 });
@@ -115,7 +115,7 @@ test('video-file.mjs: a record with NO sourceUrl still streams (fallback path)',
   });
 
   var videoFile = (await import('../netlify/functions/video-file.mjs')).default;
-  var res = await videoFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/video-file?key=vf-nosource'));
+  var res = await videoFile(fakeRequest('https://dreamtube.life/.netlify/functions/video-file?key=vf-nosource'));
   assert.equal(res.status, 200);
   var buf = await res.arrayBuffer();
   assert.equal(buf.byteLength, 6);
@@ -128,7 +128,7 @@ test('image-file.mjs: redirects to metadata.sourceUrl instead of streaming when 
   });
 
   var imageFile = (await import('../netlify/functions/image-file.mjs')).default;
-  var res = await imageFile(fakeRequest('https://dreamtube1.netlify.app/.netlify/functions/image-file?key=if-big'));
+  var res = await imageFile(fakeRequest('https://dreamtube.life/.netlify/functions/image-file?key=if-big'));
   assert.equal(res.status, 302);
   assert.equal(res.headers.get('location'), 'https://fal.media/big-source.png');
 });

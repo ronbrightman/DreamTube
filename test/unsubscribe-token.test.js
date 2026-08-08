@@ -107,7 +107,7 @@ test('unsubscribe-token: buildUnsubscribeUrl builds a working, self-consistent l
     var unsubscribeToken = require('../netlify/functions/lib/unsubscribe-token');
     var event = fakeEvent({ method: 'GET', headers: { host: 'dreamtube1.netlify.app' } });
     var url = unsubscribeToken.buildUnsubscribeUrl(event, 'Nora@Example.com');
-    assert.match(url, /^https:\/\/dreamtube1\.netlify\.app\/\.netlify\/functions\/unsubscribe-email\?email=nora%40example\.com&token=[0-9a-f]{64}$/);
+    assert.match(url, /^https:\/\/dreamtube\.life\/\.netlify\/functions\/unsubscribe-email\?email=nora%40example\.com&token=[0-9a-f]{64}$/);
 
     var params = new URL(url).searchParams;
     assert.equal(unsubscribeToken.verifyToken(params.get('email'), params.get('token')), true);

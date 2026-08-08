@@ -18,6 +18,7 @@
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 var crypto = require('crypto');
+var siteOrigin = require('./site-origin');
 
 var STORE_NAME = 'dreamtube-pending-dream-claims';
 // Generous — this is the literal payoff of the retention email (the whole
@@ -36,10 +37,9 @@ async function createToken(event, pendingId) {
   return token;
 }
 
-/** Builds the claim-dream.html URL a claim token resolves to, from the request's own Host header — same `x-forwarded-host || host` pattern every other emailed-link function in this codebase uses (request-password-reset.js, lib/magic-link.js). */
+/** Builds the claim-dream.html URL a claim token resolves to, on the CANONICAL origin (lib/site-origin.js) — never the request's own Host header, per the 08-08 canonical-domain rule documented there. */
 function buildUrl(event, pendingId, token) {
-  var host = event.headers['x-forwarded-host'] || event.headers.host;
-  return 'https://' + host + '/claim-dream.html?pending=' + encodeURIComponent(pendingId) + '&token=' + encodeURIComponent(token);
+  return siteOrigin.emailOrigin(event) + '/claim-dream.html?pending=' + encodeURIComponent(pendingId) + '&token=' + encodeURIComponent(token);
 }
 
 /**

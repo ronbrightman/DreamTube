@@ -55,6 +55,7 @@
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 var crypto = require('crypto');
+var siteOrigin = require('./site-origin');
 
 var STORE_NAME = 'dreamtube-dream-share-tokens';
 // Generous, not a security-sensitive short window -- this is the literal
@@ -89,10 +90,9 @@ async function createToken(event, dream) {
   return token;
 }
 
-/** Builds the watch.html URL a share token resolves to, from the request's own Host header -- same `x-forwarded-host || host` pattern every other emailed-link function in this codebase uses (request-password-reset.js, lib/pending-dream-token.js). */
+/** Builds the watch.html URL a share token resolves to, on the CANONICAL origin (lib/site-origin.js) -- never the request's own Host header, per the 08-08 canonical-domain rule documented there. */
 function buildUrl(event, dreamId, token) {
-  var host = event.headers['x-forwarded-host'] || event.headers.host;
-  return 'https://' + host + '/watch.html?id=' + encodeURIComponent(dreamId) + '&token=' + encodeURIComponent(token);
+  return siteOrigin.emailOrigin(event) + '/watch.html?id=' + encodeURIComponent(dreamId) + '&token=' + encodeURIComponent(token);
 }
 
 /**

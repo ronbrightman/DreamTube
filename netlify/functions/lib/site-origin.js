@@ -2,18 +2,32 @@
 //
 // One resolver for "what is this app's own public https origin", for code
 // that emits a url someone will open OUTSIDE the request that produced it
-// -- i.e. email bodies. Added for tracker item
+// -- email bodies, share links, OG tags. Added for tracker item
 // for-product-bug-two-blank-square-emails--3fvxvc.
 //
-// THE BUG THIS EXISTS TO FIX. Every emailed url in this codebase was built
-// as `'https://' + (x-forwarded-host || host)`, reconstructing the origin
-// from the INBOUND REQUEST. That is correct and remains this codebase's
-// convention for request-driven senders (request-password-reset.js,
-// lib/dream-share-token.js, lib/pending-dream-token.js,
-// create-checkout-session-dodo.js, ...) -- each of those runs under a real
-// public HTTP request whose Host genuinely IS the origin the recipient
-// should come back to, which is also what keeps deploy previews and the
-// second domain (dreamtube.life vs dreamtube1.netlify.app) self-consistent.
+// THE 08-08 CANONICAL-DOMAIN RULE (founder standing rule): "if we don't
+// need a Netlify URL, never link to any Netlify URL." Every outbound
+// user-facing link resolves to the canonical origin,
+// https://dreamtube.life -- NEVER echoed back from the inbound request's
+// Host header. Mixed-hostname links are a live bug family, not
+// cosmetics: localStorage/auth/session identity is per-origin, so a
+// user who browses on one hostname and clicks an emailed link to the
+// other lands in a "logged-out" browser identity. One canonical origin
+// in every outbound link ends that class of bug. The request-host
+// precedence tier this file used to have (see git history) was removed
+// for exactly that reason; a deploy-preview-triggered email carrying a
+// production link is the INTENDED behavior under this rule, not a bug.
+//
+// THE BUG THIS ORIGINALLY EXISTED TO FIX. Every emailed url in this
+// codebase was built as `'https://' + (x-forwarded-host || host)`,
+// reconstructing the origin from the INBOUND REQUEST. That WAS this
+// codebase's convention for request-driven senders
+// (request-password-reset.js, lib/dream-share-token.js,
+// lib/pending-dream-token.js, ...) until the 08-08 canonical rule above
+// retired it for every user-facing link -- those senders now all call
+// emailOrigin() here. The convention survives only where the visitor's
+// browser must round-trip back to the origin it left from
+// (facebook-oauth-callback.js, the Dodo checkout functions).
 //
 // But since commit de124a5 (2026-08-04) the only path that sends the
 // automatic first-dream retention email is send-pending-first-dream-
@@ -47,46 +61,30 @@
 // the same place at once. Re-fixing four copies leaves four things that
 // can drift apart again. One resolver cannot.
 //
-// SCOPE, deliberately narrow: this file is for EMAIL urls only. The
-// request-driven, in-request callers listed above are not changed -- they
-// are not broken, they always run under a real public request, and
-// rewriting them would be unrelated risk in a bugfix. share-dream.js
-// already independently arrived at this exact pattern for its own
-// (different) reason -- CRLF safety on a raw Location header -- including
-// the same `process.env.URL`-derived fallback; this generalises that
-// precedent rather than inventing one.
+// SCOPE: every outbound user-facing absolute self-link -- emailed urls
+// (password reset, verification, share/claim tokens, retention emails,
+// unsubscribe) and the share endpoints' OG/redirect urls. NOT in scope:
+// mid-browser round trips that must return to the origin the visitor is
+// actually on (facebook-oauth-callback.js, the Dodo checkout functions)
+// -- those NEED the request host, because the visitor's localStorage
+// session lives on the origin they left from, and machine-to-machine
+// callbacks (start-pending-generation's fal webhook url), which no human
+// ever sees.
 //
 // PRECEDENCE, highest first:
-//   1. The request's own `x-forwarded-host || host`, when it looks like a
-//      genuine public hostname (see isPublicHost). Keeps every request-
-//      driven sender behaving exactly as it does today, deploy previews
-//      and both live domains included.
-//   2. `process.env.URL` -- Netlify's own built-in "primary url of this
-//      site" variable, available to every Netlify Function. Derived rather
-//      than hardcoded so a future primary-domain switch
-//      (dreamtube1.netlify.app -> dreamtube.life) needs no code change,
-//      just Netlify's own site settings. Same reasoning share-dream.js's
-//      FALLBACK_HOST already documents.
-//   3. FALLBACK_HOST below -- only ever reached when URL is unset (local
-//      dev, tests), and equal to today's real production primary host.
+//   1. `process.env.URL` -- Netlify's own built-in "primary url of this
+//      site" variable, available to every Netlify Function. In
+//      production this IS https://dreamtube.life (the primary-domain
+//      flip already happened -- see docs/DOMAIN_ROUTING_MATRIX.md).
+//      Derived rather than hardcoded so any future primary-domain
+//      change needs no code change, just Netlify's own site settings.
+//   2. FALLBACK_HOST below -- only ever reached when URL is unset
+//      (local dev, tests), and equal to the canonical production host.
 //
-// WHY REJECT rather than merely check-for-empty. Two separate reasons, and
-// the first is the load-bearing one:
-//   - It is NOT independently confirmable from this sandbox what Netlify's
-//     production scheduler puts in `host` for a scheduled invocation. The
-//     documented local-dev value is `localhost:8888` (via the
-//     `Netlify Clockwork` user-agent), which is every bit as unusable in a
-//     stranger's inbox as an empty string is -- a `https://localhost:8888/
-//     profile.html` link in a real email is just a different flavour of
-//     the same bug. Falling back on "not a usable PUBLIC origin" rather
-//     than on "" alone makes the fix correct either way, without needing
-//     to pin down a value this sandbox cannot observe.
-//   - Host/X-Forwarded-Host is client-suppliable. It has always been
-//     escaped on its way into email HTML, so this was not an injection
-//     hole, but validating an allow-list here means a hostile header can
-//     no longer put an attacker's domain in front of a recipient inside an
-//     email that genuinely came from us. Same allow-list-not-blocklist
-//     reasoning share-dream.js's HOSTNAME_RE documents.
+// The inbound request's Host header is deliberately NOT consulted --
+// see the 08-08 rule above. isPublicHost is still applied to the env
+// URL's host (guarding against a localhost URL in netlify dev), and
+// remains exported for callers that validate hosts for other reasons.
 
 // Allow-list, not a block-list -- see header comment. A legitimate public
 // Host header is a dotted hostname (letters/digits/hyphens, at least one
@@ -103,9 +101,10 @@ var PUBLIC_HOST_RE = /^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)+(:[0-9]{1,5})?$/;
 var NON_PUBLIC_HOST_RE = /^(localhost|127\.|0\.0\.0\.0|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[01])\.)/i;
 
 // Only ever used when process.env.URL is unset (local dev / tests) --
-// equal to today's real production primary host, so this matches current
-// production behavior exactly rather than introducing a third answer.
-var FALLBACK_HOST = 'dreamtube1.netlify.app';
+// equal to the canonical production host (08-08 rule), so local/test
+// behavior matches production exactly rather than introducing a second
+// answer.
+var FALLBACK_HOST = 'dreamtube.life';
 
 /** True when `host` is a hostname a stranger's mail client could actually reach. */
 function isPublicHost(host) {
@@ -128,15 +127,16 @@ function configuredHost() {
 }
 
 /**
- * This app's own public https origin, with no trailing slash, safe to
- * prefix onto an emailed path. NEVER returns an empty-host origin -- see
- * this file's header comment. `event` may be null/undefined/header-less
- * (exactly what a scheduled invocation looks like to this code).
+ * This app's own CANONICAL public https origin, with no trailing slash,
+ * safe to prefix onto an emailed path. NEVER returns an empty-host
+ * origin -- see this file's header comment. The `event` parameter is
+ * retained (and ignored) for signature stability across the ~10 call
+ * sites and so a future caller-specific need can be reintroduced
+ * without touching every caller; `event` may be null/undefined/
+ * header-less (exactly what a scheduled invocation looks like).
  */
 function emailOrigin(event) {
-  var headers = (event && event.headers) || {};
-  var host = headers['x-forwarded-host'] || headers.host;
-  return 'https://' + (isPublicHost(host) ? host : configuredHost());
+  return 'https://' + configuredHost();
 }
 
 module.exports = { emailOrigin, isPublicHost, FALLBACK_HOST, PUBLIC_HOST_RE };
