@@ -1,12 +1,13 @@
 // test/media-file-functions.test.js
 //
-// Covers netlify/functions/video-file.mjs and the new
-// netlify/functions/image-file.mjs (tracker item
-// for-product-owner-media-library-page-fou-1fwxaw) — the streaming
-// read-back side of lib/media-rehost.js's write. Both are modern
-// Response-based streaming functions (see video-file.mjs's own header
-// comment for why), loaded here via dynamic import() since this suite's
-// other files are all CommonJS.
+// Covers netlify/functions/video-file.mjs, netlify/functions/image-file.mjs
+// (tracker item for-product-owner-media-library-page-fou-1fwxaw), and
+// netlify/functions/watermarked-video-file.mjs (tracker item
+// for-product-founder-ruling-08-07-every-u-g81h7v — watermark-on-download)
+// — the streaming read-back side of lib/media-rehost.js's write. All three
+// are modern Response-based streaming functions (see video-file.mjs's own
+// header comment for why), loaded here via dynamic import() since this
+// suite's other files are all CommonJS.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -131,4 +132,48 @@ test('image-file.mjs: redirects to metadata.sourceUrl instead of streaming when 
   var res = await imageFile(fakeRequest('https://dreamtube.life/.netlify/functions/image-file?key=if-big'));
   assert.equal(res.status, 302);
   assert.equal(res.headers.get('location'), 'https://fal.media/big-source.png');
+});
+
+// watermarked-video-file.mjs — the third copy of this same pattern, for
+// lib/watermark-video.js's own "dreamtube-videos-watermarked" store
+// (tracker item for-product-founder-ruling-08-07-every-u-g81h7v).
+
+test('watermarked-video-file.mjs: 400 when key is missing', async function () {
+  var watermarkedVideoFile = (await import('../netlify/functions/watermarked-video-file.mjs')).default;
+  var res = await watermarkedVideoFile(fakeRequest('https://dreamtube.life/.netlify/functions/watermarked-video-file'));
+  assert.equal(res.status, 400);
+});
+
+test('watermarked-video-file.mjs: 404 for an unknown key', async function () {
+  var watermarkedVideoFile = (await import('../netlify/functions/watermarked-video-file.mjs')).default;
+  var res = await watermarkedVideoFile(fakeRequest('https://dreamtube.life/.netlify/functions/watermarked-video-file?key=nope'));
+  assert.equal(res.status, 404);
+});
+
+test('watermarked-video-file.mjs: a rehosted twin (has sourceUrl) redirects to its source, from the SEPARATE dreamtube-videos-watermarked store', async function () {
+  var mediaRehost = require('../netlify/functions/lib/media-rehost');
+  var bytes = new ArrayBuffer(8);
+  global.fetch = async function () {
+    return { ok: true, status: 200, headers: { get: function () { return 'video/mp4'; } }, arrayBuffer: async function () { return bytes; } };
+  };
+  await mediaRehost.rehostBestEffort({}, 'video-watermarked', 'https://fal.media/twin.mp4', 'wvf-key-1');
+
+  var watermarkedVideoFile = (await import('../netlify/functions/watermarked-video-file.mjs')).default;
+  var res = await watermarkedVideoFile(fakeRequest('https://dreamtube.life/.netlify/functions/watermarked-video-file?key=wvf-key-1'));
+  assert.equal(res.status, 302);
+  assert.equal(res.headers.get('location'), 'https://fal.media/twin.mp4');
+});
+
+test('watermarked-video-file.mjs: a record with NO sourceUrl still streams (fallback path)', async function () {
+  var { getStore } = require('@netlify/blobs');
+  var bytes = new ArrayBuffer(6);
+  await getStore({ name: 'dreamtube-videos-watermarked' }).set('wvf-nosource', bytes, {
+    metadata: { contentType: 'video/mp4', byteLength: 6 }
+  });
+
+  var watermarkedVideoFile = (await import('../netlify/functions/watermarked-video-file.mjs')).default;
+  var res = await watermarkedVideoFile(fakeRequest('https://dreamtube.life/.netlify/functions/watermarked-video-file?key=wvf-nosource'));
+  assert.equal(res.status, 200);
+  var buf = await res.arrayBuffer();
+  assert.equal(buf.byteLength, 6);
 });

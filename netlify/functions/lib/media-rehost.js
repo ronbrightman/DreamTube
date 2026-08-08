@@ -132,9 +132,18 @@
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 
-var STORE_NAMES = { video: 'dreamtube-videos', image: 'dreamtube-images' };
-var FILE_FUNCTIONS = { video: 'video-file', image: 'image-file' };
-var DEFAULT_CONTENT_TYPES = { video: 'video/mp4', image: 'image/jpeg' };
+// 'video-watermarked' added for lib/watermark-video.js (tracker item
+// for-product-founder-ruling-08-07-every-u-g81h7v — watermark-on-download)
+// — a SEPARATE store/key-space from 'video' above, deliberately: these are
+// server-generated watermarked TWINS, keyed by dreamId rather than by fal
+// requestId, never the clean original a dream's in-app playback depends
+// on. Reusing rehostBestEffort here (rather than a parallel hand-rolled
+// write path) gets the same idempotency/size-gate/force-bypass behavior
+// for free — see that module's own header comment for the full mechanism,
+// unchanged for every existing 'video'/'image' caller.
+var STORE_NAMES = { video: 'dreamtube-videos', image: 'dreamtube-images', 'video-watermarked': 'dreamtube-videos-watermarked' };
+var FILE_FUNCTIONS = { video: 'video-file', image: 'image-file', 'video-watermarked': 'watermarked-video-file' };
+var DEFAULT_CONTENT_TYPES = { video: 'video/mp4', image: 'image/jpeg', 'video-watermarked': 'video/mp4' };
 
 // Netlify's documented hard ceiling for a streaming function's response —
 // see this file's header comment ("SIZE") for the full reasoning and the
