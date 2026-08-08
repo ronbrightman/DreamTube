@@ -31,20 +31,24 @@
 // layer unchanged (screen(0, B) = B) — so a top video that's black
 // EVERYWHERE except a small translucent logo badge in one corner behaves
 // exactly like a real corner watermark overlay, without needing an actual
-// alpha channel. assets/watermark-overlay-720x1280.mp4 (committed once,
-// see that asset's own generation script referenced below) is exactly
-// that: 720x1280 (this app's fixed, confirmed veo3.1 9:16/720p output
-// size — see generate-video.js's aspect_ratio/resolution literals and
-// image-status.js's own 720x1280 mock sample), solid black, with the
-// DreamTube logo badge (assets/logo-v4-512.png) pasted bottom-right at
-// ~9% of the short side / ~3.5% padding — the SAME corner geometry PR #29
-// already shipped for the client-side image watermark in postpack-h4mv.html
-// (WATERMARK_LOGO_SIZE_RATIO/WATERMARK_PADDING_RATIO), so a video download
-// and an image download read as the same visual brand mark. Logo pixel
-// brightness is pre-scaled by 0.82 (that same PR's WATERMARK_OPACITY) so
-// the baked-in translucency matches too, rather than relying on
-// blend-video's own runtime `opacity` param (left at 1 here — no reason to
-// stack two opacity mechanisms).
+// alpha channel. assets/watermark-overlay-720x1280.mp4 is a one-time
+// committed binary asset (no reproducible generation script checked in —
+// if assets/logo-v4-512.png is ever updated, this file needs to be
+// regenerated and re-committed by hand): 720x1280 (this app's fixed,
+// confirmed veo3.1 9:16/720p output size — see generate-video.js's
+// aspect_ratio/resolution literals and image-status.js's own 720x1280
+// mock sample), solid black, with the DreamTube logo badge pasted
+// bottom-right at ~9% of the short side / ~3.5% padding — the same
+// corner geometry PR #29's now-superseded client-side image watermark
+// used (that PR's own WATERMARK_LOGO_SIZE_RATIO/WATERMARK_PADDING_RATIO
+// constants no longer exist in postpack-h4mv.html, since this mechanism
+// replaced it; matched at authoring time so a video download and an
+// image download read as the same visual brand mark, not something
+// this file can verify live against removed code). Logo pixel
+// brightness is pre-scaled by 0.82 (that same removed PR's
+// WATERMARK_OPACITY) so the baked-in translucency matches too, rather
+// than relying on blend-video's own runtime `opacity` param (left at 1
+// here — no reason to stack two opacity mechanisms).
 //
 // WHY THE OVERLAY IS ONLY 1 SECOND LONG, NOT PER-VIDEO-DURATION-MATCHED
 // (the other open question this ruling flagged): fal's blend-video

@@ -30,15 +30,32 @@
 //                                       fall back to the clean `src` url
 //                                       (that would violate this ruling).
 //
+// RATE LIMITING: a cache/pending-job hit (the common case once any given
+// dream has been downloaded once) costs nothing but a couple of cheap
+// Blobs reads, so those paths stay ungated. Actually SUBMITTING a new
+// blend-video job is a real, metered fal.ai call — same "zero protection
+// on a paid endpoint" gap lib/rate-limit.js was built to close for
+// generate-video.js (see that file's own header comment), and every
+// other fal-invoking function in this codebase (generate-video.js,
+// generate-interp-audio.js, etc) already calls it — this one now does
+// too, gated on the submit path specifically rather than the whole
+// handler, per-IP/per-day (matching the house convention; a client-
+// supplied dreamId is not itself authenticated identity, so there's no
+// per-email bucket to add here the way generate-video.js has one).
+//
 // Error codes (this file's own range, distinct from generate-video.js's
 // E1xx/video-status.js's E2xx per this codebase's per-file convention):
 //   WD01 method_not_allowed
 //   WD02 missing_params (id and/or src)
 //   WD03 missing_api_key (no FAL_KEY configured in this environment)
 //   WD04 submit_failed (fal rejected the blend-video submission)
+//   WD05 rate_limited (too many new-blend-job submissions from this IP today)
 //   WD09 uncaught exception in the handler itself
 
 var watermarkVideo = require('./lib/watermark-video');
+var rateLimit = require('./lib/rate-limit');
+
+var MAX_PER_IP_PER_DAY_DEFAULT = 30;
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'GET') {
@@ -66,6 +83,14 @@ exports.handler = async function (event) {
     var pending = await watermarkVideo.getPendingJob(event, dreamId);
     if (pending) {
       return { statusCode: 200, body: JSON.stringify({ status: 'processing' }) };
+    }
+
+    var maxPerDay = parseInt(process.env.MAX_DOWNLOAD_VIDEO_PER_IP_PER_DAY, 10);
+    if (!maxPerDay || maxPerDay <= 0) maxPerDay = MAX_PER_IP_PER_DAY_DEFAULT;
+    var ip = rateLimit.clientIp(event);
+    var ipLimit = await rateLimit.checkAndIncrement(event, 'download-video-ip', ip, maxPerDay);
+    if (!ipLimit.allowed) {
+      return { statusCode: 200, body: JSON.stringify({ status: 'error', error: 'WD05: rate_limited: too many watermark requests from this network today, try again tomorrow' }) };
     }
 
     var submitResult = await watermarkVideo.submitBlendJob(event, dreamId, srcUrl, falKey);

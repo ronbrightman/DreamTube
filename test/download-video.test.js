@@ -104,3 +104,46 @@ test('a fal submission failure surfaces a real error, never a silent "ready"', a
   assert.equal(body.status, 'error');
   assert.match(body.error, /^WD04/);
 });
+
+test('a new-job SUBMISSION is rate-limited per IP per day -- a client varying `id` on every request cannot generate unbounded real fal spend', async function () {
+  process.env.MAX_DOWNLOAD_VIDEO_PER_IP_PER_DAY = '2';
+  var submitCalls = 0;
+  global.fetch = async function () {
+    submitCalls++;
+    return { ok: true, status: 200, text: async function () { return JSON.stringify({ request_id: 'req-' + submitCalls }); } };
+  };
+  var event1 = fakeEvent({ method: 'GET', query: { id: 'dream-a', src: 'https://fal.media/a.mp4' }, ip: '1.2.3.4' });
+  var event2 = fakeEvent({ method: 'GET', query: { id: 'dream-b', src: 'https://fal.media/b.mp4' }, ip: '1.2.3.4' });
+  var event3 = fakeEvent({ method: 'GET', query: { id: 'dream-c', src: 'https://fal.media/c.mp4' }, ip: '1.2.3.4' });
+
+  await handler(event1);
+  await handler(event2);
+  assert.equal(submitCalls, 2, 'first two distinct-dream submissions from this IP today are allowed');
+
+  var res3 = await handler(event3);
+  var body3 = JSON.parse(res3.body);
+  assert.equal(body3.status, 'error');
+  assert.match(body3.error, /^WD05/);
+  assert.equal(submitCalls, 2, 'the third submission attempt must never reach fal once the per-IP cap is hit');
+
+  delete process.env.MAX_DOWNLOAD_VIDEO_PER_IP_PER_DAY;
+});
+
+test('rate limiting only gates NEW submissions -- a cached-twin hit for a different dream is never blocked by another dream\'s rate-limited IP', async function () {
+  process.env.MAX_DOWNLOAD_VIDEO_PER_IP_PER_DAY = '1';
+  global.fetch = async function () {
+    return { ok: true, status: 200, text: async function () { return JSON.stringify({ request_id: 'req-only' }); } };
+  };
+  var { getStore } = require('@netlify/blobs');
+  await getStore({ name: 'dreamtube-videos-watermarked' }).set('dream-already-cached', new ArrayBuffer(4), { metadata: { contentType: 'video/mp4', byteLength: 4 } });
+
+  var burnEvent = fakeEvent({ method: 'GET', query: { id: 'dream-burn', src: 'https://fal.media/burn.mp4' }, ip: '9.9.9.9' });
+  await handler(burnEvent); // uses up the cap of 1 for this IP
+
+  var cachedEvent = fakeEvent({ method: 'GET', query: { id: 'dream-already-cached', src: 'https://fal.media/x.mp4' }, ip: '9.9.9.9' });
+  var res = await handler(cachedEvent);
+  var body = JSON.parse(res.body);
+  assert.equal(body.status, 'ready', 'a cache hit must still succeed even once this IP has exhausted its new-submission cap');
+
+  delete process.env.MAX_DOWNLOAD_VIDEO_PER_IP_PER_DAY;
+});
