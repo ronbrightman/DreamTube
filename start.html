@@ -471,6 +471,7 @@
 <script src="js/store.js"></script>
 <script src="js/facebook-config.js"></script>
 <script src="js/pwa.js"></script>
+<script src="js/funnel-character-stash.js"></script>
 <script>
 (function(){
   'use strict';
@@ -900,38 +901,20 @@
   // had been entered in the app wizard itself. On the legacy funnel
   // domain (dreamtubeapp.netlify.app — different origin) no stash ever
   // exists here; descriptions arrive embedded in the caption param
-  // instead (the funnel's cross-origin fallback), unchanged. Validation
-  // floor mirrors the sheets' own Save rules (desc-or-photo; non-self
-  // needs a name), so nothing DreamStore.saveCharacter would reject at
-  // flush time is ever adopted.
-  var FUNNEL_CHAR_STASH_KEY = 'dreamtube_funnel_character_stash';
-  var FUNNEL_CHAR_STASH_MAX_AGE_MS = 30 * 60 * 1000; // same bound as FB_STAGED_MAX_AGE_MS, same reasoning
+  // instead (the funnel's cross-origin fallback), unchanged.
+  // The consume itself (one-shot removal, 30-min savedAt bound, and the
+  // validation floor mirroring the sheets' own Save rules) lives in the
+  // SHARED js/funnel-character-stash.js helper since the wall-routing
+  // round (2026-08-08) — wizard.html's funnel-arrival wall leg (where the
+  // flo arm routes now) consumes the identical stash through the same
+  // helper, so the two adoption sites can never drift. This page remains
+  // the old arm's (and record-mode's) unchanged target.
   (function adoptFunnelCharacterStash(){
-    var raw = null;
-    try{ raw = localStorage.getItem(FUNNEL_CHAR_STASH_KEY); }catch(e){ raw = null; }
-    try{ localStorage.removeItem(FUNNEL_CHAR_STASH_KEY); }catch(e){ /* private mode — nothing persisted anyway */ }
-    if(!raw) return;
-    try{
-      var parsed = JSON.parse(raw);
-      if(!parsed || parsed.v !== 1 || !Array.isArray(parsed.characters)) return;
-      if(!parsed.savedAt || (Date.now() - parsed.savedAt) > FUNNEL_CHAR_STASH_MAX_AGE_MS) return;
-      parsed.characters.forEach(function(c){
-        if(!c) return;
-        var isSelf = !!c.isSelf;
-        var name = typeof c.name === 'string' ? c.name.trim() : '';
-        var description = typeof c.description === 'string' ? c.description.trim() : '';
-        // Photos are self-only (matching the sheet + DreamStore contract)
-        // and must be a real image data URL — anything else is dropped,
-        // never forwarded to generation.
-        var photoDataUrl = (isSelf && typeof c.photoDataUrl === 'string' && c.photoDataUrl.indexOf('data:image/') === 0) ? c.photoDataUrl : null;
-        if(!description && !photoDataUrl) return;
-        if(!isSelf && !name) return;
-        var character = { id: 'local' + Math.random().toString(36).slice(2, 9), name: name, isSelf: isSelf, description: description };
-        if(photoDataUrl) character.photoDataUrl = photoDataUrl;
-        staged.characters.push(character);
-        staged.selectedIds.push(character.id);
-      });
-    }catch(e){ /* malformed stash — already consumed above, nothing adopted */ }
+    if(!window.FunnelCharacterStash) return;
+    FunnelCharacterStash.consume().forEach(function(character){
+      staged.characters.push(character);
+      staged.selectedIds.push(character.id);
+    });
   })();
 
   track('funnel_resumed_from_marketing', { recall: quiz.recall, dream_types: quiz.dreamTypes, motivations: quiz.motivations, style: chosenStyle });
