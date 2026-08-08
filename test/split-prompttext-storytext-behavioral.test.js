@@ -137,8 +137,10 @@ async function reachStyleScreenViaChips(page, freeText) {
   await page.click('#build-action-continue');
 
   await page.waitForSelector('#build-mood-skip');
+  // Layout-B: a Mood chip tap AUTO-advances (~260ms) to Free text -- no
+  // Continue tap needed (Mood is the single-select step with no secondary
+  // field). Tapping the chip still records it as the answer.
   await page.click('[data-build-mood="mysterious"]');
-  await page.click('#build-mood-continue');
 
   await page.waitForSelector('#build-freetext-skip');
   if (freeText) {
