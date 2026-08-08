@@ -225,3 +225,33 @@ test('rehostBestEffort: force on a still-genuinely-oversized fresh fetch reports
   assert.equal(stored.metadata.byteLength, mediaRehost.MAX_STREAMABLE_BYTES + 1);
   assert.equal(stored.metadata.sourceUrl, 'https://fal.media/still-big.mp4', 'redirect fallback can now use this even though streaming is still not possible');
 });
+
+// ============================================================================
+// 'video-watermarked' mediaType (added for lib/watermark-video.js, tracker
+// item for-product-founder-ruling-08-07-every-u-g81h7v — watermark-on-
+// download) -- proves the new mediaType reuses this same mechanism
+// correctly, in its OWN store, without disturbing the 'video'/'image'
+// mediaTypes above at all.
+// ============================================================================
+
+test("durableUrl/STORE_NAMES: 'video-watermarked' is its own store, distinct from 'video'", function () {
+  assert.equal(mediaRehost.durableUrl('video-watermarked', 'dream-1'), '/.netlify/functions/watermarked-video-file?key=dream-1');
+  assert.equal(mediaRehost.STORE_NAMES['video-watermarked'], 'dreamtube-videos-watermarked');
+  assert.notEqual(mediaRehost.STORE_NAMES['video-watermarked'], mediaRehost.STORE_NAMES.video);
+});
+
+test("rehostBestEffort: 'video-watermarked' stores into dreamtube-videos-watermarked, leaving dreamtube-videos untouched", async function () {
+  var bytes = new ArrayBuffer(12);
+  global.fetch = async function () { return fakeMediaResponse(bytes, 'video/mp4'); };
+
+  var result = await mediaRehost.rehostBestEffort({}, 'video-watermarked', 'https://fal.media/twin.mp4', 'dream-twin-1');
+  assert.equal(result.ok, true);
+  assert.equal(result.url, '/.netlify/functions/watermarked-video-file?key=dream-twin-1');
+
+  var { getStore } = require('@netlify/blobs');
+  var twinStore = await getStore({ name: 'dreamtube-videos-watermarked' }).getWithMetadata('dream-twin-1');
+  assert.equal(twinStore.data, bytes);
+
+  var videoStore = await getStore({ name: 'dreamtube-videos' }).getMetadata('dream-twin-1');
+  assert.equal(videoStore, null, "the clean-original 'dreamtube-videos' store must never see a watermarked-twin write");
+});

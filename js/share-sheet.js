@@ -220,6 +220,23 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
   }
 
+  /**
+   * Resolves to the URL "Save to device" should actually fetch/open for
+   * `dream`. Images: unchanged, resolves dream.imageUrl immediately. Videos
+   * (founder ruling, tracker item for-product-founder-ruling-08-07-every-
+   * u-g81h7v — "when a user downloads a video, the file must carry the
+   * logo watermark"): resolves the WATERMARKED twin via
+   * js/watermark-download.js, never the raw dream.videoUrl — this is the
+   * one place that matters, since dream.videoUrl itself stays wired
+   * unchanged into every <video> element's src for in-app playback.
+   * `onStatus`/`isCancelled` are threaded straight through to
+   * WatermarkDownload.resolveVideoUrl — see that module's own doc comment.
+   */
+  function resolveSaveUrl(dream, usingVideo, onStatus, isCancelled) {
+    if (!usingVideo) return Promise.resolve(dream.imageUrl);
+    return WatermarkDownload.resolveVideoUrl(dream.id, dream.videoUrl, { onStatus: onStatus, isCancelled: isCancelled });
+  }
+
   function chooseSave() {
     if (!current) return;
     var dream = current.dream;
@@ -232,25 +249,14 @@
     // match the URL this function is actually about to fetch, not a
     // possibly-stale/absent mediaType label.
     var usingVideo = !!dream.videoUrl;
-    var mediaUrl = dream.videoUrl || dream.imageUrl;
     var mediaType = usingVideo ? 'video' : 'image';
-    if (!mediaUrl) {
+    if (!dream.videoUrl && !dream.imageUrl) {
       showError("This dream doesn't have a saved file yet");
       return;
     }
 
     var myGen = currentGen;
-
-    // No File-based share support at all (most desktop browsers) — skip
-    // straight to opening the raw media URL in a new tab. No point
-    // fetching a blob just to build an <a download> when a plain new-tab
-    // open (browser's own image/video context menu / built-in save UI)
-    // achieves the same "get me this file" outcome with far less latency.
-    if (!(navigator.canShare && navigator.share)) {
-      hide();
-      window.open(mediaUrl, '_blank');
-      return;
-    }
+    function abandoned() { return myGen !== currentGen; } // sheet dismissed/reopened meanwhile -- see WatermarkDownload's isCancelled doc comment
 
     var btn = document.getElementById('share-opt-save');
     var label = document.getElementById('share-opt-save-label');
@@ -258,28 +264,60 @@
     label.textContent = 'Preparing…';
     document.getElementById('share-sheet-error').style.display = 'none';
 
-    fetchAsBlob(mediaUrl).then(function (blob) {
-      if (myGen !== currentGen) return; // sheet dismissed/reopened meanwhile -- this attempt is abandoned, no-op
-      var ext = extensionFromMime(blob.type, mediaType === 'image' ? 'jpg' : 'mp4');
-      var filename = 'dreamtube-' + (dream.id || 'dream') + '.' + ext;
-      var fallbackMime = mediaType === 'image' ? 'image/jpeg' : 'video/mp4';
-      var file = new File([blob], filename, { type: blob.type || fallbackMime });
+    resolveSaveUrl(dream, usingVideo, function (status) {
+      // 'processing' only ever fires for the video path, once the initial
+      // submit has happened and this is genuinely waiting on the
+      // server-side watermark job — a more accurate label than the
+      // generic "Preparing…" for what's actually a real, possibly
+      // multi-second wait (see lib/watermark-video.js's own doc comment on
+      // why this isn't instant).
+      if (status === 'processing' && !abandoned()) label.textContent = 'Watermarking…';
+    }, abandoned).then(function (mediaUrl) {
+      if (abandoned()) return; // no-op -- see WatermarkDownload's isCancelled doc comment
 
-      if (navigator.canShare({ files: [file] })) {
+      // No File-based share support at all (most desktop browsers) — skip
+      // straight to opening the resolved media URL in a new tab. No point
+      // fetching a blob just to build an <a download> when a plain new-tab
+      // open (browser's own image/video context menu / built-in save UI)
+      // achieves the same "get me this file" outcome with far less latency.
+      if (!(navigator.canShare && navigator.share)) {
         hide();
-        navigator.share({ files: [file] }).catch(function () { /* user cancelled the native share sheet */ });
-      } else {
-        downloadBlob(blob, filename);
-        hide();
+        window.open(mediaUrl, '_blank');
+        return;
       }
-    }).catch(function () {
-      if (myGen !== currentGen) return; // abandoned attempt -- don't surprise-open a tab for a sheet the user already left
-      // Fetching the media as a blob failed (CORS on an external fal.ai
-      // image URL, a network hiccup, etc) — Save must never just do
-      // nothing. Opening the raw media URL in a new tab still lets the
-      // user save it manually via their browser's own context menu.
-      hide();
-      window.open(mediaUrl, '_blank');
+
+      fetchAsBlob(mediaUrl).then(function (blob) {
+        if (abandoned()) return;
+        var ext = extensionFromMime(blob.type, mediaType === 'image' ? 'jpg' : 'mp4');
+        var filename = 'dreamtube-' + (dream.id || 'dream') + '.' + ext;
+        var fallbackMime = mediaType === 'image' ? 'image/jpeg' : 'video/mp4';
+        var file = new File([blob], filename, { type: blob.type || fallbackMime });
+
+        if (navigator.canShare({ files: [file] })) {
+          hide();
+          navigator.share({ files: [file] }).catch(function () { /* user cancelled the native share sheet */ });
+        } else {
+          downloadBlob(blob, filename);
+          hide();
+        }
+      }).catch(function () {
+        if (abandoned()) return;
+        // Fetching the (already-watermarked, for video) media as a blob
+        // failed (CORS, a network hiccup, etc) — Save must never just do
+        // nothing. Opening the resolved media URL in a new tab still lets
+        // the user save it manually via their browser's own context menu
+        // — still the watermarked twin for video, never the raw original.
+        hide();
+        window.open(mediaUrl, '_blank');
+      });
+    }).catch(function (err) {
+      if (abandoned() || (err && err.cancelled)) return; // sheet dismissed/reopened meanwhile, or a stale watermark attempt cancelled by a newer one -- no-op
+      // The watermark job itself failed or timed out — per the founder's
+      // ruling this must show a real error, never silently fall back to
+      // opening dream.videoUrl unwatermarked.
+      btn.disabled = false;
+      label.textContent = 'Save to device';
+      showError(usingVideo ? "Couldn't prepare a watermarked copy — try again in a moment." : "Couldn't save this file — try again in a moment.");
     });
   }
 
