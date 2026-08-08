@@ -23,6 +23,17 @@
 //      dodo-webhook.js never actually calls it with a falsy paymentId (a
 //      real Dodo payload always has one), so nothing else in this test
 //      suite exercises that branch.
+//   4. The dodoCustomerId fold-in (tracker item
+//      for-product-repeat-purchase-friction-dod-b6pzs6, review round-2
+//      finding) — creditTokenPackOnce's optional 5th `dodoCustomerId`
+//      argument is folded into creditTokenPackAmountOnce's own existing
+//      hardened write rather than a second, separate, unguarded
+//      setEntitlement call. Proves the stamp survives a genuinely
+//      concurrent spendTokens call — see that test's own doc comment for
+//      why this no longer needs a forced mock-blobs read override the way
+//      it did before creditTokenPackAmountOnce's blobsCas.casWrite
+//      migration (tracker item entitlements-js-retryingwrite-balance-mu-
+//      qxm1ih).
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -449,6 +460,91 @@ test('concurrent races on DIFFERENT payment_ids for the same email both go throu
 
   assert.equal(results[0].credited, true);
   assert.equal(results[1].credited, true);
+});
+
+// ----- dodoCustomerId fold-in vs. a concurrent spendTokens call (review
+// round-2 finding, tracker item for-product-repeat-purchase-friction-dod-
+// b6pzs6) -----
+//
+// The bug this closes: dodo-webhook.js's first draft stamped dodoCustomerId
+// via a SEPARATE, plain, unguarded `entitlements.setEntitlement(event,
+// email, {dodoCustomerId})` call sitting next to (not folded into)
+// creditTokenPackOnce's own hardened credit. spendTokens (generate-video.js's
+// per-generation deduction — the single highest-frequency writer to this
+// same per-email record) is ALSO a plain, unguarded read -> Object.assign ->
+// setJSON, with no retry/verify. Two such plain writes racing the same
+// record can each build their patch from a stale pre-the-other's-write
+// `existing`, so whichever lands second silently reverts or drops whatever
+// the other had just changed — see creditTokenPackAmountOnce's own doc
+// comment (the "WHY THIS NEEDS ITS OWN WRITE" section it grew as part of
+// this fix) for the fuller mechanics.
+//
+// REBASE NOTE (tracker item for-product-repeat-purchase-friction-dod-b6pzs6,
+// rescue/rebase pass): this test originally (2026-07-28) forced the SPECIFIC
+// "reverse ordering" interleaving flagged by review against the
+// then-current blobsRetry.retryingWrite implementation of
+// creditTokenPackAmountOnce, by overriding mock-blobs' plain-get call #3
+// (identified at the time as spendTokens' own setEntitlement()-internal
+// read) to return a stale, pre-stamp snapshot. Since then,
+// creditTokenPackAmountOnce migrated to blobsCas.casWrite (tracker item
+// entitlements-js-retryingwrite-balance-mu-qxm1ih) — a genuinely different
+// primitive that re-reads fresh (via getWithMetadata, on a SEPARATE
+// call-count channel from the plain-get one this test overrides — see
+// test/helpers/mock-blobs.js's own casReadOverrides doc comment) on every
+// attempt and lets the server reject a write built from a stale read,
+// rather than trusting a client-side verify-read the way retryingWrite did.
+// Two consequences for this test, both verified empirically while rebasing
+// rather than guessed at:
+//   1. The plain-get call sequence itself shifted (creditTokenPackAmountOnce's
+//      own syncTokens call is now call #3, not spendTokens' setEntitlement
+//      read — that moved to call #2), so the OLD override target no longer
+//      even touches the right call.
+//   2. More fundamentally, forcing ANY plain-get call stale can no longer
+//      reproduce the original clobber: creditTokenPackAmountOnce's actual
+//      credited value/dodoCustomerId now come from casWrite's own internal
+//      FRESH getWithMetadata read (a completely separate, un-overridden
+//      channel here), not from the syncTokens fallback this override
+//      targets — that fallback is now provably unused whenever a real
+//      record already exists (see creditTokenPackAmountOnce's own "stale
+//      first CAS read... is atomically REJECTED" test above, which covers
+//      exactly this guarantee generically).
+// What's still true and worth a regression test: a GENUINELY concurrent
+// spendTokens call, racing creditTokenPackOnce with no forcing at all, must
+// not cause the dodoCustomerId stamp to go missing. Empirically (verified
+// while rebasing, not assumed), this mock environment's natural scheduling
+// has creditTokenPackOnce's own atomic write consistently complete AFTER
+// spendTokens' simpler read/write chain — the SAFE ordering, since
+// casWrite's own fresh read then correctly incorporates spendTokens'
+// already-applied deduction on top of the credit, reconciling BOTH effects
+// in one write rather than losing either one. (The narrower, opposite
+// hazard — spendTokens' OWN plain, unguarded write reverting a
+// dodoCustomerId that had already landed, if spendTokens' internal read
+// happens to race in stale relative to an EARLIER-landing credit write — is
+// a real, but separate and already-accepted, pre-existing tradeoff of
+// spendTokens/addTokens' own unguarded-write design, documented generally
+// in the STANDING CHECKLIST comment above spendTokens/addTokens; it
+// pre-dates this fix and folding dodoCustomerId into creditTokenPackAmountOnce's
+// own write was never meant to close it — see that function's own doc
+// comment's "Residual, undefended race" section for the identical
+// disclosure already made for addTokens' balance field.)
+test('creditTokenPackOnce\'s dodoCustomerId stamp (folded into creditTokenPackAmountOnce\'s existing atomic casWrite) survives a genuinely concurrent spendTokens call, reconciling both effects rather than losing either one', async function () {
+  var email = 'dodoraceconcurrency@example.com';
+  await entitlements.setEntitlement({}, email, {
+    tokens: { balance: 100, lastClaimAt: Date.now() },
+    firstPackPurchaseAt: Date.now() - 999999999 // isolate from the separate first-purchase-bonus behavior
+  });
+
+  await Promise.all([
+    entitlements.creditTokenPackOnce({}, email, 'pay_dodo_race_concurrency', 100, 'cus_dodo_race_concurrency'),
+    entitlements.spendTokens({}, email, 30)
+  ]);
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.dodoCustomerId, 'cus_dodo_race_concurrency', 'the dodoCustomerId stamp must survive a concurrent spendTokens call racing in around it, not get silently dropped');
+  // 100 initial + 100 credited - 30 spent = 170 -- casWrite's own fresh
+  // read-per-attempt means BOTH concurrent effects reconcile correctly in
+  // this natural interleaving, not just the field this test cares about.
+  assert.equal(record.tokens.balance, 170, '100 initial + 100 credited - 30 spent, both concurrent effects correctly reconciled');
 });
 
 // ----- No first-purchase bonus, ever (retired 2026-08-02, "The Vault"

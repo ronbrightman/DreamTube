@@ -16,6 +16,12 @@
 // now (it wasn't before) because the starter-pack E9 one-time-enforcement
 // guard reads the buyer's entitlement record via lib/entitlements.js's
 // getTokenStatus.
+//
+// Also covers the returning-buyer prefill's password-verification gate
+// (tracker item for-product-repeat-purchase-friction-dod-b6pzs6): mock-blobs
+// backs the account-store/entitlements lookups this gate now performs, same
+// convention as test/session-transfer.test.js for its equivalent real-
+// password check.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -24,6 +30,7 @@ var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
 
 var { fakeEvent } = require('./helpers/fake-event');
+var accountStore = require('../netlify/functions/lib/account-store');
 var entitlements = require('../netlify/functions/lib/entitlements');
 var handler = require('../netlify/functions/create-checkout-session-dodo').handler;
 
@@ -54,6 +61,12 @@ function reqEvent(overrides) {
   return fakeEvent(Object.assign({ method: 'POST', body: { email: 'buyer@example.com', pack: 'pack099' } }, overrides));
 }
 
+var ipCounter = 0;
+function nextIp() {
+  ipCounter += 1;
+  return '10.8.0.' + ipCounter;
+}
+
 test.beforeEach(function () {
   global.fetch = realFetch;
   mockBlobs.reset();
@@ -71,6 +84,8 @@ test.after(function () {
   delete process.env.DODO_PRODUCT_PACK_SMALL500;
   delete process.env.DODO_PRODUCT_PACK_MEDIUM1500;
   delete process.env.DODO_PRODUCT_PACK_LARGE4000;
+  delete process.env.MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IP_PER_DAY;
+  delete process.env.MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IDENTIFIER_PER_DAY;
 });
 
 test('non-POST method -> 405 E1', async function () {
@@ -349,4 +364,137 @@ test('E9 is checked before the missing-product-id guard would even matter for a 
   var res = await handler(reqEvent({ body: { email: email, pack: 'pack099' } }));
   assert.equal(res.statusCode, 400);
   assert.match(JSON.parse(res.body).error, /^E9:/);
+});
+
+// ============================================================================
+// Returning-buyer prefill — real password verification before attaching a
+// stored Dodo customer_id / enabling show_saved_payment_methods (tracker item
+// for-product-repeat-purchase-friction-dod-b6pzs6, founder decision
+// 2026-07-28). See this file's own header comment for the full security
+// reasoning this section proves out: Dodo auto-attaches ANY checkout to an
+// existing customer purely by EMAIL MATCH, so this must NEVER fire off a
+// bare, unverified email — only after a real password check.
+//
+// Uses pack199 throughout (not pack099, the one-time starter SKU) so these
+// tests exercise ONLY the password-verification gate, never entangling with
+// the separate E9 starter-pack-one-time-use enforcement tested above —
+// none of these accounts ever stamp firstPackPurchaseAt.
+// ============================================================================
+
+test('SECURITY REGRESSION: checkout WITHOUT a password never attaches customer_id or enables saved payment methods, even when a dodoCustomerId is already on file for this email', async function () {
+  await accountStore.createAccount({}, { username: 'nopwbuyer', password: 'realpassword1', email: 'nopwbuyer@example.com' });
+  await entitlements.setEntitlement({}, 'nopwbuyer@example.com', { dodoCustomerId: 'cus_existing_123' });
+
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ ip: nextIp(), body: { email: 'nopwbuyer@example.com', pack: 'pack199' } }));
+  assert.equal(res.statusCode, 200);
+
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { email: 'nopwbuyer@example.com' }, 'no password supplied -- must be the plain bare-email customer object, never customer_id');
+  assert.equal(sentBody.show_saved_payment_methods, undefined, 'must not enable saved payment methods without a verified password');
+});
+
+test('checkout WITH the correct password DOES attach the stored dodoCustomerId and enables show_saved_payment_methods', async function () {
+  await accountStore.createAccount({}, { username: 'realbuyer', password: 'correctpw123', email: 'realbuyer@example.com' });
+  await entitlements.setEntitlement({}, 'realbuyer@example.com', { dodoCustomerId: 'cus_realbuyer_456' });
+
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ ip: nextIp(), body: { email: 'realbuyer@example.com', pack: 'pack199', password: 'correctpw123' } }));
+  assert.equal(res.statusCode, 200);
+
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { customer_id: 'cus_realbuyer_456' }, 'a verified password + an on-file dodoCustomerId must attach the existing Dodo customer, not a bare email');
+  assert.equal(sentBody.show_saved_payment_methods, true);
+});
+
+test('checkout WITH a correct password but NO dodoCustomerId on file yet (verified account, first-ever purchase) falls back to the bare-email customer object -- nothing to attach', async function () {
+  await accountStore.createAccount({}, { username: 'firsttimebuyer', password: 'correctpw123', email: 'firsttimebuyer@example.com' });
+
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ ip: nextIp(), body: { email: 'firsttimebuyer@example.com', pack: 'pack199', password: 'correctpw123' } }));
+  assert.equal(res.statusCode, 200);
+
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { email: 'firsttimebuyer@example.com' });
+  assert.equal(sentBody.show_saved_payment_methods, undefined);
+});
+
+test('SECURITY: checkout WITH a WRONG password falls back safely to the bare-email checkout -- no error, no attach, purchase still proceeds', async function () {
+  await accountStore.createAccount({}, { username: 'wrongpwbuyer', password: 'realpassword1', email: 'wrongpwbuyer@example.com' });
+  await entitlements.setEntitlement({}, 'wrongpwbuyer@example.com', { dodoCustomerId: 'cus_wrongpw_789' });
+
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ ip: nextIp(), body: { email: 'wrongpwbuyer@example.com', pack: 'pack199', password: 'totally-wrong-guess' } }));
+  assert.equal(res.statusCode, 200, 'a wrong password must never error out the whole checkout -- this is a friction-reduction feature, not an auth gate on the purchase itself');
+
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { email: 'wrongpwbuyer@example.com' });
+  assert.equal(sentBody.show_saved_payment_methods, undefined);
+});
+
+test('SECURITY: a password supplied for an email with NO registered account at all falls back safely -- never attaches anything, never errors', async function () {
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ ip: nextIp(), body: { email: 'nosuchaccount@example.com', pack: 'pack199', password: 'whatever123' } }));
+  assert.equal(res.statusCode, 200);
+
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { email: 'nosuchaccount@example.com' });
+  assert.equal(sentBody.show_saved_payment_methods, undefined);
+});
+
+test('an empty-string password is treated exactly like no password at all -- no verification attempted, no rate-limit bucket touched', async function () {
+  await accountStore.createAccount({}, { username: 'emptypwbuyer', password: 'realpassword1', email: 'emptypwbuyer@example.com' });
+  await entitlements.setEntitlement({}, 'emptypwbuyer@example.com', { dodoCustomerId: 'cus_empty_1' });
+
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ ip: nextIp(), body: { email: 'emptypwbuyer@example.com', pack: 'pack199', password: '' } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { email: 'emptypwbuyer@example.com' });
+});
+
+// ----- Rate limiting on the password-verification check itself, mirroring
+// create-session-transfer.js's own two-bucket (per-IP + per-account-
+// identifier) rate limiting on its equivalent real-password check -----
+
+test('exceeding MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IP_PER_DAY silently falls back to the bare-email checkout (never a 4xx/5xx) once the per-IP cap on password attempts is hit', async function () {
+  process.env.MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IP_PER_DAY = '1';
+  await accountStore.createAccount({}, { username: 'ipcapbuyer', password: 'realpassword1', email: 'ipcapbuyer@example.com' });
+  await entitlements.setEntitlement({}, 'ipcapbuyer@example.com', { dodoCustomerId: 'cus_ipcap_1' });
+
+  var ip = nextIp();
+  stubFetchCapture();
+  var first = await handler(reqEvent({ ip: ip, body: { email: 'ipcapbuyer@example.com', pack: 'pack199', password: 'realpassword1' } }));
+  assert.equal(first.statusCode, 200);
+  var firstBody = JSON.parse(first.body);
+  assert.ok(firstBody.url, 'first attempt (within cap) must still succeed and use the verified path');
+
+  var captured = stubFetchCapture();
+  var second = await handler(reqEvent({ ip: ip, body: { email: 'ipcapbuyer@example.com', pack: 'pack199', password: 'realpassword1' } }));
+  assert.equal(second.statusCode, 200, 'a rate-limited password check must never block the underlying checkout itself');
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { email: 'ipcapbuyer@example.com' }, 'once the per-IP password-check cap is hit, this call must fall back to the bare-email checkout exactly like an unverified request');
+  assert.equal(sentBody.show_saved_payment_methods, undefined);
+});
+
+test('exceeding MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IDENTIFIER_PER_DAY throttles repeated password guesses against ONE account even from rotating IPs, same round-2 review fix as create-session-transfer.js', async function () {
+  process.env.MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IDENTIFIER_PER_DAY = '2';
+  await accountStore.createAccount({}, { username: 'identcapbuyer', password: 'realpassword1', email: 'identcapbuyer@example.com' });
+  await entitlements.setEntitlement({}, 'identcapbuyer@example.com', { dodoCustomerId: 'cus_identcap_1' });
+
+  stubFetchCapture();
+  var first = await handler(reqEvent({ ip: nextIp(), body: { email: 'identcapbuyer@example.com', pack: 'pack199', password: 'wrong-guess-one' } }));
+  assert.equal(first.statusCode, 200); // 1st of 2 allowed identifier attempts
+
+  stubFetchCapture();
+  var second = await handler(reqEvent({ ip: nextIp(), body: { email: 'identcapbuyer@example.com', pack: 'pack199', password: 'wrong-guess-two' } }));
+  assert.equal(second.statusCode, 200); // still under the per-identifier cap, even from a brand-new IP each time
+
+  // The REAL password, tried from yet another fresh IP, is now blocked by
+  // the per-identifier cap regardless of correctness.
+  var captured = stubFetchCapture();
+  var third = await handler(reqEvent({ ip: nextIp(), body: { email: 'identcapbuyer@example.com', pack: 'pack199', password: 'realpassword1' } }));
+  assert.equal(third.statusCode, 200, 'checkout itself must still succeed even though the password-verification cap was hit');
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.deepEqual(sentBody.customer, { email: 'identcapbuyer@example.com' }, 'per-identifier cap on password attempts must block verification (falling back to bare email) regardless of rotating IPs');
 });
