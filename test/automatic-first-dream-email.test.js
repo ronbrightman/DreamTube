@@ -180,15 +180,17 @@ async function seedJobOwner(operationName, email, mediaType) {
 }
 
 /**
- * Forces a pending record's `triggeredAt` (lib/first-dream-email-pending-
- * store.js) into the past, well beyond send-pending-first-dream-
- * emails.js's own THUMBNAIL_WAIT_MS, then runs its scanAndSend once --
- * modeling "a later scheduled run, after the founder's 3-minute window
- * has elapsed, with no thumbnail ever having synced" without this test
- * suite actually waiting 3 real minutes. A no-op (nothing to flush) for
- * any operationName that was never enqueued in the first place -- exactly
- * what every test whose OWN skip condition fires before the enqueue point
- * needs (see this file's own header comment).
+ * Simulates "the captured thumbnail has synced, and the next scheduled scan
+ * runs" for an enqueued operationName: seeds a real, synced private dream
+ * WITH an imageUrl for the record's owner (matching sourceOperationName),
+ * then runs send-pending-first-dream-emails.js's scanAndSend once. Since
+ * the founder's 2026-08-08 thumbnail-gate rule, a real thumbnail is the
+ * ONLY way the automatic email ever sends (no thumbnail = defer, then drop
+ * — never a bare send), so tests that want to prove "the deferred automatic
+ * email actually goes out" must model the thumbnail landing, which is what
+ * this does. A no-op (nothing to flush) for any operationName that was
+ * never enqueued -- exactly what every test whose OWN skip condition fires
+ * before the enqueue point needs (see this file's own header comment).
  *
  * `hostHeaders` (optional): threaded into scanAndSend's own event so
  * lib/first-dream-email-sender.js's profileUrl/absoluteImageUrl resolve
@@ -199,16 +201,21 @@ async function seedJobOwner(operationName, email, mediaType) {
 async function flushPending(operationName, hostHeaders) {
   var pendingStore = require('../netlify/functions/lib/first-dream-email-pending-store');
   var sendPending = require('../netlify/functions/send-pending-first-dream-emails');
+  var dreamStore = require('../netlify/functions/lib/dream-store');
   var record = await pendingStore.getPending(fakeEvent({}), operationName);
   if (record) {
-    mockBlobs.seed(pendingStore.STORE_NAME, operationName, Object.assign({}, record, {
-      triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
-    }));
+    await dreamStore.upsertPrivateDream(fakeEvent({}), record.username, {
+      id: 'dream-' + operationName, ownerHandle: '@' + record.username,
+      caption: 'A test dream', style: 'Cinematic', mediaType: 'video',
+      videoUrl: 'https://example.com/v.mp4',
+      imageUrl: 'https://img.example/' + encodeURIComponent(operationName) + '.jpg',
+      sourceOperationName: operationName
+    });
   }
   return sendPending.scanAndSend(fakeEvent({ headers: hostHeaders || {} }));
 }
 
-test('mark-generation-completed: a brand-new account\'s first verified video completion ENQUEUES the retention email, and a later scan (no thumbnail synced within the window) sends it linking to profile.html', async function () {
+test('mark-generation-completed: a brand-new account\'s first verified video completion ENQUEUES the retention email, and a later scan (once the thumbnail has synced) sends it WITH the real thumbnail, linking to profile.html', async function () {
   await registerAccount('autouser', 'autouser@example.com');
   var opName = realMockOpName('auto-1');
   await seedJobOwner(opName, 'autouser@example.com', 'video');
@@ -221,32 +228,48 @@ test('mark-generation-completed: a brand-new account\'s first verified video com
   // THUMBNAIL-GATED SEND (see this file's own header comment): the mark
   // request itself only ENQUEUES now -- no Resend call happens on this
   // request at all.
-  assert.equal(spies.resendCalls.length, 0, 'must not send synchronously on the mark request -- the send is deferred, gated on the captured thumbnail (or the 3-minute fallback)');
+  assert.equal(spies.resendCalls.length, 0, 'must not send synchronously on the mark request -- the send is deferred, gated on the captured thumbnail');
 
+  // flushPending models the thumbnail syncing + the next scan running.
   var scanResult = await flushPending(opName, { host: 'dreamtube1.netlify.app' });
-  assert.equal(scanResult.sentFallback, 1, 'no thumbnail was ever synced for this operationName, so the deferred scan must send the fallback template once the window elapses');
+  assert.equal(scanResult.sentWithImage, 1, 'once the thumbnail has synced, the deferred scan sends WITH the real image');
 
   assert.equal(spies.resendCalls.length, 1, 'expected exactly one automatic Resend send, with no client request to send-first-dream-email.js at all');
   assert.deepEqual(spies.resendCalls[0].body.to, ['autouser@example.com']);
   assert.match(spies.resendCalls[0].body.html, /href="https:\/\/dreamtube\.life\/profile\.html"/, 'the automatic email must link to profile.html too');
-  // REAL THUMBNAIL (tracker item for-product-dream-ready-email-real-first-
-  // qr9fbj) -- no dream was ever synced server-side for this operationName
-  // in this test (no client-side finalizeDream/dream-sync call happened),
-  // so send-pending-first-dream-emails.js's scan never finds an imageUrl
-  // to send with, even after the wait -- falls back to the flat-color
-  // banner. See test/send-pending-first-dream-emails.test.js for the
-  // dedicated coverage of the "a thumbnail WAS synced in time" case.
-  // NOTE: the redesigned shell (tracker item
-  // for-product-email-redesign-unsubscribe-l-16ysmp) always renders its
-  // own header <img> (the logo) regardless of thumbnail state -- so this
-  // checks for absence of the THUMBNAIL <img> specifically (its own
-  // distinct object-fit:cover style), not "no <img> anywhere".
-  assert.doesNotMatch(spies.resendCalls[0].body.html, /object-fit:cover/, 'no thumbnail was synced within the window -- must fall back to the color banner, not a broken thumbnail <img>');
+  // The automatic email now ALWAYS carries the real thumbnail <img> (its
+  // own distinct object-fit:cover style) -- the founder's 08-08 rule means
+  // it never sends without one.
+  assert.match(spies.resendCalls[0].body.html, /object-fit:cover/, 'the automatic send must carry the real thumbnail <img>');
 
   assert.equal(spies.posthogCalls.length, 1, 'expected the first_dream_email_sent PostHog event to fire on the actual send');
   assert.equal(spies.posthogCalls[0].body.event, 'first_dream_email_sent');
   assert.equal(spies.posthogCalls[0].body.distinct_id, 'autouser', 'distinct_id must be the raw username, matching this codebase\'s posthog.identify() convention');
   assert.equal(spies.posthogCalls[0].body.properties.auto, true, 'must be flagged as the automatic path, not the client-triggered fallback');
+});
+
+test('mark-generation-completed: if the thumbnail NEVER syncs within the give-up window, the automatic email is DROPPED -- never sent thumbnail-less (founder rule 2026-08-08)', async function () {
+  await registerAccount('nothumbuser', 'nothumbuser@example.com');
+  var opName = realMockOpName('auto-nothumb');
+  await seedJobOwner(opName, 'nothumbuser@example.com', 'video');
+  var spies = installFetchSpy();
+
+  var markHandler = require('../netlify/functions/mark-generation-completed').handler;
+  await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opName } }));
+
+  // No thumbnail ever syncs (no dream seeded), and the record is pushed
+  // past the give-up window -- the scan must DROP it, sending nothing.
+  var pendingStore = require('../netlify/functions/lib/first-dream-email-pending-store');
+  var sendPending = require('../netlify/functions/send-pending-first-dream-emails');
+  var record = await pendingStore.getPending(fakeEvent({}), opName);
+  mockBlobs.seed(pendingStore.STORE_NAME, opName, Object.assign({}, record, {
+    triggeredAt: Date.now() - sendPending.GIVE_UP_AFTER_MS - 5000
+  }));
+  var scanResult = await sendPending.scanAndSend(fakeEvent({}));
+
+  assert.equal(scanResult.droppedNoThumbnail, 1);
+  assert.equal(spies.resendCalls.length, 0, 'no thumbnail ever synced -- must send NOTHING, not a bare email');
+  assert.equal(await pendingStore.getPending(fakeEvent({}), opName), null, 'dropped record is dequeued');
 });
 
 test('mark-generation-completed: a second (and third) completed video for the SAME account never sends a second automatic email', async function () {
@@ -310,11 +333,20 @@ test('CONCURRENCY: two of a brand-new account\'s videos completing at nearly the
   await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opA } }));
   await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opB } }));
 
-  var recordA = await pendingStore.getPending(fakeEvent({}), opA);
-  var recordB = await pendingStore.getPending(fakeEvent({}), opB);
-  var pastDeadline = Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000;
-  mockBlobs.seed(pendingStore.STORE_NAME, opA, Object.assign({}, recordA, { triggeredAt: pastDeadline }));
-  mockBlobs.seed(pendingStore.STORE_NAME, opB, Object.assign({}, recordB, { triggeredAt: pastDeadline }));
+  // A real thumbnail syncs for BOTH of this account's dreams, so both
+  // pending records are in the "send now, with image" branch in the SAME
+  // window -- the only path that actually calls sendIfEligible, and thus
+  // the one where the once-ever guard's race must hold. (No thumbnail would
+  // just mean both drop, sending nothing -- no race to exercise.)
+  var dreamStore = require('../netlify/functions/lib/dream-store');
+  await dreamStore.upsertPrivateDream(fakeEvent({}), 'raceruser', {
+    id: 'dream-' + opA, ownerHandle: '@raceruser', caption: 'A', style: 'Cinematic',
+    mediaType: 'video', videoUrl: 'https://example.com/a.mp4', imageUrl: 'https://img.example/a.jpg', sourceOperationName: opA
+  });
+  await dreamStore.upsertPrivateDream(fakeEvent({}), 'raceruser', {
+    id: 'dream-' + opB, ownerHandle: '@raceruser', caption: 'B', style: 'Cinematic',
+    mediaType: 'video', videoUrl: 'https://example.com/b.mp4', imageUrl: 'https://img.example/b.jpg', sourceOperationName: opB
+  });
 
   // Same "the mock Blobs store's operations are still genuinely async, so
   // a Promise.all races step-by-step exactly like two concurrent Netlify
@@ -937,22 +969,24 @@ test('mark-generation-completed + send-first-dream-email: the client-triggered f
   await markHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { operationName: opName } }));
   assert.equal(spies.resendCalls.length, 0);
 
-  // result.html's own client fallback fires next, well within the
-  // 3-minute window, and wins the real send.
+  // result.html's own client fallback fires next -- and (this is the case
+  // where it legitimately wins) its thumbnail HAS already synced, so it
+  // carries a real imageUrl and passes the thumbnail gate, winning the send.
   var sendHandler = require('../netlify/functions/send-first-dream-email').handler;
   var fallbackRes = await sendHandler(fakeEvent({
     method: 'POST', ip: nextIp(),
     body: {
       username: 'cooperateuser', password: 'realpassword1', dreamId: 'dream-1',
-      caption: 'A dream', style: 'Cinematic', videoUrl: 'https://example.com/v.mp4', mediaType: 'video'
+      caption: 'A dream', style: 'Cinematic', videoUrl: 'https://example.com/v.mp4', mediaType: 'video',
+      imageUrl: 'https://fal.media/files/cooperate-thumb.jpg'
     }
   }));
   assert.equal(JSON.parse(fallbackRes.body).ok, true);
-  assert.equal(spies.resendCalls.length, 1, 'the client-triggered fallback wins the real send');
+  assert.equal(spies.resendCalls.length, 1, 'the client-triggered fallback (with a synced thumbnail) wins the real send');
 
-  // The automatic path's later deferred scan (once the 3-minute window
-  // elapses with no thumbnail synced) must be a harmless no-op -- the
-  // once-ever guard already claimed by the fallback above.
+  // The automatic path's later scan (once the thumbnail syncs server-side)
+  // must be a harmless no-op -- the once-ever guard already claimed by the
+  // fallback above.
   await flushPending(opName);
   assert.equal(spies.resendCalls.length, 1, 'the automatic path\'s later scan must not send a second email once the client-triggered fallback already won');
 });
@@ -972,14 +1006,16 @@ test('mark-generation-completed + send-first-dream-email: the automatic path win
   await flushPending(opName);
   assert.equal(spies.resendCalls.length, 1);
 
-  // A late-arriving client fallback (e.g. a delayed retry) must still be a
-  // harmless no-op.
+  // A late-arriving client fallback (e.g. a delayed retry) -- even WITH a
+  // synced thumbnail on hand -- must still be a harmless no-op via the
+  // once-ever guard.
   var sendHandler = require('../netlify/functions/send-first-dream-email').handler;
   var fallbackRes = await sendHandler(fakeEvent({
     method: 'POST', ip: nextIp(),
     body: {
       username: 'automatonuser', password: 'realpassword1', dreamId: 'dream-1',
-      caption: 'A dream', style: 'Cinematic', videoUrl: 'https://example.com/v.mp4', mediaType: 'video'
+      caption: 'A dream', style: 'Cinematic', videoUrl: 'https://example.com/v.mp4', mediaType: 'video',
+      imageUrl: 'https://fal.media/files/automaton-thumb.jpg'
     }
   }));
   assert.equal(JSON.parse(fallbackRes.body).ok, true);
