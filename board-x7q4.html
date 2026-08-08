@@ -14,7 +14,10 @@ summary::-webkit-details-marker{display:none}
 summary .tag{font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:99px;white-space:nowrap}
 .tag.p0{background:#3a1218;color:#ff8a96}.tag.today{background:#2a2440;color:#c9bfff}.tag.stale{background:#332a12;color:#ffd28a}.tag.new{background:#12332a;color:#8ee6c2}.tag.fyi{background:#1c1c2c;color:#8f88b3}.tag.min{background:#1c1c2c;color:#8f88b3}
 .body{padding:2px 13px 12px;color:#cfc9ec;font-size:13.5px;border-top:1px solid rgba(255,255,255,.06)}
-.body b{color:#fff}.body .do{background:#0f0d20;border-radius:8px;padding:8px 10px;margin-top:7px}
+.body b{color:#fff}.body .do-action { font-size:17px; font-weight:800; line-height:1.5; color:#ffd98a; background:rgba(217,166,83,.12); border:1px solid rgba(217,166,83,.55); border-radius:12px; padding:12px 14px; margin:8px 0 8px; }
+  .do-action a { color:#9ab0ff; word-break:break-all; }
+  details.do-bg summary { color:#777; font-size:12px; cursor:pointer; margin:4px 0; }
+  .do{background:#0f0d20;border-radius:8px;padding:8px 10px;margin-top:7px}
 .body .do b{color:#ffd28a}
 a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .note{color:#8f88b3;font-size:12px;margin-top:18px;line-height:1.55}
@@ -38,8 +41,26 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
     function linkify(s){ return s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>'); }
     box.innerHTML = items.map(function(i){
       var title = esc((i.title || '').replace(/^\[for ron\]\s*/i, ''));
-      return '<details class="ron"><summary>' + title + ' <span class="tag new">live</span></summary>' +
-             '<div class="body"><div class="do">' + linkify(esc(i.detail || '')) + '</div></div></details>';
+      // DO-THIS convention (founder, 08-08 — second complaint about long
+      // unclear items): a flagged item's detail STARTS with one
+      // "DO THIS: ..." sentence. That first line renders BIG and always
+      // visible; everything after the first blank line is background,
+      // collapsed by default. Items not yet in the format degrade to the
+      // old whole-detail rendering rather than hiding anything.
+      var detail = i.detail || '';
+      var firstBreak = detail.indexOf('\n');
+      var action = firstBreak > -1 ? detail.slice(0, firstBreak).trim() : detail.trim();
+      var rest = firstBreak > -1 ? detail.slice(firstBreak).trim() : '';
+      var isDoThis = /^DO THIS:/i.test(action);
+      var actionHtml = isDoThis
+        ? '<div class="do-action">👉 ' + linkify(esc(action.replace(/^DO THIS:\s*/i, ''))) + '</div>'
+        : '';
+      var bodyText = isDoThis ? rest : detail;
+      var bodyHtml = bodyText
+        ? '<details class="do-bg"><summary>background</summary><div class="do">' + linkify(esc(bodyText)) + '</div></details>'
+        : '';
+      return '<details class="ron" open><summary>' + title + ' <span class="tag new">live</span></summary>' +
+             '<div class="body">' + actionHtml + bodyHtml + '</div></details>';
     }).join('');
   }).catch(function(){
     box.innerHTML = '<div class="note">Live list unavailable (offline?) — the curated items below still apply.</div>';
