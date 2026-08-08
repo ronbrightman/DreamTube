@@ -1678,7 +1678,12 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    tag has no CSS equivalent of "fall through to what's underneath" the
    way a failed background-image naturally does). */
 .itp-persona-card .itp-persona-card-fallback{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:46px; font-weight:800; color:rgba(255,255,255,.32);}
-.itp-persona-card .itp-persona-card-bg{ position:absolute; inset:0; background-size:cover; background-position:center top;}
+/* center 38% (not `top`): the 5th persona renders in a full-width LANDSCAPE
+   tile (.itp-persona-card--wide), where `center top` cropped to just the
+   forehead. 38% keeps the face band centred in both the square 2-col tiles
+   and the wide tile — verified against the normalized portrait crops (eyes
+   ~42% down the source square). */
+.itp-persona-card .itp-persona-card-bg{ position:absolute; inset:0; background-size:cover; background-position:center 38%;}
 .itp-persona-card .itp-persona-card-scrim{ position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.92), rgba(0,0,0,.15) 55%, rgba(0,0,0,.35));}
 .itp-persona-card .itp-persona-card-content{ position:absolute; left:11px; right:11px; bottom:11px; z-index:2;}
 .itp-persona-card .itp-persona-card-name{ font-weight:800; font-size:13.5px; color:#fff; line-height:1.2;}
@@ -1780,6 +1785,14 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
   background:var(--surface-alt); border-left-width:3px; /* left border-color set inline per-persona accent */
 }
 .itp-reading-persona-line{ display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+/* Explicit avatar size for the reading-card persona line. Without it the
+   .itp-portrait had NO width/height in this context (only the .itp-topbar and
+   .itp-loading-wrap contexts set one), which was harmless while only the
+   letter-circle fallback rendered — but a REAL portrait <img> (width/height
+   100% of an unsized parent) balloons to its 768px intrinsic size and fills
+   the card. Small round avatar next to the "Name — inspired by X" label. */
+.itp-reading-persona-line .itp-portrait{ width:40px; height:40px;}
+.itp-reading-persona-line .itp-portrait-fallback{ font-size:16px;}
 .itp-reading-persona-name{ font-size:12.5px; font-weight:800;}
 /* .interp-text (reused verbatim) supplies the reading body's own
    typography — no .itp-reading-card override needed beyond spacing. */
