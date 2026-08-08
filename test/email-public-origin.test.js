@@ -238,10 +238,13 @@ test('REGRESSION: a REAL relative durable thumbnail url still becomes a real thu
 });
 
 // ---------------------------------------------------------------------------
-// No regression for the request-driven senders, which were always correct.
+// Request-driven sends emit the CANONICAL origin too -- the 08-08
+// canonical-domain rule (lib/site-origin.js) retired the old
+// "request host wins" convention: a request arriving on the Netlify
+// alias must still email dreamtube.life links.
 // ---------------------------------------------------------------------------
 
-test('a real inbound request\'s own host still wins over the configured fallback -- deploy previews and the second domain keep working', async function () {
+test('a request arriving on the Netlify alias still emails CANONICAL links -- the request host is ignored (08-08 rule)', async function () {
   await registerAccount('realhost', 'realhost@example.com');
   await pendingStore.markPending(fakeEvent({}), 'mock:1:realhost', 'realhost', 'realhost@example.com');
   var record = await pendingStore.getPending(fakeEvent({}), 'mock:1:realhost');
@@ -250,23 +253,25 @@ test('a real inbound request\'s own host still wins over the configured fallback
   }));
 
   var spies = installFetchSpy();
-  await sendPending.scanAndSend(fakeEvent({ headers: { 'x-forwarded-host': 'dreamtube.life' } }));
+  await sendPending.scanAndSend(fakeEvent({ headers: { 'x-forwarded-host': 'dreamtube1.netlify.app' } }));
 
   var html = spies.resendCalls[0].body.html;
-  assert.match(html, /https:\/\/dreamtube\.life\/assets\/logo-v4\.png/, 'a genuine request host must still be used verbatim');
-  assertEveryUrlIsPublic(html, 'real-host send');
+  assert.match(html, /https:\/\/dreamtube\.life\/assets\/logo-v4\.png/, 'an alias-host request must still emit canonical links, never echo the alias back');
+  assert.doesNotMatch(html, /dreamtube1\.netlify\.app/, 'no Netlify-alias url may appear anywhere in a user-facing email (08-08 rule)');
+  assertEveryUrlIsPublic(html, 'alias-host send');
 });
 
 // ---------------------------------------------------------------------------
 // The origin resolver itself.
 // ---------------------------------------------------------------------------
 
-test('emailLayout.selfOrigin: a genuine public request host is used as-is', function () {
-  assert.equal(emailLayout.selfOrigin(fakeEvent({ headers: { host: 'dreamtube.life' } })), 'https://dreamtube.life');
+test('emailLayout.selfOrigin: the request host is IGNORED -- canonical origin even for an alias or deploy-preview host (08-08 rule)', function () {
+  process.env.URL = 'https://dreamtube.life';
+  assert.equal(emailLayout.selfOrigin(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } })), 'https://dreamtube.life');
   assert.equal(
     emailLayout.selfOrigin(fakeEvent({ headers: { host: 'wrong.example', 'x-forwarded-host': 'deploy-preview-9--dreamtube1.netlify.app' } })),
-    'https://deploy-preview-9--dreamtube1.netlify.app',
-    'x-forwarded-host still takes precedence, this codebase\'s existing convention'
+    'https://dreamtube.life',
+    'a deploy-preview-triggered email carrying production links is the INTENDED behavior under the canonical rule'
   );
 });
 
@@ -276,9 +281,9 @@ test('emailLayout.selfOrigin: a header-less event (the scheduled invocation) fal
   assert.equal(emailLayout.selfOrigin(null), 'https://dreamtube.life', 'a missing event object must be just as safe as a header-less one');
 });
 
-test('emailLayout.selfOrigin: with no request host AND no configured URL, falls back to this app\'s real production host -- never an empty host', function () {
+test('emailLayout.selfOrigin: with no request host AND no configured URL, falls back to the canonical production host -- never an empty host', function () {
   delete process.env.URL;
-  assert.equal(emailLayout.selfOrigin(fakeEvent({})), 'https://dreamtube1.netlify.app');
+  assert.equal(emailLayout.selfOrigin(fakeEvent({})), 'https://dreamtube.life');
 });
 
 test('emailLayout.selfOrigin: a non-public host (netlify dev\'s own localhost:8888, an ip literal, a bare hostname) is rejected -- an inbox cannot reach any of them', function () {
@@ -286,7 +291,7 @@ test('emailLayout.selfOrigin: a non-public host (netlify dev\'s own localhost:88
   ['localhost:8888', 'localhost', '127.0.0.1', '10.0.0.4:8888', 'someinternalbox'].forEach(function (host) {
     assert.equal(
       emailLayout.selfOrigin(fakeEvent({ headers: { host: host } })),
-      'https://dreamtube1.netlify.app',
+      'https://dreamtube.life',
       host + ' must not end up as an email\'s origin'
     );
   });
@@ -295,7 +300,7 @@ test('emailLayout.selfOrigin: a non-public host (netlify dev\'s own localhost:88
 test('emailLayout.selfOrigin: a CRLF/injection-shaped host header is rejected rather than embedded in email HTML', function () {
   delete process.env.URL;
   ['evil.example\r\nX-Injected: 1', 'evil.example/"><script>', 'evil.example ', ''].forEach(function (host) {
-    assert.equal(emailLayout.selfOrigin(fakeEvent({ headers: { host: host } })), 'https://dreamtube1.netlify.app', JSON.stringify(host) + ' must be rejected');
+    assert.equal(emailLayout.selfOrigin(fakeEvent({ headers: { host: host } })), 'https://dreamtube.life', JSON.stringify(host) + ' must be rejected');
   });
 });
 
@@ -303,5 +308,5 @@ test('unsubscribe links built from a header-less event are publicly resolvable t
   delete process.env.URL;
   var url = unsubscribeToken.buildUnsubscribeUrl(fakeEvent({}), 'someone@example.com');
   assertPubliclyResolvable(url, 'unsubscribe token url');
-  assert.match(url, /^https:\/\/dreamtube1\.netlify\.app\/\.netlify\/functions\/unsubscribe-email\?/);
+  assert.match(url, /^https:\/\/dreamtube\.life\/\.netlify\/functions\/unsubscribe-email\?/);
 });

@@ -187,7 +187,7 @@ test('dream-share-token: a valid token resolves the exact dream it was minted fo
     id: 'dream-42', ownerHandle: '@nora', caption: 'A dream', style: 'Anime', videoUrl: 'https://example.com/v.mp4', mediaType: 'video'
   });
   var url = dreamShareToken.buildUrl(event, 'dream-42', token);
-  assert.equal(url, 'https://dreamtube1.netlify.app/watch.html?id=dream-42&token=' + token);
+  assert.equal(url, 'https://dreamtube.life/watch.html?id=dream-42&token=' + token);
 
   var result = await dreamShareToken.verifyToken(event, 'dream-42', token);
   assert.equal(result.ok, true);
@@ -261,7 +261,7 @@ test('send-first-dream-email: a real registered account with a verified email ge
     assert.equal(sentCalls.length, 1, 'expected exactly one Resend send');
     assert.deepEqual(sentCalls[0].body.to, ['nora@example.com'], 'must send to the ACCOUNT\'S REAL email, resolved server-side');
     assert.match(sentCalls[0].body.subject, /ready/i);
-    assert.match(sentCalls[0].body.html, /href="https:\/\/dreamtube1\.netlify\.app\/profile\.html"/, 'body must link to the account\'s own profile page (founder decision 2026-07-27), not a per-dream watch link');
+    assert.match(sentCalls[0].body.html, /href="https:\/\/dreamtube\.life\/profile\.html"/, 'body must link to the account\'s own profile page (founder decision 2026-07-27), not a per-dream watch link');
     assert.doesNotMatch(sentCalls[0].body.html, /watch\.html/, 'must not link to the old per-dream watch.html share link anymore');
     assert.match(sentCalls[0].body.html, /create\.html/, 'body must contain the soft "make another" nudge link');
     assert.match(sentCalls[0].body.html, /Flying over the ocean/, 'the client-triggered fallback path still personalizes with the dream\'s own caption');
@@ -270,7 +270,7 @@ test('send-first-dream-email: a real registered account with a verified email ge
     // for-product-email-redesign-unsubscribe-l-16ysmp): night-aesthetic
     // shell (logo header) and a real, working unsubscribe link, both now
     // present on every send.
-    assert.match(sentCalls[0].body.html, /<img src="https:\/\/dreamtube1\.netlify\.app\/assets\/logo-v4\.png"/, 'redesigned template must carry the app\'s own logo in its header');
+    assert.match(sentCalls[0].body.html, /<img src="https:\/\/dreamtube\.life\/assets\/logo-v4\.png"/, 'redesigned template must carry the app\'s own logo in its header');
     assert.match(sentCalls[0].body.html, /\/\.netlify\/functions\/unsubscribe-email\?email=nora%40example\.com&amp;token=[0-9a-f]{64}/, 'redesigned template must carry a real, per-recipient unsubscribe link');
   });
 });
@@ -296,7 +296,7 @@ test('send-first-dream-email: a dream with a real imageUrl renders an <img> inst
 
     assert.equal(sentCalls.length, 1);
     var html = sentCalls[0].body.html;
-    assert.match(html, /<img src="https:\/\/dreamtube1\.netlify\.app\/\.netlify\/functions\/image-file\?key=thumb%3Anora%3Adream-1"/, 'a relative durable image url must be resolved to an absolute https:// url an email client can actually load');
+    assert.match(html, /<img src="https:\/\/dreamtube\.life\/\.netlify\/functions\/image-file\?key=thumb%3Anora%3Adream-1"/, 'a relative durable image url must be resolved to an absolute https:// url an email client can actually load');
     assert.doesNotMatch(html, /background:#[0-9a-fA-F]{6};margin-bottom:18px/, 'the flat-color banner div must not render when a real thumbnail is available');
   });
 });
@@ -338,10 +338,10 @@ test('send-first-dream-email: no imageUrl (the common case, especially right aft
   });
 });
 
-test('lib/first-dream-email-sender.js: absoluteImageUrl resolves a relative durable url against the request host, passes an absolute one through, and returns null only when there is no url at all', function () {
+test('lib/first-dream-email-sender.js: absoluteImageUrl resolves a relative durable url against the CANONICAL origin (08-08 rule, lib/site-origin.js), passes an absolute one through, and returns null only when there is no url at all', function () {
   var sender = require('../netlify/functions/lib/first-dream-email-sender');
   var event = fakeEvent({ method: 'POST', headers: { host: 'dreamtube1.netlify.app' } });
-  assert.equal(sender.absoluteImageUrl(event, '/.netlify/functions/image-file?key=x'), 'https://dreamtube1.netlify.app/.netlify/functions/image-file?key=x');
+  assert.equal(sender.absoluteImageUrl(event, '/.netlify/functions/image-file?key=x'), 'https://dreamtube.life/.netlify/functions/image-file?key=x');
   assert.equal(sender.absoluteImageUrl(event, 'https://fal.media/x.jpg'), 'https://fal.media/x.jpg');
   assert.equal(sender.absoluteImageUrl(event, null), null);
   assert.equal(sender.absoluteImageUrl(event, ''), null);
@@ -363,7 +363,7 @@ test('lib/first-dream-email-sender.js: absoluteImageUrl resolves a relative dura
   // regression coverage.
   assert.equal(
     sender.absoluteImageUrl(fakeEvent({ method: 'POST' }), '/relative'),
-    'https://dreamtube1.netlify.app/relative',
+    'https://dreamtube.life/relative',
     'a header-less event (the scheduled sender) must still resolve against the configured public origin, not drop the thumbnail'
   );
 });

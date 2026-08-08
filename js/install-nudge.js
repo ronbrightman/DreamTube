@@ -227,7 +227,7 @@ window.InstallNudge = (function () {
    * hit in a real browser) case location.host is somehow empty.
    */
   function currentHostForToolbarMock() {
-    return (window.location && window.location.host) || 'dreamtube1.netlify.app';
+    return (window.location && window.location.host) || 'dreamtube.life';
   }
 
   /**

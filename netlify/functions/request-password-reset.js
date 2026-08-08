@@ -65,6 +65,7 @@
 var { connectLambda, getStore } = require('@netlify/blobs');
 var crypto = require('crypto');
 var accountStore = require('./lib/account-store');
+var siteOrigin = require('./lib/site-origin');
 
 var RESET_STORE = 'dreamtube-password-resets';
 var RESET_TTL_MS = 30 * 60 * 1000;
@@ -109,8 +110,9 @@ exports.handler = async function (event) {
     var account = await accountStore.getByEmail(event, email);
     if (account) {
       var token = crypto.randomBytes(32).toString('hex');
-      var host = event.headers['x-forwarded-host'] || event.headers.host;
-      var resetUrl = 'https://' + host + '/login.html?reset=' + token;
+      // Canonical origin, never the request host -- 08-08 rule, see
+      // lib/site-origin.js.
+      var resetUrl = siteOrigin.emailOrigin(event) + '/login.html?reset=' + token;
 
       connectLambda(event);
       var store = getStore(RESET_STORE);

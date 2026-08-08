@@ -1138,7 +1138,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
               </button>
               <div class="mky-exp">
                 <div class="mky-copied" id="mky-copied" hidden>✓ Link copied</div>
-                <div class="mky-step">Open your browser and paste it there — dreamtube1.netlify.app comes with you.</div>
+                <div class="mky-step">Open your browser and paste it there — dreamtube.life comes with you.</div>
               </div>
             </div>
             <div class="mky-item" id="mky-item-bookmark">
@@ -2312,9 +2312,26 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // token (see DreamStore.maintainSessionTransferUrl below) that lands the
   // visitor signed in once pasted into a real browser. =====
   function isAndroidUA(){ return /Android/.test(navigator.userAgent || ''); }
+  // 08-08 canonical-domain rule ("if we don't need a Netlify URL, never
+  // link to any Netlify URL"): a link we actively hand the user to carry
+  // into another browser should land on https://dreamtube.life, not the
+  // Netlify alias — otherwise their new browser builds its identity
+  // (localStorage) on the alias origin and every future canonical link
+  // looks logged-out to them. Guarded to EXACTLY the live alias host so
+  // deploy previews / local dev still copy their own origin for testing.
+  // Safe across origins because location.href here carries the live
+  // session-transfer token (DreamStore.maintainSessionTransferUrl below),
+  // which is origin-agnostic — it signs them in wherever it's opened.
+  function canonicalHref(){
+    if(location.host === 'dreamtube1.netlify.app'){
+      return 'https://dreamtube.life' + location.pathname + location.search + location.hash;
+    }
+    return location.href;
+  }
   function buildAndroidChromeIntentUrl(){
-    var target = location.href.replace(/^https?:\/\//, '');
-    var fallback = encodeURIComponent(location.href);
+    var href = canonicalHref();
+    var target = href.replace(/^https?:\/\//, '');
+    var fallback = encodeURIComponent(href);
     return 'intent://' + target + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + fallback + ';end';
   }
   // Founder walkthrough punch list (2026-08-01, tracker item
@@ -2336,7 +2353,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // was about.
   function copyLinkForBrowser(onCopied){
     if(navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(location.href).then(function(){
+      navigator.clipboard.writeText(canonicalHref()).then(function(){
         if(onCopied) onCopied();
       }).catch(function(){ showToast("Couldn't copy link"); });
     } else {

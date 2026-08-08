@@ -172,7 +172,7 @@ test('successful completion: marks the record ready+notified and sends the ready
   // for-product-email-redesign-unsubscribe-l-16ysmp): this is one of the
   // two retention/marketing sends in scope -- night-aesthetic shell (logo
   // header) and a real, working unsubscribe link.
-  assert.match(sentHtml, /<img src="https:\/\/dreamtube1\.netlify\.app\/assets\/logo-v4\.png"/, 'redesigned template must carry the app\'s own logo in its header');
+  assert.match(sentHtml, /<img src="https:\/\/dreamtube\.life\/assets\/logo-v4\.png"/, 'redesigned template must carry the app\'s own logo in its header');
   assert.match(sentHtml, /\/\.netlify\/functions\/unsubscribe-email\?email=claimant%40example\.com&amp;token=[0-9a-f]{64}/, 'redesigned template must carry a real, per-recipient unsubscribe link');
 });
 
