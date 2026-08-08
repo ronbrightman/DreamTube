@@ -205,16 +205,58 @@
 // shared array): every write here is a single keyed idempotent overwrite of
 // one user's own record — two different users' writes never touch the same
 // key, so there's no read-modify-write race on a shared collection the way
-// the feed has (see get-feed.js's header comment). The realistic races here
-// (two near-simultaneous generate-video.js requests from the same email
-// both reading the same pre-spend balance, or a lazy grant firing twice)
-// are the same class of narrow last-write-wins race rate-limit.js's own
-// header comment already accepts for this deploy — Netlify Blobs has no
-// compare-and-swap primitive — and are bounded in impact: at most a handful
-// of tokens of drift, never unbounded, and E109/E110 (rate limit + daily
-// spend circuit breaker, both untouched by this change, see
-// generate-video.js) remain the real backstop against runaway cost
-// regardless of how this counter drifts.
+// the feed has (see get-feed.js's header comment). The remaining risk is
+// entirely WITHIN one email's own record: spendTokens/addTokens (see the
+// STANDING CHECKLIST comment further down for why these two stay PLAIN,
+// unguarded writers — an explicit accepted tradeoff, not an oversight) are
+// still a plain, unconditional read -> merge -> write, same shape as every
+// other pre-migration writer here. Two near-simultaneous spendTokens calls
+// racing EACH OTHER (the case this comment used to describe in isolation)
+// really is bounded — at most a handful of tokens of drift, never
+// unbounded, with E109/E110 (rate limit + daily spend circuit breaker,
+// both untouched by this change, see generate-video.js) as the real
+// backstop against runaway cost regardless of how that narrow drift goes.
+// But spendTokens/addTokens racing ANY of this record's CAS'd writers
+// (claimDailyTokens, creditTokenPackAmountOnce, refundTokenAmountOnce,
+// applyAchievementGrantOnce, forgetAppliedTokenPack, forgetRefundedJobId)
+// is NOT bounded the same way: spendTokens/addTokens' own write is still
+// unconditional, with no etag check to reject a stale base. If
+// spendTokens/addTokens' own read happens to land BEFORE one of those
+// CAS'd writers' commit, and its own write lands AFTER, that plain write
+// silently reverts the WHOLE record — the CAS'd writer's entire credit
+// (a full daily claim, a full token-pack purchase, a full refund, a full
+// achievement grant), not just a few tokens of drift — back to the stale
+// value spendTokens/addTokens read. This is the SAME "claim erasure"
+// failure shape (tracker item for-product-p1-urgent-fresh-signup-can-d-
+// qhrrqy) this whole migration exists to close, just via spendTokens/
+// addTokens' own still-plain write rather than one of the writers already
+// migrated. This is a PRE-EXISTING, already-accepted tradeoff — it existed
+// before this migration too, not introduced by it — left as-is here
+// because spendTokens fires on every single generation (by far the
+// highest-frequency writer to this store) and a full CAS retry loop there
+// would be real, ongoing overhead for a fire-and-forget balance decrement,
+// a materially different cost/benefit than the low-frequency writers this
+// migration did cover. Documented here plainly, with the real severity,
+// rather than the "bounded... at most a handful of tokens... never
+// unbounded" framing an earlier draft of this comment used, which
+// understated the case where spendTokens/addTokens races a CAS'd writer
+// specifically (verified-gap finding, independent review of this file's
+// original CAS migration).
+//
+// Every writer NOT named above (syncTokens' init write, claimDailyTokens,
+// creditTokenPackAmountOnce, refundTokenAmountOnce,
+// applyAchievementGrantOnce, forgetAppliedTokenPack, forgetRefundedJobId)
+// goes through lib/blobs-cas.js's real compare-and-swap write instead —
+// see that file's own header comment — specifically BECAUSE Netlify
+// Blobs' default client (`@netlify/blobs` 8.2.0, still used by
+// spendTokens/addTokens/setEntitlement here) has no compare-and-swap
+// primitive of its own; a separately-aliased `blobs10` package is what
+// actually provides one, deliberately scoped to the writers this file's
+// own tracker item (for-product-p1-urgent-fresh-signup-can-d-qhrrqy)
+// evidenced as vulnerable to a real, not just theoretical, clobber —
+// forgetAppliedTokenPack/forgetRefundedJobId joined this list after an
+// independent review of the original migration caught them still calling
+// plain setEntitlement (see their own doc comments for that fix's detail).
 //
 // Reads were originally requested with Blobs' strong-consistency mode (a
 // paying user must never be told "not entitled" for up to a minute right
@@ -231,6 +273,28 @@ var crypto = require('crypto');
 var { getStore, connectLambda } = require('@netlify/blobs');
 var rateLimit = require('./rate-limit');
 var blobsRetry = require('./blobs-retry');
+// blobsCas (lib/blobs-cas.js, built on the separately-aliased `blobs10`
+// package — see that file's own header comment): the REAL compare-and-swap
+// read -> mutate -> conditional-write loop this record's own balance
+// mutations (syncTokens' init write, claimDailyTokens,
+// creditTokenPackAmountOnce, refundTokenAmountOnce,
+// applyAchievementGrantOnce — everything that writes THIS SAME
+// per-email STORE_NAME record) are migrated onto (tracker item
+// for-product-p1-urgent-fresh-signup-can-d-qhrrqy's "claim erasure"
+// incident, and the general "concurrent writes to the SAME account's
+// balance record landing out of order" race family it evidences).
+// blobsRetry (lib/blobs-retry.js, still on the default `@netlify/blobs`
+// 8.2.0) stays in place for the three MARKER stores below
+// (TOKEN_PURCHASES_STORE_NAME/REFUNDED_JOBS_STORE_NAME/
+// ACHIEVEMENT_GRANTS_STORE_NAME) — those are keyed by an opaque
+// paymentId/jobId/achievement-pair, not by email, so two different
+// callers' writes to those stores never contend for the SAME key the way
+// two requests for the SAME account's balance record do; the "concurrent
+// writes to the SAME account's record" race this migration closes simply
+// doesn't apply to them, and leaving them on the already-hardened
+// blobsRetry pattern keeps this change scoped to the evidenced race
+// family rather than a wholesale, unscoped SDK bump.
+var blobsCas = require('./blobs-cas');
 var jobOwners = require('./job-owners');
 var effectiveConfig = require('./effective-config');
 
@@ -493,21 +557,20 @@ effectiveConfig.logEffectiveConfigOnce('entitlements', [
  * bypassed IP still gets exactly INITIAL_GRANT (320) tokens, no more, same
  * as any other brand-new email that simply wasn't IP-capped.
  *
- * Return value also carries `justSeeded` (2026-07-29, tracker item
- * entitlements-js-retryingwrite-balance-mu-qxm1ih): true only on the
- * branch below that just materialized this email's FIRST-EVER tokens
- * sub-object via a write in THIS SAME call, false whenever `record.tokens`
- * already existed before this call started (nothing was written here).
- * Purely an internal signal — never exported, never persisted onto the
- * entitlement record itself — consumed only by creditTokenPackAmountOnce/
- * refundTokenAmountOnce/applyAchievementGrantOnce's shared
- * baseTokensForAttempt helper (see its own doc comment) to know whether
- * attempt 0 of their OWN following retryingWrite loop is allowed to trust
- * its own fresh read yet: right after THIS write, Netlify Blobs' lack of a
- * read-your-own-write guarantee means that attempt's read can still
- * legitimately show the pre-seed state (or nothing at all) for a brief
- * window, so only in that specific justSeeded-and-first-attempt case must
- * the caller fall back to this return value instead.
+ * Return value used to also carry a `justSeeded` flag (2026-07-29, tracker
+ * item entitlements-js-retryingwrite-balance-mu-qxm1ih), consumed only by
+ * creditTokenPackAmountOnce/refundTokenAmountOnce/applyAchievementGrantOnce's
+ * shared baseTokensForAttempt helper to know whether their OWN following
+ * retryingWrite loop's first attempt was allowed to trust its own fresh
+ * read yet (Netlify Blobs' lack of a read-your-own-write guarantee meant
+ * that attempt's read could still legitimately show the pre-seed state
+ * right after THIS write). RETIRED along with baseTokensForAttempt itself
+ * as part of the CAS migration (tracker item for-product-p1-urgent-fresh-
+ * signup-can-d-qhrrqy's follow-up — see baseTokensForAttempt's own retired
+ * comment above creditTokenPackAmountOnce for the full reasoning): under
+ * real CAS, EVERY caller's fallback-to-`syncedTokens` guess is safe on
+ * every attempt, not just a `justSeeded`-flagged first one, since a wrong
+ * guess's conditional write can never actually commit.
  */
 async function syncTokens(event, email, opts) {
   var key = normalizeEmail(email);
@@ -597,9 +660,9 @@ async function syncTokens(event, email, opts) {
       // init through" note a few lines below.
       var freshRead = await getEntitlement(event, key);
       if (freshRead && freshRead.tokens) {
-        return Object.assign({}, freshRead.tokens, { firstPackPurchaseAt: freshRead.firstPackPurchaseAt, firstClaimAt: freshRead.firstClaimAt, justSeeded: false });
+        return Object.assign({}, freshRead.tokens, { firstPackPurchaseAt: freshRead.firstPackPurchaseAt, firstClaimAt: freshRead.firstClaimAt });
       }
-      return Object.assign({ balance: initMarker.balance }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
+      return Object.assign({ balance: initMarker.balance }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
     }
 
     var maxInitPerIp = parseInt(process.env.MAX_TOKEN_GRANTS_PER_IP_PER_DAY, 10);
@@ -613,7 +676,7 @@ async function syncTokens(event, email, opts) {
     if (!ipCheck.allowed) {
       // Capped for today: NO write of any kind (see REPLAY GUARD above) —
       // return a throwaway zero and let a later read retry the init.
-      return Object.assign({ balance: 0 }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: false });
+      return Object.assign({ balance: 0 }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
     }
 
     // No lastClaimAt stamped here — a brand-new record deliberately has
@@ -651,30 +714,30 @@ async function syncTokens(event, email, opts) {
     // gets ERASED by the seed's delayed write landing after it" failure
     // mode this tracker item's round-2 comment calls out.
     //
-    // Fixed the same way every other guarded writer in this file already
-    // is: blobs-retry's own read -> mutate -> write -> verify loop, with
-    // `mutate` SKIPping outright the instant a fresh read shows `tokens`
-    // already populated by ANYONE — another init replay (harmless, same
-    // value) or, critically, a genuine claim/spend/credit that raced
-    // ahead of us — instead of blindly overwriting it. `fresh` is a fixed
-    // constant here, never per-attempt, so `verify` only needs to confirm
-    // the written balance is visible — no attemptId needed the way
-    // claimDailyTokens' own loop requires one (two concurrent CLAIMS can
-    // collide on an identical `now`; two concurrent INITS can never
-    // disagree on the value they're trying to write in the first place).
-    var initWrite = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+    // CAS REWRITE (tracker item for-product-p1-urgent-fresh-signup-can-d-
+    // qhrrqy's own follow-up: "the real fix is the @netlify/blobs 10.x
+    // conditional-write migration"). This used to go through blobs-retry's
+    // read -> mutate -> write -> verify loop — a real mitigation, but still
+    // only a mitigation: its verify-read was itself only eventually
+    // consistent, so it was possible (if rare) for a write to land and its
+    // OWN verify-read to lag behind it, and for a genuinely later write
+    // from a different caller to be misread as "ours." blobsCas.casWrite
+    // (lib/blobs-cas.js) replaces the verify-read with a REAL
+    // compare-and-swap write (`onlyIfNew`/`onlyIfMatch`, see that file's
+    // header comment): `mutate` SKIPs outright the instant a fresh read
+    // shows `tokens` already populated by ANYONE — another init replay
+    // (harmless, same value) or, critically, a genuine claim/spend/credit
+    // that raced ahead of us — instead of blindly overwriting it, exactly
+    // as before. What's gone is the separate verify step and the
+    // "was this genuinely someone else's or my own write lagging" ambiguity
+    // it created: the CAS write's own `modified` result is unambiguous
+    // proof of who actually won.
+    var initWrite = await blobsCas.casWrite(event, STORE_NAME, key, {
       maxAttempts: MAX_CREDIT_ATTEMPTS,
-      read: function (evt) {
-        connectLambda(evt);
-        return store().get(key, { type: 'json' });
-      },
       mutate: function (existing) {
-        if (existing && existing.tokens) return blobsRetry.SKIP;
+        if (existing && existing.tokens) return blobsCas.SKIP;
         var rec = existing || { email: key };
         return Object.assign({}, rec, { email: key, tokens: fresh, updatedAt: Date.now() });
-      },
-      verify: function (verifyRead) {
-        return !!(verifyRead && verifyRead.tokens && verifyRead.tokens.balance === fresh.balance);
       }
     });
 
@@ -687,7 +750,7 @@ async function syncTokens(event, email, opts) {
       // condition — defensive only, mirrors this file's existing
       // `rec.someField || fallback` discipline elsewhere).
       var wonTokens = (initWrite.current && initWrite.current.tokens) || fresh;
-      return Object.assign({}, wonTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
+      return Object.assign({}, wonTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
     }
 
     if (!initWrite.ok) {
@@ -706,13 +769,13 @@ async function syncTokens(event, email, opts) {
       // always had before this fix.
       var finalInitRead = await getEntitlement(event, key);
       var finalTokens = (finalInitRead && finalInitRead.tokens) || fresh;
-      return Object.assign({}, finalTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
+      return Object.assign({}, finalTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
     }
 
-    return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: true });
+    return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
   }
 
-  return Object.assign({}, record.tokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, justSeeded: false });
+  return Object.assign({}, record.tokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
 }
 
 /**
@@ -835,27 +898,39 @@ async function getTokenStatus(event, email, opts) {
  * double-claim).
  *
  * ----------------------------------------------------------------------
- * CONCURRENCY (review finding, round 1): a bare read -> setEntitlement
- * write is NOT safe against two genuinely concurrent claim attempts for
- * the same email (two open tabs, a retried client request) — this file's
- * own header comment and creditTokenPackOnce/refundTokensOnce already
- * document, with a proven-in-this-file's-own-test-suite incident, why a
- * naive single write is unsafe under this codebase's eventually-
- * consistent Blobs reads. Fixed the same documented way every other
- * balance-mutating path in this file already does: blobsRetry.retryingWrite
- * re-checks the SAME cooldown condition fresh on every attempt (inside
- * `mutate`, off that attempt's own read), SKIPping if some other request
- * already claimed this window between our outer syncTokens call and this
- * attempt's read — so two racing claims can land at most ONE credit
- * between them, never two, and the loser gets an honest `claimed:false`
- * (not a fabricated success) with `nextClaimAt` derived from whichever
- * record actually won. `verify` deliberately checks a fresh random
- * `attemptId` (see that var's own doc comment below), NOT `lastClaimAt
- * === now` — two genuinely concurrent calls can capture the IDENTICAL
- * `now` millisecond, which would make both writes look indistinguishable
- * to a timestamp-based verify and let both report `claimed:true` (caught
- * by this file's own round-1-of-round-1 concurrency test before this was
- * corrected).
+ * CONCURRENCY — CAS REWRITE (tracker item
+ * for-product-p1-urgent-fresh-signup-can-d-qhrrqy's "claim erasure"
+ * incident: a claim seconds after signup was observed to succeed, then
+ * get silently clobbered minutes later by a delayed signup-seed write
+ * landing on top of it). A bare read -> setEntitlement write was never
+ * safe against two genuinely concurrent writers touching this SAME
+ * email's record (two open tabs, a retried client request, or — the
+ * incident's actual shape — this SAME call's own outer syncTokens seed
+ * write racing this function's own claim write). This used to go through
+ * blobsRetry.retryingWrite's read -> mutate -> write -> verify loop, which
+ * mitigated but could not fully close the gap: its verify-read was itself
+ * only eventually consistent, so a genuine clobber and "our own write
+ * landed, the verify-read just lagged" were sometimes impossible to tell
+ * apart from inside the loop — the exact ambiguity that forced a random
+ * `attemptId`/`lastClaimAttemptId` marker and a special self-clobber check
+ * in the SKIP branch below (see git history for that version if it's ever
+ * needed for reference).
+ *
+ * Now goes through blobsCas.casWrite (lib/blobs-cas.js): `mutate`
+ * re-checks the SAME cooldown condition fresh on every attempt (off that
+ * attempt's own read), SKIPping if some other request already claimed
+ * this window between our outer syncTokens call and this attempt's read —
+ * so two racing claims can land at most ONE credit between them, never
+ * two, and the loser gets an honest `claimed:false` with `nextClaimAt`
+ * derived from whichever record actually won. What's gone is the
+ * attemptId/verify-read machinery entirely: a CAS write's `modified`
+ * result is the server's OWN atomic confirmation of whether this exact
+ * write took effect, so there is no separate "was this genuinely someone
+ * else's write, or my own lagging behind its own verify-read" question
+ * left to disambiguate — a `modified: true` result IS proof this attempt
+ * won, full stop, with no way for two genuinely concurrent calls sharing
+ * the identical `now` millisecond to both look like winners the way a
+ * naive timestamp-only check once could.
  *
  * Streak: `gap = now - lastClaimAt` inside `mutate`, using THAT attempt's
  * own fresh `lastClaimAt` (never the outer syncTokens call's, which could
@@ -867,14 +942,20 @@ async function getTokenStatus(event, email, opts) {
  * + 1`, else resets to `1` — see tokens.streak's own doc comment (top of
  * file) for why 48h, not 20h/24h.
  *
- * Exhaustion (every attempt's verify failed): same fail-loud posture as
- * creditTokenPackAmountOnce — one more plain, unhurried read to catch the
- * common "our write actually landed, only the verify-read lagged" case
- * before ever reporting success; if that still doesn't show OUR `now`
- * stamped as lastClaimAt, throws rather than silently returning a
- * not-claimed result that could actually mask a real (if rare) failure —
- * claim-daily-tokens.js's handler turns this into a 500 the client's
- * existing "Couldn't claim right now" retry copy already covers.
+ * Exhaustion (every attempt's CAS write was rejected): unlike the old
+ * verify-loop, this is now UNAMBIGUOUS — a rejected conditional write is
+ * the server's own confirmation that write never took effect, so there is
+ * no "maybe it actually landed, only the check lagged" case left to rescue
+ * with a bonus read (if any attempt's write HAD actually landed, `casWrite`
+ * would have returned `ok:true` immediately and never reached exhaustion
+ * at all). Still throws rather than returning a not-claimed result,
+ * though — same fail-loud posture as creditTokenPackAmountOnce/etc.
+ * below — because genuinely losing every one of `MAX_CREDIT_ATTEMPTS`
+ * CAS attempts for one email's own claim is itself an anomaly worth
+ * surfacing (heavy write contention, or reads that kept lagging), not an
+ * honest "not eligible right now" outcome — claim-daily-tokens.js's
+ * handler turns this into a 500 the client's existing "Couldn't claim
+ * right now" retry copy already covers.
  *
  * Returns EXACTLY the two documented response shapes (see this file's own
  * doc block and claim-daily-tokens.js), PLUS `amountClaimed` on a genuine
@@ -895,105 +976,67 @@ async function getTokenStatus(event, email, opts) {
  * phantom record, and never claims anything" guard.
  *
  * `firstClaimAt`: a top-level record field (sibling of
- * lastClaimAttemptId/firstPackPurchaseAt, never inside `tokens`), stamped
- * to `now` the first time this email's `mutate` below computes
- * `isFirstEverClaim: true`, and NEVER overwritten again afterward
- * (`rec.firstClaimAt || now`) — see FIRST_CLAIM_BONUS_AMOUNT's own doc
- * comment for the full reasoning (once-only, first-claim-EVER, not
- * streak-based). `isFirstEverClaim` itself checks BOTH `rec.firstClaimAt`
- * AND `tokens.lastClaimAt` (via hasCompletedAnyClaim, the exact same check
- * getTokenStatus uses to project the upcoming amount) — not `firstClaimAt`
- * alone — specifically so an account that already completed a claim under
- * the pre-2026-07-28 flat-20-only regime (real accounts exist from
- * earlier the same day this bonus shipped, before this field existed) is
- * correctly recognized as having already had its "first claim" and never
- * retroactively re-granted the bonus just because `firstClaimAt` was never
- * backfilled for it. `tokens.lastClaimAt` alone is sufficient signal for
- * that grandfather case since it is ONLY ever set by a genuine successful
- * claim (see that field's own doc comment at the top of this file).
+ * firstPackPurchaseAt, never inside `tokens`), stamped to `now` the first
+ * time this email's `mutate` below computes `isFirstEverClaim: true`, and
+ * NEVER overwritten again afterward (`rec.firstClaimAt || now`) — see
+ * FIRST_CLAIM_BONUS_AMOUNT's own doc comment for the full reasoning
+ * (once-only, first-claim-EVER, not streak-based). `isFirstEverClaim`
+ * itself checks BOTH `rec.firstClaimAt` AND `tokens.lastClaimAt` (via
+ * hasCompletedAnyClaim, the exact same check getTokenStatus uses to
+ * project the upcoming amount) — not `firstClaimAt` alone — specifically
+ * so an account that already completed a claim under the pre-2026-07-28
+ * flat-20-only regime (real accounts exist from earlier the same day this
+ * bonus shipped, before this field existed) is correctly recognized as
+ * having already had its "first claim" and never retroactively re-granted
+ * the bonus just because `firstClaimAt` was never backfilled for it.
+ * `tokens.lastClaimAt` alone is sufficient signal for that grandfather
+ * case since it is ONLY ever set by a genuine successful claim (see that
+ * field's own doc comment at the top of this file).
  */
 async function claimDailyTokens(event, email) {
   var key = normalizeEmail(email);
   if (!key) return { claimed: false, nextClaimAt: 0 };
 
   // Ensures the lazy first-read INITIAL_GRANT (syncTokens) has already
-  // landed before this record is touched via blobsRetry directly below —
-  // same sequencing creditTokenPackAmountOnce follows, for the same
-  // reason (a brand-new email's first-ever grant must exist before any
-  // later credit path reads/mutates the record).
-  //
-  // The return value is captured (2026-08-01 fix, tracker item
-  // for-product-bug-founder-repro-high-brand-1dtzdc) — it used to be
-  // discarded here, which was the actual root cause of a brand-new
-  // account's very first claim silently losing its signup grant: unlike
-  // creditTokenPackAmountOnce/refundTokenAmountOnce/
-  // applyAchievementGrantOnce (all fixed 2026-07-29, tracker item
-  // entitlements-js-retryingwrite-balance-mu-qxm1ih, via this exact
-  // baseTokensForAttempt/syncedTokens pattern — see that helper's own doc
-  // comment for the full reasoning), this function's `mutate` below used
-  // to read balance straight off `rec.tokens` on every attempt, including
-  // attempt 0. For a genuinely brand-new email, the `syncTokens` call
-  // directly above JUST wrote the INITIAL_GRANT seed moments earlier in
-  // this SAME call — and Netlify Blobs has no read-your-own-write
-  // guarantee (this file's own header comment), so attempt 0's own fresh
-  // read can legitimately still show the pre-seed (no-tokens) record.
-  // Without this fix, that phantom `{balance:0}` became the base the
-  // claim amount was added to, quietly discarding the real signup
-  // grant — home.html's auto-open-right-after-signup flow, firing a claim
-  // only seconds after the account (and its entitlement record) was
-  // created, makes this the near-guaranteed default path for every new
-  // signup rather than a rare edge case.
+  // landed before this record is touched via blobsCas directly below —
+  // same sequencing creditTokenPackAmountOnce/refundTokenAmountOnce/
+  // applyAchievementGrantOnce follow, for the same reason (a brand-new
+  // email's first-ever grant must exist before any later credit path
+  // reads/mutates the record). Also doubles as the fallback base for
+  // `mutate`'s `rec.tokens || syncedTokens` below, for the narrow window
+  // where THIS call's own seed write (moments ago, in this same call)
+  // hasn't propagated to a fresh read yet — Netlify Blobs' read side is
+  // still only eventually consistent even with a real CAS write primitive
+  // (see lib/blobs-cas.js's own header comment: CAS closes the WRITE race,
+  // not the READ one). Unlike the pre-CAS version of this function, this
+  // fallback no longer needs to be trusted only on a specific attempt
+  // index: if `existing` is stale (this record actually already exists
+  // server-side, just not visible to this attempt's read yet), the
+  // conditional write below is rejected outright (there IS no etag to
+  // match, since this attempt never saw one) rather than silently
+  // persisting a value computed from a wrong guess — so using
+  // `syncedTokens` as this attempt's best-available guess is always safe,
+  // never just "safe on attempt 0."
   var syncedTokens = await syncTokens(event, key);
-  var attemptIndex = 0;
 
   var now = Date.now();
   var newBalance, newStreak, claimAmount;
 
-  // `attemptId`: a fresh random token per call, NOT derived from `now` —
-  // two genuinely concurrent claims for the same email (two open tabs, a
-  // retried client request) can easily capture the IDENTICAL `Date.now()`
-  // millisecond (near-certain when triggered synchronously, e.g. by this
-  // file's own concurrency tests, and entirely plausible under real
-  // production load too). `verify` originally compared
-  // `verifyRead.tokens.lastClaimAt === now` — but if both racers land on
-  // the same `now`, BOTH writes look identical and BOTH verifies pass,
-  // so both calls report `claimed:true` even though only one is the
-  // record's actual final state (the classic "verify returns true for
-  // both callers" hazard this file's own header comment already warns
-  // about for a naive design). Stamping a random `attemptId` — astronomically
-  // unlikely to collide between two genuinely different calls even in the
-  // same millisecond — and checking THAT for equality instead gives each
-  // attempt a way to tell whether the persisted record actually reflects
-  // its own write or a concurrent racer's, regardless of timestamp
-  // collisions. Lives at the TOP LEVEL of the record (a sibling of
-  // firstPackPurchaseAt/appliedTokenPackPaymentIds), not inside `tokens`,
-  // so `tokens` itself stays exactly `{balance, lastClaimAt, streak}` —
-  // no cleanup write needed, a stale value here is inert (only ever
-  // compared against a fresh `attemptId` a later call mints for itself).
-  var attemptId = crypto.randomBytes(12).toString('hex');
-
-  var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+  var result = await blobsCas.casWrite(event, STORE_NAME, key, {
     maxAttempts: MAX_CREDIT_ATTEMPTS,
-    read: function (evt) {
-      connectLambda(evt);
-      return store().get(key, { type: 'json' });
-    },
     mutate: function (existing) {
-      var currentAttempt = attemptIndex;
-      attemptIndex++;
       var rec = existing || { email: key };
-      var tokens = rec.tokens || { balance: 0 };
+      var tokens = rec.tokens || syncedTokens;
       var lastClaimAt = tokens.lastClaimAt || 0;
       // Fresh, per-attempt re-check — a concurrent claim from another
       // request/tab may have already landed between our outer syncTokens
       // read above and this attempt's read. Deliberately off THIS
-      // attempt's own fresh `rec`/`tokens` (never `syncedTokens`) — the
-      // cooldown/streak/first-claim decision must always reflect the most
-      // current state a real concurrent claim could have already written.
-      // baseTokensForAttempt below only ever supplies a trustworthy
-      // BALANCE base for a still-propagating seed write — see its own doc
-      // comment — it is never a stand-in for this claimability check.
-      if (now - lastClaimAt < CLAIM_COOLDOWN_MS) return blobsRetry.SKIP;
+      // attempt's own fresh `rec`/`tokens` whenever a real record exists,
+      // falling back to `syncedTokens` only when it doesn't yet (see this
+      // function's own doc comment above) — the cooldown/streak/
+      // first-claim decision must always reflect the most current state a
+      // real concurrent claim could have already written.
+      if (now - lastClaimAt < CLAIM_COOLDOWN_MS) return blobsCas.SKIP;
       var gap = now - lastClaimAt;
       var previousStreak = tokens.streak || 0;
       newStreak = (tokens.lastClaimAt && gap < STREAK_CONTINUITY_MS) ? previousStreak + 1 : 1;
@@ -1003,47 +1046,25 @@ async function claimDailyTokens(event, email) {
       // firstClaimAt existed, so it's never re-granted the bonus.
       var isFirstEverClaim = !hasCompletedAnyClaim(rec.firstClaimAt, tokens.lastClaimAt);
       claimAmount = isFirstEverClaim ? FIRST_CLAIM_BONUS_AMOUNT : DAILY_CLAIM_AMOUNT;
-      // baseTokensForAttempt (2026-08-01 fix, tracker item for-product-bug-
-      // founder-repro-high-brand-1dtzdc — see this function's own doc
-      // comment above for the full incident): on attempt 0 of a call whose
-      // OWN syncTokens just seeded this record, `rec.tokens` (this
-      // attempt's fresh read) may still legitimately show the pre-seed
-      // state under Blobs' no-read-your-own-write guarantee, so the
-      // BALANCE is based on `syncedTokens` (this call's own in-memory copy
-      // of what it just wrote) instead of trusting that read — same rule
-      // creditTokenPackAmountOnce/refundTokenAmountOnce/
-      // applyAchievementGrantOnce already apply. Every other case trusts
-      // this attempt's own fresh `rec.tokens`, so a real concurrent
-      // spendTokens/addTokens/another claim that landed since our outer
-      // syncTokens call is still correctly picked up rather than reverted.
-      var baseTokens = baseTokensForAttempt(currentAttempt, rec, syncedTokens);
-      newBalance = Math.min(MAX_TOKEN_BALANCE, baseTokens.balance + claimAmount);
+      newBalance = Math.min(MAX_TOKEN_BALANCE, tokens.balance + claimAmount);
       return Object.assign({}, rec, {
         email: key,
         tokens: { balance: newBalance, lastClaimAt: now, streak: newStreak },
-        lastClaimAttemptId: attemptId,
         firstClaimAt: rec.firstClaimAt || now,
         updatedAt: now
       });
-    },
-    verify: function (verifyRead) {
-      return !!(verifyRead && verifyRead.lastClaimAttemptId === attemptId);
     }
   });
 
   if (result.skipped) {
     // SKIP fires whenever a fresh read already shows a cooldown in
-    // effect -- which includes the read seeing OUR OWN just-written
-    // record from an earlier attempt in this same call, once its verify
-    // (which raced the write under Blobs' eventual consistency) had
-    // already failed and looped back to a fresh read that then caught up.
-    // Without this check that self-clobber gets misreported as
-    // claimed:false even though the credit genuinely landed -- the same
-    // "was this actually my own write" hazard the exhaustion branch below
-    // already guards against, just reachable one step earlier here.
-    if (result.current && result.current.lastClaimAttemptId === attemptId) {
-      return { claimed: true, balance: result.current.tokens.balance, streak: result.current.tokens.streak, nextClaimAt: now + CLAIM_COOLDOWN_MS, amountClaimed: claimAmount };
-    }
+    // effect — genuinely someone else's already-committed claim, never
+    // our own earlier attempt's write (a CAS write either fully commits
+    // and this loop returns immediately, or is atomically rejected and
+    // never persists anything — there is no in-between state a LATER
+    // attempt's read could mistake for "our own", unlike the old
+    // verify-based loop this replaced, which is why the self-clobber
+    // check that version needed here is gone).
     var currentLastClaimAt = (result.current && result.current.tokens && result.current.tokens.lastClaimAt) || 0;
     return { claimed: false, nextClaimAt: currentLastClaimAt + CLAIM_COOLDOWN_MS };
   }
@@ -1052,35 +1073,53 @@ async function claimDailyTokens(event, email) {
     return { claimed: true, balance: newBalance, streak: newStreak, nextClaimAt: now + CLAIM_COOLDOWN_MS, amountClaimed: claimAmount };
   }
 
-  var finalRead = await getEntitlement(event, key);
-  if (finalRead && finalRead.lastClaimAttemptId === attemptId) {
-    return { claimed: true, balance: finalRead.tokens.balance, streak: finalRead.tokens.streak, nextClaimAt: now + CLAIM_COOLDOWN_MS, amountClaimed: claimAmount };
-  }
-  throw new Error('claimDailyTokens: exhausted attempts claiming for ' + key + ' without ever confirming the claim landed');
+  // Exhausted — see this function's own doc comment for why this is now
+  // unambiguous (a rejected CAS write never partially lands, so there is
+  // no "maybe it actually landed" case left to rescue with a bonus read).
+  throw new Error('claimDailyTokens: exhausted attempts claiming for ' + key + ' — every conditional write was rejected');
 }
 
 // ── STANDING CHECKLIST for adding a new low-frequency field to this
 //    record (recurring-pattern-new-entitlements-js-wr-m5mo9g) ──
 // spendTokens/addTokens below are this record's only remaining PLAIN
-// (unguarded, no retry/verify) writers — an already-accepted tradeoff
-// since spendTokens is by far the highest-frequency writer to this store
-// (fires on every generation) and a full retryingWrite there would be
-// needless overhead for a fire-and-forget balance decrement. Every OTHER
-// field on this record (dodoCustomerId, appliedTokenPackPaymentIds,
-// firstPackPurchaseAt, lastClaimAttemptId, refundedJobIds, ...) is written
-// through blobsRetry.retryingWrite instead, specifically because a plain
-// write racing spendTokens/addTokens can silently clobber whichever one
-// lands second (see dodoCustomerId's own doc comment above for a full
-// worked example of exactly this class of bug, caught in review before it
-// shipped). So: when adding a NEW low-frequency field to this record, fold
-// it into an EXISTING hardened retryingWrite call (creditTokenPackAmountOnce,
-// claimDailyTokens, refundTokenAmountOnce — whichever already fires at a
-// point in the field's own natural lifecycle) rather than adding a
-// standalone plain setEntitlement call beside it. Only spendTokens/
-// addTokens themselves get to stay plain, and only because their own
-// tradeoff (frequency vs. race-safety) has already been explicitly
-// accepted — a new field does not inherit that exemption just by being
-// written near them.
+// (unguarded, no CAS) writers reachable from this file's own live
+// token-economy code paths — an already-accepted tradeoff since
+// spendTokens is by far the highest-frequency writer to this store (fires
+// on every generation) and a full blobsCas.casWrite retry loop there would
+// be needless overhead for a fire-and-forget balance decrement (see this
+// file's own header comment for the full severity this tradeoff actually
+// carries, not just a narrow last-write-wins drift — spendTokens/addTokens
+// racing a CAS'd writer can revert that writer's ENTIRE credit, since
+// spendTokens/addTokens' own write is unconditional too). The ONE other
+// exception is stripe-webhook.js's two setEntitlement calls (checkout/
+// subscription sync) — also still plain, but for the dormant Stripe/Dodo
+// subscription backend (see this file's own header comment on why token
+// economy no longer uses it), not part of the live low-frequency-field
+// question this checklist is about.
+//
+// Every LOW-FREQUENCY field on this record (appliedTokenPackPaymentIds,
+// firstPackPurchaseAt, refundedJobIds, firstClaimAt, achievement grants,
+// ...) is written through blobsCas.casWrite instead — including the
+// housekeeping forget* helpers (forgetAppliedTokenPack,
+// forgetRefundedJobId) that merely PRUNE an already-committed entry back
+// out of one of those fields, which is exactly the case an earlier
+// version of this migration missed: even a "just cleanup, not a new
+// credit" write still needs CAS, because a plain write racing
+// spendTokens/addTokens OR any other CAS'd writer can silently clobber
+// whichever one lands second (see forgetAppliedTokenPack's own doc
+// comment for a full worked example of exactly this class of bug, caught
+// by an independent review before this branch could ship). So: when
+// adding a NEW low-frequency field to this record — a fresh field OR a
+// housekeeping prune of an existing one — fold it into an EXISTING
+// hardened casWrite call (creditTokenPackAmountOnce, claimDailyTokens,
+// refundTokenAmountOnce, applyAchievementGrantOnce, forgetAppliedTokenPack,
+// forgetRefundedJobId — whichever already fires at a point in the field's
+// own natural lifecycle) rather than adding a standalone plain
+// setEntitlement call beside it. Only spendTokens/addTokens themselves get
+// to stay plain, and only because their own tradeoff (frequency vs.
+// race-safety) has already been explicitly accepted — a new field, or a
+// new cleanup step, does not inherit that exemption just by being written
+// near them.
 
 /**
  * Deducts `amount` tokens from this email's balance, called only from
@@ -1573,53 +1612,24 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
  * CURRENT record state rather than a stale pre-loop snapshot.
  */
 
-/**
- * Chooses the base `{balance, lastClaimAt, streak}` a single retryingWrite
- * ATTEMPT should build its new `tokens` sub-object from — shared by
- * creditTokenPackAmountOnce, refundTokenAmountOnce, and
- * applyAchievementGrantOnce, the three functions that share the exact same
- * "syncTokens once, then a bounded read -> mutate -> write -> verify loop"
- * shape (see any one's own doc comment for the full mechanism this is
- * part of). Exists purely so this one piece of logic can't drift three
- * separate ways.
- *
- * `attemptIndex` is 0 for the FIRST attempt of the caller's own
- * retryingWrite loop, incrementing on every subsequent attempt — callers
- * track this themselves (a closure counter bumped once per `mutate` call,
- * since `mutate` runs exactly once per attempt in lockstep with `read`).
- *
- * Rule (2026-07-29 fix, tracker item
- * entitlements-js-retryingwrite-balance-mu-qxm1ih — the bug this closes,
- * and the read-your-own-write hazard it must NOT reopen, are both
- * explained in full on each of the three callers' own doc comments):
- *   - `attemptIndex === 0 && syncedTokens.justSeeded`: this call's own
- *     outer `syncTokens` JUST materialized this email's first-ever tokens
- *     sub-object with a write, moments ago, in this exact same call.
- *     Netlify Blobs has no read-your-own-write guarantee, so attempt 0's
- *     own fresh read can still legitimately show the pre-seed record (or
- *     nothing at all) — `rec.tokens` is NOT trustworthy yet here, so
- *     `syncedTokens` (this call's own in-memory copy of the value it just
- *     wrote) is the only safe base. This is a narrow, single-attempt
- *     window: by the time a SECOND attempt runs (blobs-retry.js's own
- *     real ~200ms inter-attempt delay), that one seed write has almost
- *     always propagated.
- *   - Every other case (a record whose tokens already existed before this
- *     call even started — `syncTokens` never wrote anything, so there is
- *     no read-your-own-write hazard from THIS call to guard against — or
- *     any attempt after the first): trust THIS attempt's own fresh
- *     `rec.tokens`, falling back to `syncedTokens` only if `rec.tokens`
- *     itself is entirely absent (mirrors this file's existing
- *     `rec.someArrayField || []` fallback discipline for other per-record
- *     fields). This is what lets a real concurrent claimDailyTokens/
- *     spendTokens/addTokens write that has landed on this SAME email's
- *     record since `syncTokens` was called get picked up and preserved,
- *     instead of being silently reverted by a stale pre-loop snapshot plus
- *     this function's own delta on top.
- */
-function baseTokensForAttempt(attemptIndex, rec, syncedTokens) {
-  if (attemptIndex === 0 && syncedTokens.justSeeded) return syncedTokens;
-  return rec.tokens || syncedTokens;
-}
+// baseTokensForAttempt was retired as part of the CAS migration (tracker
+// item for-product-p1-urgent-fresh-signup-can-d-qhrrqy's follow-up). It
+// used to choose, PER RETRY ATTEMPT, whether to trust that attempt's own
+// fresh `rec.tokens` read or fall back to a pre-loop `syncedTokens`
+// snapshot — necessary under blobs-retry.js's verify-loop because a WRONG
+// guess on attempt 0 (right after this call's own syncTokens seed write,
+// before it had propagated to a fresh read) could actually COMMIT: the old
+// loop's write was unconditional, so an incorrect base silently became the
+// new persisted balance if that attempt's verify-read happened to line up.
+// Under blobsCas.casWrite, every write is conditional (`onlyIfNew`/
+// `onlyIfMatch`) — a write built from a stale/wrong guess is atomically
+// REJECTED by the server the instant the record's real current state
+// (or its real etag) doesn't match what this attempt's read implied, and
+// the loop simply retries with a fresher read. This makes attempt-number
+// bookkeeping unnecessary for correctness: every migrated function below
+// now just does `(existing && existing.tokens) || syncedTokens` uniformly,
+// on every attempt — a wrong guess can never commit, so there's nothing
+// left for a "trust this only on attempt 0" rule to protect against.
 
 async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
   var key = normalizeEmail(email);
@@ -1627,56 +1637,34 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
 
   // Ensures a brand-new email's tokens sub-object exists (materializing
   // INITIAL_GRANT via syncTokens' own lazy-seed branch) before this record
-  // is touched via blobsRetry directly below, AND gives `mutate` a
-  // fallback base for the narrow window where attempt 0's own fresh read
-  // might not show that just-written tokens field yet (Netlify Blobs has
-  // no read-your-own-write guarantee — this file's own header comment
-  // documents the exact incident that forced this codebase off strong
-  // consistency). See baseTokensForAttempt's own doc comment for the full
-  // per-attempt rule this feeds — as of 2026-07-29 (tracker item
-  // entitlements-js-retryingwrite-balance-mu-qxm1ih) this snapshot is
-  // deliberately NOT reused verbatim on every retry attempt the way it
-  // used to be: each attempt now re-derives balance/lastClaimAt/streak
-  // from THAT attempt's own fresh `rec.tokens` whenever it's safe to trust
-  // (falling back to this snapshot only in the one narrow case
-  // baseTokensForAttempt documents), the same "trust the fresh per-attempt
-  // read, don't reuse a stale pre-loop snapshot" discipline this
-  // function's own appliedTokenPackPaymentIds/firstPackPurchaseAt fields
-  // already followed. The old version reused this snapshot verbatim on
-  // every attempt, which could silently revert a concurrent
-  // claimDailyTokens/spendTokens/addTokens write that landed on this SAME
-  // email's record between this call's outer syncTokens read and a later
-  // retry attempt's successful write.
+  // is touched via blobsCas directly below, AND gives `mutate` a fallback
+  // base for the narrow window where a fresh read might not show that
+  // just-written tokens field yet (Netlify Blobs' read side is still only
+  // eventually consistent even under real CAS — see lib/blobs-cas.js's
+  // own header comment). See the retired-baseTokensForAttempt comment
+  // just above for why this fallback no longer needs to be trusted only
+  // on a specific attempt.
   var syncedTokens = await syncTokens(event, key);
-  var attemptIndex = 0;
 
-  var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+  var result = await blobsCas.casWrite(event, STORE_NAME, key, {
     maxAttempts: MAX_CREDIT_ATTEMPTS,
-    read: function (evt) {
-      connectLambda(evt);
-      return store().get(key, { type: 'json' });
-    },
     mutate: function (existing) {
-      var currentAttempt = attemptIndex;
-      attemptIndex++;
       // This fresh-per-attempt read is used to check
       // appliedTokenPackPaymentIds (the idempotency guard against a
-      // concurrent resume), firstPackPurchaseAt (the first-purchase-bonus
-      // check, same reasoning — see this function's own doc comment), AND
-      // (as of the 2026-07-29 fix) the base balance/lastClaimAt/streak via
-      // baseTokensForAttempt — see that helper's own doc comment for
-      // exactly when it trusts this fresh read vs. falls back to
-      // `syncedTokens`.
+      // concurrent resume) and firstPackPurchaseAt (the first-purchase
+      // gating check, same reasoning — see this function's own doc
+      // comment), falling back to `syncedTokens` only when this attempt's
+      // own read doesn't show a real record yet.
       var rec = existing || { email: key };
       var appliedList = rec.appliedTokenPackPaymentIds || [];
-      if (appliedList.indexOf(paymentId) !== -1) return blobsRetry.SKIP; // already applied by an earlier attempt
+      if (appliedList.indexOf(paymentId) !== -1) return blobsCas.SKIP; // already applied by an earlier attempt
       // No first-purchase bonus multiplier anymore (retired 2026-08-02 —
       // see this function's own doc comment) — `amount` is credited
       // verbatim. `firstPackPurchaseAt` is still stamped below regardless
       // of whether this happens to be this email's first purchase, purely
       // so `hasMadeFirstPurchase` can gate starter-pack eligibility.
       var creditAmount = amount;
-      var baseTokens = baseTokensForAttempt(currentAttempt, rec, syncedTokens);
+      var baseTokens = rec.tokens || syncedTokens;
       var newBalance = Math.min(MAX_TOKEN_BALANCE, baseTokens.balance + creditAmount);
       return Object.assign({}, rec, {
         email: key,
@@ -1685,36 +1673,28 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
         firstPackPurchaseAt: rec.firstPackPurchaseAt || Date.now(),
         updatedAt: Date.now()
       });
-    },
-    verify: function (verifyRead) {
-      return !!(verifyRead && verifyRead.appliedTokenPackPaymentIds && verifyRead.appliedTokenPackPaymentIds.indexOf(paymentId) !== -1);
     }
   });
 
   if (result.ok || result.skipped) return { ok: true }; // credited just now, or already applied by an earlier attempt
 
-  // Attempts exhausted without our write ever being confirmed — take one
-  // more plain, unhurried read before giving up: this resolves the
-  // common case (our write actually landed, only the verify-read lagged
-  // behind it — see blobs-retry.js's own honest caveat about this being
-  // possible) without ever reporting success when nothing was actually
-  // confirmed.
-  var finalRead = await getEntitlement(event, key);
-  var finalApplied = (finalRead && finalRead.appliedTokenPackPaymentIds) || [];
-  if (finalApplied.indexOf(paymentId) !== -1) return { ok: true };
-
-  // Genuinely could not confirm the credit landed, even after the bonus
-  // read — this is NOT a legitimate "someone else already handled it"
-  // outcome (that's the `result.skipped` branch above, already handled).
-  // Returning normally here with some "not applied" value would let the
-  // caller silently swallow a real, transient failure exactly the way
-  // the original bug did — just relocated from "addTokens threw" to
-  // "write contention/propagation lag exhausted our attempts". Throwing
-  // instead propagates up through dodo-webhook.js's existing catch block
-  // into a 500, which is what actually gets Dodo to redeliver and give
-  // this a real second chance, rather than silently 200ing with the
-  // marker left `'pending'` and no future trigger to ever resume it.
-  throw new Error('creditTokenPackAmountOnce: exhausted attempts crediting paymentId ' + paymentId + ' for ' + key + ' without ever confirming the credit landed');
+  // Attempts exhausted — unlike the old verify-loop, this is now
+  // unambiguous: a rejected CAS write never partially lands, so there is
+  // no "our write may have landed, only the check lagged" case left to
+  // rescue with a bonus read (if any attempt's write had actually landed,
+  // `casWrite` would have returned `ok:true` immediately, never reaching
+  // here). This is NOT a legitimate "someone else already handled it"
+  // outcome either (that's the `result.skipped` branch above, already
+  // handled) — genuinely every attempt lost the CAS race. Returning
+  // normally here with some "not applied" value would let the caller
+  // silently swallow a real, transient failure exactly the way the
+  // original bug did — just relocated from "addTokens threw" to "write
+  // contention/propagation lag exhausted our attempts". Throwing instead
+  // propagates up through dodo-webhook.js's existing catch block into a
+  // 500, which is what actually gets Dodo to redeliver and give this a
+  // real second chance, rather than silently 200ing with the marker left
+  // `'pending'` and no future trigger to ever resume it.
+  throw new Error('creditTokenPackAmountOnce: exhausted attempts crediting paymentId ' + paymentId + ' for ' + key + ' — every conditional write was rejected');
 }
 
 /**
@@ -1726,18 +1706,47 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
  * array from growing across a long-lived paying account's lifetime; NOT
  * required for correctness (a lingering entry is harmless — it just means
  * a paymentId that will never be looked up again stays idempotency-marked
- * forever), so callers should treat a failure here as non-fatal. No-ops
- * for an empty/missing email or a paymentId that isn't present.
+ * forever). No-ops for an empty/missing email or a paymentId that isn't
+ * present (checked fresh on every CAS attempt below, so a paymentId
+ * already pruned by an earlier/concurrent call is a clean SKIP, not a
+ * wasted write).
+ *
+ * Goes through blobsCas.casWrite, same as every other writer to this
+ * record (see the STANDING CHECKLIST comment above spendTokens/addTokens)
+ * — NOT a plain setEntitlement call, even though this is low-frequency
+ * housekeeping: a plain read -> merge -> unconditional-write here can
+ * silently revert a genuinely concurrent CAS credit (claimDailyTokens,
+ * creditTokenPackAmountOnce, refundTokenAmountOnce,
+ * applyAchievementGrantOnce) landing in the narrow window between this
+ * call's own read and its own write, since a plain write has no etag
+ * check to reject a stale base. Proven directly by this file's own test
+ * suite (test/entitlements-token-purchases.test.js's forget-vs-claim
+ * race) — this was a real, evidenced gap (an independent review of the
+ * original CAS migration caught it), not a theoretical one. Exhaustion
+ * here stays non-fatal (logged by blobsCas.casWrite itself, nothing
+ * thrown) — same "harmless if this never lands" posture as before,
+ * preserved even though the write itself is now atomic.
  */
 async function forgetAppliedTokenPack(event, email, paymentId) {
   var key = normalizeEmail(email);
   if (!key) return;
-  var record = await getEntitlement(event, key);
-  var applied = (record && record.appliedTokenPackPaymentIds) || [];
-  if (applied.indexOf(paymentId) === -1) return;
-  await setEntitlement(event, key, {
-    appliedTokenPackPaymentIds: applied.filter(function (id) { return id !== paymentId; })
+  await blobsCas.casWrite(event, STORE_NAME, key, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    mutate: function (existing) {
+      var rec = existing || { email: key };
+      var applied = rec.appliedTokenPackPaymentIds || [];
+      if (applied.indexOf(paymentId) === -1) return blobsCas.SKIP; // already absent -- nothing to prune
+      return Object.assign({}, rec, {
+        email: key,
+        appliedTokenPackPaymentIds: applied.filter(function (id) { return id !== paymentId; }),
+        updatedAt: Date.now()
+      });
+    }
   });
+  // Result deliberately not inspected -- ok, skipped, and exhausted are
+  // all a normal, non-fatal outcome for purely-cosmetic housekeeping (see
+  // this function's own doc comment above). blobsCas.casWrite already
+  // logs an exhaustion for diagnostics; nothing further to do with it here.
 }
 
 // ============================================================================
@@ -2041,23 +2050,15 @@ async function refundTokensOnce(event, email, jobId, amount) {
  * left as-is by that same pass, see this function's own doc comment
  * above for why).
  *
- * Base balance/lastClaimAt/streak (2026-07-29 fix, tracker item
- * entitlements-js-retryingwrite-balance-mu-qxm1ih): same
- * `syncTokens`-then-`baseTokensForAttempt` discipline as
- * creditTokenPackAmountOnce — see either that function's own doc comment
- * or baseTokensForAttempt's for the full reasoning. In short: `syncedTokens`
- * (captured once, before the loop) still exists to (a) materialize a
- * brand-new email's INITIAL_GRANT before this record is ever touched here,
- * and (b) serve as attempt 0's ONLY trustworthy base in the narrow window
- * right after that same-call seed write, before it's had a chance to
- * propagate — but it is no longer reused verbatim on every later retry
- * attempt the way it used to be. Each attempt now re-derives its base from
- * THAT attempt's own fresh `rec.tokens` whenever `baseTokensForAttempt`
- * says it's safe to trust, so a real concurrent claimDailyTokens/
- * spendTokens/addTokens write landing on this SAME email's record between
- * this call's outer syncTokens read and a later retry attempt's
- * successful write is picked up and preserved, instead of being silently
- * reverted by a stale snapshot plus this function's own delta on top.
+ * Base balance/lastClaimAt/streak: same `syncTokens`-then-fallback
+ * discipline as creditTokenPackAmountOnce — see the retired-
+ * baseTokensForAttempt comment above that function for the full CAS
+ * reasoning. `syncedTokens` (captured once, before the loop) materializes
+ * a brand-new email's INITIAL_GRANT before this record is ever touched
+ * here, and serves as the fallback base whenever an attempt's own fresh
+ * read doesn't show a real record yet — safe on EVERY attempt now, not
+ * just the first, since a wrong guess can never actually commit under
+ * CAS (see lib/blobs-cas.js's own header comment).
  */
 async function refundTokenAmountOnce(event, email, jobId, amount) {
   var key = normalizeEmail(email);
@@ -2069,21 +2070,14 @@ async function refundTokenAmountOnce(event, email, jobId, amount) {
   }
 
   var syncedTokens = await syncTokens(event, key);
-  var attemptIndex = 0;
 
-  var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+  var result = await blobsCas.casWrite(event, STORE_NAME, key, {
     maxAttempts: MAX_CREDIT_ATTEMPTS,
-    read: function (evt) {
-      connectLambda(evt);
-      return store().get(key, { type: 'json' });
-    },
     mutate: function (existing) {
-      var currentAttempt = attemptIndex;
-      attemptIndex++;
       var rec = existing || { email: key };
       var refundedList = rec.refundedJobIds || [];
-      if (refundedList.indexOf(jobId) !== -1) return blobsRetry.SKIP; // already applied by an earlier attempt
-      var baseTokens = baseTokensForAttempt(currentAttempt, rec, syncedTokens);
+      if (refundedList.indexOf(jobId) !== -1) return blobsCas.SKIP; // already applied by an earlier attempt
+      var baseTokens = rec.tokens || syncedTokens;
       var newBalance = Math.min(MAX_TOKEN_BALANCE, baseTokens.balance + amount);
       return Object.assign({}, rec, {
         email: key,
@@ -2091,23 +2085,15 @@ async function refundTokenAmountOnce(event, email, jobId, amount) {
         refundedJobIds: refundedList.concat([jobId]),
         updatedAt: Date.now()
       });
-    },
-    verify: function (verifyRead) {
-      return !!(verifyRead && verifyRead.refundedJobIds && verifyRead.refundedJobIds.indexOf(jobId) !== -1);
     }
   });
 
   if (result.ok || result.skipped) return { ok: true }; // credited just now, or already applied by an earlier attempt
 
-  // Bonus confirmatory read, same reasoning as creditTokenPackAmountOnce's
-  // own — resolves the common "our write actually landed, only the
-  // verify-read lagged" case without ever reporting success when nothing
-  // was actually confirmed.
-  var finalRead = await getEntitlement(event, key);
-  var finalRefunded = (finalRead && finalRead.refundedJobIds) || [];
-  if (finalRefunded.indexOf(jobId) !== -1) return { ok: true };
-
-  throw new Error('refundTokenAmountOnce: exhausted attempts refunding jobId ' + jobId + ' for ' + key + ' without ever confirming the refund landed');
+  // Attempts exhausted — unambiguous under CAS, see
+  // creditTokenPackAmountOnce's own identical exhaustion comment for why
+  // no bonus confirmatory read is needed anymore.
+  throw new Error('refundTokenAmountOnce: exhausted attempts refunding jobId ' + jobId + ' for ' + key + ' — every conditional write was rejected');
 }
 
 /**
@@ -2116,19 +2102,33 @@ async function refundTokenAmountOnce(event, email, jobId, amount) {
  * `'committed'` (see refundTokensOnce) — at that point the marker record
  * is the sole durable source of truth for "already refunded" and this
  * per-email array no longer needs to remember it too. Mirrors
- * forgetAppliedTokenPack exactly (same reasoning, same "harmless if this
- * never runs" non-fatal cleanup). No-ops for an empty/missing email or a
- * jobId that isn't present.
+ * forgetAppliedTokenPack exactly, including going through blobsCas.casWrite
+ * rather than a plain setEntitlement call — see that function's own doc
+ * comment for the full "why CAS, not plain, even for low-frequency
+ * housekeeping" reasoning, which applies here identically. Purely a
+ * housekeeping step, not required for correctness (a lingering entry is
+ * harmless); a CAS exhaustion here stays non-fatal, logged by
+ * blobsCas.casWrite itself, never thrown. No-ops for an empty/missing
+ * email or a jobId that isn't present (checked fresh on every CAS attempt).
  */
 async function forgetRefundedJobId(event, email, jobId) {
   var key = normalizeEmail(email);
   if (!key) return;
-  var record = await getEntitlement(event, key);
-  var refunded = (record && record.refundedJobIds) || [];
-  if (refunded.indexOf(jobId) === -1) return;
-  await setEntitlement(event, key, {
-    refundedJobIds: refunded.filter(function (id) { return id !== jobId; })
+  await blobsCas.casWrite(event, STORE_NAME, key, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    mutate: function (existing) {
+      var rec = existing || { email: key };
+      var refunded = rec.refundedJobIds || [];
+      if (refunded.indexOf(jobId) === -1) return blobsCas.SKIP; // already absent -- nothing to prune
+      return Object.assign({}, rec, {
+        email: key,
+        refundedJobIds: refunded.filter(function (id) { return id !== jobId; }),
+        updatedAt: Date.now()
+      });
+    }
   });
+  // Result deliberately not inspected -- see forgetAppliedTokenPack's own
+  // identical closing comment.
 }
 
 // ============================================================================
@@ -2441,56 +2441,30 @@ async function applyAchievementGrantOnce(event, email, achievementId, grantSpec)
   var key = normalizeEmail(email);
   if (!key) return { ok: false };
 
-  // syncTokens-then-baseTokensForAttempt discipline shared with
-  // creditTokenPackAmountOnce/refundTokenAmountOnce — see
-  // baseTokensForAttempt's own doc comment for the full per-attempt rule.
-  // `syncedTokens` still exists to (a) materialize a brand-new email's
-  // INITIAL_GRANT before this record is ever touched here, and (b) serve
-  // as attempt 0's only trustworthy base in the narrow read-your-own-write
-  // window right after that same-call seed write. Needed for BOTH grant
-  // types, not just 'tokens': a 'capability' grant still rewrites the
-  // whole `tokens` sub-object unchanged (to preserve it against a stale
-  // read the same way spendTokens/addTokens already do), so it needs this
-  // same base too.
-  //
-  // FIXED 2026-07-29 (tracker item entitlements-js-retryingwrite-balance-
-  // mu-qxm1ih): this used to capture `syncedTokens` ONCE before the retry
-  // loop below, then reuse it verbatim on EVERY retry attempt for
-  // `lastClaimAt`/`streak`/the pre-grant `balance` base — unlike
-  // `nextCapabilities`, which already correctly re-derived from each
-  // attempt's own fresh `rec.capabilities` read. blobs-retry.js's own
-  // header comment documents a second/third attempt as a NORMAL occurrence
-  // (propagation lag), not a rare edge case, so a real `claimDailyTokens`/
-  // `spendTokens`/`addTokens`/pack-credit/refund write landing on this
-  // SAME email's record in that window could have its fresher
-  // `lastClaimAt`/`streak`/`balance` silently reverted by this function's
-  // stale snapshot plus its own delta on top. Now each attempt re-derives
-  // its base from THAT attempt's own fresh `rec.tokens` via
-  // baseTokensForAttempt whenever it's safe to trust one, matching
-  // `nextCapabilities`'s existing discipline — see that helper's own doc
-  // comment for the exact rule, and creditTokenPackAmountOnce's/
-  // refundTokenAmountOnce's doc comments for the identical fix applied to
-  // those two functions.
+  // syncTokens-then-fallback discipline shared with
+  // creditTokenPackAmountOnce/refundTokenAmountOnce — see the retired-
+  // baseTokensForAttempt comment above creditTokenPackAmountOnce for the
+  // full CAS reasoning. `syncedTokens` materializes a brand-new email's
+  // INITIAL_GRANT before this record is ever touched here, and serves as
+  // the fallback base (needed for BOTH grant types, not just 'tokens': a
+  // 'capability' grant still rewrites the whole `tokens` sub-object
+  // unchanged, to preserve it against a not-yet-visible read the same way
+  // spendTokens/addTokens already do) whenever an attempt's own fresh read
+  // doesn't show a real record yet — safe on every attempt under CAS, not
+  // just the first.
   var syncedTokens = await syncTokens(event, key);
-  var attemptIndex = 0;
 
-  var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+  var result = await blobsCas.casWrite(event, STORE_NAME, key, {
     maxAttempts: MAX_CREDIT_ATTEMPTS,
-    read: function (evt) {
-      connectLambda(evt);
-      return store().get(key, { type: 'json' });
-    },
     mutate: function (existing) {
-      var currentAttempt = attemptIndex;
-      attemptIndex++;
       var rec = existing || { email: key };
       var achievements = rec.achievements || {};
-      if (achievements[achievementId]) return blobsRetry.SKIP; // already applied by an earlier attempt
+      if (achievements[achievementId]) return blobsCas.SKIP; // already applied by an earlier attempt
 
       var now = Date.now();
       var ledgerEntry = { grantedAt: now, type: grantSpec.type };
       var nextAchievements = Object.assign({}, achievements);
-      var baseTokens = baseTokensForAttempt(currentAttempt, rec, syncedTokens);
+      var baseTokens = rec.tokens || syncedTokens;
       // `tokens` is carried through unchanged by default (same
       // "purely additive, never resets claim state" discipline
       // spendTokens/addTokens already apply) -- the 'tokens' branch below
@@ -2516,22 +2490,15 @@ async function applyAchievementGrantOnce(event, email, achievementId, grantSpec)
         capabilities: nextCapabilities,
         updatedAt: now
       });
-    },
-    verify: function (verifyRead) {
-      return !!(verifyRead && verifyRead.achievements && verifyRead.achievements[achievementId]);
     }
   });
 
   if (result.ok || result.skipped) return { ok: true }; // applied just now, or already applied by an earlier attempt
 
-  // Bonus confirmatory read, same reasoning as creditTokenPackAmountOnce's/
-  // refundTokenAmountOnce's own -- resolves the common "our write actually
-  // landed, only the verify-read lagged" case without ever reporting
-  // success when nothing was actually confirmed.
-  var finalRead = await getEntitlement(event, key);
-  if (finalRead && finalRead.achievements && finalRead.achievements[achievementId]) return { ok: true };
-
-  throw new Error('applyAchievementGrantOnce: exhausted attempts granting achievement ' + achievementId + ' for ' + key + ' without ever confirming the grant landed');
+  // Attempts exhausted — unambiguous under CAS, see
+  // creditTokenPackAmountOnce's own identical exhaustion comment for why
+  // no bonus confirmatory read is needed anymore.
+  throw new Error('applyAchievementGrantOnce: exhausted attempts granting achievement ' + achievementId + ' for ' + key + ' — every conditional write was rejected');
 }
 
 /**

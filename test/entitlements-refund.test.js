@@ -323,31 +323,34 @@ test('refundTokenAmountOnce is idempotent per jobId when called directly twice',
 
 // ----- Balance-base correctness + exhaustion-must-throw -----
 
-test("refundTokenAmountOnce bases the new balance on syncTokens' own returned value, not a stale independent re-read", async function () {
-  // Same three-call sequence entitlements-token-purchases.test.js's own
-  // equivalent test documents for creditTokenPackAmountOnce (identical
-  // structure — syncTokens then retryingWrite, both against STORE_NAME):
-  // call #1 is syncTokens' own getEntitlement (sees nothing, brand-new
-  // email); call #2 is that same first-ever-read branch's internal
-  // setEntitlement existing-read, persisting the signup grant; call #3 is
-  // refundTokenAmountOnce's own retryingWrite `read()` for its first
-  // attempt — the one this test actually targets, simulated as landing
-  // BEFORE the signup grant's write (from call #2) has propagated to it.
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
-    if (callIndex === 3) {
-      return { value: { email: key, tokens: { balance: 0, lastClaimAt: Date.now() - 100000 } } };
+// CAS REWRITE NOTE (mirrors entitlements-token-purchases.test.js's own
+// identical note for creditTokenPackAmountOnce): refundTokenAmountOnce now
+// goes through blobsCas.casWrite (lib/blobs-cas.js), whose reads are
+// getWithMetadata() calls — a get()-based setReadOverride no longer
+// intercepts anything on this path. Use setCasReadOverride instead, and
+// prove the CAS invariant directly: a stale read's conditional write is
+// atomically rejected, never silently committed.
+test("a stale first CAS read (observing a pre-signup-grant snapshot with a non-current etag) is atomically REJECTED, not silently committed — the retry lands on the real balance", async function () {
+  // Seed the record directly (bypassing syncTokens' own init branch
+  // entirely) so this test targets ONLY refundTokenAmountOnce's own
+  // casWrite loop.
+  await entitlements.setEntitlement({}, 'refundstaleread@example.com', { tokens: { balance: 320, lastClaimAt: Date.now() - 100000 } });
+
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 1) {
+      return { value: { data: { email: key, tokens: { balance: 0, lastClaimAt: Date.now() - 100000 } }, etag: 'stale-etag-will-never-match', metadata: {} } };
     }
-    return null; // fall through to the real stored value for every other call
+    return null; // fall through to the real current state
   });
 
   try {
     var result = await entitlements.refundTokenAmountOnce({}, 'refundstaleread@example.com', 'job_stale_read', 100);
-    assert.equal(result.ok, true);
+    assert.equal(result.ok, true, 'the retry must still succeed once a fresher attempt reads the real state');
 
     var record = await entitlements.getEntitlement({}, 'refundstaleread@example.com');
-    assert.equal(record.tokens.balance, 320 + 100, "balance must be 320 (Token Economy C's INITIAL_GRANT, from syncTokens' own in-memory return value) + 100 (this refund) — a buggy re-read-based implementation would compute 0 + 100 = 100 here, silently discarding the signup grant that had just landed");
+    assert.equal(record.tokens.balance, 320 + 100, 'balance must be 320 (the REAL pre-existing balance) + 100 (this refund) — attempt 1\'s stale-based write (0 + 100 = 100) must have been atomically rejected, never persisted');
   } finally {
-    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
   }
 });
 
@@ -381,8 +384,12 @@ test("genuine exhaustion applying the balance credit (refundTokenAmountOnce's ow
     email: email, amount: 100, status: 'pending', claimId: 'stale', createdAt: Date.now() - 5000
   });
 
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function () {
-    return { value: undefined };
+  // Every CAS read against the entitlement record comes back with an etag
+  // that can never match the real current one, so every attempt's
+  // conditional write is atomically rejected — genuine exhaustion, not a
+  // write that actually landed but went unobserved.
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key) {
+    return { value: { data: { email: key, tokens: { balance: 0 } }, etag: 'stale-etag-will-never-match', metadata: {} } };
   });
 
   try {
@@ -392,7 +399,7 @@ test("genuine exhaustion applying the balance credit (refundTokenAmountOnce's ow
       'genuine exhaustion applying the balance credit must throw too, not leave the marker pending forever with no way to resume'
     );
   } finally {
-    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
   }
 });
 
@@ -603,4 +610,86 @@ test("a genuinely concurrent claimDailyTokens write is NOT reverted by refundTok
   assert.equal(record.tokens.balance, 100 + entitlements.DAILY_CLAIM_AMOUNT + 50, 'both the claim (+20) and the refund (+50) must land -- the bug this fix closes would silently discard the claim, leaving only 100 + 50 = 150');
   assert.notEqual(record.tokens.lastClaimAt, pastCooldown, "the concurrent claim's fresh lastClaimAt must survive -- the bug this fix closes would silently revert it back to the pre-claim value");
   assert.equal(record.tokens.streak, 4, "the concurrent claim's bumped streak (3 -> 4) must survive, not get reverted back to 3");
+});
+
+// ----- forgetRefundedJobId racing a CAS'd writer for the SAME email: the
+// housekeeping cleanup must never revert a concurrent credit (independent
+// review finding on the CAS migration itself, fixed here) -----
+//
+// Mirrors entitlements-token-purchases.test.js's own equivalent
+// forgetAppliedTokenPack test exactly -- see that test's own doc comment
+// for the full mechanism and why both a read override (covering the
+// pre-fix plain `.get()` shape AND the post-fix CAS `.getWithMetadata()`
+// shape) and a `delay(0)` before starting forgetRefundedJobId are both
+// needed to make this reliable rather than occasional. Before this fix,
+// forgetRefundedJobId called setEntitlement -- a PLAIN, UNCONDITIONAL
+// read -> merge -> write, no etag, no CAS -- to prune a committed jobId
+// out of refundedJobIds; a concurrent CAS'd writer to the SAME email's
+// record (claimDailyTokens here) landing in the narrow window between
+// setEntitlement's own internal read and its own internal write had its
+// credit silently erased the same way forgetAppliedTokenPack's did.
+//
+// FAILS against the pre-fix code (confirmed directly against a stashed
+// copy of the pre-fix function during this fix's own development); PASSES
+// against the fix (forgetRefundedJobId's own first CAS attempt's
+// conditional write is atomically REJECTED once the real etag has moved
+// on, and blobsCas.casWrite's own loop retries with a fresh read).
+
+function delayTick() {
+  return new Promise(function (resolve) { setTimeout(resolve, 0); });
+}
+
+test("forgetRefundedJobId's housekeeping cleanup does NOT revert a concurrent claimDailyTokens credit (real Promise.all concurrency, forced-stale first read simulating eventual-consistency lag)", async function () {
+  for (var i = 0; i < 5; i++) {
+    mockBlobs.reset();
+    var email = 'forget-refund-race-claim-' + i + '@example.com';
+    var pastCooldown = Date.now() - (entitlements.CLAIM_COOLDOWN_MS + 60000);
+    var seedRecord = {
+      tokens: { balance: 50, lastClaimAt: pastCooldown, streak: 3 },
+      firstClaimAt: pastCooldown - 1000,
+      refundedJobIds: ['job_old']
+    };
+    await entitlements.setEntitlement({}, email, seedRecord);
+    // The genuinely stale pre-claim snapshot forgetRefundedJobId's own
+    // reads will be forced to see -- captured now, before either call
+    // below starts. Both call shapes are captured, since which one the
+    // current code actually calls is exactly what this test is agnostic
+    // to by design (see entitlements-token-purchases.test.js's own
+    // equivalent test for the full reasoning).
+    var stalePlain = await require('@netlify/blobs').getStore({ name: entitlements.STORE_NAME }).get(email, { type: 'json' });
+    var staleCas = await require('@netlify/blobs').getStore({ name: entitlements.STORE_NAME }).getWithMetadata(email, { type: 'json' });
+
+    mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key) {
+      if (new Error().stack.indexOf('forgetRefundedJobId') !== -1) return { value: stalePlain };
+      return null;
+    });
+    var forcedCasOnce = false;
+    mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key) {
+      if (!forcedCasOnce && new Error().stack.indexOf('forgetRefundedJobId') !== -1) {
+        forcedCasOnce = true;
+        return { value: staleCas };
+      }
+      return null;
+    });
+
+    var claimPromise = entitlements.claimDailyTokens({}, email);
+    var forgetPromise = delayTick().then(function () {
+      return entitlements.forgetRefundedJobId({}, email, 'job_old');
+    });
+
+    var results;
+    try {
+      results = await Promise.all([forgetPromise, claimPromise]);
+    } finally {
+      mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+      mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
+    }
+
+    var claim = results[1];
+    assert.equal(claim.claimed, true, 'trial ' + i + ': the concurrent claim must succeed');
+    var record = await entitlements.getEntitlement({}, email);
+    assert.equal(record.tokens.balance, 50 + claim.amountClaimed, 'trial ' + i + ": the claim's credit must survive forgetRefundedJobId's housekeeping write -- the bug this fix closes would silently revert it back to 50");
+    assert.notEqual(record.tokens.lastClaimAt, pastCooldown, 'trial ' + i + ": the claim's fresh lastClaimAt must survive too, not just its balance delta");
+    assert.deepEqual(record.refundedJobIds, [], 'trial ' + i + ': the housekeeping prune must still land once the stale attempt is rejected and retried with a fresh read');
+  }
 });

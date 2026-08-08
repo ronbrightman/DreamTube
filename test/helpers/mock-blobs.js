@@ -30,17 +30,29 @@
 // `reset()` clears everything between tests so one test's writes can't
 // leak into another's.
 //
-// CAS SUPPORT (`{ onlyIfNew: true }`, added for the same tracker item):
-// mirrors the real 10.x SDK's own documented contract (see
+// CAS SUPPORT (`{ onlyIfNew: true }` / `{ onlyIfMatch: etag }`): mirrors the
+// real 10.x SDK's own documented contract (see
 // node_modules/blobs10/dist/main.d.ts's SetOptions/WriteResult, and
 // dist/main.cjs's Store.setJSON) — a conditional write either resolves
-// with `{ modified: true, etag }` (the key didn't exist, ours now does) or
-// `{ modified: false }` (the key already existed, write atomically
-// rejected) — it NEVER throws for an ordinary "already exists" collision,
-// only for a genuine transport/server failure (simulated here the same way
-// as every unconditional write, via setWriteOverride). `{ onlyIfMatch }`
-// (etag-based conditional update) is intentionally NOT implemented here —
-// neither rewritten store uses it, only `onlyIfNew` (fresh-claim creation).
+// with `{ modified: true, etag }` (the precondition held: the key didn't
+// exist yet for `onlyIfNew`, or its current etag matched for `onlyIfMatch`)
+// or `{ modified: false }` (the precondition failed — key already existed,
+// or the etag didn't match — write atomically rejected) — it NEVER throws
+// for an ordinary precondition-failure collision, only for a genuine
+// transport/server failure (simulated here the same way as every
+// unconditional write, via setWriteOverride).
+//
+// `onlyIfMatch` (added for lib/blobs-cas.js, entitlements.js's/
+// like-dream.js's real read-getWithMetadata-etag -> write-onlyIfMatch-etag
+// migration) needs every key to carry a REAL, write-tracking etag rather
+// than the single hardcoded 'mock-etag' string getWithMetadata used to
+// always return regardless of how many times a key had been written —
+// under that constant, two different writes could never be told apart by
+// etag, which would make an onlyIfMatch check meaningless (every write
+// would "match" every stale read). `etagsFor(name)` tracks a real,
+// monotonically-incrementing etag per (storeName, key), bumped on every
+// successful write (unconditional, onlyIfNew, or onlyIfMatch) and cleared
+// on delete() — see below.
 
 var stores = {};
 
@@ -69,6 +81,21 @@ var metaStores = {};
 // would never reach those already-bound locals, only mutating this
 // function's own behavior does.
 var readOverrides = {};
+
+// Per-store CAS-read overrides — the getWithMetadata()-side counterpart to
+// readOverrides above, kept deliberately SEPARATE rather than folded into
+// the same mechanism/call-count: get() and getWithMetadata() are now used
+// by genuinely different call sites within the SAME request in some code
+// paths (e.g. entitlements.js's syncTokens still does a plain get() while
+// claimDailyTokens' own CAS loop does getWithMetadata() against the SAME
+// store) — sharing one override+callCount between them would make a test's
+// "intercept the Nth call" reasoning depend on interleaving between two
+// independently-evolving call sites, which is exactly the kind of coupling
+// this file's existing per-hazard-layer design (readOverrides vs
+// writeOverrides vs resultOverrides) already avoids elsewhere. Keyed by
+// storeName -> { fn, callCount }, same closure-scoped-not-on-exports
+// reasoning as readOverrides.
+var casReadOverrides = {};
 
 // Per-store write overrides — the write-side counterpart to readOverrides
 // above, for tests simulating a Blobs write failure (e.g. a quota error, a
@@ -108,6 +135,24 @@ function metaStoreFor(name) {
   return metaStores[name];
 }
 
+// Per-store real-write-tracking etag map (storeName -> Map(key -> etag
+// string)) — see this file's header comment ("CAS SUPPORT") for why this
+// exists as real, per-write-unique state rather than a hardcoded constant.
+var etagStores = {};
+
+function etagStoreFor(name) {
+  if (!etagStores[name]) etagStores[name] = new Map();
+  return etagStores[name];
+}
+
+/** Bumps and records a fresh etag for (name, key) after a real write; returns the new etag. */
+function bumpEtag(name, key) {
+  etagCounter++;
+  var etag = 'mock-etag-' + etagCounter;
+  etagStoreFor(name).set(key, etag);
+  return etag;
+}
+
 function fakeGetStore(opts) {
   // Real @netlify/blobs' getStore() accepts either a plain string (treated
   // as the store name — see request-password-reset.js/verify-password-
@@ -145,22 +190,30 @@ function fakeGetStore(opts) {
         var substituted = resultOverride.fn(key, value, options, resultOverride.callCount);
         if (substituted) return substituted.result;
       }
-      // CAS path (`{ onlyIfNew: true }`, blobs10 only — see this file's
-      // header comment): the real SDK never throws for an ordinary
-      // "already exists" collision, it resolves with `modified: false`
-      // instead. Mirrored exactly here, ahead of the unconditional
-      // fallthrough below.
+      // CAS path (`{ onlyIfNew: true }` / `{ onlyIfMatch: etag }`, blobs10
+      // only — see this file's header comment): the real SDK never throws
+      // for an ordinary precondition-failure collision, it resolves with
+      // `modified: false` instead. Mirrored exactly here, ahead of the
+      // unconditional fallthrough below.
       if (options && options.onlyIfNew) {
         if (map.has(key)) return { modified: false };
         map.set(key, value);
-        etagCounter++;
-        return { modified: true, etag: 'mock-etag-' + etagCounter };
+        return { modified: true, etag: bumpEtag(name, key) };
+      }
+      if (options && options.onlyIfMatch) {
+        if (!map.has(key)) return { modified: false }; // nothing to match an etag against
+        var currentEtag = etagStoreFor(name).get(key);
+        if (currentEtag !== options.onlyIfMatch) return { modified: false }; // stale/losing write
+        map.set(key, value);
+        return { modified: true, etag: bumpEtag(name, key) };
       }
       map.set(key, value);
+      bumpEtag(name, key); // tracked even for an unconditional write, so a LATER onlyIfMatch read/write against this key still sees a real, current etag
     },
     delete: async function (key) {
       map.delete(key);
       metaStoreFor(name).delete(key);
+      etagStoreFor(name).delete(key);
     },
     // Binary write, mirroring real @netlify/blobs' Store.set(key, data,
     // {metadata}) — see this file's header comment on `metaStores`. `data`
@@ -175,24 +228,39 @@ function fakeGetStore(opts) {
       }
       map.set(key, data);
       metaStoreFor(name).set(key, (options && options.metadata) || {});
+      bumpEtag(name, key);
     },
     // Mirrors real @netlify/blobs' Store.getMetadata(key): { etag,
     // metadata } if the key exists (via either set() or setJSON()), null
     // if not — see this file's header comment.
     getMetadata: async function (key) {
       if (!map.has(key)) return null;
-      return { etag: 'mock-etag', metadata: metaStoreFor(name).get(key) || {} };
+      return { etag: etagStoreFor(name).get(key) || 'mock-etag', metadata: metaStoreFor(name).get(key) || {} };
     },
     // Mirrors real @netlify/blobs' Store.getWithMetadata(key, {type}):
     // { data, etag, metadata } if the key exists, null if not. `type` is
     // ignored here (unlike the real SDK, which converts based on it) —
-    // every real call site in this codebase (video-file.mjs/image-file.mjs)
-    // just hands `data` straight to a Response constructor, which accepts
-    // the raw ArrayBuffer/Buffer this mock already stores just as well as
-    // it would a real stream.
+    // real call sites hand `data` straight either to a Response constructor
+    // (video-file.mjs/image-file.mjs, an ArrayBuffer/Buffer) or into
+    // lib/blobs-cas.js's own CAS read (a plain JSON value) — this mock's
+    // raw stored value already works for both.
+    //
+    // CAS-read override (casReadOverrides, see this file's header comment
+    // on why this is a SEPARATE mechanism from readOverrides): `fn(key,
+    // callIndex)` returning `{ value }` substitutes the ENTIRE resolved
+    // value (`{ data, etag, metadata }` or `null`) for this call, letting a
+    // test simulate a stale/lagging CAS read independently of get()'s own
+    // override. A falsy return falls through to the real current state,
+    // exactly like readOverrides' own contract.
     getWithMetadata: async function (key) {
+      var override = casReadOverrides[name];
+      if (override) {
+        override.callCount++;
+        var result = override.fn(key, override.callCount);
+        if (result) return result.value;
+      }
       if (!map.has(key)) return null;
-      return { data: map.get(key), etag: 'mock-etag', metadata: metaStoreFor(name).get(key) || {} };
+      return { data: map.get(key), etag: etagStoreFor(name).get(key) || 'mock-etag', metadata: metaStoreFor(name).get(key) || {} };
     },
     // Minimal stand-in for real @netlify/blobs' list() — added for
     // tracker item for-product-build-stage-0-pwa-web-push-f-jbutt5's
@@ -254,6 +322,31 @@ function clearReadOverride(storeName) {
 }
 
 /**
+ * Installs a temporary override on every getWithMetadata() call against
+ * `storeName` — the CAS-read counterpart to setReadOverride above, kept as
+ * its own mechanism/call-count (see this file's header comment on
+ * `casReadOverrides` for why). `fn(key, callIndex)` (callIndex starts at 1,
+ * incrementing per getWithMetadata() against this store since the override
+ * was installed) is called on every CAS read; if it returns `{ value }`,
+ * that value (a `{ data, etag, metadata }` object, or `null`) is returned
+ * instead of the real current state — use this to simulate a CAS read
+ * observing a STALE etag (a real hazard: the read side of Blobs is still
+ * only eventually consistent even though the write side now has real
+ * compare-and-swap — see lib/blobs-cas.js's own header comment). Returning
+ * a falsy value falls through to the real current state for that call.
+ * Call clearCasReadOverride (or reset(), which clears all overrides too)
+ * when done.
+ */
+function setCasReadOverride(storeName, fn) {
+  casReadOverrides[storeName] = { fn: fn, callCount: 0 };
+}
+
+/** Removes a single store's CAS-read override, if any. */
+function clearCasReadOverride(storeName) {
+  delete casReadOverrides[storeName];
+}
+
+/**
  * Installs a temporary override on every setJSON() call against
  * `storeName`: `fn(key, value, callIndex)` (callIndex starts at 1) is
  * called on every write; returning a truthy value (an Error, or any
@@ -299,16 +392,24 @@ function fakeConnectLambda() {
   // above works with no credentials at all.
 }
 
-/** Directly seeds a value into a given store's key — used by tests that need to arrange pre-existing state (e.g. "this IP already hit today's rate limit") without going through a handler first. */
+/** Directly seeds a value into a given store's key — used by tests that need to arrange pre-existing state (e.g. "this IP already hit today's rate limit") without going through a handler first. Bumps a real etag too, same as a real write, so a seeded key is immediately usable as the base of a CAS onlyIfMatch write/read. */
 function seed(storeName, key, value) {
   storeFor(storeName).set(key, value);
+  bumpEtag(storeName, key);
+}
+
+/** Returns the real, currently-tracked etag for (storeName, key), or undefined if the key has never been written. Lets a test's own setCasReadOverride report an accurate etag alongside a substituted/cloned value — see e.g. test/like-dream.test.js's installIndependentReadsForStore. */
+function getEtag(storeName, key) {
+  return etagStoreFor(storeName).get(key);
 }
 
 /** Clears all fake store state, including any read/write/result overrides. Call between tests. */
 function reset() {
   stores = {};
   metaStores = {};
+  etagStores = {};
   readOverrides = {};
+  casReadOverrides = {};
   writeOverrides = {};
   resultOverrides = {};
 }
@@ -332,8 +433,9 @@ function install() {
 }
 
 module.exports = {
-  install, reset, seed,
+  install, reset, seed, getEtag,
   setReadOverride, clearReadOverride,
+  setCasReadOverride, clearCasReadOverride,
   setWriteOverride, clearWriteOverride,
   setResultOverride, clearResultOverride
 };

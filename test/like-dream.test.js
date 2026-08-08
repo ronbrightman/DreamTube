@@ -192,10 +192,18 @@ test('a plain (non-@-prefixed) handle is used as-is for distinct_id (stripHandle
 // reason) — but see the "FORCED, deterministic race" test further down for
 // the one that actually distinguishes old vs. new: it breaks the mock's
 // reference-sharing explicitly, mirroring the real Netlify Blobs semantics
-// every read/write actually has, using the same setReadOverride/
-// setWriteOverride technique test/entitlements-token-purchases.test.js and
-// test/automatic-first-dream-email.test.js already use for hazards a plain
-// synchronous Map can't otherwise reproduce.
+// every read/write actually has.
+//
+// CAS REWRITE NOTE (tracker item for-product-p1-urgent-fresh-signup-can-d-
+// qhrrqy's follow-up): like-dream.js now goes through blobsCas.casWrite
+// (lib/blobs-cas.js), whose reads are getWithMetadata() calls — a
+// get()-based setReadOverride no longer intercepts them (see
+// test/helpers/mock-blobs.js's own header comment on why this is a
+// SEPARATE mechanism, setCasReadOverride/clearCasReadOverride). setJSON()
+// itself IS still intercepted by setWriteOverride regardless of which
+// "SDK" made the call (both @netlify/blobs and blobs10 resolve to the
+// SAME fake store internals) — only the READ side of the old technique
+// needed updating below.
 // ============================================================================
 
 test('CONCURRENCY: two concurrent delta:1 likes on the SAME dream both land -- the count reflects both, neither clobbers the other', async function () {
@@ -252,18 +260,21 @@ test('CONCURRENCY: three concurrent delta:1 likes on the same dream all land', a
 
 /**
  * Installs the real-Blobs-fidelity fix described in the CONCURRENCY block's
- * header comment above: every get() against `storeName` returns a fresh,
- * independent deep clone of whatever was actually most recently written
- * (or the value present at install time, for reads before any write),
- * instead of the mock's default shared-reference behavior. Tracks "what
- * was actually written" via setWriteOverride (which still lets the real
- * write happen -- it only OBSERVES the value, via a falsy return) rather
- * than needing raw access to the mock's private store map. This is what
- * makes two concurrent handler() calls behave like two genuinely separate
- * Netlify Function invocations reading a real, physically deserialized
- * Blobs value, instead of accidentally sharing one in-process object.
- * Callers MUST call the returned `uninstall()` when done (mirrors every
- * other override's clear pattern).
+ * header comment above: every getWithMetadata() CAS read against
+ * `storeName` returns a fresh, independent deep clone of whatever was
+ * actually most recently written (or the value present at install time,
+ * for reads before any write), paired with the REAL current etag (via
+ * mockBlobs.getEtag — necessary so the CAS write this clone feeds into
+ * still succeeds/fails exactly as it should; only the VALUE's object
+ * identity is being forced independent here, not the etag's correctness).
+ * Tracks "what was actually written" via setWriteOverride (which still
+ * lets the real write happen -- it only OBSERVES the value, via a falsy
+ * return) rather than needing raw access to the mock's private store map.
+ * This is what makes two concurrent handler() calls behave like two
+ * genuinely separate Netlify Function invocations reading a real,
+ * physically deserialized Blobs value, instead of accidentally sharing one
+ * in-process object. Callers MUST call the returned `uninstall()` when
+ * done (mirrors every other override's clear pattern).
  */
 function installIndependentReadsForStore(storeName) {
   var groundTruth = null;
@@ -271,13 +282,13 @@ function installIndependentReadsForStore(storeName) {
     groundTruth = value;
     return false; // let the real write proceed
   });
-  mockBlobs.setReadOverride(storeName, function () {
-    return { value: JSON.parse(JSON.stringify(groundTruth)) };
+  mockBlobs.setCasReadOverride(storeName, function (key) {
+    return { value: { data: JSON.parse(JSON.stringify(groundTruth)), etag: mockBlobs.getEtag(storeName, key), metadata: {} } };
   });
   return {
     seedGroundTruth: function (value) { groundTruth = value; },
     uninstall: function () {
-      mockBlobs.clearReadOverride(storeName);
+      mockBlobs.clearCasReadOverride(storeName);
       mockBlobs.clearWriteOverride(storeName);
     }
   };
@@ -303,35 +314,37 @@ test('CONCURRENCY (FORCED, deterministic race -- the actual negative-proof test)
   var store = getStore('dreamtube-feed');
   var finalFeed = await store.get('feed-index', { type: 'json' });
   var finalDream = finalFeed.filter(function (d) { return d.id === 'dream-race-forced'; })[0];
-  assert.equal(finalDream.likes, 12, 'both concurrent likes must be reflected (10 + 1 + 1) against a store whose reads behave like real, independently-deserialized Netlify Blobs reads -- this is the test that actually fails against the pre-fix whole-array-RMW-with-no-retry implementation (final lands at 11, one like clobbered) and passes once like-dream.js retries+verifies via lib/blobs-retry.js');
+  assert.equal(finalDream.likes, 12, 'both concurrent likes must be reflected (10 + 1 + 1) against a store whose CAS reads behave like real, independently-deserialized Netlify Blobs reads -- this is the test that actually fails against the pre-fix whole-array-RMW-with-no-retry implementation (final lands at 11, one like clobbered) and passes once like-dream.js goes through lib/blobs-cas.js\'s real compare-and-swap write');
 });
 
-// A false-negative verify (our own just-written likes count not yet
-// visible to the verify-read) must NOT double-apply the delta on retry --
-// see lib/blobs-retry.js's own header comment on why a naive "read
-// current, add delta" mutate is unsafe under its retry contract. This
-// mirrors test/entitlements-token-purchases.test.js's own stale-read
+// CAS REWRITE (tracker item for-product-p1-urgent-fresh-signup-can-d-
+// qhrrqy's follow-up): this used to prove a false-negative VERIFY-READ
+// (our own just-written likes count not yet visible to the verify-read,
+// under the old blobsRetry.retryingWrite loop) doesn't double-apply the
+// delta on retry — a hazard that no longer exists under real CAS (there is
+// no separate verify-read anymore; a write either fully commits or is
+// atomically rejected and never persists, so there's no "maybe my own
+// write already landed" ambiguity a later attempt could double-apply
+// against — see like-dream.js's own header comment). What replaces it: a
+// stale FIRST read (an old snapshot, with a non-current etag) must have
+// its conditional write atomically REJECTED, and the retry must land
+// correctly against the real state — not silently commit a wrong number
+// computed from the stale base. Mirrors
+// test/entitlements-token-purchases.test.js's own equivalent CAS
 // regression test for creditTokenPackAmountOnce.
-test('a verify-read that falsely reports our own just-applied write as invisible does not double-apply the delta on retry', async function () {
+test('a stale first CAS read (an old likes snapshot with a non-current etag) is atomically REJECTED, not silently committed -- the retry lands on the real, current count', async function () {
   await seedFeedDream({ id: 'dream-false-negative', ownerHandle: '@owner-fn', likes: 5 });
   installPostHogSpy();
 
-  // Force the FIRST verify-read (the read right after the write) to look
-  // stale (still showing the pre-write feed), so the loop retries. The
-  // retry's own fresh read then sees the real, already-incremented state.
-  // A mutate that blindly recomputed "current + delta" from that fresh
-  // read would double-apply here (5 -> 6 -> 7); the fix must recognize its
-  // own already-applied write and not add the delta twice.
-  var callCount = 0;
-  mockBlobs.setReadOverride('dreamtube-feed', function (key, callIndex) {
-    callCount++;
-    // Only intercept the SECOND get() call against this store for this
-    // request (the first is the loop's own initial `read`, which must see
-    // the real seeded state; the second is the write's immediate
-    // verify-read) -- fall through to the real value everywhere else,
-    // including every subsequent attempt's read/verify.
-    if (callIndex === 2) {
-      return { value: [{ id: 'dream-false-negative', ownerHandle: '@owner-fn', likes: 5 }] };
+  // Attempt 1 observes a snapshot that looks plausible (matching the real
+  // seeded state) but carries an etag that can never match the record's
+  // real current one -- as if a genuinely concurrent write had already
+  // landed between this read and the real current state. Every later
+  // attempt falls through to the real, current state (and its real,
+  // matching etag).
+  mockBlobs.setCasReadOverride('dreamtube-feed', function (key, callIndex) {
+    if (callIndex === 1) {
+      return { value: { data: [{ id: 'dream-false-negative', ownerHandle: '@owner-fn', likes: 5 }], etag: 'stale-etag-will-never-match', metadata: {} } };
     }
     return null;
   });
@@ -340,9 +353,9 @@ test('a verify-read that falsely reports our own just-applied write as invisible
     var res = await handler(postEvent({ id: 'dream-false-negative', delta: 1, likerHandle: '@liker-fn' }));
     assert.equal(res.statusCode, 200);
     var body = JSON.parse(res.body);
-    assert.equal(body.likes, 6, 'a false-negative verify must not cause the delta to be applied twice');
+    assert.equal(body.likes, 6, 'the retry must land on the real state (5 + 1 = 6), not double-apply or silently commit a wrong base');
   } finally {
-    mockBlobs.clearReadOverride('dreamtube-feed');
+    mockBlobs.clearCasReadOverride('dreamtube-feed');
   }
 
   var store = getStore('dreamtube-feed');

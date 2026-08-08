@@ -374,159 +374,136 @@ test('three CONCURRENT claimDailyTokens calls for the SAME email still land exac
 // earlier, in the SKIP branch, which is actually the more likely path to
 // hit this exact self-clobber (it returns on the very next attempt, not
 // only after every attempt is exhausted).
-test('a single claim call whose OWN verify-read lags, then loops into a fresh read that sees its own just-committed write, still reports claimed:true (not a false claimed:false self-clobber)', async function () {
+// ── CAS REWRITE NOTE (tracker item for-product-p1-urgent-fresh-signup-
+//    can-d-qhrrqy's follow-up: the @netlify/blobs 10.x conditional-write
+//    migration) ──
+// claimDailyTokens now goes through blobsCas.casWrite (lib/blobs-cas.js)
+// instead of blobsRetry.retryingWrite — a REAL compare-and-swap write
+// (onlyIfNew/onlyIfMatch) replaces the old read -> mutate -> write ->
+// verify loop. The three tests this section used to hold (a
+// "self-clobbering SKIP" false negative, a read-your-own-write race on a
+// just-seeded account, and a propagation-lag exhaustion scenario) all
+// targeted a get()-based read/verify hazard that a get()-based
+// setReadOverride could intercept — claimDailyTokens' own reads are now
+// getWithMetadata() calls (a SEPARATE mock mechanism, setCasReadOverride —
+// see test/helpers/mock-blobs.js's own header comment on why). The
+// self-clobber scenario is gone entirely under real CAS (see
+// claimDailyTokens' own doc comment: a CAS write's `modified` result is
+// unambiguous, so there is no "was this actually my own write" question
+// left to misread as a false SKIP) — replaced below with the genuinely
+// new invariant CAS provides: a stale read's conditional write is
+// atomically REJECTED, never silently committed on a wrong base.
+
+test("a stale first CAS read (observing a pre-claim snapshot with a non-current etag) is atomically REJECTED, not silently committed — the retry lands claimed:true against the real state", async function () {
   var ev = fakeEvent({ ip: nextIp() });
   var email = 'selflag@example.com';
   await entitlements.setEntitlement(ev, email, { tokens: { balance: 0, lastClaimAt: Date.now() - (25 * HOUR_MS) } });
 
-  // Call #1 against this store is syncTokens' own getEntitlement (record
-  // already has tokens, so no seeding write follows). Call #2 is
-  // retryingWrite's attempt-1 read() (genuinely sees the not-yet-claimed
-  // record). Call #3 is attempt-1's own verify-read, right after its
-  // setJSON -- simulate it NOT seeing that just-committed write yet
-  // (`{value: undefined}`), forcing a loop to attempt 2. Every other call
-  // (attempt-2's read, its own verify) falls through to the real stored
-  // value, which by then genuinely contains attempt-1's committed write.
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
-    if (callIndex === 3) return { value: undefined };
-    return null;
+  // Attempt 1 of claimDailyTokens' own casWrite loop observes a snapshot
+  // that LOOKS claimable (matching the real pre-claim state) but carries
+  // an etag that can never match the record's real current one — as if a
+  // genuinely concurrent write had already landed between this read and
+  // the real current state. The resulting conditional write must be
+  // rejected, not committed, and the next attempt must retry against the
+  // real state instead.
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 1) {
+      return { value: { data: { email: key, tokens: { balance: 0, lastClaimAt: Date.now() - (25 * HOUR_MS) } }, etag: 'stale-etag-will-never-match', metadata: {} } };
+    }
+    return null; // fall through to the real current state
   });
 
   try {
     var result = await entitlements.claimDailyTokens(ev, email);
-    assert.equal(result.claimed, true, 'the claim genuinely landed on attempt 1 -- a self-clobbering SKIP on attempt 2 must not report this as claimed:false');
+    assert.equal(result.claimed, true, 'the claim must still land once a fresher attempt reads the real state');
     assert.equal(result.balance, 20);
     assert.equal(result.streak, 1);
   } finally {
-    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
   }
 
   var record = await entitlements.getEntitlement(ev, email);
   assert.equal(record.tokens.balance, 20, 'exactly one credit must have landed, not zero and not two');
 });
 
-// BUG 2 (tracker item for-product-daily-claim-bugs-founder-rea-kei2ub,
-// 2026-07-28): a real, genuinely eligible user tapped Claim and got
-// "Couldn't claim right now -- try again in a moment". Root cause:
-// blobs-retry.js's retryingWrite used to fire all `maxAttempts` (3 for
-// this call site) back-to-back with ZERO elapsed real time between them,
-// against a store this codebase's own docs (entitlements.js's header
-// comment) say can lag up to ~60s under real eventual consistency. Three
-// attempts within the same handful of milliseconds gives that lag no
-// real window to resolve, so a verify-read (or even a plain read()) can
-// plausibly keep missing an already-committed write on every single
-// attempt -- exhausting the loop and throwing, even though the claim
-// itself would have genuinely succeeded if only the next attempt had
-// waited a little.
-//
-// This test simulates exactly that: EVERY read against this store (both
-// the loop's own read() and its verify-read) is intercepted to keep
-// returning the OLD, pre-claim snapshot -- "this read hasn't picked up
-// the just-written update yet, it's still returning whatever was already
-// converged before" -- for a fixed real-time LAG_MS window since the
-// test started, then falls through to the real, already-committed data
-// once that window has elapsed. This models propagation lag as a
-// function of genuine wall-clock time, the one thing a synchronous
-// in-memory mock can't otherwise reproduce (nothing here behaves
-// differently just because more *attempts* happened -- only real elapsed
-// time resolves it). With the OLD zero-delay behavior, all 3 attempts
-// (plus the final catch-up read) fire within milliseconds -- nowhere
-// near enough real time to clear LAG_MS -- so every one of them keeps
-// seeing the stale pre-claim snapshot and the claim throws. With the
-// fix's real inter-attempt delay, by the 3rd attempt enough wall-clock
-// time has genuinely passed for a fresh read to see the already-
-// committed write (recognized as this call's own attemptId, so it
-// reports claimed:true via the existing self-clobber/SKIP handling —
-// see claimDailyTokens' own doc comment) -- succeeding where the
-// zero-delay version would have exhausted.
 // Tracker item for-product-bug-founder-repro-high-brand-1dtzdc (founder
 // repro, 2026-08-01): a brand-new account's very first daily-claim attempt,
 // fired seconds after signup (home.html's auto-open-right-after-signup
-// flow), silently lost its signup grant. Root cause: unlike
-// creditTokenPackAmountOnce/refundTokenAmountOnce/applyAchievementGrantOnce
-// (all fixed 2026-07-29, tracker item entitlements-js-retryingwrite-
-// balance-mu-qxm1ih, via baseTokensForAttempt/syncedTokens -- see that
-// helper's own doc comment), claimDailyTokens discarded syncTokens' return
-// value entirely and let its retryingWrite `mutate` read balance straight
-// off `rec.tokens` on EVERY attempt, including attempt 0. For a genuinely
-// brand-new email, syncTokens' own first-ever-read branch JUST wrote the
-// INITIAL_GRANT seed (320 as of the 2026-08-01 economy bump, tracker
-// xostu6) moments earlier in this SAME call -- and Netlify Blobs has no
-// read-your-own-write guarantee (this file's own header comment, and
-// syncTokens' `justSeeded` doc comment, both document this exact hazard).
-// So attempt 0's fresh read can legitimately still show the pre-seed
-// (null/no-tokens) record, and the claim gets computed off a phantom
-// balance of 0 instead of the real seeded balance -- silently discarding
-// the signup grant the instant this account's first-ever claim lands, even
-// though the claim itself reports `claimed:true` (no error, no visible
-// failure -- the balance is just quietly wrong).
-test('a claim on a JUST-SEEDED brand-new account, whose own retry loop does not yet see syncTokens\' own seeding write (Netlify Blobs read-your-own-write hazard), still credits off the REAL seeded balance -- must not silently drop the signup grant', async function () {
+// flow), silently lost its signup grant under the pre-CAS implementation.
+// Under real CAS this can no longer happen even in principle: a claim
+// attempt built off a stale/wrong balance guess can never actually commit
+// (its conditional write is atomically rejected the instant the record's
+// real state doesn't match) — this test proves that directly rather than
+// merely proving the end-to-end amount happens to come out right.
+test("a claim whose OWN first CAS read does not yet see the real, already-seeded signup grant (a stale read landing just before propagation) is atomically REJECTED and retries against the real balance -- must not silently drop the signup grant", async function () {
   var ev = fakeEvent({ ip: nextIp() });
   var email = 'freshaccountrace@example.com';
 
-  // No prior setEntitlement/getTokenStatus call -- this IS syncTokens'
-  // first-ever-read branch, run from inside claimDailyTokens itself,
-  // exactly like home.html's auto-open claim firing before (or racing) any
-  // separate get-token-status.js read has propagated.
-  var testStart = Date.now();
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
-    // callIndex 1 is syncTokens' own pre-seed getEntitlement read -- the
-    // record genuinely doesn't exist yet, so falling through to the real
-    // (empty) map is correct and not part of the hazard being simulated.
-    if (callIndex === 1) return null;
-    // Everything from callIndex 2 onward (the retryingWrite loop's own
-    // read() and every verify-read) simulates NOT seeing syncTokens' own
-    // just-committed seed write yet, for a short real-time window -- the
-    // read-your-own-write gap this test targets. Falls through to the real
-    // (by-then-genuinely-committed) value once the window passes, so the
-    // claim can still eventually succeed rather than hanging forever.
-    if (Date.now() - testStart < 50) return { value: undefined };
-    return null;
+  // Seed the record for REAL first (syncTokens' own init branch, run to
+  // genuine completion) -- mirrors claimDailyTokens always awaiting its
+  // own outer syncTokens() call before its casWrite loop ever starts, so
+  // by the time that loop runs the real 320-token grant already exists
+  // server-side.
+  await entitlements.getTokenStatus(ev, email);
+
+  // Force claimDailyTokens' own FIRST casWrite attempt to see NOTHING, as
+  // if the real, already-committed record hadn't propagated to this read
+  // yet -- since the key genuinely exists, the resulting onlyIfNew write
+  // is atomically rejected, and the loop retries against a fresh read.
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 1) return { value: null };
+    return null; // fall through to the real current state
   });
 
   try {
     var result = await entitlements.claimDailyTokens(ev, email);
-    assert.equal(result.claimed, true, 'the claim should still succeed once the retry loop catches up');
+    assert.equal(result.claimed, true, 'the claim should still succeed once the retry catches up');
     assert.equal(result.amountClaimed, 100, 'first-ever claim bonus');
-    assert.equal(result.balance, 420, '320 (signup grant, already seeded moments earlier in this same call) + 100 (first-ever-claim bonus) -- must NOT silently drop the signup grant just because attempt 0\'s own read raced its own seeding write');
+    assert.equal(result.balance, 420, '320 (real signup grant, already committed before this loop started) + 100 (first-ever-claim bonus) -- must NOT silently drop the signup grant just because attempt 1\'s own read raced the real, already-committed state');
   } finally {
-    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
   }
 
   var record = await entitlements.getEntitlement(ev, email);
   assert.equal(record.tokens.balance, 420, 'the persisted record must reflect the real seeded balance too, not just this call\'s return value');
 });
 
-test('a read() (and its verify-read) that keeps returning the stale pre-claim snapshot for a real ~250ms propagation-lag window still lands the claim once the fix\'s inter-attempt delay gives it enough real time -- proving the delay does something a synchronous mock can\'t fake by attempt count alone', async function () {
+test("a first CAS read that keeps returning the stale pre-claim snapshot for a real ~250ms propagation-lag window still lands the claim once the fix's inter-attempt delay gives it enough real time -- proving the delay does something a synchronous mock can't fake by attempt count alone", async function () {
   var ev = fakeEvent({ ip: nextIp() });
   var email = 'propagationlag@example.com';
   // 25h ago -- comfortably past the 20h cooldown, so this is genuinely
   // claimable regardless of how any individual read is intercepted below.
   await entitlements.setEntitlement(ev, email, { tokens: { balance: 100, lastClaimAt: Date.now() - (25 * HOUR_MS), streak: 4 } });
-  var preClaimRecord = await entitlements.getEntitlement(ev, email);
 
   var testStart = Date.now();
   var LAG_MS = 250;
-  // callIndex 1 is syncTokens' own pre-claim getEntitlement read, made
-  // before any write in this call -- letting it through as-is is
-  // equivalent to returning preClaimRecord anyway (nothing has been
-  // written yet at that point), just written this way to make the "call
-  // 1 is special" reasoning explicit. Every read from callIndex 2 onward
-  // (the retry loop's own read() calls AND every verify-read) is subject
-  // to the simulated lag, all seeing the exact same stale snapshot until
-  // LAG_MS has genuinely elapsed.
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
-    if (callIndex === 1) return null;
-    if (Date.now() - testStart < LAG_MS) return { value: preClaimRecord };
-    return null; // lag window has passed -- fall through to the real, already-committed value
+  // Every CAS read against this store, for a real LAG_MS wall-clock
+  // window since the test started, comes back with an etag that can
+  // never match the record's real current one (as if this attempt's read
+  // were still looking at stale, not-yet-propagated state) -- forcing
+  // every attempt within that window to lose the CAS race. Once LAG_MS
+  // has genuinely elapsed, reads fall through to the real, current state
+  // (and its real, matching etag), letting a subsequent attempt succeed.
+  // This models propagation lag as a function of genuine wall-clock time,
+  // the one thing a synchronous in-memory mock can't otherwise reproduce
+  // (nothing here behaves differently just because more *attempts*
+  // happened -- only real elapsed time resolves it) -- proving
+  // blobsCas.casWrite's own real inter-attempt delay (mirroring blobs-
+  // retry.js's identical, already-proven reasoning) is what actually lets
+  // this succeed, not merely a lucky attempt count.
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key) {
+    if (Date.now() - testStart < LAG_MS) {
+      return { value: { data: { email: key, tokens: { balance: 100, lastClaimAt: Date.now() - (25 * HOUR_MS), streak: 4 } }, etag: 'stale-etag-will-never-match', metadata: {} } };
+    }
+    return null; // lag window has passed -- fall through to the real, current state
   });
 
   try {
     var result = await entitlements.claimDailyTokens(ev, email);
-    assert.equal(result.claimed, true, 'the claim must still land once the fix\'s real inter-attempt delay gives the simulated propagation lag enough wall-clock time to clear');
+    assert.equal(result.claimed, true, 'the claim must still land once the real inter-attempt delay gives the simulated propagation lag enough wall-clock time to clear');
     assert.equal(result.balance, 120, '100 + 20');
   } finally {
-    mockBlobs.clearReadOverride(entitlements.STORE_NAME);
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
   }
 
   var record = await entitlements.getEntitlement(ev, email);
@@ -561,17 +538,19 @@ test('a straggling duplicate signup-init write must not clobber a claim that alr
   // e.g. a concurrent get-token-status.js read fired alongside the claim
   // above, whose own very first read of the entitlement record genuinely
   // raced ahead of everything above and still reports "no tokens yet"
-  // (as if it had started before any of the writes above landed). The
-  // token-init-grant marker read is stubbed the same way, for the same
-  // reason. This exercises exactly the "outer syncTokens condition still
-  // passes for a straggler" case — what matters is whether the GUARDED
-  // init write's own retryingWrite loop still refuses to clobber the
-  // real, already-claimed state once IT reads fresh.
-  var entitlementReads = 0;
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
-    entitlementReads++;
-    if (entitlementReads === 1) return { value: undefined }; // outer syncTokens check: "no record yet"
-    return null; // every read from here on (the guarded write's own retryingWrite attempts) sees the REAL, already-claimed record
+  // (as if it had started before any of the writes above landed). This
+  // exercises the "outer syncTokens condition still passes for a
+  // straggler" case — syncTokens' own outer getEntitlement read is still a
+  // PLAIN get() (unmigrated, hence setReadOverride still intercepts it
+  // here), which is what routes this call into the init branch at all.
+  // What matters downstream is whether the GUARDED init write itself (now
+  // blobsCas.casWrite, reading via getWithMetadata — a separate mechanism
+  // this override does NOT touch, so it always sees the REAL, already-
+  // claimed record directly, no interception needed) still refuses to
+  // clobber it. The token-init-grant marker read is stubbed the same way,
+  // for the same "straggler sees nothing yet" reasoning.
+  mockBlobs.setReadOverride(entitlements.STORE_NAME, function () {
+    return { value: undefined }; // outer syncTokens check: "no record yet"
   });
   mockBlobs.setReadOverride('dreamtube-rate-limits', function () { return { value: undefined }; }); // the marker also looks not-yet-written to this straggler
 
@@ -596,3 +575,72 @@ test('a straggling duplicate signup-init write must not clobber a claim that alr
 // reproducing the exact production incident this fix closes. Confirmed
 // manually before this fix was committed; not kept as a permanently
 // skipped duplicate test to avoid dead code.
+
+// ============================================================================
+// GENUINE END-TO-END CONCURRENCY: signup-seed write racing a claim, for a
+// SAME brand-new email, via REAL Promise.all interleaving (not a
+// setCasReadOverride-forced scenario) — tracker item
+// for-product-p1-urgent-fresh-signup-can-d-qhrrqy's own "claim erasure"
+// incident shape: "a daily-claim seconds after signup can be ERASED by the
+// signup seed's delayed write landing AFTER the claim's write." This is
+// the closest thing to a direct reproduction of the actual production
+// incident this whole CAS migration exists to close — two independent
+// entry points (a plain balance read that lazily seeds the 320-token
+// signup grant, and a claim for the first-ever +100 bonus) touching the
+// SAME never-before-seen email's entitlement record at genuinely the same
+// time, with no coordination between them beyond what entitlements.js
+// itself provides.
+// ============================================================================
+
+test('a genuinely concurrent signup-seed read (getTokenStatus) and first-ever claim (claimDailyTokens) for the SAME brand-new email both land correctly -- no lost update either way', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var email = 'concurrent-seed-vs-claim@example.com';
+
+  // Promise.all, not two sequential awaits -- both entry points start
+  // genuinely concurrently, exactly like home.html's auto-open-claim-sheet
+  // firing alongside its own token-status read moments after a fresh
+  // signup (the real trigger for the production incident this closes).
+  var results = await Promise.all([
+    entitlements.getTokenStatus(ev, email),   // lazily seeds the 320-token signup grant
+    entitlements.claimDailyTokens(ev, email)  // the account's first-ever claim, +100 bonus
+  ]);
+
+  var status = results[0];
+  var claim = results[1];
+
+  // Whichever ran through first, the FINAL persisted state must reflect
+  // BOTH the signup grant and the claim -- 420 total, never a lower number
+  // (which would mean one write silently erased the other's effect, the
+  // exact "claim erasure" failure mode this migration closes) and never a
+  // higher one (which would mean the claim somehow applied twice).
+  var record = await entitlements.getEntitlement(ev, email);
+  assert.equal(record.tokens.balance, 420, '320 (signup grant) + 100 (first-ever-claim bonus) must BOTH have landed -- neither write may silently erase the other');
+  assert.ok(record.tokens.lastClaimAt, 'the claim must be durably recorded, not silently discarded by a later signup-seed write');
+  assert.ok(record.firstClaimAt, 'firstClaimAt must be stamped -- the claim genuinely happened');
+
+  // The claim's own return value must also be internally consistent with
+  // whatever ends up persisted -- claimed:true must always mean the claim
+  // really landed, never a phantom success.
+  if (claim.claimed) {
+    assert.equal(claim.amountClaimed, 100, 'first-ever claim bonus');
+  }
+  // status.balance is a point-in-time read that may legitimately race
+  // either write -- not asserted here (its own dedicated marker-echo tests
+  // above already cover that projection in isolation); this test's whole
+  // point is the FINAL, durably-persisted state, proven above.
+});
+
+test('repeated trials of the signup-seed-vs-claim race stay consistent (rules out a lucky single pass)', async function () {
+  for (var i = 0; i < 8; i++) {
+    var ev = fakeEvent({ ip: nextIp() });
+    var email = 'concurrent-seed-vs-claim-loop-' + i + '@example.com';
+
+    await Promise.all([
+      entitlements.getTokenStatus(ev, email),
+      entitlements.claimDailyTokens(ev, email)
+    ]);
+
+    var record = await entitlements.getEntitlement(ev, email);
+    assert.equal(record.tokens.balance, 420, 'trial ' + i + ': both the signup grant and the claim must land');
+  }
+});
