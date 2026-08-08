@@ -64,7 +64,11 @@ function buildHtml(code, verifyUrl) {
     '<div style="max-width:480px;margin:0 auto;font-family:sans-serif;">' +
     '<p style="font-size:16px;">Your DreamTube verification code:</p>' +
     '<p style="font-size:32px; font-weight:700; letter-spacing:4px; margin:8px 0 20px;">' + esc(code) + '</p>' +
-    '<p><a href="' + verifyUrl + '" style="display:inline-block;padding:12px 22px;background:#000;color:#fff;border-radius:24px;text-decoration:none;font-weight:600;">Or click here to verify instantly</a></p>' +
+    // Brand purple, not #000 — a black button vanishes into the dark
+    // background of a dark-mode mail client (founder repro 2026-08-08: the
+    // link was "barely visible"). #7c5cff reads on both light and dark
+    // email backgrounds; white text keeps AA contrast on it.
+    '<p><a href="' + verifyUrl + '" style="display:inline-block;padding:12px 22px;background:#7c5cff;color:#ffffff;border-radius:24px;text-decoration:none;font-weight:700;">Or click here to verify instantly</a></p>' +
     '<p style="color:#666;font-size:13px;margin-top:16px;">You\'re already signed in — this just confirms this is really your email address. No need to do anything right now if you\'d rather wait.</p>' +
     '</div>'
   );
