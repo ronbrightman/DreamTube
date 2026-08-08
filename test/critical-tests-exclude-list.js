@@ -37,7 +37,14 @@
 //      repair scripts run manually, not part of any real user's path.
 //   2. tracker.html's own test family -- an internal owner/Manager-only
 //      coordination tool, not customer-facing, same risk class as the
-//      admin tools above.
+//      admin tools above. NOT tracker.test.js -- round 8 review found its
+//      tail (the "Concurrent-write race" block) is the SOLE regression
+//      coverage for a real, confirmed production incident: tracker-
+//      store.js's updateItem/addItem/deleteItem used to silently revert
+//      a concurrent caller's write (no CAS primitive against Netlify
+//      Blobs), and this store has real concurrent traffic today
+//      (tracker.html's own JS AND dreamtube-growth calling add/delete-
+//      tracker-item.js directly) -- stays in the critical tier.
 //   3. Secondary/non-core channels explicitly parked below the primary
 //      email/app surface (WhatsApp capture -- save-whatsapp-number,
 //      send-whatsapp-morning-capture, whatsapp-morning-capture-opt-in,
@@ -268,7 +275,6 @@ module.exports = [
   "tracker-reviewed-behavioral.test.js",
   "tracker-speak-behavioral.test.js",
   "tracker-waiting-for-behavioral.test.js",
-  "tracker.test.js",
   "verify-email-settings-row-behavioral.test.js",
   "whatsapp-morning-capture-opt-in-behavioral.test.js"
 ];
