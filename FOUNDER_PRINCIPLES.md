@@ -382,6 +382,15 @@ toward cheaper models (cost over speed — they run in the background).
 
 ## Cross-session working (growth ⇄ product ⇄ Manager)
 
+- **Canonical domain rule (founder standing rule, his "never", 2026-08-08):**
+  the product's one address is **https://dreamtube.life**. Never link a
+  *.netlify.app URL anywhere a user or the founder sees — emails, share/OG
+  links, funnel handoffs, Board/chat messages, docs he reads. Mixed-hostname
+  links split browser storage identity (a dreamtube1.netlify.app tab shares
+  nothing with dreamtube.life) — a live bug family, not cosmetics. Netlify
+  hostnames remain only where the mechanism itself requires them (the /go/*
+  proxy target, deploy previews, internal tooling), each with a comment.
+
 - The **shared tracker** (`dreamtube1.netlify.app/tracker.html`, owner-gated
   API) is the live channel. Log anything open — including anything you're
   waiting on Ron for — the same turn. Tag items **`[for product]` /
