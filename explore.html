@@ -310,7 +310,7 @@
       dowBadge +
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
-        '<div class="feed-user-row">'+avatarHTML(d)+'<div class="feed-user" data-filter-user="'+esc(d.ownerHandle)+'">'+esc(DreamStore.displayHandle(d.ownerHandle))+'</div></div>' +
+        '<div class="feed-user-row">'+avatarHTML(d)+'<div class="feed-user" data-profile-handle="'+esc(d.ownerHandle)+'">'+esc(DreamStore.displayHandle(d.ownerHandle))+'</div></div>' +
         '<div class="feed-caption clamped" dir="auto">'+esc(d.caption)+'</div>' +
         '<div class="feed-tag-row"><span data-filter-style="'+esc(d.style)+'">Style: '+esc(d.style)+'</span>' + '</div>' +
       '</div>' +
@@ -354,7 +354,7 @@
 
   var root = document.getElementById('feed-scroll');
   var chip = document.getElementById('filter-chip');
-  var filter = null; // { type: 'style'|'user', value: string }
+  var filter = null; // { type: 'style', value: string } — user filter removed 2026-08-08 (a username tap now opens the profile instead)
 
   // Fetched once from the real shared feed (see js/store.js's
   // getSharedFeed) and filtered client-side, rather than re-fetching per
@@ -743,7 +743,7 @@
     var dreams = allDreams.filter(function(d){ return !d.blockedByMe; });
     if(filter){
       dreams = dreams.filter(function(d){
-        return filter.type === 'style' ? d.style === filter.value : d.ownerHandle === filter.value;
+        return d.style === filter.value;
       });
     }
 
@@ -764,7 +764,7 @@
 
     if(filter){
       chip.style.display = 'flex';
-      chip.innerHTML = esc(filter.type === 'style' ? 'Style: ' + filter.value : DreamStore.displayHandle(filter.value)) + ' <span class="fc-x">✕</span>';
+      chip.innerHTML = esc('Style: ' + filter.value) + ' <span class="fc-x">✕</span>';
     } else {
       chip.style.display = 'none';
     }
@@ -961,10 +961,14 @@
       render();
       return;
     }
-    var userTag = e.target.closest('[data-filter-user]');
+    var userTag = e.target.closest('[data-profile-handle]');
     if(userTag){
-      filter = { type: 'user', value: userTag.dataset.filterUser };
-      render();
+      // Tapping a username opens THAT user's profile page (founder 2026-08-08),
+      // not a feed filter-by-user (the old behavior — it "sorted" the feed to
+      // that user, which read as broken since you expect to visit their
+      // profile). u.html normalizes the handle param through displayHandle(),
+      // same link shape profile.html uses for its own PUBLIC link.
+      location.href = 'u.html?handle=' + encodeURIComponent(DreamStore.displayHandle(userTag.dataset.profileHandle));
       return;
     }
     var muteEl = e.target.closest('[data-mute]');
