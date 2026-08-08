@@ -43,9 +43,11 @@
 //      send-whatsapp-morning-capture, whatsapp-morning-capture-opt-in,
 //      admin-submit-whatsapp-template; postpack/social-share asset
 //      assembly -- postpack-*, assemble-instagram-tiktok-postpack,
-//      share-sheet/share-profile/share-dream page-level tests, though
-//      NOT the underlying share-token/leak-prevention logic itself,
-//      which stays in via sync-profile.test.js and friends).
+//      share-sheet-behavioral's own page-level UI test). NOT
+//      share-dream.test.js or share-profile.test.js -- round 4 review
+//      found both carry real CRLF-header-injection and XSS-escaping
+//      defense tests with no compensating coverage elsewhere; both
+//      stay in the critical tier alongside sync-profile.test.js.
 //   4. Analytics/telemetry-plumbing tests where a bug produces a wrong
 //      METRIC, not a wrong charge, a data leak, or a broken user flow
 //      (posthog-capture, posthog-identity-merge-behavioral,
@@ -96,10 +98,15 @@
 //      behavioral, result-scroll-lock-behavioral, result-thumbnail-
 //      crossorigin-capture-behavioral, retention-email-first-video-
 //      behavioral, scroll-lock-behavioral, sheet-dismiss-behavioral,
-//      email-public-origin, a2hs-install-nudge-journey-behavioral,
-//      pwa-stage0-behavioral, pwa-sw-update-behavioral, pwa-version-
-//      fallback-behavioral, transcript-text-review-behavioral,
-//      verify-email-settings-row-behavioral, media-library-page --
+//      a2hs-install-nudge-journey-behavioral, pwa-stage0-behavioral,
+//      pwa-sw-update-behavioral, pwa-version-fallback-behavioral,
+//      transcript-text-review-behavioral, verify-email-settings-row-
+//      behavioral, media-library-page -- NOT email-public-origin.test.js,
+//      which round 4 review found was misfiled here: it's the
+//      regression test for a real, documented past production incident
+//      (broken image/unsubscribe-link URLs in retention emails,
+//      tracker for-product-bug-two-blank-square-emails--3fvxvc), not a
+//      generation-variant UI test, and stays in the critical tier --
 //      this last one is ALSO the repo's one documented pre-existing
 //      full-suite-load flake, unrelated to this branch).
 //
@@ -141,7 +148,6 @@ module.exports = [
   "deploy-log-store.test.js",
   "dream-thumbnail-capture-behavioral.test.js",
   "effective-config-logging.test.js",
-  "email-public-origin.test.js",
   "email-verify-sheet-behavioral.test.js",
   "explore-avatar-fallback-behavioral.test.js",
   "faq-section-behavioral.test.js",
@@ -193,8 +199,6 @@ module.exports = [
   "save-whatsapp-number.test.js",
   "scroll-lock-behavioral.test.js",
   "send-whatsapp-morning-capture.test.js",
-  "share-dream.test.js",
-  "share-profile.test.js",
   "share-sheet-behavioral.test.js",
   "sheet-dismiss-behavioral.test.js",
   "smoke-status-store.test.js",
