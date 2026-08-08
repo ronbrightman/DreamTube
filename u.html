@@ -524,7 +524,10 @@
         // Owner-only per the founder's slice-1 review call — see the
         // button's own comment above.
         document.getElementById('u-share-btn').style.display = isOwner ? 'flex' : 'none';
-        document.getElementById('u-priv-note').style.display = 'block';
+        // Owner-only: "Your interpretations stay private to you" only makes
+        // sense on your OWN profile. A visitor viewing someone else's profile
+        // has no interpretations here to keep private (founder 2026-08-08).
+        document.getElementById('u-priv-note').style.display = isOwner ? 'block' : 'none';
 
         lastLoadedDreams = DreamStore.decorateFeedDreams(data.dreams);
         renderDreams(lastLoadedDreams);
