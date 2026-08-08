@@ -84,31 +84,44 @@
 //      network-retry-behavioral, both-domain-smoke).
 //   8. Narrow generation-variant/style-toggle UI tests that explicitly
 //      state zero real fal.ai cost in their own header and don't touch
-//      a rate limit or a charge decision (image-generation-style-
-//      toggle-behavioral, image-generation-turn-into-video-behavioral,
-//      mood-music-bed-behavioral, music-bed-behavioral, result-image-
-//      render-behavioral, interp-voice-behavioral, interp-voice-
-//      captions, interpreter-personas, sage-during-generation-
-//      behavioral, notify-likes-badge-behavioral, content-block-panel-
-//      behavioral, create-record-inapp-webview-guard-behavioral,
-//      dream-thumbnail-capture-behavioral, explore-avatar-fallback-
-//      behavioral, feed-windowing-behavioral, forming-veil-nebula-
-//      behavioral, home-webview-escape-behavioral, install-first-door-
-//      behavioral, profile-me-character-behavioral, result-play-intent-
-//      behavioral, result-scroll-lock-behavioral, result-thumbnail-
-//      crossorigin-capture-behavioral, retention-email-first-video-
-//      behavioral, scroll-lock-behavioral, sheet-dismiss-behavioral,
-//      a2hs-install-nudge-journey-behavioral, pwa-stage0-behavioral,
-//      pwa-sw-update-behavioral, pwa-version-fallback-behavioral,
-//      transcript-text-review-behavioral, verify-email-settings-row-
-//      behavioral, media-library-page -- NOT email-public-origin.test.js,
-//      which round 4 review found was misfiled here: it's the
-//      regression test for a real, documented past production incident
-//      (broken image/unsubscribe-link URLs in retention emails,
-//      tracker for-product-bug-two-blank-square-emails--3fvxvc), not a
-//      generation-variant UI test, and stays in the critical tier --
-//      this last one is ALSO the repo's one documented pre-existing
-//      full-suite-load flake, unrelated to this branch).
+//      a rate limit, a charge decision, real user data, or a documented
+//      incident (image-generation-style-toggle-behavioral, image-
+//      generation-turn-into-video-behavioral, music-bed-behavioral,
+//      result-image-render-behavioral, interp-voice-behavioral, interp-
+//      voice-captions, interpreter-personas, sage-during-generation-
+//      behavioral, content-block-panel-behavioral, create-record-inapp-
+//      webview-guard-behavioral, dream-thumbnail-capture-behavioral,
+//      explore-avatar-fallback-behavioral, feed-windowing-behavioral,
+//      forming-veil-nebula-behavioral, home-webview-escape-behavioral,
+//      install-first-door-behavioral, profile-me-character-behavioral,
+//      result-play-intent-behavioral, result-scroll-lock-behavioral,
+//      retention-email-first-video-behavioral, scroll-lock-behavioral,
+//      sheet-dismiss-behavioral, a2hs-install-nudge-journey-behavioral,
+//      pwa-stage0-behavioral, pwa-sw-update-behavioral, pwa-version-
+//      fallback-behavioral, transcript-text-review-behavioral, verify-
+//      email-settings-row-behavioral, media-library-page -- this last
+//      one is ALSO the repo's one documented pre-existing full-suite-
+//      load flake, unrelated to this branch).
+//      "Zero real fal.ai cost" alone is NOT sufficient to exclude a file
+//      -- rounds 4 and 5 both found files correctly zero-cost but
+//      mischaracterized here anyway, each the SOLE coverage for a real
+//      bug or documented incident with nothing to do with generation
+//      cost. NOT in this category, all promoted to critical-tier:
+//      email-public-origin.test.js (round 4 -- regression test for a
+//      documented past production incident, broken image/unsubscribe-
+//      link URLs in retention emails, tracker for-product-bug-two-
+//      blank-square-emails--3fvxvc); mood-music-bed-behavioral.test.js
+//      (round 5 -- sole test proving a dream's mood field actually
+//      reaches the wire on cross-device sync, after a real silent-data-
+//      loss regression found reviewing this same branch); result-
+//      thumbnail-crossorigin-capture-behavioral.test.js (round 5 --
+//      root-cause regression test for a founder-confirmed real
+//      production incident, "never once received a real thumbnail" in
+//      retention emails, tracker for-product-p1-regression-evidence-
+//      found-7lbwkx); notify-likes-badge-behavioral.test.js (found in
+//      the same pass -- a real cross-account badge-count leak on
+//      account switch, same class as logout-clears-pendingjob-
+//      behavioral.test.js's already-critical cross-account leak fix).
 //
 // HOW A NEW TEST FILE GETS CLASSIFIED (do this when adding one): by
 // DEFAULT it's already in the critical tier -- do nothing. Only add it
@@ -174,9 +187,7 @@ module.exports = [
   "media-file-functions.test.js",
   "media-library-page.test.js",
   "meta-capi-behavioral.test.js",
-  "mood-music-bed-behavioral.test.js",
   "music-bed-behavioral.test.js",
-  "notify-likes-badge-behavioral.test.js",
   "phase1-product-events-behavioral.test.js",
   "poll-until-done-network-retry-behavioral.test.js",
   "posthog-capture.test.js",
@@ -193,7 +204,6 @@ module.exports = [
   "result-image-render-behavioral.test.js",
   "result-play-intent-behavioral.test.js",
   "result-scroll-lock-behavioral.test.js",
-  "result-thumbnail-crossorigin-capture-behavioral.test.js",
   "retention-email-first-video-behavioral.test.js",
   "sage-during-generation-behavioral.test.js",
   "save-whatsapp-number.test.js",
