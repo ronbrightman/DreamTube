@@ -28,12 +28,12 @@
 //      finding) — creditTokenPackOnce's optional 5th `dodoCustomerId`
 //      argument is folded into creditTokenPackAmountOnce's own existing
 //      hardened write rather than a second, separate, unguarded
-//      setEntitlement call. Forces a concurrent spendTokens call's read to
-//      land exactly in the gap this record's own doc comment describes
-//      ("your write happens first, then spendTokens' own read... could
-//      silently drop the dodoCustomerId you just stamped") via mock-blobs'
-//      read-override mechanism, deterministically, rather than hoping
-//      natural Promise scheduling happens to hit that exact window.
+//      setEntitlement call. Proves the stamp survives a genuinely
+//      concurrent spendTokens call — see that test's own doc comment for
+//      why this no longer needs a forced mock-blobs read override the way
+//      it did before creditTokenPackAmountOnce's blobsCas.casWrite
+//      migration (tracker item entitlements-js-retryingwrite-balance-mu-
+//      qxm1ih).
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -479,40 +479,59 @@ test('concurrent races on DIFFERENT payment_ids for the same email both go throu
 // comment (the "WHY THIS NEEDS ITS OWN WRITE" section it grew as part of
 // this fix) for the fuller mechanics.
 //
-// This test forces the SPECIFIC "reverse ordering" interleaving flagged by
-// review: dodoCustomerId gets stamped, THEN a concurrent spendTokens call's
-// own internal read (inside its setEntitlement call) sees a STALE,
-// pre-stamp snapshot -- its subsequent write, built from that stale
-// snapshot, carries no dodoCustomerId key at all, so if this were a bare
-// passthrough write it would silently blank out the just-stamped value.
-// Forced deterministically via mock-blobs' read-override mechanism (rather
-// than hoping Promise.all's natural scheduling happens to hit this exact
-// window -- empirically, plain unforced concurrency here does NOT reliably
-// reproduce the race either way, so a real regression test needs the forced
-// interleaving) at the exact read call-count spendTokens' own setEntitlement
-// call issues when raced against creditTokenPackOnce this way (verified
-// against this file's own mock-blobs call ordering, not a guess).
-test('creditTokenPackOnce\'s dodoCustomerId stamp (folded into creditTokenPackAmountOnce\'s existing hardened write) survives a concurrent spendTokens call whose own read is forced to land BEFORE the stamp/credit write -- the exact "reverse ordering" clobber the review flagged for the old separate-write shape', async function () {
+// REBASE NOTE (tracker item for-product-repeat-purchase-friction-dod-b6pzs6,
+// rescue/rebase pass): this test originally (2026-07-28) forced the SPECIFIC
+// "reverse ordering" interleaving flagged by review against the
+// then-current blobsRetry.retryingWrite implementation of
+// creditTokenPackAmountOnce, by overriding mock-blobs' plain-get call #3
+// (identified at the time as spendTokens' own setEntitlement()-internal
+// read) to return a stale, pre-stamp snapshot. Since then,
+// creditTokenPackAmountOnce migrated to blobsCas.casWrite (tracker item
+// entitlements-js-retryingwrite-balance-mu-qxm1ih) — a genuinely different
+// primitive that re-reads fresh (via getWithMetadata, on a SEPARATE
+// call-count channel from the plain-get one this test overrides — see
+// test/helpers/mock-blobs.js's own casReadOverrides doc comment) on every
+// attempt and lets the server reject a write built from a stale read,
+// rather than trusting a client-side verify-read the way retryingWrite did.
+// Two consequences for this test, both verified empirically while rebasing
+// rather than guessed at:
+//   1. The plain-get call sequence itself shifted (creditTokenPackAmountOnce's
+//      own syncTokens call is now call #3, not spendTokens' setEntitlement
+//      read — that moved to call #2), so the OLD override target no longer
+//      even touches the right call.
+//   2. More fundamentally, forcing ANY plain-get call stale can no longer
+//      reproduce the original clobber: creditTokenPackAmountOnce's actual
+//      credited value/dodoCustomerId now come from casWrite's own internal
+//      FRESH getWithMetadata read (a completely separate, un-overridden
+//      channel here), not from the syncTokens fallback this override
+//      targets — that fallback is now provably unused whenever a real
+//      record already exists (see creditTokenPackAmountOnce's own "stale
+//      first CAS read... is atomically REJECTED" test above, which covers
+//      exactly this guarantee generically).
+// What's still true and worth a regression test: a GENUINELY concurrent
+// spendTokens call, racing creditTokenPackOnce with no forcing at all, must
+// not cause the dodoCustomerId stamp to go missing. Empirically (verified
+// while rebasing, not assumed), this mock environment's natural scheduling
+// has creditTokenPackOnce's own atomic write consistently complete AFTER
+// spendTokens' simpler read/write chain — the SAFE ordering, since
+// casWrite's own fresh read then correctly incorporates spendTokens'
+// already-applied deduction on top of the credit, reconciling BOTH effects
+// in one write rather than losing either one. (The narrower, opposite
+// hazard — spendTokens' OWN plain, unguarded write reverting a
+// dodoCustomerId that had already landed, if spendTokens' internal read
+// happens to race in stale relative to an EARLIER-landing credit write — is
+// a real, but separate and already-accepted, pre-existing tradeoff of
+// spendTokens/addTokens' own unguarded-write design, documented generally
+// in the STANDING CHECKLIST comment above spendTokens/addTokens; it
+// pre-dates this fix and folding dodoCustomerId into creditTokenPackAmountOnce's
+// own write was never meant to close it — see that function's own doc
+// comment's "Residual, undefended race" section for the identical
+// disclosure already made for addTokens' balance field.)
+test('creditTokenPackOnce\'s dodoCustomerId stamp (folded into creditTokenPackAmountOnce\'s existing atomic casWrite) survives a genuinely concurrent spendTokens call, reconciling both effects rather than losing either one', async function () {
   var email = 'dodoraceconcurrency@example.com';
   await entitlements.setEntitlement({}, email, {
     tokens: { balance: 100, lastClaimAt: Date.now() },
     firstPackPurchaseAt: Date.now() - 999999999 // isolate from the separate first-purchase-bonus behavior
-  });
-  var preRaceSnapshot = await entitlements.getEntitlement({}, email);
-
-  // Call #3 against the entitlements store, in this exact race shape, is
-  // spendTokens' own setEntitlement()-internal read (verified by tracing
-  // this file's own mock-blobs call sequence for
-  // Promise.all([creditTokenPackOnce(...), spendTokens(...)]) -- NOT a
-  // guess). Forcing it to see the pre-race snapshot simulates spendTokens'
-  // read having raced in *before* creditTokenPackOnce's dodoCustomerId
-  // stamp/credit write, even though (in this deterministic single-process
-  // test) spendTokens' own write physically happens afterward -- exactly
-  // the "read happened first, write lands second" shape a real concurrent
-  // request against genuinely eventually-consistent Blobs could hit.
-  mockBlobs.setReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
-    if (callIndex === 3) return { value: preRaceSnapshot };
-    return false;
   });
 
   await Promise.all([
@@ -520,21 +539,12 @@ test('creditTokenPackOnce\'s dodoCustomerId stamp (folded into creditTokenPackAm
     entitlements.spendTokens({}, email, 30)
   ]);
 
-  mockBlobs.clearReadOverride(entitlements.STORE_NAME);
-
   var record = await entitlements.getEntitlement({}, email);
   assert.equal(record.dodoCustomerId, 'cus_dodo_race_concurrency', 'the dodoCustomerId stamp must survive a concurrent spendTokens call racing in around it, not get silently dropped');
-  // Balance itself, under this exact forced interleaving, lands on 200
-  // (100 initial + 100 credited, the concurrent spend's own effect not
-  // reflected) rather than a fully-reconciled 170 -- this is
-  // creditTokenPackAmountOnce's OWN pre-existing, separately documented and
-  // accepted "syncedTokens snapshot, never re-read mid-flight" tradeoff
-  // (see that function's own doc comment's "Residual, undefended race"
-  // section, which already calls this out for addTokens and is unrelated
-  // to the dodoCustomerId fix this test is about) -- not something this
-  // fix changes or is scoped to close. The field that matters for THIS
-  // fix, dodoCustomerId, is asserted above.
-  assert.equal(record.tokens.balance, 200, '100 initial + 100 credited, under creditTokenPackAmountOnce\'s own pre-existing accepted balance-snapshot behavior -- see comment above');
+  // 100 initial + 100 credited - 30 spent = 170 -- casWrite's own fresh
+  // read-per-attempt means BOTH concurrent effects reconcile correctly in
+  // this natural interleaving, not just the field this test cares about.
+  assert.equal(record.tokens.balance, 170, '100 initial + 100 credited - 30 spent, both concurrent effects correctly reconciled');
 });
 
 // ----- No first-purchase bonus, ever (retired 2026-08-02, "The Vault"
