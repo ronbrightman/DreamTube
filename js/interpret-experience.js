@@ -1656,7 +1656,13 @@
     trackLocal('interp_surface_opened', { has_existing: hasExisting });
 
     document.getElementById(ROOT_ID).classList.add('open');
-    document.body.style.overflow = 'hidden'; // matches this app's other full-screen overlays' scroll-lock intent
+    // Freeze the page behind this full-screen overlay via the shared,
+    // iOS-robust, ref-counted scroll lock (js/scroll-lock.js) — NOT a raw
+    // `document.body.style.overflow` toggle, which on this app's inner-scroller
+    // pages (home/result) froze the real scroller on iOS after close. See that
+    // file's header for the full root cause. Guarded so the overlay still
+    // opens even if the helper failed to load.
+    if (window.ScrollLock) window.ScrollLock.lock();
     renderDreamStrip();
     render();
   }
@@ -1687,7 +1693,7 @@
     trackLocal('interp_closed', { phase: session.phase });
     var root = document.getElementById(ROOT_ID);
     if (root) root.classList.remove('open');
-    document.body.style.overflow = '';
+    if (window.ScrollLock) window.ScrollLock.unlock();
     resetVoiceState();
     discardPrimedAudioEl();
     session = null;
@@ -1713,46 +1719,30 @@
   InterpretExperience._preparingCaptionText = preparingCaptionText;
 
   // ── Scroll-lock release safety net (tracker item
-  //    for-product-bug-founder-video-08-07-resu-f4u8zy, founder screen
-  //    recording: result.html sometimes becomes entirely unscrollable —
-  //    swiping down only rubber-bands into Safari's pull-to-refresh bubble,
-  //    intermittently). Root cause: open() (below) is the ONLY place in
-  //    this whole app that locks document.body.style.overflow — every
-  //    OTHER overlay/sheet on result.html (.player-overlay, .sheet-overlay,
-  //    .modal-overlay) is a position:fixed/absolute layer that goes
-  //    pointer-events:none when closed, so a stuck `.open` class there is
-  //    at worst a visibly-stuck overlay, never an invisible scroll block —
-  //    confirmed by reading every such overlay's CSS/JS on this page; this
-  //    module is the sole scroll-lock owner. close() already releases the
-  //    lock correctly on its three explicit triggers (topbar X, the
-  //    post-reading Close link, the error-state Close link) — the gap is
-  //    every OTHER way the page can go away while the lock is held: real
-  //    navigation elsewhere, and critically iOS Safari's native edge-swipe
-  //    back gesture, which does not run this page's click handlers and can
-  //    freeze the page into the back/forward cache (bfcache) exactly as it
-  //    stood — lock still on — to be restored verbatim on a later visit,
-  //    with no fresh page load to ever reset it.
+  //    for-product-bug-founder-video-08-07-resu-f4u8zy, plus the same-family
+  //    home.html repro returning from this overlay). The scroll lock itself
+  //    now lives in the shared js/scroll-lock.js (ref-counted, iOS-robust,
+  //    with its OWN pagehide/pageshow backstops) — see that file's header for
+  //    the full root cause (mutating body overflow froze the real inner
+  //    scroller on iOS). This module just has to make sure its own session is
+  //    torn down and its lock() is matched by an unlock() on the one path an
+  //    explicit close() button can't reach: iOS Safari's edge-swipe back
+  //    gesture, which runs no click handlers and can freeze the page into the
+  //    back/forward cache (bfcache) mid-session.
   //
-  //    `pagehide` is the standard, portable event for "this page is about
-  //    to be hidden, possibly for bfcache storage" — it fires for both a
-  //    real unload AND a bfcache-store, on iOS Safari too (unlike
-  //    `beforeunload`, which iOS Safari does not reliably fire on
-  //    gesture-driven navigation). Releasing the lock here — via the SAME
-  //    `close()` every other dismiss path already uses, not a second
-  //    bespoke reset — means a bfcache-restored copy of this page can never
-  //    come back locked. `pageshow`'s `persisted:true` case below is pure
-  //    defense-in-depth for the should-be-impossible case a restore
-  //    happens anyway with the lock still set (e.g. an already-frozen
-  //    bfcache entry from before this fix shipped) — same "release
-  //    unconditionally, in one centralized place" principle this comment
-  //    block opened with, just covering the one path `close()` itself
-  //    can't reach after the fact.
+  //    `pagehide` is the standard, portable event for "this page is about to
+  //    be hidden, possibly for bfcache storage" — it fires for both a real
+  //    unload AND a bfcache-store, on iOS Safari too (unlike `beforeunload`,
+  //    which iOS Safari does not reliably fire on gesture-driven navigation).
+  //    Running the SAME close() every explicit dismiss uses both fires the
+  //    right analytics/voice-lifecycle teardown AND releases the scroll lock
+  //    (close() calls ScrollLock.unlock()). scroll-lock.js additionally
+  //    force-releases on its own pagehide/pageshow{persisted} as a second,
+  //    independent net, so a restored page can never come back locked even if
+  //    this handler somehow didn't run.
   if (typeof window !== 'undefined') {
     window.addEventListener('pagehide', function () {
       if (session) close();
-    });
-    window.addEventListener('pageshow', function (e) {
-      if (e.persisted) document.body.style.overflow = '';
     });
   }
 

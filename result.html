@@ -822,6 +822,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 <script src="js/share-sheet.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script src="js/dream-cards.js"></script>
+<script src="js/scroll-lock.js"></script>
 <script src="js/interpreter-personas.js"></script>
 <script src="js/interpret-experience.js"></script>
 <script>
@@ -1893,11 +1894,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       video.style.display = 'block';
       playerOverlay.classList.add('open');
       playerOverlay.setAttribute('aria-hidden', 'false');
+      // Freeze the page behind this full-screen fallback player via the same
+      // shared, iOS-robust, ref-counted scroll lock the interpretation
+      // overlay uses (js/scroll-lock.js) — see the tracker item
+      // for-product-bug-founder-video-08-07-resu-f4u8zy in that file's header.
+      // Only this in-app overlay path locks; the native-fullscreen tiers of
+      // openFullscreenVideo() never call this, and don't need it.
+      if(window.ScrollLock) window.ScrollLock.lock();
       video.play().catch(function(){});
     }
     function closeOverlayPlayer(){
+      var wasOpen = playerOverlay.classList.contains('open');
       playerOverlay.classList.remove('open');
       playerOverlay.setAttribute('aria-hidden', 'true');
+      if(wasOpen && window.ScrollLock) window.ScrollLock.unlock();
       if(videoHomeParent){
         videoHomeParent.insertBefore(video, videoHomeNext);
         videoHomeParent = null;
