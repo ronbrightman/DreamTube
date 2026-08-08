@@ -505,9 +505,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 .ritual.warm .constel .st.lit{ filter:drop-shadow(0 0 4px rgba(255,224,170,.6)); }
 /* First-claim bonus eyebrow (tracker item
    for-product-funnel-ending-v2-founder-ins-tfuu0q) — shown only when
-   tokenStatus.dailyClaimAmount is the account's very first-ever claim
-   (see lib/entitlements.js's FIRST_CLAIM_BONUS_AMOUNT), distinguishing the
-   +100 first-claim bonus from every ordinary +20 daily claim. */
+   tokenStatus.dailyClaimAmount exceeds the ordinary 20-token daily claim
+   (see lib/entitlements.js's FIRST_CLAIM_BONUS_AMOUNT). As of the 2026-08-08
+   economy retune that constant equals the normal 20, so this eyebrow stays
+   hidden unless a larger first-claim bonus is reinstated. */
 .ritual-claim-eyebrow{
   margin-top:18px; font-size:11.5px; font-weight:800; letter-spacing:.08em;
   text-transform:uppercase; color:var(--home-warn);
@@ -1115,7 +1116,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
            the old "Add DreamTube to your phone" quiet row entirely — same
            real install mechanism (js/install-nudge.js/js/pwa.js), now an
            accordion of 3 rows (install/copy-link/bookmark) plus a
-           verified-install +100 claim. Retires (hidden entirely) once
+           verified-install +20 claim. Retires (hidden entirely) once
            DreamStore.getInstallBonusClaimed() is true on a later visit —
            see refreshMky() below. -->
       <section class="mky" id="mky" data-card="makeityours">
@@ -1169,11 +1170,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
               </button>
             </div>
           </div>
-          <div class="mky-reward gold" id="mky-reward-line">Add DreamTube to your home screen, then open it from the new icon — that first open unlocks +100 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
+          <div class="mky-reward gold" id="mky-reward-line">Add DreamTube to your home screen, then open it from the new icon — that first open unlocks +20 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
           <button type="button" class="mky-claim" id="mky-claim" disabled></button>
         </div>
         <div id="mky-done" hidden>
-          <div class="mky-done-line">Added to your phone ✓ · +100 claimed</div>
+          <div class="mky-done-line">Added to your phone ✓ · +20 claimed</div>
           <div class="mky-done-note">This card says goodbye — it won't be here next visit.</div>
         </div>
       </section>
@@ -2525,7 +2526,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // founder-approved--9ta1j0). Same real capability-detect/copy logic as
   // before (js/install-nudge.js/js/pwa.js), reused rather than
   // duplicated — now inside an accordion (one row open at a time), plus a
-  // verified-install +100 claim gated on DreamStore.getInstallVerified().
+  // verified-install +20 claim gated on DreamStore.getInstallVerified().
   //
   // STEP 2 OF 2 (carried over from the old install-qrow, tracker item
   // for-product-install-first-door-founder-d-b60cls): when this exact
@@ -2578,7 +2579,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       exp.innerHTML = stepLabel + InstallNudge.buildAndroidMenuFallbackHtml();
     } else {
       exp.innerHTML = stepLabel +
-        '<div class="mky-step">One tap and you’re set — open your dreams like any other app, no browser tabs. Adding it to your home screen verifies your +100 ' + tok() + '.</div>' +
+        '<div class="mky-step">One tap and you’re set — open your dreams like any other app, no browser tabs. Adding it to your home screen verifies your +20 ' + tok() + '.</div>' +
         '<button type="button" class="mky-inline-install-btn" id="mky-inline-install-btn">Add to home screen <span class="icon" id="mky-inline-install-icon"></span></button>';
       document.getElementById('mky-inline-install-icon').innerHTML = window.Icons ? Icons.download : '';
       document.getElementById('mky-inline-install-btn').addEventListener('click', function(){
@@ -2657,8 +2658,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // browser tab, and read the dead button as broken — the disabled
     // state now SAYS what unlocks it instead of silently waiting.
     claimBtn.innerHTML = installed
-      ? ('Claim +100&nbsp;' + tok())
-      : ('Open from your icon to claim +100&nbsp;' + tok());
+      ? ('Claim +20&nbsp;' + tok())
+      : ('Open from your icon to claim +20&nbsp;' + tok());
     document.getElementById('mky-reward-icon').innerHTML = window.Icons ? Icons.token : '';
     renderMkyInstallExp();
     renderMkyBookmarkExp();
@@ -2704,7 +2705,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       mkyJustClaimed = true;
       refreshMky();
       if(data.granted){
-        showToast('+100 tokens added to your Vault');
+        showToast('+20 tokens added to your Vault');
         refreshTokenStatus(false);
       }
     }).catch(function(){

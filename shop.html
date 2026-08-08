@@ -677,8 +677,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     balanceEl.textContent = tokenStatus.balance;
     topbarBalanceEl.textContent = tokenStatus.balance;
     var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
-    // The daily +20 (or +100 on a genuine first-ever claim) is an ACTIVE
-    // claim, never automatic — this countdown just tells a non-claimable
+    // The daily +20 is an ACTIVE claim, never automatic (the amount is read
+    // live from tokenStatus.dailyClaimAmount, so any future first-claim
+    // bonus reinstatement flows through automatically) — this countdown
+    // just tells a non-claimable
     // visitor when they'll next be ABLE to claim (see
     // lib/entitlements.js's own doc block).
     countdownEl.textContent = tokenStatus.claimable ? '' : (tokenStatus.nextClaimAt ? ('Next ' + amount + ' free tokens claimable in ' + formatTokenCountdown(tokenStatus.nextClaimAt)) : '');
