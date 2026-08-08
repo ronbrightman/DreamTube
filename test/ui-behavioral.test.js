@@ -1556,9 +1556,13 @@ test('create.html: keyboard-mash gibberish in the Write textarea is blocked with
     // mostly-Latin text.
     await page.fill('#dream-text', '');
     await page.fill('#dream-text', 'חלמתי שאני עף מעל העיר');
+    // #char-count now reads "N / 50 words" (the 50-word cap + live word
+    // counter shipped after this test was written -- see git history) --
+    // any non-empty count text proves the field re-rendered past the
+    // gibberish check, which is all this wait is actually gating on.
     await page.waitForFunction(function () {
       var el = document.getElementById('char-count');
-      return el && /character/.test(el.textContent);
+      return el && /\d+\s*\/\s*50\s*words/.test(el.textContent);
     }, null, { timeout: 5000 });
     var hebrewDisabled = await page.$eval('#write-continue', function (el) { return el.disabled; });
     assert.equal(hebrewDisabled, false, 'Continue must enable for real non-Latin (Hebrew) dream text');
@@ -1570,9 +1574,11 @@ test('create.html: keyboard-mash gibberish in the Write textarea is blocked with
     // gibberish error shown (it never gets that far).
     await page.fill('#dream-text', '');
     await page.fill('#dream-text', 'short');
+    // #char-count is word-based now ("1 / 50 words" for this one-word
+    // input) -- see the fix above for the same underlying rename.
     await page.waitForFunction(function () {
       var el = document.getElementById('char-count');
-      return el && el.textContent.indexOf('5 characters') !== -1;
+      return el && el.textContent.indexOf('1 / 50 words') !== -1;
     }, null, { timeout: 5000 });
     var shortDisabled = await page.$eval('#write-continue', function (el) { return el.disabled; });
     assert.equal(shortDisabled, true, 'Continue must stay disabled below the 8-char minimum');

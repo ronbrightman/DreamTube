@@ -127,7 +127,7 @@ var BED_ELIGIBLE_DREAM = {
 // result.html, so the sound nudge has nothing to point at and never fires.
 var NO_BED_DREAM = {
   id: 'dream-nudge-no-bed', ownerHandle: '@nudgetester', caption: 'An image, no video',
-  style: 'Surrealist', mediaType: 'image', imageUrl: '/assets/logo-v3.png', videoUrl: null,
+  style: 'Surrealist', mediaType: 'image', imageUrl: '/assets/fake-test-image.png', videoUrl: null,
   dur: null, isPublished: false, likes: 0, likedByMe: false
 };
 

@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "test": "node --test test/*.test.js",
+    "test:critical": "node scripts/run-critical-tests.js",
+    "test:full": "node --test test/*.test.js",
     "smoke:prod": "node --test test/prod-smoke/*.test.js",
     "smoke:prod:dreamtube1": "PROD_SMOKE_ORIGIN=https://dreamtube1.netlify.app node --test test/prod-smoke/*.test.js",
     "smoke:prod:life": "PROD_SMOKE_ORIGIN=https://dreamtube.life node --test test/prod-smoke/*.test.js",

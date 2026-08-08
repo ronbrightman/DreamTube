@@ -471,7 +471,13 @@ test('u.html and profile.html\'s new visibility-toggle buttons meet the 44px min
     var heights = await page.$$eval('#profile-visibility-row .char-mode-btn', function (els) {
       return els.map(function (el) { return el.getBoundingClientRect().height; });
     });
-    heights.forEach(function (h) { assert.ok(h >= 44, 'expected >=44px tap target, got ' + h); });
+    // 0.1px epsilon: same sub-pixel layout float rounding this repo's own
+    // test/ui-behavioral.test.js already documents (e.g. 43.99998474...
+    // observed here) on a border-box element -- not a real, perceptible
+    // tap-target regression. A strict >=44 comparison fails on exactly
+    // the intended value.
+    var TAP_TARGET_EPSILON = 0.1;
+    heights.forEach(function (h) { assert.ok(h >= 44 - TAP_TARGET_EPSILON, 'expected >=44px tap target, got ' + h); });
 
     await mockGetProfile(page, {
       exists: true, profile: { handle: '@luna', displayName: 'Luna', avatarDataUrl: null, bio: '', updatedAt: 1 },
