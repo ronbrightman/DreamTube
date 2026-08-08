@@ -1,8 +1,10 @@
 # Scheduler wake-up anchor
 
-This file exists only to explain [PR #`[scheduler]` Wake-up anchor — keep open,
-never merge](../../pull/new/scheduler-anchor) and its companion workflow,
-`.github/workflows/scheduler-ping.yml`.
+This file exists only to explain the `[scheduler] Wake-up anchor — keep
+open, never merge` pull request and its companion workflow,
+`.github/workflows/scheduler-ping.yml` (merged separately to `main` — a
+scheduled Action only runs off the default branch, so it can't live on
+this permanently-unmerged branch).
 
 **Why this exists** (tracker item `for-product-p1-your-work-loop-died-overn-jzru7c`,
 founder-flagged, mirrors the identical fix already proven in the Manager repo —
