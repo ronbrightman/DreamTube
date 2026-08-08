@@ -437,6 +437,7 @@
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/wizard-chips.js"></script>
+<script src="js/funnel-character-stash.js"></script>
 <script>
 (function(){
   'use strict';
@@ -587,7 +588,16 @@
   // the ?entry=index marker, and may itself have just created the local
   // account history this guard reads.)
   var cameFromIndexGetStarted = new URLSearchParams(location.search).get('entry') === 'index';
-  if(!resumedFromFacebook && !cameFromIndexGetStarted && DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
+  // Funnel-arrival exemption (wall routing, 2026-08-08): a ?resume=1
+  // arrival CARRYING A BUILT DREAM (caption param) is the growth funnel's
+  // handoff — the flo arm routes here now instead of start.html's old
+  // screen 13 (founder: funnel arrivals must land on THIS approved
+  // Layout-B wall). Like ?entry=index, it's an explicit, informed journey
+  // — bouncing it to index.html would throw away a fully built dream
+  // (start.html's own resume leg never had this guard either). Same
+  // reasoning exempts it from the local-account-history bounce below.
+  var isFunnelHandoffArrival = getParam('resume') === '1' && !!getParam('caption');
+  if(!resumedFromFacebook && !cameFromIndexGetStarted && !isFunnelHandoffArrival && DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
   if(cameFromIndexGetStarted){
     var __cleanParams = new URLSearchParams(location.search);
     __cleanParams.delete('entry');
@@ -1539,6 +1549,20 @@
   // ===================================================================
   var assembled = null; // { caption, characterIdsForGeneration }
 
+  // Funnel-arrival wall state (wall routing, 2026-08-08): a growth-funnel
+  // handoff (?resume=1&caption=...) lands DIRECTLY on the signup wall —
+  // the dream was fully built funnel-side, so its caption param is the
+  // FINAL prompt, used verbatim (same authoritative-words contract as
+  // write mode below), never re-assembled from this page's (empty) chip
+  // state. characterIdsForGeneration comes from the adopted funnel
+  // character stash (see boot()'s funnel-arrival leg), so a stashed self
+  // photo/description rides the wall's start-pending-generation exactly
+  // like a wizard-entered character. Both ride the Facebook snapshot too
+  // (persistWizardForFacebookRedirect), so an fb_error return re-renders
+  // the wall around the SAME funnel dream instead of chip defaults.
+  var funnelArrival = false;
+  var funnelCaption = '';
+
   /**
    * Same chip-selection fields assembleCaption below takes, minus camera/
    * POV/character-description/style — shared with buildDeterministicStory,
@@ -1572,6 +1596,13 @@
   }
 
   function assembleFromState(){
+    // FUNNEL-ARRIVAL caption contract (wall routing, 2026-08-08 — see
+    // funnelArrival's declaration above): the funnel-built caption is
+    // final and verbatim; the selected adopted characters ride along.
+    if(funnelArrival && funnelCaption){
+      assembled = { caption: funnelCaption, characterIdsForGeneration: staged.subjectCharacterIds.slice() };
+      return assembled;
+    }
     // WRITE-mode caption contract (entry chooser, founder round 8): a
     // visitor who chose "Write it in your own words" never saw the
     // Subject..Mood steps, so chip assembly would bake pure DEFAULTS
@@ -2090,7 +2121,12 @@
         // caption contract (see assembleFromState), not fall back to
         // chip-default assembly on the return leg.
         storyEdited: storyEditedByUser,
-        entryMode: entryMode
+        entryMode: entryMode,
+        // Funnel-arrival wall state — must survive the round trip so the
+        // fb_error leg re-renders the wall around the SAME funnel dream
+        // (see funnelArrival's declaration / assembleFromState's branch).
+        funnelArrival: funnelArrival,
+        funnelCaption: funnelCaption
       }));
       return true;
     }catch(e){
@@ -2137,6 +2173,8 @@
       currentStoryText = parsed.storyText || '';
       storyEditedByUser = !!parsed.storyEdited; // pre-flag snapshots simply restore un-edited — falsy is the right default
       entryMode = parsed.entryMode || null;     // restore BEFORE assembleFromState — it decides the write-mode caption contract
+      funnelArrival = !!parsed.funnelArrival;   // ditto — the funnel-arrival contract outranks both (see assembleFromState)
+      funnelCaption = parsed.funnelCaption || '';
       assembleFromState();
       // The restored story text was what the visitor last SAW for these
       // restored inputs — settle it against them (round-9 signature
@@ -2846,6 +2884,11 @@
     // they don't recognize; picking Build from the chooser afterwards
     // walks them forward normally).
     if(chooserOffered && (cur === 0 || (entryMode === 'write' && cur === FREETEXT_STEP))){ showChooser(); return; }
+    // Funnel arrivals land DIRECTLY on the wall — the steps behind it
+    // belong to the funnel (its own recap is one browser-Back away), not
+    // to this page's empty chip flow, so Back leaves the way they came
+    // instead of stepping into a wizard they never walked.
+    if(funnelArrival && cur === WALL_STEP){ history.back(); return; }
     if(cur > 0){ goToStep(cur - 1); return; }
     location.href = 'index.html';
   });
@@ -2866,11 +2909,86 @@
       clearPersistedWizardState();
       // Fresh entries (Get Started / direct) meet the entry chooser
       // first — founder round 8. A ?resume=1 arrival (funnel-style
-      // handoff — not a wizard.html path today, excluded defensively)
-      // skips it: funnel users already chose their mode funnel-side.
+      // handoff) skips it: funnel users already chose their mode
+      // funnel-side.
       if(getParam('resume') !== '1'){
         chooserOffered = true;
         showChooser();
+        return;
+      }
+      // ===== FUNNEL-ARRIVAL WALL LEG (wall routing, 2026-08-08) =====
+      // The growth funnel's flo arm hands off HERE now instead of
+      // start.html — founder test result: funnel arrivals were landing
+      // on start.html's leftover screen 13 (email-only, no forming veil,
+      // old styling) instead of this page's approved Layout-B wall. A
+      // resume arrival CARRYING A BUILT DREAM (caption param — the same
+      // param name start.html's resume leg reads) lands DIRECTLY on the
+      // wall: dream already built and recapped funnel-side, so the only
+      // thing left is the veil + Facebook/email wall. Everything below
+      // mirrors start.html's own arrival leg 1:1 (cross-referenced
+      // there), so routing flo arrivals here loses nothing:
+      //   - character stash adoption (js/funnel-character-stash.js, the
+      //     shared consuming helper) into THIS page's staged roster +
+      //     selection, so a stashed self photo/description rides the
+      //     wall's start-pending-generation call;
+      //   - PostHog identity stitch (distinct_id param ->
+      //     linkPreSignupIdentity);
+      //   - Meta attribution cookie persistence (fbc/fbp/fbclid params);
+      //   - the funnel_resumed_from_marketing event, same props.
+      // A bare ?resume=1 WITHOUT a caption keeps the pre-existing
+      // defensive behavior (chooser-free step flow) unchanged.
+      if(isFunnelHandoffArrival){
+        // Same cross-app PostHog identity stitch as start.html's arrival
+        // leg (see that file's handoffDistinctId block for the full
+        // rationale) — identify BEFORE any of this page's own events fire.
+        var handoffDistinctId = getParam('distinct_id');
+        if(handoffDistinctId && window.DreamStore && typeof DreamStore.linkPreSignupIdentity === 'function'){
+          try{ DreamStore.linkPreSignupIdentity(handoffDistinctId); }catch(e){ /* analytics must never break the app */ }
+        }
+        // Same Meta click-attribution cookie handoff as start.html's
+        // persistMetaAttributionCookies (see that block for the full
+        // rationale; fbclid->fbc construction per Meta's documented
+        // format, subdomain-index 1 per growth's handoff contract).
+        (function persistMetaAttributionCookies(){
+          try{
+            var setFirstPartyCookie = function(name, value){
+              try{ document.cookie = name + '=' + encodeURIComponent(value) + '; path=/; max-age=' + (90 * 24 * 60 * 60) + '; SameSite=Lax; Secure'; }catch(e){ /* analytics must never break the app */ }
+            };
+            var handoffFbc = getParam('fbc');
+            var handoffFbp = getParam('fbp');
+            var handoffFbclid = getParam('fbclid');
+            if(handoffFbc) setFirstPartyCookie('_fbc', handoffFbc);
+            if(handoffFbp) setFirstPartyCookie('_fbp', handoffFbp);
+            if(handoffFbclid && !handoffFbc && !getMetaCookies().fbc){
+              setFirstPartyCookie('_fbc', 'fb.1.' + Date.now() + '.' + handoffFbclid);
+            }
+          }catch(e){ /* analytics must never break the app */ }
+        })();
+        // Character stash adoption — the shared one-shot consume
+        // (validation floor, 30-min bound; see the helper's own header),
+        // staged + selected exactly like sheet-entered characters, so
+        // resolveCharactersForGeneration/flushStagedCharactersToStore
+        // treat them identically.
+        if(window.FunnelCharacterStash){
+          FunnelCharacterStash.consume().forEach(function(character){
+            staged.characters.push(character);
+            staged.subjectCharacterIds.push(character.id);
+          });
+        }
+        // Same event + props start.html's arrival leg fires, so the
+        // funnel-arrival marker is page-agnostic in every dashboard.
+        track('funnel_resumed_from_marketing', {
+          recall: getParam('recall') || null,
+          dream_types: (getParam('types') || '').split(',').filter(Boolean),
+          motivations: (getParam('motivations') || '').split(',').filter(Boolean),
+          style: getParam('style') || null
+        });
+        funnelArrival = true;
+        funnelCaption = getParam('caption');
+        if(getParam('style')) chosenStyle = getParam('style');
+        assembleFromState(); // funnel branch — set eagerly so the FB snapshot always carries a real assembled dream
+        cur = WALL_STEP;
+        render();
         return;
       }
       render();

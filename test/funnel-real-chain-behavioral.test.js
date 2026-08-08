@@ -421,6 +421,85 @@ async function driveStartHtmlEmailStep(page, stash, email) {
   return { startCalls: startCalls, stashAfterLoad: stashAfterLoad };
 }
 
+/** Drives wizard.html's funnel-arrival WALL leg (the flo arm's routing target since the wall-routing round): stash seeded pre-load, arrive at ?resume=1&caption&style, assert the Layout-B wall renders directly (veil + email, no chooser, no Subject step), submit, and capture the REAL start-pending-generation.js call. */
+async function driveWizardWallArrival(page, stash, email) {
+  var startCalls = [];
+  var checkEmailHandler = require('../netlify/functions/check-email').handler;
+  var startHandler = require('../netlify/functions/start-pending-generation').handler;
+  var registerHandler = require('../netlify/functions/register-account-passwordless').handler;
+  require('../netlify/functions/lib/email-domain-check').isDomainDeliverable = function () { return Promise.resolve(true); };
+
+  await wireRealPostHandler(page, '**/.netlify/functions/check-email', checkEmailHandler);
+  await wireRealPostHandler(page, '**/.netlify/functions/register-account-passwordless', registerHandler);
+  await wireRealPostHandler(page, '**/.netlify/functions/start-pending-generation', startHandler, {
+    wrap: function (handler, event) {
+      startCalls.push(JSON.parse(event.body));
+      return withPastClock(60000, function () { return handler(event); });
+    }
+  });
+
+  await page.addInitScript(function (payload) {
+    if (payload.stashJson === null) { localStorage.removeItem(payload.key); return; }
+    localStorage.setItem(payload.key, payload.stashJson);
+  }, { key: STASH_KEY, stashJson: stash === null ? null : JSON.stringify(stash) });
+
+  await safeGoto(page, baseUrl + '/wizard.html?' + RESUME_PARAMS);
+  var arrival = await page.evaluate(function (key) {
+    return {
+      stashAfterLoad: localStorage.getItem(key),
+      onWall: !!document.getElementById('contact-email'),
+      veil: !!document.querySelector('.fn-forming-frame'),
+      noChooser: !document.getElementById('entry-mode-row'),
+      noSubjectStep: !document.getElementById('subject-chip-row')
+    };
+  }, STASH_KEY);
+
+  await page.fill('#contact-email', email);
+  await page.click('#fn-contact-continue');
+  await settle(function () { return startCalls.length >= 1; });
+  return { startCalls: startCalls, arrival: arrival };
+}
+
+test('WIZARD WALL ROUTING: a funnel handoff (?resume=1&caption&style) lands DIRECTLY on wizard.html\'s Layout-B wall (veil, no chooser, no steps), adopts the stash, and the REAL start-pending-generation payload carries the funnel caption VERBATIM plus the photo character byte-identical', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  mockBlobs.reset();
+  process.env.GENERATION_MOCK_MODE = 'true';
+  ['start-pending-generation', 'check-email', 'register-account-passwordless', 'lib/account-store', 'lib/job-owners', 'lib/pending-dreams', 'lib/rate-limit', 'lib/email-domain-check'].forEach(function (mod) {
+    delete require.cache[require.resolve('../netlify/functions/' + mod)];
+  });
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var res = await driveWizardWallArrival(page, {
+      v: 1,
+      savedAt: Date.now(),
+      characters: [
+        { isSelf: true, name: '', description: 'short brown hair and glasses', photoDataUrl: STASH_PHOTO },
+        { isSelf: false, name: 'Maya', description: 'tall, red coat' }
+      ]
+    }, 'wall-routing@example.com');
+
+    assert.ok(res.arrival.onWall, 'the funnel arrival must land DIRECTLY on the signup wall (THE founder-reported bug: it used to land on start.html\'s old screen 13; a wizard.html arrival used to land on the Subject step)');
+    assert.ok(res.arrival.veil, 'the wall must show the forming veil — the approved Layout-B wall, not the old email-only screen');
+    assert.ok(res.arrival.noChooser && res.arrival.noSubjectStep, 'no chooser and no wizard steps for a funnel arrival — the dream is already built');
+    assert.equal(res.arrival.stashAfterLoad, null, 'the stash must be consumed one-shot on arrival');
+
+    assert.equal(res.startCalls.length, 1, 'exactly one real start-pending-generation call');
+    var body = res.startCalls[0];
+    assert.equal(body.caption, new URLSearchParams(RESUME_PARAMS).get('caption'), 'the funnel-built caption must ride VERBATIM — never re-assembled from wizard.html\'s empty chip state');
+    assert.equal(body.style, 'Cartoon', 'the funnel-chosen style must ride');
+    var self = body.characters.filter(function (c) { return c.isSelf; })[0];
+    var other = body.characters.filter(function (c) { return !c.isSelf; })[0];
+    assert.ok(self, 'the adopted self character must ride the wall\'s generation payload');
+    assert.equal(self.photoDataUrl, STASH_PHOTO, 'THE POINT: the funnel-uploaded photo must reach the wall\'s generation payload byte-identical');
+    assert.equal(self.description, 'short brown hair and glasses');
+    assert.ok(other && other.name === 'Maya' && other.description === 'tall, red coat', 'the Someone character must ride too');
+    assert.equal(body.characterIdsForGeneration.length, 2, 'both adopted characters must be SELECTED for generation');
+  } finally {
+    await page.close();
+  }
+});
+
 test('CHARACTER STASH: a funnel-stashed self photo+description and Someone record are consumed one-shot and ride the REAL start-pending-generation.js payload through the existing staging path', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   mockBlobs.reset();
