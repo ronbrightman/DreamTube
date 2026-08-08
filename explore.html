@@ -75,7 +75,22 @@
     <div class="gen-banner-text">Your dream is still generating…</div>
   </div>
   <div class="explore-filter-chip" id="filter-chip" style="display:none;"></div>
-  <div class="explore-token-chip-slot" id="explore-token-chip-slot"></div>
+  <!-- Top-left row: the pre-existing token balance chip mount, plus the new
+       "Following" filter toggle (Social Layer v2 slice 3 "follow") sitting
+       right alongside it — a flex row rather than separate absolutely-
+       positioned elements so the two never have to hardcode each other's
+       width to sit side by side. Always rendered (signed in or out) —
+       tapping it while signed out opens the same signup-nudge modal every
+       other gated action on this page already uses; see the script block
+       below. Selecting/clearing it drives the SAME `filter`/render()
+       mechanism #filter-chip above already implements for style/user
+       filters (design doc: "no new filtering mechanism"), just with a
+       dedicated tap target since there's no per-card "Following" tag to
+       tap the way style/user filters have. -->
+  <div class="explore-top-left-row" id="explore-top-left-row">
+    <div class="explore-token-chip-slot" id="explore-token-chip-slot"></div>
+    <div class="explore-following-chip" id="following-filter-chip">Following</div>
+  </div>
   <div class="feed-scroll" id="feed-scroll"></div>
   <div class="toast" id="toast"></div>
   <!-- cache-bust 2026-07-31T09:20Z: Bar A dock rolled out here (for-product-urgent-founder-roll-the-new--8pyek3) -->
@@ -175,6 +190,37 @@
   }
   signupNudge.addEventListener('click', function(e){
     if(e.target.id === 'modal-signup-nudge') signupNudge.classList.remove('open');
+  });
+
+  function normalizeFollowHandle(h){
+    return (typeof h === 'string' ? h : '').replace(/^@/, '').toLowerCase();
+  }
+
+  // ===== "Following" filter chip (Social Layer v2 slice 3 "follow") =====
+  // Fetched once, eagerly, for a signed-in visitor (mirrors the token
+  // chip's own "only for a signed-in visitor" gating above) — ready by the
+  // time a real tap could plausibly land. `followingSet` stays null until
+  // that fetch resolves; if the chip is tapped before it does, the filter
+  // still activates (an empty result briefly reads as "no dreams match"),
+  // and the fetch's own .then() below re-renders once the real list is in,
+  // closing that race rather than leaving a stale empty state.
+  var followingSet = null;
+  var followingChip = document.getElementById('following-filter-chip');
+  if (DreamStore.getCurrentUser()) {
+    DreamStore.getFollowStatus().then(function (status) {
+      followingSet = {};
+      (status.following || []).forEach(function (h) { followingSet[normalizeFollowHandle(h)] = true; });
+      if (filter && filter.type === 'following') render();
+    });
+  }
+  followingChip.addEventListener('click', function(){
+    if(!DreamStore.getCurrentUser()){
+      signupCta.href = 'login.html?mode=signup&next=' + encodeURIComponent('explore.html');
+      signupNudge.classList.add('open');
+      return;
+    }
+    filter = (filter && filter.type === 'following') ? null : { type: 'following' };
+    render();
   });
 
   function esc(str){ var d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
@@ -742,7 +788,16 @@
     var dreams = allDreams.filter(function(d){ return !d.blockedByMe; });
     if(filter){
       dreams = dreams.filter(function(d){
-        return filter.type === 'style' ? d.style === filter.value : d.ownerHandle === filter.value;
+        if(filter.type === 'style') return d.style === filter.value;
+        // 'following' (Social Layer v2 slice 3) -- client-side filter
+        // against the once-fetched followingSet (see this page's own
+        // "Following" filter chip block above), same shared `filter`
+        // mechanism style/user filters already use, no second filtering
+        // path. `followingSet` still null (fetch not resolved yet, or
+        // never signed in) reads as "matches nothing" rather than
+        // throwing -- the fetch's own .then() re-renders once it lands.
+        if(filter.type === 'following') return !!(followingSet && followingSet[normalizeFollowHandle(d.ownerHandle)]);
+        return d.ownerHandle === filter.value; // 'user'
       });
     }
 
@@ -758,15 +813,22 @@
     if(dreams.length){
       appendNextBatch();
     } else {
-      root.innerHTML = '<div class="grid-empty" style="color:#fff;">' + (filter ? 'No dreams match this filter.' : 'No dreams posted yet.') + '</div>';
+      var emptyMsg = filter && filter.type === 'following'
+        ? "No dreams from accounts you follow yet."
+        : (filter ? 'No dreams match this filter.' : 'No dreams posted yet.');
+      root.innerHTML = '<div class="grid-empty" style="color:#fff;">' + emptyMsg + '</div>';
     }
 
     if(filter){
       chip.style.display = 'flex';
-      chip.innerHTML = esc(filter.type === 'style' ? 'Style: ' + filter.value : DreamStore.displayHandle(filter.value)) + ' <span class="fc-x">✕</span>';
+      var chipLabel = filter.type === 'style' ? 'Style: ' + filter.value
+        : filter.type === 'following' ? 'Following'
+        : DreamStore.displayHandle(filter.value);
+      chip.innerHTML = esc(chipLabel) + ' <span class="fc-x">✕</span>';
     } else {
       chip.style.display = 'none';
     }
+    followingChip.classList.toggle('active', !!(filter && filter.type === 'following'));
   }
   render();
 
