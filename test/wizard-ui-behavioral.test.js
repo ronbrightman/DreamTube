@@ -98,18 +98,23 @@ test('wizard.html: every core step is completable purely by tapping chips (zero 
     await page.click('#subject-other-row [data-subj-other="stranger"]');
     await page.click('#fn-subject-continue');
 
-    // Step 2 -- Setting: tap Night (auxiliary toggle, never advances),
-    // then Sky/space -- a single-select place pick AUTO-advances ~260ms
-    // later under Layout-B, no Continue tap needed.
+    // Step 2 -- Setting: a COMPOUND step (place + Day/Night on one screen).
+    // Founder 08-08: a place tap must NOT auto-advance, or Day/Night gets
+    // skipped. Tap Sky/space, then Night, then Continue -- Continue is the
+    // only way forward. (Order deliberately place-then-time here to prove
+    // the place tap left the screen alone so Day/Night was still reachable.)
     await page.waitForSelector('#setting-time-row [data-scenery-time="Night"]');
-    await page.click('#setting-time-row [data-scenery-time="Night"]');
     await page.click('#setting-place-row [data-setting-place="sky"]');
+    await page.click('#setting-time-row [data-scenery-time="Night"]');
+    await page.click('#fn-setting-continue');
 
-    // Step 3 -- Action: REQUIRED, no Skip link should exist at all.
-    // Tapping the chip auto-advances.
+    // Step 3 -- Action: REQUIRED, no Skip link should exist at all. Also a
+    // COMPOUND step (POV toggle alongside), so the chip tap SELECTS and
+    // Continue advances -- no auto-advance (founder 08-08).
     await page.waitForSelector('#action-row [data-action="flying"]');
     assert.equal(await page.locator('#fn-action-skip').count(), 0, 'Action step must have no Skip control per the spec');
     await page.click('#action-row [data-action="flying"]');
+    await page.click('#fn-action-continue');
 
     // Step 4 -- Mood: tap Epic (drives camera inference -> sweeping crane,
     // overridden below since Flying was chosen -- Flying/Falling wins over
@@ -311,7 +316,8 @@ test('wizard.html Subject step: ALL selections (Me with a photo, "Someone I know
     await page.click('#fn-subject-continue');
     await page.waitForSelector('#setting-time-row [data-scenery-time="Night"]');
     await page.click('#fn-setting-skip');
-    await page.click('[data-action="flying"]'); // auto-advances (Layout-B)
+    await page.click('[data-action="flying"]'); // selects; Action needs Continue (compound step)
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
@@ -366,19 +372,88 @@ test('wizard.html Subject step: ALL selections (Me with a photo, "Someone I know
 // endpoint explicitly.
 // ===========================================================================
 
-/** Walks a fresh page through the core wizard steps up to the signup wall — shared by every wall test below. The Action tap auto-advances (Layout-B single-select); every skippable step still advances via its Skip link; the round-8 recap step is accepted as-is. */
+/** Walks a fresh page through the core wizard steps up to the signup wall — shared by every wall test below. Action is a compound step (POV toggle alongside), so its chip tap SELECTS and Continue advances; every skippable step still advances via its Skip link; the round-8 recap step is accepted as-is. */
 async function reachWall(page) {
   await gotoWizardBuild(page);
   await page.click('[data-subj-other="none"]');
   await page.click('#fn-subject-continue');
   await page.click('#fn-setting-skip');
   await page.click('[data-action="flying"]');
+  await page.click('#fn-action-continue');
   await page.click('#fn-mood-skip');
   await page.click('#fn-style-skip');
   await page.click('#fn-freetext-skip');
   await page.click('#fn-recap-continue');
   await page.waitForSelector('#contact-email');
 }
+
+/** Same walk as reachWall, but opens wizard.html with an explicit query string (used to force the wall_subtext_arm override). */
+async function reachWallWithSearch(page, search) {
+  await safeGoto(page, baseUrl + '/wizard.html' + (search || ''));
+  await page.click('#entry-mode-row [data-entry-mode="build"]');
+  await page.waitForSelector('#subject-chip-row');
+  await page.click('[data-subj-other="none"]');
+  await page.click('#fn-subject-continue');
+  await page.click('#fn-setting-skip');
+  await page.click('[data-action="flying"]');
+  await page.click('#fn-action-continue');
+  await page.click('#fn-mood-skip');
+  await page.click('#fn-style-skip');
+  await page.click('#fn-freetext-skip');
+  await page.click('#fn-recap-continue');
+  await page.waitForSelector('#contact-email');
+}
+
+test('wizard.html signup wall: the wall_subtext_arm A/B is assigned (persisted, stable) before the wall renders, and each arm renders correctly — "shown" keeps the reassurance line, "hidden" drops it with nothing else on the wall changing', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var SUBTEXT = 'Free to start, no card needed';
+
+  // (a) shown arm (forced via ?wallsubtext=shown, mirroring ?lbskin) — the
+  // reassurance line renders, and the override persists to localStorage.
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await reachWallWithSearch(page, '?wallsubtext=shown');
+    var arm = await page.evaluate(function () { return localStorage.getItem('dt_wall_subtext_arm'); });
+    assert.equal(arm, 'shown', 'the ?wallsubtext override must force and persist the arm');
+    assert.equal(await page.locator('.fn-microcopy', { hasText: SUBTEXT }).count(), 1, 'the "shown" arm must render the reassurance subtext line');
+    // The rest of the wall is intact regardless of arm.
+    assert.equal(await page.locator('#contact-email').count(), 1);
+    assert.equal(await page.locator('#fn-contact-continue').count(), 1);
+  } finally {
+    await page.close();
+  }
+
+  // (b) hidden arm — the SAME wall, but the reassurance line is gone and
+  // nothing else changes (fnStageHtml filters the falsy group cleanly).
+  page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await reachWallWithSearch(page, '?wallsubtext=hidden');
+    var arm2 = await page.evaluate(function () { return localStorage.getItem('dt_wall_subtext_arm'); });
+    assert.equal(arm2, 'hidden', 'the ?wallsubtext override must force and persist the hidden arm');
+    assert.equal(await page.locator('.fn-microcopy', { hasText: SUBTEXT }).count(), 0, 'the "hidden" arm must NOT render the reassurance subtext line');
+    assert.equal(await page.locator('#contact-email').count(), 1, 'the wall itself must be unchanged in the hidden arm');
+    assert.equal(await page.locator('#fn-contact-continue').count(), 1, 'the CTA must be unchanged in the hidden arm');
+  } finally {
+    await page.close();
+  }
+
+  // (c) no override -> the arm is still auto-assigned to exactly one of the
+  // two values, persisted (stable per visitor), and the rendered subtext
+  // MATCHES the assigned arm — proving assignment happened before paint.
+  page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await reachWallWithSearch(page, '');
+    var arm3 = await page.evaluate(function () { return localStorage.getItem('dt_wall_subtext_arm'); });
+    assert.ok(arm3 === 'shown' || arm3 === 'hidden', 'with no override the arm must still be auto-assigned to exactly one of the two values');
+    var lineCount = await page.locator('.fn-microcopy', { hasText: SUBTEXT }).count();
+    assert.equal(lineCount, arm3 === 'shown' ? 1 : 0, 'the rendered subtext must match the assigned arm — assignment is before first paint');
+  } finally {
+    await page.close();
+  }
+});
 
 test('wizard.html signup wall: renders the forming veil on top, the Facebook button with the "or" divider above the email field (screen-13 order), a "Send me my dream" CTA, the story recap card — and NO username/password fields anywhere', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
@@ -1353,7 +1428,7 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
 // boolean asserts only (assert.ok((await page.$(...)) === null, ...)).
 // ===========================================================================
 
-test('wizard.html Layout-B: a single-select tap (Action) auto-advances with NO Continue tap, and a Continue tap inside the auto-advance window advances exactly once, never two steps', async function (t) {
+test('wizard.html: the compound Action step does NOT auto-advance on a chip tap (POV is a secondary field on the same screen) — the POV toggle stays reachable and Continue is the only way forward — while a single-choice step (Mood) still auto-advances', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -1364,26 +1439,71 @@ test('wizard.html Layout-B: a single-select tap (Action) auto-advances with NO C
     await page.click('#fn-setting-skip');
     await page.waitForSelector('#action-row [data-action="flying"]');
 
-    // (a) Tap alone advances — nothing else is clicked.
+    // (a) A chip tap SELECTS but must NOT advance — founder 08-08: POV
+    // lives on this same screen and a tap-to-advance skipped past it.
     await page.click('#action-row [data-action="flying"]');
+    assert.equal(await page.locator('[data-action="flying"].sel').count(), 1, 'the tapped action chip must show as selected');
+    await page.waitForTimeout(500); // well past the old 260ms auto-advance window
+    assert.equal(await page.locator('#action-row').count(), 1, 'the Action step must NOT auto-advance on a chip tap — POV is a secondary field here');
+    assert.equal(await page.locator('#mood-row').count(), 0, 'must still be sitting on Action, not skipped ahead to Mood');
+
+    // (b) The POV toggle is reachable precisely because the screen stayed.
+    // Flip it on (tap the visible switch, delivered to #pov-toggle via the
+    // wrapping <label>), then Continue advances exactly once to Mood.
+    await page.click('.fn-toggle-row .fn-switch-track');
+    assert.equal(await page.locator('#pov-toggle').isChecked(), true, 'POV must be reachable and toggleable before leaving the Action step');
+    await page.click('#fn-action-continue');
     await page.waitForSelector('#mood-row', { timeout: 3000 });
 
-    // (b) Back to Action, then chip-tap + Continue-tap in the SAME tick
-    // (guaranteed inside the 260ms window — a two-round-trip click pair
-    // could straddle it under load and flake): next() cancels the armed
-    // auto-advance, so this must land on Mood, not skip through to Style.
-    await page.click('#fnBack');
-    await page.waitForSelector('#action-row [data-action="running"]');
-    await page.evaluate(function () {
-      document.querySelector('#action-row [data-action="running"]').click();
-      document.getElementById('fn-action-continue').click();
-    });
-    await page.waitForSelector('#mood-row', { timeout: 3000 });
-    // Give the (cancelled) timer's original 260ms window ample time to
-    // have fired if the cancel were broken, then confirm no double-hop.
-    await page.waitForTimeout(500);
-    assert.equal(await page.locator('#mood-row').count(), 1, 'must still be sitting on Mood — a Continue tap inside the auto-advance window must advance exactly once');
-    assert.equal(await page.locator('#style-grid').count(), 0, 'must NOT have double-advanced through to Style');
+    // (c) Mood is a single-choice step with NO secondary field, so it STILL
+    // auto-advances on a chip tap — no Continue needed.
+    await page.click('#mood-row [data-mood="epic"]');
+    await page.waitForSelector('#style-grid', { timeout: 3000 });
+    assert.equal(await page.locator('#style-grid').count(), 1, 'Mood must still auto-advance to Style on a single tap');
+  } finally {
+    await page.close();
+  }
+});
+
+test('wizard.html: the compound Setting step does NOT auto-advance on a place tap (Day/Night is a secondary field on the same screen) — both stay selectable together and Continue is required — while the single-choice Style step still auto-advances', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await gotoWizardBuild(page);
+    await page.click('[data-subj-other="none"]');
+    await page.click('#fn-subject-continue');
+    await page.waitForSelector('#setting-place-row [data-setting-place="sky"]');
+
+    // (a) A place tap SELECTS but must NOT advance — founder 08-08: "it
+    // goes to the next page without letting you choose day or night".
+    await page.click('#setting-place-row [data-setting-place="sky"]');
+    assert.equal(await page.locator('#setting-place-row [data-setting-place="sky"].sel').count(), 1, 'the tapped place chip must show as selected');
+    await page.waitForTimeout(500); // well past the old 260ms auto-advance window
+    assert.equal(await page.locator('#setting-place-row').count(), 1, 'the Setting step must NOT auto-advance on a place tap');
+    assert.equal(await page.locator('#action-row').count(), 0, 'must still be sitting on Setting, not skipped ahead to Action');
+
+    // (b) Day/Night is still reachable AFTER the place pick and selectable
+    // without racing an advance — the whole point of the fix. Both
+    // selections coexist on the one screen.
+    await page.click('#setting-time-row [data-scenery-time="Night"]');
+    assert.equal(await page.locator('#setting-time-row [data-scenery-time="Night"].sel').count(), 1, 'Day/Night must be selectable after a place is picked');
+    assert.equal(await page.locator('#setting-place-row [data-setting-place="sky"].sel').count(), 1, 'the place selection must survive picking Day/Night');
+
+    // (c) Continue is the only way forward.
+    await page.click('#fn-setting-continue');
+    await page.waitForSelector('#action-row [data-action="flying"]', { timeout: 3000 });
+
+    // (d) Style (single choice, no secondary field) STILL auto-advances --
+    // walk to it and confirm one tap moves off it to the free-text step.
+    await page.click('#action-row [data-action="flying"]');
+    await page.click('#fn-action-continue');
+    await page.waitForSelector('#fn-mood-skip');
+    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#style-grid [data-style="Anime"]');
+    await page.click('#style-grid [data-style="Anime"]');
+    await page.waitForSelector('#fn-freetext-skip', { timeout: 3000 });
+    assert.equal(await page.locator('#fn-freetext-skip').count(), 1, 'Style must still auto-advance to the free-text step on a single tap');
   } finally {
     await page.close();
   }
@@ -1446,6 +1566,7 @@ test('wizard.html round-8 Subject: tapping Me selects it immediately AND opens t
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
     await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
@@ -1506,6 +1627,7 @@ test('wizard.html round-8 Subject: cancelling the Me sheet keeps Me SELECTED wit
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
     await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
@@ -1562,6 +1684,7 @@ test('wizard.html round-8 recap step: "Here\'s your dream — make it yours" is 
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
     await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
@@ -1770,6 +1893,7 @@ test('wizard.html Build mode: "Anything to add?" text JOINS the chip-assembled s
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
     await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.fill('#free-text-input', EXTRA);
@@ -1866,6 +1990,7 @@ test('wizard.html round 9: wall→Back repaints the LLM-upgraded story with NO t
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
     await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
@@ -1919,6 +2044,7 @@ test('wizard.html round 9: a hand-edited recap SURVIVES an accidental Back→For
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
     await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
@@ -1971,6 +2097,7 @@ test('wizard.html round 9: the deterministic chips+freetext join is sentence-cas
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
     await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.fill('#free-text-input', 'the sea was made of glass'); // lowercase, no period — the bug-hunt repro
@@ -2009,6 +2136,7 @@ test('wizard.html round 9 fix #6: neither the wall\'s email input nor the recap 
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
     await page.click('[data-action="flying"]');
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
