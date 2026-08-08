@@ -134,6 +134,21 @@ test('image-file.mjs: redirects to metadata.sourceUrl instead of streaming when 
   assert.equal(res.headers.get('location'), 'https://fal.media/big-source.png');
 });
 
+test('image-file.mjs: a record with NO sourceUrl still streams the stored bytes (fallback path, metadata-first read)', async function () {
+  var { getStore } = require('@netlify/blobs');
+  var bytes = new ArrayBuffer(9);
+  await getStore({ name: 'dreamtube-images' }).set('if-nosource', bytes, {
+    metadata: { contentType: 'image/png', byteLength: 9 }
+  });
+
+  var imageFile = (await import('../netlify/functions/image-file.mjs')).default;
+  var res = await imageFile(fakeRequest('https://dreamtube.life/.netlify/functions/image-file?key=if-nosource'));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'image/png');
+  var buf = await res.arrayBuffer();
+  assert.equal(buf.byteLength, 9);
+});
+
 // watermarked-video-file.mjs — the third copy of this same pattern, for
 // lib/watermark-video.js's own "dreamtube-videos-watermarked" store
 // (tracker item for-product-founder-ruling-08-07-every-u-g81h7v).

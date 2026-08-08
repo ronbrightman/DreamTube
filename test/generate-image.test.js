@@ -71,11 +71,18 @@ test.beforeEach(async function () {
   delete process.env.DAILY_SPEND_CAP_USD;
   delete process.env.MAX_GENERATIONS_PER_IP_PER_DAY;
   delete process.env.TURNSTILE_SECRET_KEY;
+  // Content-tier gate (generate-image.js's E116, added 2026-08-08): force a
+  // deterministic no-network 'clean' verdict here so the classifier never
+  // fires its own fetch — this suite counts/inspects the FAL submission
+  // fetch specifically and is not the gate's own coverage (that lives in
+  // test/content-gate-generation.test.js). Cleared in test.after.
+  process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'clean';
   await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
 });
 
 test.after(function () {
   global.fetch = realFetch;
+  delete process.env.CONTENT_CLASSIFIER_MOCK_TIER;
 });
 
 // ----- Validation -----

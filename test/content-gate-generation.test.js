@@ -31,6 +31,7 @@ var accountAuthToken = require('../netlify/functions/lib/account-auth-token');
 var cc = require('../netlify/functions/lib/content-classifier');
 
 var genVideoHandler = require('../netlify/functions/generate-video').handler;
+var genImageHandler = require('../netlify/functions/generate-image').handler;
 var startPendingHandler = require('../netlify/functions/start-pending-generation').handler;
 var publishHandler = require('../netlify/functions/publish-dream').handler;
 
@@ -201,6 +202,100 @@ test('explicit text hidden in a character DESCRIPTION is still caught (classifia
   }));
   assert.equal(sawDescription, true, 'the character description must be part of the classified text');
   assert.equal(res.statusCode, 422);
+});
+
+// ===== generate-image.js (logged-in IMAGE chokepoint) =====
+//
+// Founder directive 2026-08-08 "same gate for both image and video": the
+// image path mirrors generate-video.js's gate EXACTLY — same E116 code, same
+// 422, same no-fal-call/no-token-spend on a block, same fail-open (normal) /
+// fail-closed (named-photo) directions. Image token cost is 10 (not 100), so
+// a 300-balance account lands at 290 after an allowed image.
+
+function genImageEvent(body) {
+  return fakeEvent({ method: 'POST', ip: nextIp(), body: Object.assign({ caption: 'a dream', style: 'Cartoon' }, body) });
+}
+
+test('image: explicit -> E116 block: 422, NO fal call, NO token spend, explicit message', async function () {
+  process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'explicit';
+  var falCount = stubFalSpy();
+  await balance('img-exp@example.com', 300);
+  var res = await genImageHandler(genImageEvent({ email: 'img-exp@example.com', caption: 'a graphic sexual scene' }));
+  assert.equal(res.statusCode, 422);
+  var err = JSON.parse(res.body).error;
+  assert.match(err, /^E116: content_policy_blocked/);
+  assert.match(err, /explicit sexual content/);
+  assert.equal(falCount(), 0, 'no fal submission on a block');
+  assert.equal(await bal('img-exp@example.com'), 300, 'no tokens spent on a block');
+});
+
+test('image: suggestive/romantic (e.g. lingerie) -> ALLOWED: 200, fal called, 10 tokens spent (only true explicit is blocked)', async function () {
+  process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'romantic';
+  var falCount = stubFalSpy();
+  await balance('img-rom@example.com', 300);
+  var res = await genImageHandler(genImageEvent({ email: 'img-rom@example.com', caption: 'a portrait in lingerie' }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(falCount(), 1);
+  assert.equal(await bal('img-rom@example.com'), 290);
+});
+
+test('image: clean -> ALLOWED: 200, fal called, 10 tokens spent', async function () {
+  process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'clean';
+  var falCount = stubFalSpy();
+  await balance('img-cln@example.com', 300);
+  var res = await genImageHandler(genImageEvent({ email: 'img-cln@example.com', caption: 'flying over mountains' }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(falCount(), 1);
+  assert.equal(await bal('img-cln@example.com'), 290);
+});
+
+test('image: named-other-person photo + romantic -> BLOCKED with the named-person message (anti-NCII), no spend', async function () {
+  process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'romantic';
+  var falCount = stubFalSpy();
+  await balance('img-named@example.com', 300);
+  var res = await genImageHandler(genImageEvent({
+    email: 'img-named@example.com',
+    caption: 'a romantic evening',
+    characters: [{ name: 'Alex', isSelf: false, photoDataUrl: 'data:image/png;base64,AAAA' }]
+  }));
+  assert.equal(res.statusCode, 422);
+  var err = JSON.parse(res.body).error;
+  assert.match(err, /^E116: content_policy_blocked/);
+  assert.match(err, /real person you've named and added a photo of/);
+  assert.equal(falCount(), 0);
+  assert.equal(await bal('img-named@example.com'), 300);
+});
+
+test('image: mock mode still enforces the gate: explicit is blocked even in GENERATION_MOCK_MODE (no token spend)', async function () {
+  process.env.GENERATION_MOCK_MODE = 'true';
+  process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'explicit';
+  await balance('img-mockexp@example.com', 300);
+  var res = await genImageHandler(genImageEvent({ email: 'img-mockexp@example.com', caption: 'explicit stuff' }));
+  assert.equal(res.statusCode, 422);
+  assert.equal(await bal('img-mockexp@example.com'), 300, 'mock mode must not spend tokens on a blocked image');
+});
+
+test('image: classifier error on a NORMAL request -> FAILS OPEN: generation proceeds', async function () {
+  var falCount = stubClassifierErrorFalOk();
+  await balance('img-failopen@example.com', 300);
+  var res = await genImageHandler(genImageEvent({ email: 'img-failopen@example.com', caption: 'anything' }));
+  assert.equal(res.statusCode, 200);
+  assert.equal(falCount(), 1, 'a classifier outage must not break image generation for the normal case');
+  assert.equal(await bal('img-failopen@example.com'), 290);
+});
+
+test('image: classifier error on a NAMED-PHOTO request -> FAILS CLOSED: blocked, no fal call, no spend', async function () {
+  var falCount = stubClassifierErrorFalOk();
+  await balance('img-failclosed@example.com', 300);
+  var res = await genImageHandler(genImageEvent({
+    email: 'img-failclosed@example.com',
+    caption: 'anything',
+    characters: [{ name: 'Alex', isSelf: false, photoDataUrl: 'data:image/png;base64,AAAA' }]
+  }));
+  assert.equal(res.statusCode, 422);
+  assert.match(JSON.parse(res.body).error, /real person you've named and added a photo of/);
+  assert.equal(falCount(), 0, 'the NCII landmine must never slip through on a classifier error');
+  assert.equal(await bal('img-failclosed@example.com'), 300);
 });
 
 // ===== start-pending-generation.js (pre-signup funnel chokepoint) =====
