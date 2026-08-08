@@ -33,8 +33,13 @@
 // WHAT BELONGS ON THIS EXCLUDE LIST (the ONLY categories -- when in
 // doubt, do NOT add a file here; leave it in the fast tier by default):
 //   1. Admin one-off tools with no live user traffic (admin-diagnose-*,
-//      admin-repair-*, audit-*-page.test.js) -- owner-only diagnostic/
-//      repair scripts run manually, not part of any real user's path.
+//      admin-repair-*, audit-*-page.test.js, plus admin-media-library-
+//      data.test.js/admin-postpack-data.test.js/admin-recovery-sweep-
+//      page.test.js -- named explicitly here per round 10's header-
+//      completeness finding: all three are owner-gated, read-only or
+//      idempotent/dry-run-capable admin data feeds/tools, no live user-
+//      traffic path) -- owner-only diagnostic/repair scripts run
+//      manually, not part of any real user's path.
 //   2. tracker.html's own test family -- an internal owner/Manager-only
 //      coordination tool, not customer-facing, same risk class as the
 //      admin tools above. NOT tracker.test.js -- round 8 review found its
@@ -74,7 +79,12 @@
 //      home-day0-dream-card-behavioral, profile-night-restyle-
 //      behavioral, chamber-makeover-behavioral, logo-purple-retouch-
 //      asset-sweep, sound-nudge-behavioral, legal-pages-behavioral,
-//      faq-section-behavioral).
+//      faq-section-behavioral, barA-nav-rollout-behavioral -- named
+//      explicitly here per round 10's header-completeness finding: a
+//      pure nav-bar/avatar-rendering visual-pin suite whose one
+//      security-adjacent mechanic, the webview-escape session-transfer
+//      token, is explicitly deferred to session-transfer-behavioral.test.js,
+//      confirmed still in the critical tier).
 //   6. Pure UI/interaction-polish behavioral suites with no money/data/
 //      auth stake even on total failure -- a broken scroll lock, a
 //      stuck install-nudge banner, a webview escape hint not showing,
