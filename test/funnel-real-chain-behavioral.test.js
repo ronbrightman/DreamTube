@@ -251,7 +251,8 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
     await page.waitForSelector('[data-action="flying"]');
-    await page.click('[data-action="flying"]'); // auto-advances (Layout-B single-select)
+    await page.click('[data-action="flying"]'); // selects; Action needs Continue (compound step)
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');

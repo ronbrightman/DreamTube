@@ -623,8 +623,9 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
     await page.click('[data-subj-other="stranger"]');
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
-    await page.click('[data-action="flying"]'); // auto-advances (Layout-B)
-    await page.click('[data-mood="epic"]');     // auto-advances too
+    await page.click('[data-action="flying"]'); // selects; Action needs Continue (compound step)
+    await page.click('#fn-action-continue');
+    await page.click('[data-mood="epic"]');     // Mood still auto-advances (single choice)
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
 
@@ -703,7 +704,8 @@ test('wizard.html: chips WITH free text -- storyText keeps the chip story AND th
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
-    await page.click('[data-action="flying"]'); // auto-advances (Layout-B)
+    await page.click('[data-action="flying"]'); // selects; Action needs Continue (compound step)
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.fill('#free-text-input', FREE_TEXT);
