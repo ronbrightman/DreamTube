@@ -13,6 +13,13 @@ var assert = require('node:assert/strict');
 var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
 
+// Content-tier safety gate (netlify/functions/lib/content-classifier.js) —
+// force the classifier to a deterministic 'clean' verdict with no network
+// call so THIS file's fal-call-shape / fal-never-called assertions aren't
+// perturbed by the classifier's own LLM fetch. The gate itself is covered
+// in test/content-classifier.test.js and test/content-gate-generation.test.js.
+process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'clean';
+
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
 var pendingDreams = require('../netlify/functions/lib/pending-dreams');

@@ -134,6 +134,26 @@
 //                                   correctly-typed image data URL (wrong
 //                                   type, malformed, or over
 //                                   AVATAR_MAX_BYTES decoded size)
+//   E9 content_policy_blocked   — OUTPUT-SIDE defense-in-depth (founder-
+//                                   directed 2026-08-08, lib/content-classifier.js):
+//                                   before a dream reaches the world-readable
+//                                   shared feed, its caption is re-classified and
+//                                   an EXPLICIT result blocks the publish, so
+//                                   nothing borderline the model DID produce can
+//                                   leak outward to other users. Explicit-only —
+//                                   the romantic allowance and the named-person
+//                                   NCII threshold are generation-time concerns;
+//                                   this is purely a public-leak backstop. Same
+//                                   200/ok:false "routine business outcome" shape
+//                                   as E5/E8 (js/store.js's syncPublishedDreamToFeed
+//                                   is fire-and-forget): the dream stays published
+//                                   in the owner's own private/local view, it just
+//                                   never reaches the shared cross-account feed.
+//                                   FAILS OPEN on a classifier error/timeout — a
+//                                   classifier outage must not block every publish;
+//                                   the generation-time gate is the primary defense.
+//                                   Private dreams are never touched by this — only
+//                                   this outward-facing publish path calls it.
 //   E8 email_not_verified       — the verified token's own account has
 //                                   `emailVerified === false` (tracker item
 //                                   for-product-build-passwordless-signup-
@@ -154,6 +174,7 @@
 var { connectLambda, getStore } = require('@netlify/blobs');
 var accountAuthToken = require('./lib/account-auth-token');
 var accountStore = require('./lib/account-store');
+var contentClassifier = require('./lib/content-classifier');
 
 function stripAt(handle) {
   var s = (typeof handle === 'string' ? handle : '').trim();
@@ -258,6 +279,20 @@ exports.handler = async function (event) {
   var account = await accountStore.getByUsername(event, auth.username);
   if (account && account.emailVerified === false) {
     return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'E8: email_not_verified' }) };
+  }
+
+  // E9 — output-side explicit re-check (see this file's own E9 doc comment
+  // and lib/content-classifier.js). Re-classifies the caption before it
+  // reaches the world-readable shared feed; an explicit result blocks the
+  // publish so borderline content the model did manage to produce can't leak
+  // outward. Fails OPEN on a classifier error (the generation-time gate is
+  // the primary defense). Uses the existing FAL_KEY, same as every other
+  // classifier call — absent key simply fails open here. Same 200/ok:false
+  // fire-and-forget-friendly shape as E5/E8.
+  var recheck = await contentClassifier.evaluateExplicitRecheck({ text: caption, falKey: process.env.FAL_KEY });
+  if (!recheck.allowed) {
+    console.log('publish-dream: content_recheck_blocked reason=' + recheck.reason + ' id=' + id);
+    return { statusCode: 200, body: JSON.stringify({ ok: false, error: 'E9: content_policy_blocked: ' + recheck.message }) };
   }
 
   try {

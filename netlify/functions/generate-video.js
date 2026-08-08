@@ -607,6 +607,16 @@ async function callVeoDirect(prompt, apiKey) {
 //   E115 fal rejected the PixVerse V6 text-to-video submission (the edit-rotation partner model —
 //                                     see callFalPixverse above and docs/EDIT_MECHANISM_SPEC.md §2/§3.4).
 //                                     Same causes as E105, just the other rotation slot.
+//   E116 content_policy_blocked    — the content-tier safety gate (lib/content-classifier.js,
+//                                     founder-directed 2026-08-08) classified the dream as explicit
+//                                     (any request) or as any sexual/romantic content when an uploaded
+//                                     photo of a NAMED OTHER PERSON is attached (the anti-NCII
+//                                     safeguard). Returned 422 with a clear, specific block message and
+//                                     — unlike E105/E106/E114/E115 — NO fal call is made, NO spend is
+//                                     reserved, and NO tokens are spent. Placed before the spend guard
+//                                     and mock-mode branch specifically so a block costs nothing. See
+//                                     the gate's own call site below and content-classifier.js's header
+//                                     for the tiered policy and the fail-open/fail-closed directions.
 //   E109 rate_limited              — MAX_GENERATIONS_PER_IP_PER_DAY (or the same cap per-email)
 //                                     exceeded for today. Cost/abuse safety net, unrelated to E112's
 //                                     token balance below — see lib/rate-limit.js.
@@ -724,6 +734,7 @@ var jobOwners = require('./lib/job-owners');
 var ownerBypass = require('./lib/owner-bypass');
 var geo = require('./lib/geo');
 var effectiveConfig = require('./lib/effective-config');
+var contentClassifier = require('./lib/content-classifier');
 
 // Logs this function's resolved rate-limit/cost-control config once per
 // cold start (tracker item for-product-damage-assessment-env-var-ca-
@@ -990,6 +1001,42 @@ exports.handler = async function (event) {
   var tokenStatus = await entitlements.getTokenStatus(event, email, { ownerBypass: ownerBypassActive });
   if (tokenStatus.balance < 100) {
     return { statusCode: 402, body: JSON.stringify({ error: 'E112: insufficient_tokens: not enough tokens to generate a video' }) };
+  }
+
+  // E116 — CONTENT-TIER SAFETY GATE (founder-directed 2026-08-08, see
+  // lib/content-classifier.js's full header for the policy). Classifies the
+  // dream text into explicit/romantic/clean BEFORE any generation is
+  // committed, and blocks per the tiered threshold:
+  //   - normal request:            block EXPLICIT (romantic/clean pass).
+  //   - named-other-person photo:  block ANY sexual/romantic content
+  //                                (the anti-NCII safeguard — a non-self
+  //                                character with both a name and a photo).
+  // Deliberately placed AFTER the token-balance check but BEFORE the spend
+  // guard's checkAndReserve below AND before the mock-mode early-return, so a
+  // block (a) never reserves against the daily spend cap for a generation
+  // that won't happen, and (b) never spends tokens — in mock mode or real.
+  // The named-person flag is STRUCTURED data from the character payload
+  // (contentClassifier.detectNamedOtherPersonPhoto), never inferred by the
+  // LLM. Character descriptions are folded into the classified text too
+  // (buildClassifiableText), so explicit text can't hide in a "description"
+  // field. FAIL-SAFE: the normal case fails OPEN on a classifier error/
+  // timeout (the model's own guardrails still refuse hard-explicit output, so
+  // a classifier outage must not break generation for everyone); the
+  // named-other-person-photo case fails CLOSED (the NCII landmine must never
+  // slip through on an error). Both directions live in
+  // evaluateGenerationGate. On a block, NO fal call is made and NO tokens are
+  // spent — the client (home.html/result.html's content-policy branch)
+  // surfaces `error` as a clean, specific message, not a generic failure.
+  var hasNamedOtherPersonPhoto = contentClassifier.detectNamedOtherPersonPhoto(characters);
+  var classifiableText = contentClassifier.buildClassifiableText(caption, characters);
+  var gate = await contentClassifier.evaluateGenerationGate({
+    text: classifiableText,
+    hasNamedOtherPersonPhoto: hasNamedOtherPersonPhoto,
+    falKey: falKey
+  });
+  if (!gate.allowed) {
+    console.log('generate-video: content_gate_blocked reason=' + gate.reason + (gate.error ? (' error=' + gate.error) : '') + ' named_photo=' + hasNamedOtherPersonPhoto);
+    return { statusCode: 422, body: JSON.stringify({ error: 'E116: content_policy_blocked: ' + gate.message }) };
   }
 
   var dailyCapUsd = parseFloat(process.env.DAILY_SPEND_CAP_USD);

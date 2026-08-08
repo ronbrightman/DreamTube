@@ -72,6 +72,14 @@
 //   E9 turnstile_verification_failed — same conditional check as generate-video.js's E113
 //   E10 fal rejected the submission (bad params, content policy, rate limit, etc.)
 //   E11 couldn't reach fal at all
+//   E12 content_policy_blocked — the content-tier safety gate
+//                                (lib/content-classifier.js) blocked this dream:
+//                                explicit content (any request), or ANY
+//                                sexual/romantic content when an uploaded photo
+//                                of a named other person is attached (anti-NCII).
+//                                Same gate as generate-video.js's E116. Returned
+//                                422 with a clear block message; NO fal call, NO
+//                                pending record, NO spend, NO tokens spent.
 
 var crypto = require('crypto');
 var rateLimit = require('./lib/rate-limit');
@@ -84,6 +92,7 @@ var jobOwners = require('./lib/job-owners');
 var genVideo = require('./generate-video');
 var genImage = require('./generate-image');
 var effectiveConfig = require('./lib/effective-config');
+var contentClassifier = require('./lib/content-classifier');
 
 // Logs this function's resolved rate-limit/cost-control config once per
 // cold start (tracker item for-product-damage-assessment-env-var-ca-
@@ -238,6 +247,38 @@ exports.handler = async function (event) {
   if (tokenStatus.balance < tokenCost) {
     var insufficientMsg = mediaType === 'image' ? 'not enough tokens to generate an image' : 'not enough tokens to generate a video';
     return { statusCode: 402, body: JSON.stringify({ error: 'E7: insufficient_tokens: ' + insufficientMsg }) };
+  }
+
+  // E12 — CONTENT-TIER SAFETY GATE, the pre-signup funnel path's copy of the
+  // exact same gate generate-video.js's handler runs (see
+  // lib/content-classifier.js's header for the full policy, and this file's
+  // own E12 doc comment above). This funnel endpoint is a real, anyone-can-
+  // reach-it fal.ai-cost endpoint before signup, so it gets the SAME
+  // content protection as the logged-in path, not a lighter version. Placed
+  // BEFORE the spend guard's checkAndReserve, the pending-dreams record
+  // creation, the mock branch, and both the image and video submission
+  // branches below, so a block costs nothing (no spend reserved, no pending
+  // record, no tokens spent) on any of those paths. Gates image and video
+  // alike — the caption is classified regardless of mediaType. The
+  // named-other-person-photo flag is structured character-payload data
+  // (detectNamedOtherPersonPhoto), never LLM-inferred; character descriptions
+  // are folded into the classified text so explicit text can't hide there.
+  // FAIL-SAFE: normal case fails OPEN, named-other-person-photo case fails
+  // CLOSED (see evaluateGenerationGate). On the funnel, a block leaves the
+  // client's pendingStartFailed true (nothing surfaced here, nothing spent);
+  // the message reaches the user when home.html retries the generation
+  // post-signup through generate-video.js, whose identical gate blocks it
+  // again and whose content-policy client branch shows the clean message.
+  var hasNamedOtherPersonPhoto = contentClassifier.detectNamedOtherPersonPhoto(characters);
+  var classifiableText = contentClassifier.buildClassifiableText(caption, characters);
+  var gate = await contentClassifier.evaluateGenerationGate({
+    text: classifiableText,
+    hasNamedOtherPersonPhoto: hasNamedOtherPersonPhoto,
+    falKey: falKey
+  });
+  if (!gate.allowed) {
+    console.log('start-pending-generation: content_gate_blocked reason=' + gate.reason + (gate.error ? (' error=' + gate.error) : '') + ' named_photo=' + hasNamedOtherPersonPhoto);
+    return { statusCode: 422, body: JSON.stringify({ error: 'E12: content_policy_blocked: ' + gate.message }) };
   }
 
   var dailyCapUsd = parseFloat(process.env.DAILY_SPEND_CAP_USD);

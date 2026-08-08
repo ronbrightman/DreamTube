@@ -2232,6 +2232,21 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         return;
       }
 
+      // E116 (content-tier safety gate — generate-video.js's content
+      // classifier blocked this dream: explicit content, or any sexual/
+      // romantic content featuring a named+photographed real other person).
+      // This is a deliberate policy decision, NOT a bug or a transient
+      // failure — so it must surface as the server's own clear, specific,
+      // non-preachy message on its own, never wrapped in the "Something went
+      // wrong generating your video — nothing was lost" bug framing below.
+      // Nothing was spent (the gate blocks before any token spend server-
+      // side — see generate-video.js's E116), so there's no refund note and
+      // no store to open; the user just edits the dream text and retries.
+      if(code === 'E116'){
+        showToast((match && match[2]) || 'That dream can’t be turned into a video.');
+        return;
+      }
+
       // Media-aware fallback copy (mirrors processing.html's own
       // applyMediaTypeCopy/#proc-fail-copy, which showed BOTH a static
       // "Something went wrong generating your video/image" line AND a
