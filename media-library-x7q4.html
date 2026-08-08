@@ -151,6 +151,13 @@
           <option value="published">Published only</option>
           <option value="private">Private only</option>
         </select>
+        <!-- Sort control (founder ask 08-08: "sort by date thing") — the
+             grid always sorted newest-first invisibly; this makes it an
+             explicit, flippable choice. -->
+        <select class="ml-select" id="ml-sort-order">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
         <button type="button" class="btn btn-ghost" id="ml-refresh-btn" style="width:auto; padding:8px 16px;">Refresh</button>
       </div>
 
@@ -272,7 +279,11 @@
   }
 
   function cardHTML(item) {
-    var when = item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'unknown date';
+    // Full date + time (founder ask 08-08: "add the timestamp for every
+    // video") — was toLocaleDateString (date only).
+    var when = item.createdAt
+      ? new Date(item.createdAt).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : 'unknown date';
     var expiry = expiryText(item);
     var mediaEl = item.mediaType === 'image'
       ? '<img class="vcard-image" loading="lazy" src="' + esc(item.url) + '" alt="">'
@@ -345,9 +356,17 @@
       if (publishedFilter === 'private' && it.isPublished) return false;
       return true;
     });
-    // Newest first — most useful default for "did the thing I just made
-    // land somewhere durable" style spot-checking.
-    filtered.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+    // Newest first by default — most useful for "did the thing I just made
+    // land somewhere durable" spot-checking; the toolbar's sort select can
+    // flip it (founder ask 08-08). Unknown createdAt sinks to the end in
+    // both directions.
+    var sortOrder = (document.getElementById('ml-sort-order') || { value: 'newest' }).value;
+    filtered.sort(function (a, b) {
+      var av = a.createdAt || 0, bv = b.createdAt || 0;
+      if (!av && bv) return 1;
+      if (av && !bv) return -1;
+      return sortOrder === 'oldest' ? av - bv : bv - av;
+    });
 
     var gridEl = document.getElementById('ml-grid');
     var emptyEl = document.getElementById('ml-empty');
@@ -501,6 +520,7 @@
   });
   document.getElementById('ml-filter-status').addEventListener('change', renderGrid);
   document.getElementById('ml-filter-account').addEventListener('change', renderGrid);
+  document.getElementById('ml-sort-order').addEventListener('change', renderGrid);
   document.getElementById('ml-filter-published').addEventListener('change', renderGrid);
 
   // ===== Backfill sweep (admin-backfill-media-rehost.js) — drives the
