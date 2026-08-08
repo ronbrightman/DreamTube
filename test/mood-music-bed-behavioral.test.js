@@ -349,8 +349,11 @@ test('create.html "Build it": the Mood step answer now survives onto the draft a
     await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
 
     await walkBuildWizardToMood(page);
-    await page.click('.opt-chip[data-build-mood="tense"]');
-    await page.click('#build-mood-continue');
+    // Layout-B: a Mood chip tap AUTO-advances (~260ms) to Free text -- no
+    // Continue tap needed (the step has no secondary field). Tapping the
+    // chip still records it as the answer.
+    await page.click('.fn-chip[data-build-mood="tense"]');
+    await page.waitForSelector('#build-freetext-input', { timeout: 8000 });
     await page.click('#build-freetext-skip');
     await page.waitForURL(/style\.html/, { timeout: 8000 });
 
@@ -376,7 +379,7 @@ test('create.html "Build it": tapping SKIP on the Mood step persists NO mood, ev
     // Confirm the ambiguity this behavior turns on is real: a chip IS
     // highlighted right now, with the user having tapped nothing.
     var preselected = await page.evaluate(function () {
-      var el = document.querySelector('#build-mood-row .opt-chip.selected');
+      var el = document.querySelector('#build-mood-row .fn-chip.sel');
       return el ? el.dataset.buildMood : null;
     });
     assert.equal(preselected, 'dreamy', 'the default mood chip is pre-highlighted, which is why a skipped flag is needed at all');
@@ -403,7 +406,9 @@ test('create.html "Build it": a "+ Something else" free-text mood persists no mo
     await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
 
     await walkBuildWizardToMood(page);
-    await page.click('.opt-chip[data-build-mood="other"]');
+    // "+ Something else" deliberately does NOT auto-advance (the user is
+    // about to type) -- Continue advances with whatever was written.
+    await page.click('.fn-chip[data-build-mood="other"]');
     await page.fill('#build-mood-other-input', 'bittersweet and electric');
     await page.click('#build-mood-continue');
     await page.click('#build-freetext-skip');
@@ -436,8 +441,10 @@ test('create.html "Build it": going Back to the Mood step after skipping it, and
     // there's no earlier step left).
     await page.click('#create-back');
     await page.waitForSelector('#build-mood-row', { timeout: 8000 });
-    await page.click('.opt-chip[data-build-mood="epic"]');
-    await page.click('#build-mood-continue');
+    // Tapping a real chip auto-advances (Layout-B) AND clears the earlier
+    // skip flag -- no Continue tap needed.
+    await page.click('.fn-chip[data-build-mood="epic"]');
+    await page.waitForSelector('#build-freetext-input', { timeout: 8000 });
     await page.click('#build-freetext-skip');
     await page.waitForURL(/style\.html/, { timeout: 8000 });
 

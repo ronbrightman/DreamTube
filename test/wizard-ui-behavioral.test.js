@@ -85,6 +85,21 @@ async function gotoWizardBuild(page) {
   await page.waitForSelector('#subject-chip-row');
 }
 
+/** Seeds a logged-in account and opens create.html's "Build it" flow at the Subject step — the logged-in Layout-B retrofit (no signup wall; straight to generation). */
+async function gotoCreateBuild(page) {
+  await safeGoto(page, baseUrl + '/login.html');
+  await page.evaluate(function () {
+    var state = { user: { handle: '@buildtester', username: 'buildtester' }, accounts: { buildtester: { password: 'testpass1', email: 'buildtester@example.com' } }, dreams: [], draft: { caption: '', style: null, characterIds: [], sceneryTime: null, sceneryPlace: null, restore: false }, charactersByUser: {}, likedIds: {} };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  });
+  await safeGoto(page, baseUrl + '/create.html');
+  await page.click('#choice-build');
+  await page.waitForSelector('#build-subject-chip-row');
+}
+
+// A 1x1 PNG, used to exercise the Me character's Upload-photo path.
+var TINY_PNG_BUFFER = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQAY3Y2wAAAAAElFTkSuQmCC', 'base64');
+
 test('wizard.html: every core step is completable purely by tapping chips (zero typing), Action has no Skip (required), and the assembled caption reaches the draft with the inferred camera/lighting baked in', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
@@ -1328,6 +1343,137 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
     assert.ok(draft.caption.length > 0);
     assert.doesNotMatch(draft.caption, /Cinematic style/, 'the real style choice belongs to style.html, not baked in early');
     assert.match(draft.caption, /dreamlike\.$/);
+  } finally {
+    await page.close();
+  }
+});
+
+// ===========================================================================
+// create.html Layout-B parity (tracker item
+// for-product-founder-picked-layout-b-flo--lks7mj): the logged-in "Build it"
+// flow now wears the same Flo pill-row skin as wizard.html + the funnel, with
+// two founder-ruled interaction specifics that DIFFER from a naive port:
+//   - Mood (the one single-select Build step with no secondary field)
+//     AUTO-advances ~260ms after a tap, no Continue needed.
+//   - Setting (place + Day/Night) and Action (chip + POV) must NOT
+//     auto-advance on the primary tap — they carry a secondary choice, so
+//     they require Continue. (Founder: place tap was skipping Day/Night;
+//     action tap was skipping POV.)
+// The pre-existing test above already pins the caption/draft contract; these
+// pin exactly the restyle's behavior deltas. Skin is byte-stable logic — no
+// analytics/payload assertions change.
+// ===========================================================================
+
+test('create.html Layout-B: Mood auto-advances on a chip tap (no Continue), while Setting and Action do NOT auto-advance — their Day/Night and POV secondary choices stay reachable after the primary tap', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await gotoCreateBuild(page);
+
+    // Subject: skip straight past.
+    await page.click('#build-subject-skip');
+
+    // Setting: tap a place, then confirm we're STILL on Setting (no
+    // auto-advance) and Day/Night is still pickable afterwards.
+    await page.waitForSelector('#build-place-row [data-build-place="urban"]');
+    await page.click('#build-place-row [data-build-place="urban"]');
+    await page.waitForTimeout(400); // longer than the 260ms auto-advance window
+    assert.equal(await page.locator('#build-place-row').count(), 1, 'Setting must NOT auto-advance on a place tap — it carries the Day/Night pick');
+    await page.click('#build-time-row [data-build-time="Night"]');
+    assert.equal(await page.locator('#build-time-row .fn-chip.sel').count(), 1, 'Day/Night is still reachable after the place tap');
+    await page.click('#build-setting-continue');
+
+    // Action: tap a chip, then confirm we're STILL on Action and POV is
+    // still toggleable afterwards.
+    await page.waitForSelector('#build-action-row [data-build-action="flying"]');
+    await page.click('#build-action-row [data-build-action="flying"]');
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator('#build-action-row').count(), 1, 'Action must NOT auto-advance on a chip tap — it carries the POV toggle');
+    await page.click('.fn-toggle-row .fn-switch-track'); // the POV switch (the hidden checkbox is toggled via its label)
+    assert.equal(await page.isChecked('#build-pov-toggle'), true, 'POV toggle is still reachable after the action tap');
+    await page.click('#build-action-continue');
+
+    // Mood: a chip tap AUTO-advances to Free text with no Continue tap.
+    await page.waitForSelector('#build-mood-row [data-build-mood="joyful"]');
+    await page.click('#build-mood-row [data-build-mood="joyful"]');
+    await page.waitForSelector('#build-freetext-input', { timeout: 3000 });
+    assert.equal(await page.locator('#build-freetext-input').count(), 1, 'Mood must auto-advance on a chip tap (no secondary field)');
+  } finally {
+    await page.close();
+  }
+});
+
+test('create.html Layout-B: a Continue tap inside Mood\'s auto-advance window advances exactly once (never double-hops past Free text)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await gotoCreateBuild(page);
+    await page.click('#build-subject-skip');
+    await page.click('#build-place-row [data-build-place="urban"]');
+    await page.click('#build-setting-continue');
+    await page.click('#build-action-row [data-build-action="flying"]');
+    await page.click('#build-action-continue');
+    await page.waitForSelector('#build-mood-row [data-build-mood="joyful"]');
+
+    // Chip-tap + Continue-tap in the SAME tick (guaranteed inside the 260ms
+    // window): buildNext cancels the armed auto-advance, so this lands on
+    // Free text exactly once — it must not double-hop straight to style.html.
+    await page.evaluate(function () {
+      document.querySelector('#build-mood-row [data-build-mood="joyful"]').click();
+      document.getElementById('build-mood-continue').click();
+    });
+    await page.waitForSelector('#build-freetext-input', { timeout: 3000 });
+    await page.waitForTimeout(500); // let the cancelled 260ms timer's window elapse
+    assert.equal(await page.locator('#build-freetext-input').count(), 1, 'must be sitting on Free text — a Continue tap inside the auto-advance window advances exactly once');
+    assert.equal(new URL(page.url()).pathname, '/create.html', 'must NOT have double-advanced through Free text to style.html');
+  } finally {
+    await page.close();
+  }
+});
+
+test('create.html Layout-B: tapping Me opens the character sheet, and an uploaded photo flows straight into the generation draft characterIds (logged-in — no cross-origin stash), with POV riding into the caption', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    await gotoCreateBuild(page);
+
+    // Subject: open the Me sheet, switch to Upload photo, attach a photo, Save.
+    await page.click('#build-subj-add-self');
+    await page.waitForSelector('#build-sheet-character-overlay.open');
+    await page.click('#build-char-mode-row .char-mode-btn[data-char-mode="photo"]');
+    await page.setInputFiles('#build-char-photo-input', { name: 'me.png', mimeType: 'image/png', buffer: TINY_PNG_BUFFER });
+    await page.waitForSelector('#build-char-photo-preview img');
+    await page.click('#build-char-save-btn');
+    await page.waitForSelector('#build-sheet-character-overlay:not(.open)');
+    // The Me chip is now selected (pink), as a Layout-B pill row.
+    assert.equal(await page.locator('#build-subject-chip-row .char-chip.selected').count(), 1, 'saving the Me photo selects the Me character row');
+    // The real store character carries the photo (logged-in, straight to generation).
+    var meHasPhoto = await page.evaluate(function () {
+      return window.DreamStore.getCharacters().some(function (c) { return c.isSelf && !!c.photoDataUrl; });
+    });
+    assert.equal(meHasPhoto, true, 'the uploaded photo is persisted on the real Me character');
+    await page.click('#build-subject-continue');
+
+    // Setting -> Action with POV ON.
+    await page.click('#build-place-row [data-build-place="urban"]');
+    await page.click('#build-setting-continue');
+    await page.click('#build-action-row [data-build-action="flying"]');
+    await page.click('.fn-toggle-row .fn-switch-track');
+    await page.click('#build-action-continue');
+
+    // Mood auto-advances, then finish through Free text.
+    await page.click('#build-mood-row [data-build-mood="dreamy"]');
+    await page.waitForSelector('#build-freetext-input');
+    await page.click('#build-freetext-continue');
+
+    await page.waitForURL(/style\.html/, { timeout: 5000 });
+    await page.waitForFunction(function () { return !!window.DreamStore; }, null, { timeout: 5000 });
+    var draft = await page.evaluate(function () { return window.DreamStore.getDraft(); });
+    assert.equal(draft.characterIds.length, 1, 'the Me character rides into the generation draft as characterIds (no cross-origin stash needed logged-in)');
+    assert.match(draft.caption, /POV/, 'POV rides into the assembled caption');
   } finally {
     await page.close();
   }
