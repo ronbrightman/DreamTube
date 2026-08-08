@@ -1526,12 +1526,24 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       render(); // drops back out of the regenerating state -- finalizeDream never ran, so `dream` is exactly what it was before this attempt; nothing was silently lost
       var raw = (err && err.message) || 'E399: unknown_error';
       var match = /^([A-Z]\d+):\s*([\s\S]*)$/.exec(raw);
+      var code = match ? match[1] : null;
+      // E116 (content-tier safety gate — see generate-video.js's E116 and
+      // home.html's own identical branch): a deliberate policy block, not a
+      // bug, so it surfaces as the server's own clear message on its own
+      // rather than under the "Something went wrong regenerating" framing.
+      // Nothing was spent (the gate blocks before any token spend), so no
+      // refund note is shown.
+      if(code === 'E116'){
+        showToast((match && match[2]) || 'That dream can’t be turned into a video.');
+        track('generation_blocked', { reason: code, source: 'result' });
+        return;
+      }
       var mediaTypeForCopy = (dream.mediaType === 'image') ? 'picture' : 'video';
       var baseCopy = 'Something went wrong regenerating your ' + mediaTypeForCopy + ' — nothing was lost.';
       var reasonSuffix = (match && match[2]) ? (' (' + match[2] + ')') : '';
       var refundNote = (err && err.tokensRefunded) ? ' Your tokens were returned.' : '';
       showToast(baseCopy + reasonSuffix + refundNote);
-      track('generation_blocked', { reason: (match && match[1]) || raw, source: 'result' });
+      track('generation_blocked', { reason: code || raw, source: 'result' });
     });
   }
 

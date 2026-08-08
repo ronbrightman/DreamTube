@@ -15,6 +15,16 @@ var assert = require('node:assert/strict');
 var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
 
+// Content-tier safety gate (netlify/functions/lib/content-classifier.js) —
+// isolate the fal-call assertions in THIS file from the classifier's own
+// LLM fetch by forcing the classifier to a deterministic 'clean' verdict
+// with no network call (its CONTENT_CLASSIFIER_MOCK_TIER hook). Without
+// this, the classifier's fetch would count as an extra call here and the
+// fetch-shape/count assertions below (which are about the fal submission,
+// not the classifier) would mis-read call[0]. The gate itself is covered
+// directly in test/content-classifier.test.js and test/content-gate-generation.test.js.
+process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'clean';
+
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
 var genVideo = require('../netlify/functions/generate-video');
