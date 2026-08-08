@@ -98,16 +98,80 @@ function classifierTimeoutMs() {
 // still refuse hard-explicit output even if a borderline case is judged
 // 'romantic' here.
 var RUBRIC = [
-  'You are a strict content-safety classifier for a dream-to-video app.',
+  'You are a content-safety classifier for a dream-to-video app. The line you draw is essentially "Instagram-allowable": suggestive-but-clothed content passes; only actual nudity or sexual acts are blocked.',
   'Classify the dream text into exactly ONE tier and reply with STRICT JSON only, no prose before or after, in exactly this shape: {"tier":"explicit"} or {"tier":"romantic"} or {"tier":"clean"}.',
   'Tier definitions:',
-  '- "explicit": describes nudity, exposed genitals or breasts, or sexual acts (intercourse, oral sex, masturbation, etc.), or any explicit sexual description.',
-  '- "romantic": non-explicit intimacy only — kissing, hugging, holding hands, flirting, a romantic date, or a couple lying, cuddling, or sleeping together in bed with no explicit sexual detail. Mainstream romantic content.',
-  '- "clean": everything else — no sexual or romantic intimacy at all.',
+  '- "explicit" (the ONLY tier that gets blocked): actual nudity (exposed genitals, or exposed/bare breasts), sexual acts (having sex, intercourse, penetration, oral sex, masturbation), or explicit/pornographic sexual description. Naming the sexual act at all is explicit — e.g. "having sex", "we had sex", "she was naked", "he was nude" are ALL explicit. Plain wording does not make an act or nudity non-explicit.',
+  '- "romantic": suggestive OR romantic content that stays CLOTHED — lingerie, underwear, a bikini or swimwear, "an attractive/sexy figure", cleavage, clothed sensuality, dancing suggestively, kissing (even passionately), hugging, flirting, a couple cuddling or in bed with no explicit sexual detail. This is allowed content; do NOT mark it explicit just because it is sexy or suggestive.',
+  '- "clean": everything else — no sexual or romantic content at all.',
   'Classify based only on what the text actually describes.',
-  'Only classify as "explicit" when the text clearly describes explicit sexual content; when a passage is ambiguous or only mildly intimate, classify it as "romantic", not "explicit".',
+  'KEY DISTINCTION: sexy-but-clothed is "romantic" (allowed); only actual nudity or an actual sexual act is "explicit" (blocked). A woman in lingerie or a bikini with an attractive figure is "romantic", NOT explicit. "Having sex" or "she was naked" is "explicit".',
+  'Examples: "a woman in stylish lingerie with an attractive figure" -> romantic. "a sexy dance in a bikini" -> romantic. "kissing passionately" -> romantic. "having sex" -> explicit. "she was naked" -> explicit.',
   'Reply with only the JSON object.'
 ].join(' ');
+
+// --- Deterministic explicit-keyword pre-gate (founder repro, 2026-08-08) ---
+// The founder wrote "I was having sex", it was NOT blocked, and the video
+// screen vanished with no message. Root cause: the LLM rubric deliberately
+// leans "romantic when ambiguous", and on the NORMAL path the gate FAILS OPEN
+// on a classifier error/timeout — so an unambiguously explicit phrase could
+// slip through either by a lenient judgment OR by a classifier outage, reach
+// the model, get refused, and surface only as a generic failure.
+//
+// This layer is a CODE-SIDE, deterministic backstop that runs BEFORE the LLM
+// and short-circuits to `explicit` for phrases that are unambiguously sexual
+// (a named sexual act, explicit anatomy, nudity). Because it runs before the
+// LLM and never depends on it, it ALSO closes the fail-open hole for these
+// phrases: "having sex" is now blocked even if the classifier is down.
+//
+// Kept deliberately TIGHT so it never over-blocks mainstream romantic
+// content — the LLM still owns every judgment-call case (kissing, "making
+// love", a couple in bed). Nothing here matches "romantic", "sexy",
+// "sexual tension", "kiss", "cuddle", etc. Profanity used non-sexually
+// ("a fucking amazing dream") is NOT matched — the "fuck" patterns are
+// object-bound to a partner so only the sexual sense is caught.
+var EXPLICIT_KEYWORD_PATTERNS = [
+  /\bhaving sex\b/,
+  /\bhad sex\b/,
+  /\bhave sex\b/,
+  /\bhaving intercourse\b/,
+  /\bsex with\b/,
+  /\bsexual intercourse\b/,
+  /\bintercourse\b/,
+  /\boral sex\b/,
+  /\banal sex\b/,
+  /\bgiving head\b/,
+  /\bblow ?job\b/,
+  /\bhand ?job\b/,
+  /\bmasturbat\w*/,
+  /\bnaked\b/,
+  /\bnude\b/,
+  /\bnudity\b/,
+  /\btopless\b/,
+  /\bgenitals?\b/,
+  /\bpenis\b/,
+  /\bvagina\b/,
+  /\bvulva\b/,
+  /\bejaculat\w*/,
+  /\borgasm\w*/,
+  /\bcum(?:ming|med|s)?\b/,
+  /\bporn\w*/,
+  /\bfuck(?:ing|ed)?\s+(?:her|him|me|them|you|each other)\b/,
+  /\bwe fucked\b/
+];
+
+/**
+ * Whether `text` unambiguously describes explicit sexual content by keyword —
+ * the deterministic backstop described above. Case-insensitive. Returns true
+ * on the first pattern hit. This is intentionally a HIGH-PRECISION check
+ * (few false positives) rather than high-recall: the LLM classifier remains
+ * the primary, nuanced tier decision for everything this does not catch.
+ */
+function matchesExplicitKeyword(text) {
+  if (typeof text !== 'string' || !text.trim()) return false;
+  var lc = text.toLowerCase();
+  return EXPLICIT_KEYWORD_PATTERNS.some(function (re) { return re.test(lc); });
+}
 
 /**
  * Whether the character payload includes an uploaded photo of a NAMED OTHER
@@ -264,6 +328,22 @@ async function evaluateGenerationGate(opts) {
   opts = opts || {};
   var named = !!opts.hasNamedOtherPersonPhoto;
 
+  // Deterministic explicit-keyword backstop (founder repro 2026-08-08 —
+  // "I was having sex" slipped through). Runs BEFORE the LLM and independent
+  // of it, so an unambiguously explicit phrase is blocked even if the
+  // classifier is lenient OR down (this is the fix for the normal-path
+  // fail-open hole for clearly-explicit text). The named-person message is
+  // used when a named+photographed real person is attached, otherwise the
+  // plain explicit message. See matchesExplicitKeyword's own doc comment.
+  if (matchesExplicitKeyword(opts.text)) {
+    return {
+      allowed: false,
+      tier: TIER_EXPLICIT,
+      message: named ? NAMED_PERSON_BLOCK_MESSAGE : EXPLICIT_BLOCK_MESSAGE,
+      reason: named ? 'named_person_explicit_keyword' : 'explicit_keyword'
+    };
+  }
+
   var result = await classifyText(opts.text, opts.falKey);
 
   if (!result.ok) {
@@ -313,6 +393,12 @@ async function evaluateGenerationGate(opts) {
  */
 async function evaluateExplicitRecheck(opts) {
   opts = opts || {};
+  // Same deterministic explicit-keyword backstop as evaluateGenerationGate —
+  // on the output/publish side it means an unambiguously explicit caption is
+  // kept off the public feed even if the classifier fails open here too.
+  if (matchesExplicitKeyword(opts.text)) {
+    return { allowed: false, tier: TIER_EXPLICIT, message: EXPLICIT_BLOCK_MESSAGE, reason: 'explicit_keyword' };
+  }
   var result = await classifyText(opts.text, opts.falKey);
   if (!result.ok) {
     return { allowed: true, tier: null, reason: 'fail_open', error: result.error };
@@ -330,6 +416,7 @@ module.exports = {
   EXPLICIT_BLOCK_MESSAGE: EXPLICIT_BLOCK_MESSAGE,
   NAMED_PERSON_BLOCK_MESSAGE: NAMED_PERSON_BLOCK_MESSAGE,
   RUBRIC: RUBRIC,
+  matchesExplicitKeyword: matchesExplicitKeyword,
   detectNamedOtherPersonPhoto: detectNamedOtherPersonPhoto,
   buildClassifiableText: buildClassifiableText,
   classifyText: classifyText,

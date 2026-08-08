@@ -243,17 +243,28 @@ test('LIVE TIER 1: every real mood resolves to its own committed winner bed for 
         'a real mood bed makes every real-video dream eligible, even one whose style has no bed');
     });
     result.legacyRows.forEach(function (row) {
-      assert.equal(row.forDream, row.forStyle,
-        'mood "' + row.mood + '" + style "' + row.style + '": a skipped/free-text/legacy mood must fall through to the identical style bed, exactly as before this layer existed');
-      assert.equal(row.eligible, row.forStyle !== null,
-        'eligibility for the no-mood path must be unchanged too -- still driven purely by a real video + a resolvable bed');
+      if (row.forStyle !== null) {
+        // Known style: the skipped/free-text/legacy mood falls through to the
+        // identical style bed, exactly as before this layer existed.
+        assert.equal(row.forDream, row.forStyle,
+          'mood "' + row.mood + '" + style "' + row.style + '": a skipped/free-text/legacy mood must fall through to the identical style bed');
+      } else {
+        // Unknown style AND no usable mood: tier 3 (2026-08-08) resolves the
+        // neutral default bed instead of going silent.
+        assert.equal(row.forDream, 'assets/music-beds/moods/dreamy.wav',
+          'mood "' + row.mood + '" + unknown style "' + row.style + '": both tiers unresolved falls through to the tier-3 default bed, never silence');
+      }
+      // Either way a real video dream is now always eligible — a bed always
+      // resolves (style bed for a known style, default bed otherwise).
+      assert.equal(row.eligible, true,
+        'a real video dream is always eligible now -- tier 3 guarantees a bed');
     });
   } finally {
     await context.close();
   }
 });
 
-test('js/music-bed.js: the dream\'s own mood wins over its visual style with the REAL live map -- and an unknown mood, a free-text mood, or no mood at all still fall back to the style bed, failing closed when neither tier resolves', async function (t) {
+test('js/music-bed.js: the dream\'s own mood wins over its visual style with the REAL live map -- an unknown mood, a free-text mood, or no mood at all falls back to the style bed, and when NEITHER tier resolves it falls through to the tier-3 neutral default bed (never silence)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -290,9 +301,12 @@ test('js/music-bed.js: the dream\'s own mood wins over its visual style with the
         // A mood bed rescues an otherwise-unresolvable style...
         tenseUnknownStyle: MusicBed.urlForDream(d('tense', 'Surrealist')),
         tenseUnknownStyleEligible: MusicBed.eligible(d('tense', 'Surrealist')),
-        // ...but no mood + unknown style leaves both tiers unresolved.
+        // ...and no mood + unknown style now resolves to the tier-3 neutral
+        // default bed (2026-08-08 founder repro: a Write-path dream came back
+        // SILENT). urlForDream never returns null for a real dream anymore.
         noMoodUnknownStyle: MusicBed.urlForDream(d(null, 'Surrealist')),
         noMoodUnknownStyleEligible: MusicBed.eligible(d(null, 'Surrealist')),
+        defaultMood: MusicBed.DEFAULT_MOOD,
         futureMoodNoTrack: futureMoodNoTrack,
         futureMoodNoTrackUnknownStyle: futureMoodNoTrackUnknownStyle,
         futureMoodNoTrackEligible: futureMoodNoTrackEligible,
@@ -314,11 +328,15 @@ test('js/music-bed.js: the dream\'s own mood wins over its visual style with the
     assert.equal(r.upperMood, 'assets/music-beds/moods/tense.wav');
     assert.equal(r.tenseUnknownStyle, 'assets/music-beds/moods/tense.wav');
     assert.equal(r.tenseUnknownStyleEligible, true, 'a real mood bed makes a previously-ineligible unknown-style dream eligible');
-    assert.equal(r.noMoodUnknownStyle, null, 'both tiers failing must fail closed to no bed, never guess');
-    assert.equal(r.noMoodUnknownStyleEligible, false);
-    assert.equal(r.futureMoodNoTrack, 'assets/music-beds/cartoon.wav', 'a future mood key with no MOOD_FILES entry must fall back, not go silent');
-    assert.equal(r.futureMoodNoTrackUnknownStyle, null);
-    assert.equal(r.futureMoodNoTrackEligible, false);
+    // Tier 3 (2026-08-08): when neither mood nor style resolves, urlForDream
+    // returns the neutral default mood bed instead of null, so a real video
+    // dream is NEVER silent (founder repro). DEFAULT_MOOD is 'dreamy'.
+    assert.equal(r.defaultMood, 'dreamy');
+    assert.equal(r.noMoodUnknownStyle, 'assets/music-beds/moods/dreamy.wav', 'no mood + unknown style now resolves to the tier-3 default bed, never silence');
+    assert.equal(r.noMoodUnknownStyleEligible, true, 'a real video dream is always eligible now — the default bed guarantees sound');
+    assert.equal(r.futureMoodNoTrack, 'assets/music-beds/cartoon.wav', 'a future mood key with no MOOD_FILES entry still falls back to the style bed (tier 2 wins before tier 3)');
+    assert.equal(r.futureMoodNoTrackUnknownStyle, 'assets/music-beds/moods/dreamy.wav', 'future mood with no track AND unknown style falls all the way through to the tier-3 default');
+    assert.equal(r.futureMoodNoTrackEligible, true);
     assert.equal(r.imageOnly, false);
     assert.equal(r.nullDream, null);
   } finally {

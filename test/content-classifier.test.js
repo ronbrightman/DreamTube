@@ -253,3 +253,80 @@ test('recheck: FAILS OPEN on a classifier error (a classifier outage must not bl
   assert.equal(r.allowed, true);
   assert.equal(r.reason, 'fail_open');
 });
+
+// ---- Deterministic explicit-keyword backstop (founder repro 2026-08-08) ----
+// The founder wrote "I was having sex" and it was NOT blocked (the LLM leaned
+// romantic / could fail open). matchesExplicitKeyword is the code-side backstop
+// that catches unambiguous explicit phrasing before the LLM and independent of
+// it. The matrix below is the founder's own tuning target: true explicit is
+// caught, suggestive-but-clothed is NOT keyword-blocked (it goes to the LLM,
+// which the retuned rubric allows as romantic).
+
+test('matchesExplicitKeyword: clearly-explicit phrases -> true (must be caught)', function () {
+  ['I was having sex', 'we had sex', 'they have sex', 'she was naked', 'he was nude',
+   'oral sex', 'anal sex', 'she was masturbating', 'exposed genitals', 'his penis',
+   'her vagina', 'a topless woman', 'watching porn', 'we fucked all night'
+  ].forEach(function (phrase) {
+    assert.equal(cc.matchesExplicitKeyword(phrase), true, 'must catch: ' + phrase);
+  });
+});
+
+test('matchesExplicitKeyword: suggestive-but-clothed / romantic -> false (NOT keyword-blocked)', function () {
+  ['a woman wearing stylish lingerie with an attractive figure', 'a sexy dance in a bikini',
+   'she had a sexy figure', 'a low-cut dress showing cleavage', 'dancing suggestively',
+   'kissing passionately', 'a couple hugging', 'they were flirting', 'in her underwear',
+   'a fucking amazing dream about flying'  // profanity used non-sexually must NOT match
+  ].forEach(function (phrase) {
+    assert.equal(cc.matchesExplicitKeyword(phrase), false, 'must NOT keyword-block: ' + phrase);
+  });
+});
+
+test('gate: an unambiguous explicit KEYWORD blocks even when the classifier would FAIL OPEN', async function () {
+  // Classifier endpoint errors (would normally fail open on the normal path) —
+  // the keyword backstop must still block, WITHOUT any classifier call needed.
+  var called = 0;
+  global.fetch = async function () { called++; return { ok: false, status: 500, json: async function () { return {}; } }; };
+  var g = await cc.evaluateGenerationGate({ text: 'I was having sex', hasNamedOtherPersonPhoto: false, falKey: 'k' });
+  assert.equal(g.allowed, false);
+  assert.equal(g.tier, 'explicit');
+  assert.equal(g.reason, 'explicit_keyword');
+  assert.equal(g.message, cc.EXPLICIT_BLOCK_MESSAGE);
+  assert.equal(called, 0, 'the keyword backstop short-circuits before any classifier call');
+});
+
+test('gate: explicit keyword on a NAMED-PHOTO request -> blocked with the named-person message', async function () {
+  var g = await cc.evaluateGenerationGate({ text: 'we had sex', hasNamedOtherPersonPhoto: true, falKey: 'k' });
+  assert.equal(g.allowed, false);
+  assert.equal(g.reason, 'named_person_explicit_keyword');
+  assert.equal(g.message, cc.NAMED_PERSON_BLOCK_MESSAGE);
+});
+
+test('gate: suggestive-but-clothed is NOT keyword-blocked -> the classifier tier decides (romantic -> ALLOWED)', async function () {
+  // No keyword match, so the (stubbed) classifier's romantic verdict stands —
+  // the founder\'s over-block case ("lingerie, attractive figure") passes.
+  stubClassifierContent(JSON.stringify({ tier: 'romantic' }));
+  var g = await cc.evaluateGenerationGate({ text: 'a woman wearing stylish lingerie with an attractive figure', hasNamedOtherPersonPhoto: false, falKey: 'k' });
+  assert.equal(g.allowed, true);
+  assert.equal(g.tier, 'romantic');
+});
+
+test('recheck: an explicit KEYWORD blocks on the output side even if the classifier fails open', async function () {
+  global.fetch = async function () { throw new Error('down'); };
+  var r = await cc.evaluateExplicitRecheck({ text: 'we had sex on the beach', falKey: 'k' });
+  assert.equal(r.allowed, false);
+  assert.equal(r.reason, 'explicit_keyword');
+  assert.equal(r.message, cc.EXPLICIT_BLOCK_MESSAGE);
+});
+
+// ---- RUBRIC content assertions (the model's few-shot tuning) ----
+// Can't call the real LLM in tests, but we CAN assert the rubric string draws
+// the founder's line, so a future edit that deletes the suggestive-allow
+// guidance or the explicit examples fails loudly here.
+
+test('RUBRIC: draws the Instagram-allowable line (suggestive-but-clothed allowed, nudity/acts blocked)', function () {
+  assert.match(cc.RUBRIC, /lingerie/i);
+  assert.match(cc.RUBRIC, /bikini/i);
+  assert.match(cc.RUBRIC, /having sex/i);
+  assert.match(cc.RUBRIC, /naked/i);
+  assert.match(cc.RUBRIC, /clothed/i);
+});

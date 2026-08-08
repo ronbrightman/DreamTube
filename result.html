@@ -815,6 +815,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/music-bed.js"></script>
+<script src="js/content-block-panel.js"></script>
 <script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/install-nudge.js"></script>
@@ -1536,7 +1537,25 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       // Nothing was spent (the gate blocks before any token spend), so no
       // refund note is shown.
       if(code === 'E116'){
-        showToast((match && match[2]) || 'That dream can’t be turned into a video.');
+        // Persistent recovery panel, NOT a toast (founder upgrade 2026-08-08)
+        // — same shared component and treatment as home.html's E116 branch.
+        // A logged-in generation's E116 actually surfaces on home.html (every
+        // edit/regenerate persists a draft and submits via home.html?generate=1
+        // — see this driver's own header), so this branch is the defensive
+        // duplicate; it still gets the full panel so the message is never a
+        // silent vanish here either. onApplyText routes the softened/edited
+        // text into the Write field via the existing `restore` path.
+        var e116msg = ((match && match[2]) || '').replace(/^content_policy_blocked:\s*/, '') || 'That dream can’t be turned into a video.';
+        var isNamedBlock = /real person you.?ve named/i.test(e116msg);
+        ContentBlockPanel.show({
+          message: e116msg,
+          namedPerson: isNamedBlock,
+          originalText: (dream && (dream.storyText || dream.caption)) || '',
+          onApplyText: function(text){
+            DreamStore.setDraft({ restore: true, caption: text, storyText: text, sourceDreamId: null });
+            location.href = 'create.html';
+          }
+        });
         track('generation_blocked', { reason: code, source: 'result' });
         return;
       }

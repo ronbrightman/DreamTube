@@ -1212,6 +1212,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/content-block-panel.js"></script>
 <script src="js/dream-cards.js"></script>
 <script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
@@ -2245,7 +2246,29 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       // side — see generate-video.js's E116), so there's no refund note and
       // no store to open; the user just edits the dream text and retries.
       if(code === 'E116'){
-        showToast((match && match[2]) || 'That dream can’t be turned into a video.');
+        // Persistent recovery panel, NOT a toast (founder upgrade 2026-08-08):
+        // a modal that stays until the user acts, offering Soften/Edit/Discard.
+        // match[2] is the server's "content_policy_blocked: <human message>" —
+        // strip the internal reason token so the panel shows only the clean,
+        // founder-specified sentence. The named-other-person block (stricter
+        // anti-NCII rule) is detected from the message copy so the panel can
+        // hide "Soften it for me" (softening can't unblock a named real
+        // person). onApplyText routes the softened/edited text back into the
+        // Write field via the existing `restore` path (create.html), where
+        // the normal Generate flow re-gates server-side once more.
+        var e116msg = ((match && match[2]) || '').replace(/^content_policy_blocked:\s*/, '') || 'That dream can’t be turned into a video.';
+        var draftNow = DreamStore.getDraft();
+        var blockedText = (draftNow && (draftNow.storyText || draftNow.caption)) || '';
+        var isNamedBlock = /real person you.?ve named/i.test(e116msg);
+        ContentBlockPanel.show({
+          message: e116msg,
+          namedPerson: isNamedBlock,
+          originalText: blockedText,
+          onApplyText: function(text){
+            DreamStore.setDraft({ restore: true, caption: text, storyText: text, sourceDreamId: null });
+            location.href = 'create.html';
+          }
+        });
         return;
       }
 
