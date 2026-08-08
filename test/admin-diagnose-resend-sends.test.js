@@ -197,6 +197,104 @@ test('POST excludes a send outside the [sinceISO, untilISO] window even on an in
   });
 });
 
+// ===== created_at parsing (Resend's REAL, non-ISO-8601 format) =====
+//
+// Resend's own documented example response
+// (resend.com/docs/api-reference/emails/list-emails) shows `created_at`
+// in raw Postgres `timestamptz` text form -- e.g.
+// "2026-04-03 22:13:42.674981+00" -- NOT strict ISO-8601 (space instead
+// of 'T', 6-digit microseconds, bare 2-digit offset with no colon/
+// minutes). Plain Date.parse() of that exact shape is a documented
+// cross-engine/cross-version footgun that can return NaN. Every other
+// test in this file uses `makeEmail`'s clean ISO-8601 helper, which
+// would never have caught this class of bug -- these tests use the
+// literal real-format string instead.
+
+test('POST correctly parses Resend\'s REAL documented created_at format (Postgres timestamptz text, not ISO-8601), matching the exact millisecond', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL, RESEND_API_KEY: 'resend-test-key' }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+
+    // Literal sample from Resend's own docs.
+    var REAL_RESEND_CREATED_AT = '2026-04-03 22:13:42.674981+00';
+
+    // Independently computed (via Date.UTC, not via the code under test)
+    // expected epoch ms for that exact timestamp -- JS Date truncates the
+    // microsecond fraction (.674981s) down to its millisecond field (674ms).
+    var EXPECTED_MS = Date.UTC(2026, 3, 3, 22, 13, 42, 674);
+    assert.equal(EXPECTED_MS, 1775254422674, 'sanity-check the independently-computed expected ms itself');
+
+    installResendListSpy([[
+      { id: 'e1', message_id: 'msg_e1', to: ['moreecemiller@gmail.com'], from: 'DreamTube <dreams@dreamtube.life>', created_at: REAL_RESEND_CREATED_AT, subject: 'Your dream is ready' }
+    ]]);
+
+    var handler = require('../netlify/functions/admin-diagnose-resend-sends').handler;
+    // Window is exactly [EXPECTED_MS, EXPECTED_MS+1) -- a 1ms-wide box. If
+    // the parser is off by even a single millisecond in either direction,
+    // the item falls outside the window and the count comes back 0,
+    // proving this isn't just "didn't NaN" but the exact right value.
+    var res = await handler(fakeEvent({
+      method: 'POST', ip: nextIp(),
+      body: baseBody({
+        sinceISO: new Date(EXPECTED_MS).toISOString(),
+        untilISO: new Date(EXPECTED_MS + 1).toISOString()
+      })
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.results['moreecemiller@gmail.com'].count, 1, 'the Postgres-timestamptz-form created_at must parse to exactly the expected ms to fall in this 1ms window');
+    assert.equal(body.results['moreecemiller@gmail.com'].sends[0].createdAt, REAL_RESEND_CREATED_AT, 'raw created_at is passed through to the response verbatim, unparsed');
+  });
+});
+
+test('POST still handles plain ISO-8601 created_at correctly (defensive against Resend switching format later)', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL, RESEND_API_KEY: 'resend-test-key' }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    installResendListSpy([[makeEmail('e1', '2026-08-02T09:06:05Z', 'moreecemiller@gmail.com', 'Your dream is ready')]]);
+
+    var handler = require('../netlify/functions/admin-diagnose-resend-sends').handler;
+    var res = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: baseBody() }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.results['moreecemiller@gmail.com'].count, 1);
+  });
+});
+
+test('POST fails LOUDLY with 502 E11 on a genuinely unparseable created_at, rather than silently reporting count:0', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL, RESEND_API_KEY: 'resend-test-key' }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    installResendListSpy([[
+      { id: 'e1', message_id: 'msg_e1', to: ['moreecemiller@gmail.com'], from: 'DreamTube <dreams@dreamtube.life>', created_at: 'definitely-not-a-real-timestamp', subject: 'Your dream is ready' }
+    ]]);
+
+    var handler = require('../netlify/functions/admin-diagnose-resend-sends').handler;
+    var res = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: baseBody() }));
+    assert.equal(res.statusCode, 502);
+    assert.match(JSON.parse(res.body).error, /^E11: unparseable_timestamp/, 'must be a loud, documented error -- never a silent count:0 that looks like a clean scan');
+  });
+});
+
+// ===== pagination self-consistency (newest-first assumption) =====
+
+test('POST fails LOUDLY with 502 E12 when a page\'s items violate the newest-first order the pagination safety logic depends on', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL, RESEND_API_KEY: 'resend-test-key' }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    // Deliberately OUT of newest-first order: older item first, then a newer one.
+    installResendListSpy([[
+      makeEmail('e1', '2026-08-01T00:00:00Z', 'moreecemiller@gmail.com', 'Your dream is ready'),
+      makeEmail('e2', '2026-08-02T00:00:00Z', 'moreecemiller@gmail.com', 'Your dream is ready')
+    ]]);
+
+    var handler = require('../netlify/functions/admin-diagnose-resend-sends').handler;
+    var res = await handler(fakeEvent({ method: 'POST', ip: nextIp(), body: baseBody() }));
+    assert.equal(res.statusCode, 502);
+    assert.match(JSON.parse(res.body).error, /^E12: resend_order_violation/);
+  });
+});
+
 // ===== pagination =====
 
 test('POST pages backward across multiple pages and stops once it pages past sinceISO', function () {

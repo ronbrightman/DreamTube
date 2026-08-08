@@ -89,6 +89,24 @@
 //   [ {createdAt, subject}, ... ] }, ... }, totalEmailsScanned,
 //   pagesFetched, truncated }
 //
+// TIMESTAMP PARSING: Resend's own documented example response
+// (resend.com/docs/api-reference/emails/list-emails) shows `created_at`
+// in raw Postgres `timestamptz` text form, e.g.
+// `"2026-04-03 22:13:42.674981+00"` -- NOT strict ISO-8601: a space
+// instead of `T` between date and time, 6-digit microseconds, and a bare
+// 2-digit UTC offset with no minutes/colon (`+00` rather than `+00:00`
+// or `Z`). Plain `Date.parse()`/`new Date()` handling of that bare-offset
+// form is a well-known cross-engine/cross-version footgun (can return
+// NaN depending on JS engine/version), so `parseResendTimestamp` below
+// normalizes both the separator and the offset before parsing, and is
+// exercised against both this exact literal Postgres-form sample AND
+// plain ISO-8601 (in case Resend ever switches format) -- see
+// test/admin-diagnose-resend-sends.test.js. A timestamp that still fails
+// to parse after normalization is treated as a genuine anomaly (E11
+// below), never silently skipped -- silently skipping would make a real
+// duplicate-send bug look identical to "confirmed clean", which is
+// exactly the failure mode this diagnostic exists to prevent.
+//
 // Error codes (same small-number scheme as every sibling admin-*.js file):
 //   E1 method_not_allowed
 //   E2 missing_owner_email
@@ -104,6 +122,18 @@
 //   E10 resend_api_error — Resend's own API returned a non-2xx response
 //      or the fetch itself failed; propagated honestly, never swallowed
 //      into an empty/partial result presented as complete
+//   E11 unparseable_timestamp — a Resend email item had a `created_at`
+//      value that could not be parsed into a valid timestamp even after
+//      normalizing both the known Postgres-timestamptz-text-form
+//      separator/offset and plain ISO-8601 -- surfaced loudly rather
+//      than silently treating the item as "not a match" (see TIMESTAMP
+//      PARSING above)
+//   E12 resend_order_violation — a fetched page's items were not in the
+//      non-increasing (newest-first) `created_at` order the pagination
+//      stop-at-sinceISO safety logic (see PAGINATION STRATEGY above)
+//      depends on; surfaced loudly rather than silently trusting an
+//      assumption Resend's docs show by example but don't explicitly
+//      guarantee
 
 var accountStore = require('./lib/account-store');
 var { normalizeEmail } = require('./lib/entitlements');
@@ -135,6 +165,40 @@ function isValidIsoDate(s) {
 }
 
 /**
+ * Normalizes Resend's documented `created_at` format (raw Postgres
+ * `timestamptz` text form, e.g. "2026-04-03 22:13:42.674981+00") into a
+ * form `Date.parse` reliably handles: the space date/time separator
+ * becomes 'T', and a bare 2-digit UTC offset ("+00"/"-05", no
+ * minutes/colon) becomes the unambiguous "+00:00"/"-05:00" form. Safe to
+ * run on a plain ISO-8601 string too -- neither substitution matches
+ * ISO-8601's own 'T' separator or fully-qualified/±HH:MM/Z offsets, so
+ * this is a no-op for that shape (see this file's TIMESTAMP PARSING
+ * header comment for why both shapes are handled defensively).
+ */
+function normalizeResendTimestamp(raw) {
+  var s = raw.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, '$1T$2');
+  s = s.replace(/([+-]\d{2})$/, '$1:00');
+  return s;
+}
+
+/**
+ * Parses a Resend `created_at` value into epoch milliseconds, returning
+ * NaN only when the value genuinely cannot be parsed as any recognized
+ * date -- never for merely-unfamiliar-but-valid formats. Tries the
+ * normalized (Postgres-timestamptz-aware) form first, then falls back to
+ * parsing the raw string as-is (covers a plain ISO-8601 string on the
+ * off chance normalization somehow produced something Date.parse likes
+ * less than the original did).
+ */
+function parseResendTimestamp(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return NaN;
+  var normalized = normalizeResendTimestamp(raw);
+  var ms = Date.parse(normalized);
+  if (!isNaN(ms)) return ms;
+  return Date.parse(raw);
+}
+
+/**
  * Pages backward through Resend's real send history (newest-first),
  * stopping once we've paged past `sinceMs` or hit PAGE_CAP -- see this
  * file's header comment for the full strategy/stop conditions.
@@ -147,6 +211,7 @@ async function fetchResendSendsSince(resendKey, sinceMs) {
   var after = null;
   var pagesFetched = 0;
   var truncated = false;
+  var lastSeenMs = null; // most recent (largest) created_at ms seen so far, across pages
 
   for (;;) {
     if (pagesFetched >= PAGE_CAP) {
@@ -175,7 +240,29 @@ async function fetchResendSendsSince(resendKey, sinceMs) {
     var hitBoundary = false;
     for (var i = 0; i < data.length; i++) {
       var item = data[i];
-      var createdMs = item && item.created_at ? Date.parse(item.created_at) : NaN;
+      var createdMs = item && item.created_at ? parseResendTimestamp(item.created_at) : NaN;
+      if (item && item.created_at && isNaN(createdMs)) {
+        // Genuinely unparseable, even after normalization -- do NOT
+        // silently treat this as "not past the boundary" and carry on;
+        // that would let a real anomaly masquerade as a clean scan (see
+        // TIMESTAMP PARSING header comment).
+        var parseErr = new Error('could not parse created_at "' + item.created_at + '" for email id ' + (item.id || '?'));
+        parseErr.isTimestampParseError = true;
+        throw parseErr;
+      }
+
+      // Self-consistency check: the stop-at-sinceISO boundary logic below
+      // depends on results being non-increasing (newest-first) in
+      // created_at -- Resend's docs show this by example but don't
+      // explicitly guarantee it. Fail loudly rather than silently trusting
+      // it and possibly stopping pagination too early.
+      if (!isNaN(createdMs) && lastSeenMs !== null && createdMs > lastSeenMs) {
+        var orderErr = new Error('email id ' + (item.id || '?') + ' (created_at ' + item.created_at + ') is newer than a previously-seen item -- results were not in the expected newest-first order');
+        orderErr.isOrderViolation = true;
+        throw orderErr;
+      }
+      if (!isNaN(createdMs)) lastSeenMs = createdMs;
+
       if (!isNaN(createdMs) && createdMs < sinceMs) {
         // Results are strictly newest-first -- everything from here to
         // the end of this page (and every subsequent page) is even
@@ -273,6 +360,12 @@ exports.handler = async function (event) {
     page = await fetchResendSendsSince(resendKey, sinceMs);
   } catch (e) {
     console.error('admin-diagnose-resend-sends: Resend API call failed', e);
+    if (e && e.isTimestampParseError) {
+      return { statusCode: 502, body: JSON.stringify({ ok: false, error: 'E11: unparseable_timestamp: ' + e.message }) };
+    }
+    if (e && e.isOrderViolation) {
+      return { statusCode: 502, body: JSON.stringify({ ok: false, error: 'E12: resend_order_violation: ' + e.message }) };
+    }
     return { statusCode: 502, body: JSON.stringify({ ok: false, error: 'E10: resend_api_error: ' + (e && e.message ? e.message : 'unknown') }) };
   }
 
@@ -282,7 +375,15 @@ exports.handler = async function (event) {
 
   for (var i = 0; i < page.emails.length; i++) {
     var item = page.emails[i];
-    var createdMs = item && item.created_at ? Date.parse(item.created_at) : NaN;
+    var createdMs = item && item.created_at ? parseResendTimestamp(item.created_at) : NaN;
+    if (item && item.created_at && isNaN(createdMs)) {
+      // Should be unreachable -- fetchResendSendsSince already throws on
+      // any unparseable created_at before an item can reach this loop.
+      // Kept as defense-in-depth rather than trusting that invariant
+      // blindly (see TIMESTAMP PARSING header comment).
+      console.error('admin-diagnose-resend-sends: unparseable Resend timestamp reached results loop', item.created_at, item.id);
+      return { statusCode: 502, body: JSON.stringify({ ok: false, error: 'E11: unparseable_timestamp: could not parse created_at "' + item.created_at + '" for email id ' + (item.id || '?') }) };
+    }
     if (isNaN(createdMs) || createdMs < sinceMs || createdMs > untilMs) continue;
 
     var to = Array.isArray(item.to) ? item.to : (item.to ? [item.to] : []);
