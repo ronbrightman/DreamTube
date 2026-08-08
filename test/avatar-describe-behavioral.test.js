@@ -280,7 +280,7 @@ test('a failed generation shows a clear error, re-enables Save, and never loses 
 
     // Sheet stays open, a clear (humanized, not raw "E6:"-prefixed) error appears.
     await page.waitForSelector('#identity-error:has-text("flagged by the safety system")');
-    assert.equal(await page.locator('#sheet-identity-overlay').getAttribute('class'), 'sheet-overlay open');
+    assert.equal(await page.locator('#sheet-identity-overlay.open').isVisible(), true, 'the identity sheet must stay open after a failed save');
     var errorText = await page.locator('#identity-error').textContent();
     assert.equal(errorText.indexOf('E6:'), -1, 'the raw error code prefix must never reach the user');
 

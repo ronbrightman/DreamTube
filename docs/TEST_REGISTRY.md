@@ -205,6 +205,137 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 | **Domain routing matrix** (which domain serves what, and why both are legitimately live at once) — `docs/DOMAIN_ROUTING_MATRIX.md`, tracker item `for-product-reliability-net-spec-v1-smok-x1o5zc`, piece 3 | `test/prod-smoke/domain-routing-matrix.test.js` (run against real production as part of this build — see that file's own header comment; all 5 assertions passed live against both real domains) | — |
 | **Canonical-domain links** (founder standing rule 2026-08-08: "if we don't need a Netlify URL, never link to any Netlify URL" — every user-facing outbound link resolves to `https://dreamtube.life`): `lib/site-origin.js`'s `emailOrigin` no longer consults the request's Host/X-Forwarded-Host at all (env `URL` → canonical fallback), and every emailed/shared link builder now routes through it — `lib/dream-share-token.js`/`lib/pending-dream-token.js` `buildUrl`, `request-password-reset.js`, `lib/verification-email-sender.js`, `share-dream.js`/`share-profile.js` (og:url + redirect Location). Client side: `home.html`'s copy-link/open-in-Chrome webview escape swaps the live Netlify alias for the canonical host (guarded to exactly `dreamtube1.netlify.app`, deploy previews untouched; safe because the copied URL carries the origin-agnostic session-transfer `?bt=` token), plus the Make-it-yours copy text and `js/install-nudge.js`'s toolbar-mock fallback host. | `test/email-public-origin.test.js` (resolver contract rewritten to canonical semantics: alias/deploy-preview request hosts IGNORED, garbage/CRLF/non-public hosts still rejected, header-less scheduled sends canonical, plus a new no-alias-anywhere-in-email assertion), `test/share-dream.test.js`/`test/share-profile.test.js` (alias-in → canonical-out for og:url, meta-refresh, Location; CRLF/XSS defenses re-proven under the new resolver), `test/send-first-dream-email.test.js`, `test/unsubscribe-token.test.js`, `test/dream-webhook.test.js`, `test/automatic-first-dream-email.test.js`, `test/media-file-functions.test.js` (expectations flipped to canonical while inbound alias hosts kept, proving alias requests emit canonical links) | Deliberately NOT canonicalized (each is a mechanism, not a user-facing link): `facebook-oauth-callback.js` + Dodo checkout selfOrigin (mid-browser round trips must return to the origin holding the visitor's localStorage session), `start-pending-generation.js`'s fal webhook URL (machine-to-machine), `netlify.toml`'s `/go/*` proxy target (that IS the origin fetch), `both-domain-smoke.js`/prod-smoke tooling (probes both domains by design), tracker API base in agent docs (internal tooling). Cross-origin UX consequence verified, not built around: a user who browsed on the Netlify alias and clicks a canonical email link lands on dreamtube.life without that origin's localStorage — covered for verification links (`verify-email-link.js` mints a `?bt=` session-transfer token) and claim/share/unsubscribe/reset links (none require an existing signed-in session); worst case is a normal passwordless re-login. |
 
+## Test tiering (critical vs. full)
+
+Added per tracker item `for-product-test-suite-pruning-tiering-f-qminmq`
+(founder pushback 2026-08-07: "are you sure we need 350 tests?" — the
+suite carries real maintenance tax, and a redesign like Layout-B touching
+several UI-facing test files at once felt disproportionate to the real
+protection those touch-points bought). Two tiers, not two suites — the
+critical tier is a **subset** of the same `test/*.test.js` files, not a
+separate/duplicated set of tests:
+
+- **`npm test` / `npm run test:full`** — unchanged, `node --test
+  test/*.test.js`, every file (255 as of this pass, ~15-30 min). This is
+  still the ground truth and the one that must pass before anything
+  genuinely sensitive merges — nothing about tiering lowers that bar.
+  Run this nightly (or before merging anything touching money/data/auth,
+  regardless of tier) — it's the safety net that catches everything the
+  fast tier intentionally skips.
+- **`npm run test:critical`** (`scripts/run-critical-tests.js`,
+  driven by `test/critical-tests-exclude-list.js`) — a fast subset (180
+  of 255 files as of this pass) meant to run on every build/PR before
+  the full sweep gets a turn. Fails loudly if the exclude list ever
+  references a deleted/renamed file, so it can't silently go stale.
+
+**EXCLUDE-LIST, NOT INCLUDE-LIST.** This started as an include-list
+(default excluded, add a filename once someone recognized it as
+sensitive) and was rebuilt as an exclude-list the same day after three
+independent review rounds each found real money/data/security-relevant
+test files silently missing — including one case where a file was added
+for an explicit `SECURITY:`-labeled test while its own sibling file in
+the SAME feature/PR, with an equally explicit `SECURITY:` test, was
+missed in the same pass. An include-list's failure mode is silent and
+one-directional: every oversight drops real coverage from the fast tier
+with zero signal anything is wrong. An exclude-list inverts that: the
+default is IN, so a newly added test file is critical-tier automatically
+from the moment it exists — an oversight here just means a cosmetic file
+runs a few extra seconds in the fast tier, never a missed real concern.
+
+**What's in the critical tier, by construction:** every `test/*.test.js`
+file EXCEPT the ones named in `test/critical-tests-exclude-list.js`.
+That non-negotiable floor — money/data/auth, documented race/concurrency
+bug families (signup, login, sessions, tokens/entitlements, generation,
+payments, persistence, rate limiting, Blobs CAS/dedup, refunds), real
+fal.ai/paid-vendor calls with their own rate limits, and documented past
+production incidents — was never in scope to prune or loosen regardless
+of tier, and now can't be silently dropped from the fast tier either.
+
+**What's excluded, and why that's fine** (see
+`test/critical-tests-exclude-list.js`'s own header comment for the
+authoritative, itemized version — 8 named categories: admin one-off
+tools with no live traffic; `tracker.html`'s own internal-tool test
+family; secondary channels parked below the primary surface, like
+WhatsApp capture and postpack/social-share assembly; analytics/telemetry
+plumbing where a bug produces a wrong metric, not a wrong charge or a
+leak; a specific founder-approved redesign's own copy/visual-pin
+regression suite where the underlying behavior has separate real
+coverage elsewhere; pure UI/interaction-polish suites with no money/
+data/auth stake even on total failure; internal build/deploy/reliability
+tooling with no user-facing surface; and narrow generation-variant UI
+tests that explicitly disclaim any real fal.ai cost in their own
+header). None of that coverage is deleted or weakened — `npm test` /
+`test:full` still runs every one of those files, every time. Tiering
+only changes what's fast enough to gate a routine PR.
+
+**How a new test file gets classified:** by default, do nothing — it's
+already critical-tier the moment it exists. Only add it to
+`critical-tests-exclude-list.js` if it clearly and *only* matches one of
+the 8 named categories, and you can point to where its real underlying
+behavior (if any) is covered elsewhere. If it touches money, real user
+data, auth, a race/concurrency/CAS/atomic-write concern, a real paid-
+vendor call with its own rate limit, or a documented past production
+incident — leave it in, full stop, even if it also carries some
+cosmetic assertions.
+
+**What this pass actually changed in the test files themselves** (the
+pruning/loosening half of the same tracker item) — a small, deliberately
+conservative set, since a careful read of this suite found it was
+already mostly using range/regex assertions (`>=44px` tap targets,
+`match`/`doesNotMatch` regex on copy) rather than the brittle
+exact-pixel/exact-string anti-pattern the founder's concern was aimed
+at. What did get touched:
+- **Loosened** (kept the real behavioral assertion, dropped an
+  incidental exact-value pin that had zero behavioral consequence):
+  `test/avatar-describe-behavioral.test.js` (a sheet-stays-open check
+  now asserts the `.open` class token via `isVisible()` instead of the
+  full `class` attribute string — the job is "still open", not "class
+  attribute is byte-identical"), `test/home-behavioral.test.js` (the
+  ritual module's locked-state class check now asserts the `warm` class
+  token is absent, via `doesNotMatch`, instead of pinning the entire
+  class attribute to exactly `'ritual'`), `test/profile-night-restyle-
+  behavioral.test.js` (the night-theme `theme-color` meta check now
+  compares against `home.html`'s own live value instead of a hardcoded
+  hex pinned redundantly in two files — a future retune of the exact
+  shade no longer requires touching this test, only actually shipping a
+  mismatch would).
+- **Fixed** (genuinely broken on `main` at the start of this pass, found
+  by running the full suite — root-caused per `systematic-debugging`,
+  not just patched to pass): `test/home-behavioral.test.js`'s Build-it
+  step-1 assertion pinned "step 1 of 5" text that the Layout-B redesign
+  replaced with `#build-dots`, and now checks the real still-current
+  properties instead (Subject step content visible, dot 1 of 5 marked
+  current); `test/ui-behavioral.test.js`'s gibberish-detection test
+  waited on `#char-count` text containing "character"/"N characters",
+  stale since the most recent commit made that counter word-based ("N /
+  50 words"); `test/social-layer-v2-profile-behavioral.test.js` and (a
+  second instance of an already-known bug class, same fix pattern
+  `ui-behavioral.test.js` already carries elsewhere in this file) a
+  44px tap-target check failed on a sub-pixel float rounding value
+  (43.99998...px) — given the same documented epsilon rather than a
+  hard `>=44`; `test/sound-nudge-behavioral.test.js` and `test/logo-
+  purple-retouch-asset-sweep.test.js` — a test fixture's image URL had
+  reused the real, since-retired logo asset's old filename, tripping the
+  repo-wide old-asset sweep; repointed at a generic fixture filename.
+- **Deliberately left alone** despite dense copy/CSS assertions on
+  inspection, because each earns its keep: `test/shop-behavioral.test.js`/
+  `test/shop-pricing-copy-sweep.test.js` (pack pricing/token amounts —
+  real money facts, explicitly in scope to protect, not prune), `test/
+  home-mky-copy-behavioral.test.js` (regression coverage for a real
+  founder-flagged confusion bug — "install" read as different from "add
+  to home screen" — not incidental copy), `test/comment-sheet-
+  behavioral.test.js`'s exact comment-count text (`'Comments · N'`) —
+  the count is the real data under test, not incidental styling, `test/
+  interp-voice-behavioral.test.js`'s exact-copy `waitForFunction` gates
+  — used as a state-transition signal (loading → ready), not as the
+  actual assertion under test. No test file was deleted outright — no
+  file was found that was purely dead weight with zero real behavior
+  left to protect; see the "Fixed"/"Loosened" bullets above for what
+  actually changed.
+- No `test:critical` exclusion touches any file in the KEEP list above
+  (money/data/auth/race) — that set is exactly what the exclude-list
+  approach above guarantees stays in the fast tier by default.
+
 ## Last reconciled
 
 2026-08-08, alongside tracker item `for-product-close-the-recovery-backfill--9chzb4`:

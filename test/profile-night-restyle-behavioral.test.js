@@ -33,6 +33,8 @@
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
+var fs = require('node:fs');
+var path = require('node:path');
 var staticServer = require('./helpers/static-server');
 var DreamCards = require('../js/dream-cards.js');
 
@@ -318,7 +320,13 @@ test('profile.html: the night theme is really applied — #0c0a1a theme-color, s
     var page = await context.newPage();
     await openProfile(page, { dreams: [dream({})] });
 
-    assert.equal(await page.getAttribute('meta[name="theme-color"]', 'content'), '#0c0a1a');
+    // Real contract: profile's night theme-color MATCHES the rest of the
+    // app's established night theme (home.html), not one specific hex
+    // pinned in two independent places -- a future retune of the exact
+    // shade shouldn't have to touch this test as long as the pages stay
+    // in sync. See git history if the literal value is ever useful.
+    var homeThemeColor = fs.readFileSync(path.join(__dirname, '..', 'home.html'), 'utf8').match(/name="theme-color" content="([^"]+)"/)[1];
+    assert.equal(await page.getAttribute('meta[name="theme-color"]', 'content'), homeThemeColor, 'profile.html\'s theme-color must match home.html\'s night theme');
     assert.equal(await page.locator('.home-bg').count(), 1);
     assert.equal(await page.locator('.home-stars-a').count(), 1);
     assert.equal(await page.locator('.home-stars-b').count(), 1);
