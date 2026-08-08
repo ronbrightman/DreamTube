@@ -222,6 +222,21 @@ tight (curate, don't dump).
 
 ## Design & engineering process
 
+- **Batch merges into few deploys — production deploys cost Netlify
+  credits (learned the hard way 2026-08-08).** Netlify's credit model
+  charges per production deploy; ~362 deploys in a billing cycle
+  exhausted the allowance and PAUSED all production deploys mid-session,
+  freezing the live app two commits behind main while everything looked
+  merged and correct. The cause was this session's habit of merge→push→
+  deploy for each fix as its own deploy (six separate deploys for one
+  afternoon's batch alone). Standing rule: when several branches are
+  ready, MERGE THEM ALL to main locally and push ONCE so Netlify runs a
+  single deploy — don't deploy per-fix. Deploy on a meaningful cadence
+  (a batch, a milestone), not on every commit. Watch for the "operational
+  credits / production deploys paused" banner as the tell. Auto-recharge
+  is off by design (a money decision) — so credit exhaustion presents as
+  a silent deploy freeze, not an error in our code.
+
 - **STANDING RULE (founder said ALWAYS, 2026-07-24): before laying out any
   SUBSTANTIAL new user-facing feature or screen, run research → design
   first, build second** — research agent + skills, then design agent +
