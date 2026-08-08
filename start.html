@@ -879,6 +879,61 @@
     }
   }
 
+  // ===== Funnel character-stash adoption (growth flo-arm character
+  // sheet, 2026-08-08) =====
+  // The growth funnel's flo arm now runs this app's own character-sheet
+  // mechanism (ported from wizard.html) on its "Who's the dream about?"
+  // step — Me can carry a description OR a photo, Someone-I-know a name
+  // + description. A photo cannot ride the URL-param handoff, but on the
+  // same-origin /go/ deployments (dreamtube.life/go/,
+  // dreamtube1.netlify.app/go/ — see the app netlify.toml's /go/* proxy)
+  // funnel and app share localStorage — so the funnel's redirectToApp()
+  // stashes the character records under this key just before navigating
+  // here, and this block CONSUMES the stash (one-shot: removed
+  // immediately, win or lose, so a stale snapshot can never be adopted
+  // by a later, unrelated run — same discipline as FB_STAGED_KEY above)
+  // and feeds it through the EXISTING pre-signup staging path: the same
+  // `staged` object whose characters ride start-pending-generation's
+  // payload (resolveStagedCharactersForGeneration) and get flushed into
+  // real DreamStore characters at signup (flushStagedCharactersToStore).
+  // Generation therefore sees the photo/description exactly as if they
+  // had been entered in the app wizard itself. On the legacy funnel
+  // domain (dreamtubeapp.netlify.app — different origin) no stash ever
+  // exists here; descriptions arrive embedded in the caption param
+  // instead (the funnel's cross-origin fallback), unchanged. Validation
+  // floor mirrors the sheets' own Save rules (desc-or-photo; non-self
+  // needs a name), so nothing DreamStore.saveCharacter would reject at
+  // flush time is ever adopted.
+  var FUNNEL_CHAR_STASH_KEY = 'dreamtube_funnel_character_stash';
+  var FUNNEL_CHAR_STASH_MAX_AGE_MS = 30 * 60 * 1000; // same bound as FB_STAGED_MAX_AGE_MS, same reasoning
+  (function adoptFunnelCharacterStash(){
+    var raw = null;
+    try{ raw = localStorage.getItem(FUNNEL_CHAR_STASH_KEY); }catch(e){ raw = null; }
+    try{ localStorage.removeItem(FUNNEL_CHAR_STASH_KEY); }catch(e){ /* private mode — nothing persisted anyway */ }
+    if(!raw) return;
+    try{
+      var parsed = JSON.parse(raw);
+      if(!parsed || parsed.v !== 1 || !Array.isArray(parsed.characters)) return;
+      if(!parsed.savedAt || (Date.now() - parsed.savedAt) > FUNNEL_CHAR_STASH_MAX_AGE_MS) return;
+      parsed.characters.forEach(function(c){
+        if(!c) return;
+        var isSelf = !!c.isSelf;
+        var name = typeof c.name === 'string' ? c.name.trim() : '';
+        var description = typeof c.description === 'string' ? c.description.trim() : '';
+        // Photos are self-only (matching the sheet + DreamStore contract)
+        // and must be a real image data URL — anything else is dropped,
+        // never forwarded to generation.
+        var photoDataUrl = (isSelf && typeof c.photoDataUrl === 'string' && c.photoDataUrl.indexOf('data:image/') === 0) ? c.photoDataUrl : null;
+        if(!description && !photoDataUrl) return;
+        if(!isSelf && !name) return;
+        var character = { id: 'local' + Math.random().toString(36).slice(2, 9), name: name, isSelf: isSelf, description: description };
+        if(photoDataUrl) character.photoDataUrl = photoDataUrl;
+        staged.characters.push(character);
+        staged.selectedIds.push(character.id);
+      });
+    }catch(e){ /* malformed stash — already consumed above, nothing adopted */ }
+  })();
+
   track('funnel_resumed_from_marketing', { recall: quiz.recall, dream_types: quiz.dreamTypes, motivations: quiz.motivations, style: chosenStyle });
 
   var cur = 0;
@@ -939,12 +994,13 @@
   // right after real signup succeeds on screen 13 (see that screen's own
   // code) as part of the signup/generation flow this fix does not touch.
   // `staged` (declared in the head-of-file Facebook-redirect section
-  // above) can no longer be populated by anything in this file, so this
-  // is now permanently a no-op over empty arrays — exactly the same state
-  // any visitor already reached whenever the old characters screen simply
-  // didn't apply to their dream. Left in place rather than deleted since
-  // touching the signup/generation call sites that reference it is out of
-  // scope for this fix.
+  // above) has no in-page UI populating it anymore — but since 2026-08-08
+  // it CAN arrive pre-populated via adoptFunnelCharacterStash (see that
+  // block above): the growth funnel's flo-arm character sheet stashes
+  // Me/Someone records in localStorage on same-origin /go/ handoffs, and
+  // the adoption feeds them through this exact staging path, so the flush
+  // below is live again for those visitors (and still a harmless no-op
+  // over empty arrays for everyone else).
   // ===================================================================
   /** Called once, right after real signup succeeds on screen 13 — turns staged local characters into real DreamStore characters and remaps selection onto their real ids. */
   function flushStagedCharactersToStore(){
