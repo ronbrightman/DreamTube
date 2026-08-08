@@ -365,3 +365,140 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     await page.close();
   }
 });
+
+// =====================================================================
+// FUNNEL CHARACTER STASH ADOPTION (start.html, 2026-08-08): the growth
+// funnel's flo-arm character sheet stashes Me/Someone character records
+// (self photo included) in localStorage on same-origin /go/ handoffs;
+// start.html's adoptFunnelCharacterStash consumes the stash one-shot
+// into the EXISTING pre-signup `staged` machinery, so the records ride
+// the REAL start-pending-generation.js payload exactly as if they had
+// been entered in the app wizard. Same real-handler wiring as the chain
+// test above: the browser drives the real start.html client code, and
+// every /.netlify/functions/* route is answered by the real handler
+// module in this Node process.
+// =====================================================================
+
+var STASH_KEY = 'dreamtube_funnel_character_stash';
+var STASH_PHOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
+var RESUME_PARAMS = 'resume=1&recall=vividly&types=flying&motivations=' + encodeURIComponent('Turn them into videos') + '&style=Cartoon&caption=' + encodeURIComponent('Aerial wide shot of myself and someone I know, flying and floating through the air, in an open sky, Dreamy, surreal mood, hazy ethereal light, Cartoon style, dreamlike.');
+
+/** Drives start.html's live passwordless signup wall far enough for the real start-pending-generation.js call to fire (its submit fires getOrStartPendingGeneration in parallel with the real passwordless registration), with `stash` seeded into localStorage before the page's own scripts run — exactly what the funnel's redirectToApp() leaves behind on a same-origin handoff. Returns { startCalls, stashAfterLoad }. */
+async function driveStartHtmlEmailStep(page, stash, email) {
+  var startCalls = [];
+  var checkEmailHandler = require('../netlify/functions/check-email').handler;
+  var startHandler = require('../netlify/functions/start-pending-generation').handler;
+  var registerHandler = require('../netlify/functions/register-account-passwordless').handler;
+  require('../netlify/functions/lib/email-domain-check').isDomainDeliverable = function () { return Promise.resolve(true); };
+
+  await wireRealPostHandler(page, '**/.netlify/functions/check-email', checkEmailHandler);
+  await wireRealPostHandler(page, '**/.netlify/functions/register-account-passwordless', registerHandler);
+  await wireRealPostHandler(page, '**/.netlify/functions/start-pending-generation', startHandler, {
+    wrap: function (handler, event) {
+      startCalls.push(JSON.parse(event.body));
+      return withPastClock(60000, function () { return handler(event); });
+    }
+  });
+
+  // Seed the stash BEFORE any page script runs — the adoption block runs
+  // during start.html's own top-level script evaluation.
+  await page.addInitScript(function (payload) {
+    if (payload.stashJson === null) { localStorage.removeItem(payload.key); return; }
+    localStorage.setItem(payload.key, payload.stashJson);
+  }, { key: STASH_KEY, stashJson: stash === null ? null : JSON.stringify(stash) });
+
+  await safeGoto(page, baseUrl + '/start.html?' + RESUME_PARAMS);
+  var stashAfterLoad = await page.evaluate(function (key) { return localStorage.getItem(key); }, STASH_KEY);
+
+  // Live wall = passwordless (SIGNUP_PASSWORDLESS_LIVE, flipped
+  // 2026-08-03): one email field, #fn-s13-continue submit, which fires
+  // the real start-pending-generation capture call in parallel with
+  // registration.
+  await page.waitForSelector('#fn-email');
+  await page.fill('#fn-email', email);
+  await page.click('#fn-s13-continue');
+  await settle(function () { return startCalls.length >= 1; });
+  return { startCalls: startCalls, stashAfterLoad: stashAfterLoad };
+}
+
+test('CHARACTER STASH: a funnel-stashed self photo+description and Someone record are consumed one-shot and ride the REAL start-pending-generation.js payload through the existing staging path', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  mockBlobs.reset();
+  process.env.GENERATION_MOCK_MODE = 'true';
+  ['start-pending-generation', 'check-email', 'register-account-passwordless', 'lib/account-store', 'lib/job-owners', 'lib/pending-dreams', 'lib/rate-limit', 'lib/email-domain-check'].forEach(function (mod) {
+    delete require.cache[require.resolve('../netlify/functions/' + mod)];
+  });
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var res = await driveStartHtmlEmailStep(page, {
+      v: 1,
+      savedAt: Date.now(),
+      characters: [
+        { isSelf: true, name: '', description: 'short brown hair and glasses', photoDataUrl: STASH_PHOTO },
+        { isSelf: false, name: 'Maya', description: 'tall, red coat' }
+      ]
+    }, 'stash-adopt@example.com');
+
+    assert.equal(res.stashAfterLoad, null, 'the stash must be CONSUMED (removed) during page load — one-shot semantics');
+    assert.equal(res.startCalls.length, 1, 'exactly one real start-pending-generation call');
+    var body = res.startCalls[0];
+    assert.equal(body.characters.length, 2, 'both stashed characters must ride the generation payload');
+    var self = body.characters.filter(function (c) { return c.isSelf; })[0];
+    var other = body.characters.filter(function (c) { return !c.isSelf; })[0];
+    assert.ok(self, 'the self character must be in the payload');
+    assert.equal(self.description, 'short brown hair and glasses');
+    assert.equal(self.photoDataUrl, STASH_PHOTO, 'THE POINT OF THE STASH: the photo must reach the generation payload byte-identical');
+    assert.ok(other, 'the Someone character must be in the payload');
+    assert.equal(other.name, 'Maya');
+    assert.equal(other.description, 'tall, red coat');
+    assert.ok(!other.photoDataUrl, 'photos are self-only, exactly like the app sheet/store contract');
+    assert.equal(body.characterIdsForGeneration.length, 2, 'both adopted characters must be SELECTED for generation');
+  } finally {
+    await page.close();
+  }
+});
+
+test('CHARACTER STASH: an EXPIRED stash is consumed but adopts nothing, and invalid records (nameless Someone, non-image photo) are dropped — the payload stays character-free', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  mockBlobs.reset();
+  process.env.GENERATION_MOCK_MODE = 'true';
+  ['start-pending-generation', 'check-email', 'register-account-passwordless', 'lib/account-store', 'lib/job-owners', 'lib/pending-dreams', 'lib/rate-limit', 'lib/email-domain-check'].forEach(function (mod) {
+    delete require.cache[require.resolve('../netlify/functions/' + mod)];
+  });
+
+  // Expired stash: valid shape, stale savedAt.
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var res = await driveStartHtmlEmailStep(page, {
+      v: 1,
+      savedAt: Date.now() - (31 * 60 * 1000),
+      characters: [{ isSelf: true, name: '', description: 'stale details', photoDataUrl: STASH_PHOTO }]
+    }, 'stash-expired@example.com');
+    assert.equal(res.stashAfterLoad, null, 'even an expired stash is consumed (never lingers)');
+    assert.equal(res.startCalls[0].characters.length, 0, 'an expired stash must adopt nothing');
+    assert.equal(res.startCalls[0].characterIdsForGeneration.length, 0);
+  } finally {
+    await page.close();
+  }
+
+  // Invalid records: a nameless Someone and a non-image "photo" must be
+  // dropped by the adoption's validation floor (mirrors the sheets' own
+  // Save rules + the photo data-URL check).
+  var page2 = await browser.newPage();
+  await blockThirdParty(page2);
+  try {
+    var res2 = await driveStartHtmlEmailStep(page2, {
+      v: 1,
+      savedAt: Date.now(),
+      characters: [
+        { isSelf: false, name: '', description: 'has no name' },
+        { isSelf: true, name: '', description: '', photoDataUrl: 'javascript:alert(1)' }
+      ]
+    }, 'stash-invalid@example.com');
+    assert.equal(res2.startCalls[0].characters.length, 0, 'invalid records must be dropped, not forwarded to generation');
+  } finally {
+    await page2.close();
+  }
+});
