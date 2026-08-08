@@ -93,6 +93,16 @@
 .u-share-btn .icon{ width:18px; height:18px; }
 .u-priv-note{ font-size:11.5px; color:var(--text-faint); text-align:center; margin:10px 24px 0; line-height:1.5; }
 
+/* Follow button (Social Layer v2 slice 3 "follow") — design doc's own
+   state A: btn-primary "Follow" -> outline (.btn-secondary, this
+   codebase's existing muted/bordered button variant, matching the
+   "outline style" the design doc calls for without inventing a new CSS
+   button variant) "Following" once tapped. NEVER rendered when
+   viewer===handle (isOwner) — see renderFollowButton in the script below.
+   Same slot/visual weight as .u-share-btn above (they're mutually
+   exclusive: isOwner flips between the two). */
+.u-follow-btn{ margin:14px 20px 0; min-height:48px; display:flex; align-items:center; justify-content:center; }
+
 .dj-list{ padding:18px 0 24px; }
 .dj-card{ margin:0 0 26px; padding:0 16px; }
 .dj-media{ position:relative; width:100%; aspect-ratio:9/14; border-radius:16px; overflow:hidden; background:var(--surface); }
@@ -160,6 +170,14 @@
       <div class="dj-bio" id="u-bio" dir="auto" style="display:none;"></div>
       <div class="profile-stats" id="u-stats"></div>
     </div>
+
+    <!-- Follow button (Social Layer v2 slice 3 "follow", design doc's own
+         state A) — visible for any NON-owner viewer (signed in or out;
+         signed-out tap routes to the signup nudge, same as every other
+         gated action on this page). Never rendered on your own profile —
+         see renderFollowButton in the script below, which also owns the
+         Follow/Following label + btn-primary/btn-secondary swap. -->
+    <button type="button" class="btn btn-primary btn-block u-follow-btn" id="u-follow-btn" style="display:none;">Follow</button>
 
     <!-- PUBLIC/PRIVATE toggle — only rendered when viewer===handle (see
          renderOwnerControls in the script below). PUBLIC starts active
@@ -262,6 +280,52 @@
     signupNudge.classList.add('open');
     return false;
   }
+  function normalizeFollowHandle(h){
+    return (typeof h === 'string' ? h : '').replace(/^@/, '').toLowerCase();
+  }
+
+  // ===== Follow button (Social Layer v2 slice 3 "follow", design doc's own
+  // state A) =====
+  //
+  // PER-INSTANCE TOKEN GUARD — mirrors this exact page's own like-handler
+  // guard (see the click handler below for the identical-purpose comment):
+  // there is only ONE Follow button on this page (unlike explore.html's
+  // per-card like buttons, u.html shows exactly one profile per load), so
+  // `followBtn.dataset.pending` alone is sufficient — a stale async
+  // response can never write into a DIFFERENT button's DOM because no other
+  // Follow button instance exists on this page. followState is likewise
+  // page-scoped module state, safe for the same reason.
+  var followBtn = document.getElementById('u-follow-btn');
+  var followState = { following: false };
+
+  function renderFollowButton(){
+    if(isOwner){ followBtn.style.display = 'none'; return; }
+    followBtn.style.display = 'flex';
+    followBtn.textContent = followState.following ? 'Following' : 'Follow';
+    followBtn.classList.toggle('btn-primary', !followState.following);
+    followBtn.classList.toggle('btn-secondary', followState.following);
+  }
+
+  followBtn.addEventListener('click', function(){
+    if(!requireLogin()) return; // signed-out -> signup nudge, same as every other gated action on this page
+    if(followBtn.dataset.pending) return; // second rapid tap while a request is in flight is a no-op -- see this button's own PER-INSTANCE TOKEN GUARD comment above
+    var wasFollowing = followState.following;
+    var targetHandle = '@' + displayNameForCopy;
+    followBtn.dataset.pending = '1';
+    followState.following = !wasFollowing;
+    renderFollowButton();
+    DreamStore.toggleFollow(targetHandle, wasFollowing).then(function(result){
+      delete followBtn.dataset.pending;
+      followState.following = result.following;
+      renderFollowButton();
+    }).catch(function(){
+      delete followBtn.dataset.pending;
+      followState.following = wasFollowing; // roll back the optimistic flip
+      renderFollowButton();
+      showToast("Couldn't update follow — try again.");
+    });
+  });
+
   signupNudge.addEventListener('click', function(e){
     if(e.target.id === 'modal-signup-nudge') signupNudge.classList.remove('open');
   });
@@ -463,6 +527,7 @@
     document.getElementById('u-dreams-empty').style.display = 'none';
     document.getElementById('u-share-btn').style.display = 'none';
     document.getElementById('u-priv-note').style.display = 'none';
+    followBtn.style.display = 'none';
     listEl.innerHTML = '';
 
     fetch('/.netlify/functions/get-profile?handle=' + encodeURIComponent(handleParam))
@@ -525,6 +590,22 @@
         // button's own comment above.
         document.getElementById('u-share-btn').style.display = isOwner ? 'flex' : 'none';
         document.getElementById('u-priv-note').style.display = 'block';
+
+        // Follow button — shows immediately as "Follow" (the correct
+        // default for a signed-out visitor, or the safe starting guess for
+        // a signed-in one before the real check below resolves), then
+        // upgraded to "Following" if the signed-in viewer already follows
+        // this handle. Never fetched/shown at all for the owner (see
+        // renderFollowButton's own isOwner check).
+        followState.following = false;
+        renderFollowButton();
+        if(currentUser && !isOwner){
+          DreamStore.getFollowStatus().then(function(status){
+            var targetNorm = normalizeFollowHandle(displayNameForCopy);
+            followState.following = (status.following || []).some(function(h){ return normalizeFollowHandle(h) === targetNorm; });
+            renderFollowButton();
+          });
+        }
 
         lastLoadedDreams = DreamStore.decorateFeedDreams(data.dreams);
         renderDreams(lastLoadedDreams);

@@ -286,7 +286,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
         <div class="profile-avatar-edit-badge" id="profile-avatar-edit-badge"></div>
       </div>
       <div class="profile-name" id="profile-handle" title="Edit your profile">you</div>
-      <div class="profile-stats"><b id="stat-created">0</b> created on this device · <b id="stat-shared">0</b> posted</div>
+      <!-- "N followers" (Social Layer v2 slice 3 "follow") -- OWNER-ONLY,
+           via get-following.js's own owner-only followerCount (see that
+           function's own header comment for the locked "never public"
+           constraint) -- added to the SAME stats line slice 1 already
+           established here, matching its existing visual language rather
+           than inventing new UI chrome (design doc's own explicit
+           instruction). See refreshFollowerCountFromServer below. -->
+      <div class="profile-stats"><b id="stat-created">0</b> created on this device · <b id="stat-shared">0</b> posted · <b id="stat-followers">0</b> followers</div>
       <!-- PUBLIC/PRIVATE segmented toggle (Social Layer v2 slice 1, "state C"
            in docs/SOCIAL_LAYER_V2_DESIGN.md): this IS the private view — the
            toggle is a pure navigation control, not a stored preference.
@@ -906,6 +913,18 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
       .catch(function(){ /* leave the local-shared-count render in place */ });
   }
 
+  // "N followers" (Social Layer v2 slice 3 "follow") — OWNER-ONLY, via
+  // get-following.js's own owner-only followerCount (see this file's own
+  // markup comment above .profile-stats for the locked constraint). Same
+  // best-effort posture as refreshPublishedCountFromServer above — a
+  // failed fetch just leaves the "0" default in place, never a broken page.
+  function refreshFollowerCountFromServer(){
+    if(!user) return;
+    DreamStore.getFollowStatus().then(function(status){
+      document.getElementById('stat-followers').textContent = status.followerCount;
+    });
+  }
+
   // ===== Identity (the "Me" character) =====
   // Profile's name+photo are NOT a separate identity field — they ARE
   // whichever character DreamStore.getCharacters() marks isSelf, the same
@@ -1284,6 +1303,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   }
   render();
   refreshPublishedCountFromServer();
+  refreshFollowerCountFromServer();
 
   // ===== New-likes notification (tracker item idea-notify-likes, v1) =====
   // The only page-load fetch anywhere in this feature — see
