@@ -16,6 +16,14 @@ tight (curate, don't dump).
 
 ## How Ron operates (the meta)
 
+- **Self-directed text goes in *italics* (founder communication agreement,
+  re-affirmed 2026-08-08).** In any message to Ron, set the parts written
+  FOR THE AGENT — status narration, "I'm building/merging X now", working
+  notes, internal reasoning — in italics, so he can visually skip past them.
+  Anything written FOR HIM — answers, questions, decisions he must make,
+  things to test — stays in normal (non-italic) font. The italics are the
+  "you can ignore this line" signal; normal font is "this is for you."
+
 - **He dictates — read his messages phonetically (standing rule, his
   "always", 2026-08-08).** Ron usually speaks his messages through
   transcription, so expect sound-alike substitutions, wrong capitals, and
