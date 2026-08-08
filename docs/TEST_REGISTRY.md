@@ -221,54 +221,60 @@ separate/duplicated set of tests:
   regardless of tier) — it's the safety net that catches everything the
   fast tier intentionally skips.
 - **`npm run test:critical`** (`scripts/run-critical-tests.js`,
-  driven by `test/critical-tests-manifest.js`) — a fast subset (128 of
-  255 files as of this pass) meant to run on every build/PR before the
-  full sweep gets a turn. Fails loudly if the manifest ever references a
-  deleted/renamed file, so it can't silently go stale.
+  driven by `test/critical-tests-exclude-list.js`) — a fast subset (167
+  of 255 files as of this pass) meant to run on every build/PR before
+  the full sweep gets a turn. Fails loudly if the exclude list ever
+  references a deleted/renamed file, so it can't silently go stale.
 
-**What's in the critical tier, and why:**
-1. Every file guarding money/data/auth or a documented race/concurrency
-   bug family — signup, login, sessions, tokens/entitlements, generation,
-   payments (Dodo/Stripe), persistence (dream-store/dream-sync/publish),
-   rate limiting, Blobs CAS/dedup, refunds — the exact bug families
-   (races, double-credits, data loss, auth bypass) that have actually hit
-   production in this project's history. This is the non-negotiable
-   floor; it was never in scope to prune or loosen these regardless of
-   tier.
-2. A short, explicitly curated set of core-user-flow behavioral tests
-   (home, wizard/create, shop, the funnel journey, the Playwright-driven
-   `ui-behavioral.test.js` result.html suite) — not money/data/auth
-   themselves, but the primary screens a broken PR would be immediately,
-   visibly wrong on.
+**EXCLUDE-LIST, NOT INCLUDE-LIST.** This started as an include-list
+(default excluded, add a filename once someone recognized it as
+sensitive) and was rebuilt as an exclude-list the same day after three
+independent review rounds each found real money/data/security-relevant
+test files silently missing — including one case where a file was added
+for an explicit `SECURITY:`-labeled test while its own sibling file in
+the SAME feature/PR, with an equally explicit `SECURITY:` test, was
+missed in the same pass. An include-list's failure mode is silent and
+one-directional: every oversight drops real coverage from the fast tier
+with zero signal anything is wrong. An exclude-list inverts that: the
+default is IN, so a newly added test file is critical-tier automatically
+from the moment it exists — an oversight here just means a cosmetic file
+runs a few extra seconds in the fast tier, never a missed real concern.
 
-**What's NOT in it, and why that's fine:** admin one-off tools with no
-live traffic, secondary/cosmetic UI surfaces (chamber, postpack,
-tracker.html, WhatsApp capture, PWA/A2HS polish, moderation review,
-etc.), and most of the `*-copy-*`/`*-restyle-*`/`*-makeover-*`-style
-regression suites pinning one specific founder-approved redesign's
-details. None of that coverage is deleted or weakened — `npm test` /
+**What's in the critical tier, by construction:** every `test/*.test.js`
+file EXCEPT the ones named in `test/critical-tests-exclude-list.js`.
+That non-negotiable floor — money/data/auth, documented race/concurrency
+bug families (signup, login, sessions, tokens/entitlements, generation,
+payments, persistence, rate limiting, Blobs CAS/dedup, refunds), real
+fal.ai/paid-vendor calls with their own rate limits, and documented past
+production incidents — was never in scope to prune or loosen regardless
+of tier, and now can't be silently dropped from the fast tier either.
+
+**What's excluded, and why that's fine** (see
+`test/critical-tests-exclude-list.js`'s own header comment for the
+authoritative, itemized version — 8 named categories: admin one-off
+tools with no live traffic; `tracker.html`'s own internal-tool test
+family; secondary channels parked below the primary surface, like
+WhatsApp capture and postpack/social-share assembly; analytics/telemetry
+plumbing where a bug produces a wrong metric, not a wrong charge or a
+leak; a specific founder-approved redesign's own copy/visual-pin
+regression suite where the underlying behavior has separate real
+coverage elsewhere; pure UI/interaction-polish suites with no money/
+data/auth stake even on total failure; internal build/deploy/reliability
+tooling with no user-facing surface; and narrow generation-variant UI
+tests that explicitly disclaim any real fal.ai cost in their own
+header). None of that coverage is deleted or weakened — `npm test` /
 `test:full` still runs every one of those files, every time. Tiering
-only changes what's fast enough to gate a routine PR; a redesign that
-legitimately touches several of these secondary suites at once (like
-Layout-B did) no longer has to hold up every other PR's fast check while
-those get updated.
+only changes what's fast enough to gate a routine PR.
 
-**How a new test file gets classified** (see
-`test/critical-tests-manifest.js`'s own header comment for the
-authoritative version of this rule):
-- Touches money, real user data, auth, or a race/concurrency/CAS/atomic-
-  write concern? Add its filename to the manifest array. When genuinely
-  unsure, add it — the cost of over-including is a slightly slower
-  critical run, not lost coverage (the full run always covers it either
-  way).
-- Is a core, everyday user-facing flow (home, wizard/create, shop,
-  signup, result/publish — something most users hit on a normal path)?
-  Add it too, same reasoning.
-- Otherwise (a secondary surface, an admin/one-off tool, a specific
-  redesign's own copy/visual regression suite) — leave it out of the
-  manifest. It still runs in the nightly/full sweep and still blocks a
-  merge if the driver runs `npm test` first, which remains the right
-  call before anything touching something sensitive.
+**How a new test file gets classified:** by default, do nothing — it's
+already critical-tier the moment it exists. Only add it to
+`critical-tests-exclude-list.js` if it clearly and *only* matches one of
+the 8 named categories, and you can point to where its real underlying
+behavior (if any) is covered elsewhere. If it touches money, real user
+data, auth, a race/concurrency/CAS/atomic-write concern, a real paid-
+vendor call with its own rate limit, or a documented past production
+incident — leave it in, full stop, even if it also carries some
+cosmetic assertions.
 
 **What this pass actually changed in the test files themselves** (the
 pruning/loosening half of the same tracker item) — a small, deliberately
@@ -324,9 +330,9 @@ at. What did get touched:
   file was found that was purely dead weight with zero real behavior
   left to protect; see the "Fixed"/"Loosened" bullets above for what
   actually changed.
-- No `test:critical` reclassification touches any file in the KEEP list
-  above (money/data/auth/race) — that set is exactly the auto-included
-  category (1) in this section's manifest description.
+- No `test:critical` exclusion touches any file in the KEEP list above
+  (money/data/auth/race) — that set is exactly what the exclude-list
+  approach above guarantees stays in the fast tier by default.
 
 ## Last reconciled
 
