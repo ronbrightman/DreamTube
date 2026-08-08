@@ -203,6 +203,16 @@ tight (curate, don't dump).
   link edge case where something must be shown) was a good instinct but the
   wrong default — hiding the impossible choice up front is simpler and never
   disappoints a user who never saw it as an option.
+- **Never specify an ethnicity when generating a video or image unless the
+  user asked for it (standing rule, founder 2026-08-08).** In the whole
+  creation process — the product's own video/image generation prompts and
+  anything an agent generates — do NOT inject a specific ethnicity, race, or
+  skin tone into a person's description. Leave it unspecified and let the
+  model render freely; only include an ethnicity the user themselves named.
+  This generalizes the creative-side rule below ("no specific ethnic group as
+  the main person in creative") to the entire generation pipeline. Applies to
+  buildPrompt / buildImagePrompt scaffolding, persona/asset generation, and ad
+  creative alike.
 
 ## Creative
 
