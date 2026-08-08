@@ -1941,7 +1941,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     PurchaseSheet.showClaimSheet({
       source: 'home_ritual_module',
       tokenStatus: lastTokenStatus,
-      onClaimed: function(){ refreshTokenStatus(false); }
+      onClaimed: function(data){ applyClaimedStatus(data); }
     });
   });
 
@@ -2707,7 +2707,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       refreshMky();
       if(data.granted){
         showToast('+20 tokens added to your Vault');
-        refreshTokenStatus(false);
+        // Use the grant's OWN returned balance, not a stale refetch (same
+        // Blobs eventual-consistency issue applyClaimedStatus documents).
+        // Balance-only here — an install claim must NOT touch the daily
+        // claim's own claimable/streak state.
+        if(typeof data.balance === 'number'){
+          lastTokenStatus = Object.assign({}, lastTokenStatus || {}, { balance: data.balance });
+          renderRitualModule();
+          renderRitualClaim(lastTokenStatus);
+        } else {
+          refreshTokenStatus(false);
+        }
       }
     }).catch(function(){
       showToast("Couldn't claim right now — try again in a moment.");
@@ -2725,6 +2735,35 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // claim logic here at all: js/store.js's getTokenStatus/claimDailyTokens
   // + js/purchase-sheet.js's claim sheet, exactly as explore.html/
   // profile.html/shop.html already use). =====
+  // Applies a successful claim's OWN returned balance directly, instead of
+  // re-fetching (founder repro 2026-08-08: "claimed the bonus, balance
+  // didn't change until I refreshed"). getTokenStatus refetch hits Blobs
+  // eventual-consistency and reads the PRE-claim balance, so the claim
+  // looked like it did nothing; the claim response
+  // ({claimed, balance, streak, nextClaimAt}) is authoritative. A delayed
+  // reconciliation refetch settles nextClaimAt/streak, guarded so a stale
+  // read can never DROP the balance we just set.
+  function applyClaimedStatus(data){
+    if(!data || typeof data.balance !== 'number'){ refreshTokenStatus(false); return; }
+    lastTokenStatus = Object.assign({}, lastTokenStatus || {}, {
+      balance: data.balance,
+      claimable: false,
+      streak: (data.streak != null ? data.streak : (lastTokenStatus && lastTokenStatus.streak)),
+      nextClaimAt: (data.nextClaimAt != null ? data.nextClaimAt : (lastTokenStatus && lastTokenStatus.nextClaimAt))
+    });
+    renderRitualModule();
+    renderRitualClaim(lastTokenStatus);
+    setTimeout(function(){
+      DreamStore.getTokenStatus().then(function(status){
+        if(status && typeof status.balance === 'number' && lastTokenStatus && status.balance < lastTokenStatus.balance){
+          status.balance = lastTokenStatus.balance; // never let a stale read undo the claim
+        }
+        lastTokenStatus = status;
+        renderRitualModule(); renderRitualClaim(status); maybeTrackStreakFreeze(status);
+      }).catch(function(){});
+    }, 2500);
+  }
+
   function refreshTokenStatus(autoOpen){
     DreamStore.getTokenStatus().then(function(status){
       lastTokenStatus = status;
@@ -2733,7 +2772,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       maybeTrackStreakFreeze(status);
       if(autoOpen){
         PurchaseSheet.maybeAutoOpenClaimSheet(status, {
-          onClaimed: function(){ refreshTokenStatus(false); }
+          onClaimed: function(data){ applyClaimedStatus(data); }
         });
       }
     }).catch(function(){ /* leave whatever was last rendered — never block the page on this */ });
