@@ -179,7 +179,10 @@
     if (!tokenStatus) return '';
     var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
     if (tokenStatus.claimable) {
-      return 'Or claim ' + amount + ' free tokens above';
+      // The claimable case is now covered by the quiet .ps-claim-quiet link
+      // directly below the buy CTA (de-emphasis, 2026-08-09) — no separate
+      // wait-line for it, so the two don't double up.
+      return '';
     }
     if (tokenStatus.nextClaimAt) {
       return 'Or claim ' + amount + ' free tokens in ' + formatTokenCountdown(tokenStatus.nextClaimAt);
@@ -258,15 +261,18 @@
       '  <div class="sheet-handle"></div>' +
       '  <div class="purchase-sheet-title" id="ps-title"></div>' +
       '  <div class="purchase-sheet-body" id="ps-body"></div>' +
-      // Daily-claim option (tracker item for-product-build-the-daily-token-
-      // claim--fngrwd, item 5): "instantly unblocks an image" when the
-      // account has an unclaimed +20 waiting — shown ABOVE the buy CTA,
-      // hidden entirely (display:none, see renderClaimOption below) unless
-      // tokenStatus.claimable is true for THIS show() call.
-      '  <button type="button" class="claim-inline-btn" id="ps-claim-btn" style="display:none;"><span id="ps-claim-label"></span></button>' +
       '  <div class="purchase-meter"><i id="ps-meter-fill"></i></div>' +
       '  <div class="purchase-meter-label"><span id="ps-meter-have"></span><span id="ps-meter-need"></span></div>' +
       '  <button type="button" class="purchase-buy-btn" id="ps-buy-btn"><span id="ps-buy-label"></span></button>' +
+      // Daily-claim escape — DE-EMPHASIZED (founder 2026-08-09, monetization
+      // research): moved BELOW the primary buy CTA and restyled as a quiet
+      // secondary link (.ps-claim-quiet) instead of the prominent bordered
+      // button that used to sit ABOVE the buy CTA. A full-width free-claim
+      // button above the buy button handed users a free exit at the exact
+      // moment they'd pay. Still ALWAYS shown when a claim is available (never
+      // hidden — the earlier founder spec), just no longer competing with the
+      // buy CTA. Hidden (display:none) when not claimable — see renderClaimOption.
+      '  <button type="button" class="claim-inline-btn ps-claim-quiet" id="ps-claim-btn" style="display:none;"><span id="ps-claim-label"></span></button>' +
       // "Make it as an image instead" quiet-link fallback (tracker item
       // for-product-out-of-tokens-sheet-founder--dg5q1y) — directly under
       // the primary buy CTA per the founder's spec, hidden by default

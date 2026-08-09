@@ -1123,6 +1123,11 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
   border-radius:100px; padding:12px; background:transparent; color:var(--accent-value); cursor:pointer; margin-bottom:10px;
 }
 .claim-inline-btn:disabled{ opacity:.5; cursor:not-allowed;}
+/* De-emphasized daily-claim escape inside the purchase sheet (founder 2026-08-09):
+   a quiet centered text link BELOW the buy CTA, not the bordered pill that used
+   to compete above it. Scoped modifier so shop.html's own .claim-inline-btn is
+   untouched. */
+.claim-inline-btn.ps-claim-quiet{ width:auto; display:block; margin:8px auto 0; border:none; background:transparent; color:var(--text-muted); font-weight:600; font-size:12.5px; text-decoration:underline; padding:6px 8px; }
 
 /* No `position` override here on purpose -- this class is applied
    alongside the base .sheet class on the SAME element (class="sheet
