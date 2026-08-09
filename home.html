@@ -734,6 +734,30 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 .mky-row .qlabel{ flex:1; }
 .mky-row .chev{ color:#6f6894; display:inline-flex; }
 .mky-row.primary{ color:var(--home-ink); font-weight:700; }
+/* Priority treatment for the email-verification row (tracker item
+   for-product-auto-drive-email-verify-earl-qzq652) — the one row of the
+   four that gates a real capability (posting), not just a cosmetic setup
+   step, so it gets its own highlighted panel rather than reading as just
+   another line in the list. Reuses the card's own gold accent (same
+   rgba(232,196,106,*) family as .mky-bonus-chip/.mky-reward.gold/
+   .mky-claim below) rather than inventing a new color, so it reads as
+   "part of this card's reward language" rather than a mismatched alert. */
+.mky-row.priority{
+  background:linear-gradient(135deg, rgba(232,196,106,.16), rgba(232,196,106,.05));
+  border:1px solid rgba(232,196,106,.4); border-radius:16px;
+  padding:10px 12px; margin-bottom:10px;
+  color:var(--home-ink);
+}
+.mky-row.priority .qlabel{ font-weight:800; }
+.mky-row.priority .qicon{ font-size:19px; }
+/* One-line sub-copy naming the actual stakes ("why this row matters"),
+   only used on the priority row above — the other three rows are
+   self-explanatory (add to home screen / copy link / bookmark) and don't
+   need it. */
+.mky-row-sub{
+  display:block; font-size:12.5px; font-weight:600; line-height:1.4;
+  color:var(--home-soft); margin-top:2px;
+}
 .mky-row .done-check{ color:var(--home-ok); font-weight:800; margin-left:6px; }
 .mky-row .chev svg{ transition:transform .2s ease; }
 .mky-item.open .mky-row .chev svg{ transform:rotate(90deg); }
@@ -1124,6 +1148,47 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         <div id="mky-live">
           <h2 class="mky-title">Make DreamTube yours</h2>
           <div class="mky-rows">
+            <!-- Email-verification bonus row (founder 08-08: "keep it on
+                 the section that has the bonus tokens... maybe also give
+                 20 tokens for verifying email" — this REPLACED the earlier
+                 hook-it-to-Post idea, which he rejected; posting stays
+                 friction-free and the publish/E8 gate is untouched).
+                 Visible only while the signed-in account is unverified;
+                 tap opens js/email-verify-sheet.js (which auto-sends the
+                 code); the sheet's 'dreamtube:email-verified' event flips
+                 this row to its done-check state and refreshes the
+                 balance. Server side: verify-email-code.js /
+                 verify-email-link.js grant +20 once-ever via
+                 entitlements.EMAIL_VERIFIED_ACHIEVEMENT_ID.
+
+                 PROMINENCE (tracker item for-product-auto-drive-email-
+                 verify-earl-qzq652, founder-authorized 2026-08-09): this
+                 used to be markup item #4 of 4 in this accordion, after
+                 install/copy/bookmark — easy to scroll past, and the ONLY
+                 one of the four that actually gates a real server-side
+                 capability (publish-dream.js's E8 email_not_verified block
+                 on Post; the other three are purely cosmetic setup steps).
+                 Root cause of the low-verification-rate symptom this item
+                 exists to fix was literally "this row is last and looks
+                 identical to the other three" — so it's now (a) the FIRST
+                 item in source order (this section is hidden entirely once
+                 verified, so reordering here only ever changes what an
+                 UNVERIFIED viewer sees — refreshMky() below relies on this
+                 row staying outside MKY_ITEMS/the accordion-toggle group,
+                 unaffected by the reorder) and (b) styled with
+                 .mky-row.priority (see that class's own CSS comment)
+                 instead of a plain list row, with a one-line sub-copy
+                 naming the actual stakes instead of leaving it to be
+                 inferred. -->
+            <div class="mky-item" id="mky-item-verify" hidden>
+              <button type="button" class="mky-row priority" id="mky-verify-row">
+                <i class="qicon">✉️</i>
+                <span class="qlabel">Verify your email<span class="done-check" id="mky-verify-check" hidden>✓</span>
+                  <span class="mky-row-sub">Required to post your dreams</span>
+                </span>
+                <span class="mky-bonus-chip" id="mky-verify-chip">+20 <span class="tok-ico" id="mky-verify-tok" aria-hidden="true"></span></span>
+              </button>
+            </div>
             <div class="mky-item" id="mky-item-install">
               <button type="button" class="mky-row primary" id="mky-install-row" aria-expanded="false">
                 <i class="qicon">📲</i>
@@ -1150,25 +1215,6 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
                 <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></span>
               </button>
               <div class="mky-exp" id="mky-bookmark-exp"></div>
-            </div>
-            <!-- Email-verification bonus row (founder 08-08: "keep it on
-                 the section that has the bonus tokens... maybe also give
-                 20 tokens for verifying email" — this REPLACED the earlier
-                 hook-it-to-Post idea, which he rejected; posting stays
-                 friction-free and the publish/E8 gate is untouched).
-                 Visible only while the signed-in account is unverified;
-                 tap opens js/email-verify-sheet.js (which auto-sends the
-                 code); the sheet's 'dreamtube:email-verified' event flips
-                 this row to its done-check state and refreshes the
-                 balance. Server side: verify-email-code.js /
-                 verify-email-link.js grant +20 once-ever via
-                 entitlements.EMAIL_VERIFIED_ACHIEVEMENT_ID. -->
-            <div class="mky-item" id="mky-item-verify" hidden>
-              <button type="button" class="mky-row" id="mky-verify-row">
-                <i class="qicon">✉️</i>
-                <span class="qlabel">Verify your email<span class="done-check" id="mky-verify-check" hidden>✓</span></span>
-                <span class="mky-bonus-chip" id="mky-verify-chip">+20 <span class="tok-ico" id="mky-verify-tok" aria-hidden="true"></span></span>
-              </button>
             </div>
           </div>
           <div class="mky-reward gold" id="mky-reward-line">Add DreamTube to your home screen, then open it from the new icon — that first open unlocks +20 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>

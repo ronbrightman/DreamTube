@@ -387,6 +387,96 @@ test('verify bonus row: after an in-sheet verification the row flips to its ✓ 
   }
 });
 
+// ===========================================================================
+// Standalone (add-to-homescreen) survival — tracker item for-product-auto-
+// drive-email-verify-earl-qzq652 part 2 (founder-authorized 2026-08-09).
+// The founder's own read of the code ("refreshMky()'s visibility logic
+// appears to be driven purely by DreamStore flags, not any explicit
+// display-mode check") suggested this should already work, but the item
+// explicitly asked for it to be PROVEN, not assumed. forceStandalone below
+// is the same technique test/a2hs-install-nudge-journey-behavioral.test.js
+// already established for the install-bonus half of this same card (see
+// that file's own doc comment for exactly why addInitScript, not a
+// post-load page.evaluate, is required) -- duplicated here rather than
+// imported, matching this suite's existing per-file helper convention.
+// ===========================================================================
+
+/**
+ * Forces `window.matchMedia('(display-mode: standalone)').matches` to true
+ * BEFORE any page script runs -- the exact same check PwaInstall.
+ * isStandalone() reads (js/pwa.js). Must be an addInitScript so js/pwa.js's
+ * own on-load standalone check (which runs synchronously as the script
+ * parses) sees it too.
+ */
+function forceStandalone(page) {
+  return page.addInitScript(function () {
+    var real = window.matchMedia ? window.matchMedia.bind(window) : null;
+    window.matchMedia = function (q) {
+      if (String(q).indexOf('display-mode') !== -1) {
+        return { matches: true, media: q, addListener: function () {}, removeListener: function () {}, addEventListener: function () {}, removeEventListener: function () {} };
+      }
+      return real ? real(q) : { matches: false, media: q };
+    };
+  });
+}
+
+test('STANDALONE SURVIVAL: an unverified account opening home.html in simulated standalone display-mode still gets the verify row rendered, tappable, and the sheet flow completes + grants the bonus exactly as in a normal tab', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await forceStandalone(page);
+    await mockTokenStatus(page);
+    await seedHomeUser(page, { emailVerified: false, password: null, presetSessionMarker: true, username: 'standaloneverifyemail' });
+
+    // Sanity: this load really is standalone, per the same check js/pwa.js
+    // itself reads -- if this ever failed, the rest of the test would be
+    // proving nothing.
+    var reallyStandalone = await page.evaluate(function () { return window.PwaInstall && PwaInstall.isStandalone(); });
+    assert.equal(reallyStandalone, true, 'sanity: forceStandalone must actually make PwaInstall.isStandalone() true, or this test proves nothing');
+
+    await page.waitForSelector('#mky-item-verify:not([hidden])', { timeout: 4000 });
+    assert.match(await page.locator('#mky-verify-chip').textContent(), /\+20/, 'the +20 chip must render in standalone mode same as a normal tab');
+
+    await page.route('**/.netlify/functions/verify-email-code', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, bonus: { granted: true, amount: 20, balance: 340 } }) });
+    });
+
+    await page.click('#mky-verify-row');
+    await page.waitForSelector('#email-verify-sheet-overlay.open', { timeout: 4000 });
+    await page.fill('#email-verify-code-input', '123456');
+    await page.click('#email-verify-submit-btn');
+    await page.waitForSelector('#email-verify-sheet-done', { state: 'visible', timeout: 4000 });
+
+    assert.equal(await page.locator('#email-verify-bonus-line').isVisible(), true, 'the +20 celebration must show in standalone mode exactly as in a normal tab');
+    await page.waitForFunction(function () {
+      return !document.getElementById('mky-verify-check').hidden;
+    }, null, { timeout: 4000 });
+    assert.equal(await page.evaluate(function () { return DreamStore.getAccountEmailVerified(); }), true, 'the account must genuinely end up verified, not just show a UI state');
+  } finally {
+    await context.close();
+  }
+});
+
+test('STANDALONE SURVIVAL: a VERIFIED account opening home.html in simulated standalone display-mode never sees the verify row (matches normal-tab behavior)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await forceStandalone(page);
+    await mockTokenStatus(page);
+    await seedHomeUser(page, { emailVerified: true, password: null, username: 'standaloneverified' });
+
+    await page.waitForSelector('#mky', { timeout: 4000 });
+    var hidden = await page.evaluate(function () { return document.getElementById('mky-item-verify').hidden; });
+    assert.equal(hidden, true, 'a verified account must never see the row, standalone or not');
+  } finally {
+    await context.close();
+  }
+});
+
 test('verify bonus row: an install-claimed-on-an-earlier-visit account with an UNVERIFIED email keeps the Make-it-yours card, shrunk to just the verify row (the install machinery stays retired)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
