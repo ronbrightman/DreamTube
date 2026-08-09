@@ -89,7 +89,10 @@
        tap the way style/user filters have. -->
   <div class="explore-top-left-row" id="explore-top-left-row">
     <div class="explore-token-chip-slot" id="explore-token-chip-slot"></div>
-    <div class="explore-following-chip" id="following-filter-chip">Following</div>
+    <div class="explore-feed-tabs" id="explore-feed-tabs" role="tablist">
+      <button type="button" class="feed-tab active" id="feed-tab-all" data-feed-tab="all">All</button>
+      <button type="button" class="feed-tab" id="feed-tab-following" data-feed-tab="following">Following</button>
+    </div>
   </div>
   <div class="feed-scroll" id="feed-scroll"></div>
   <div class="toast" id="toast"></div>
@@ -206,7 +209,8 @@
   // and the fetch's own .then() below re-renders once the real list is in,
   // closing that race rather than leaving a stale empty state.
   var followingSet = null;
-  var followingChip = document.getElementById('following-filter-chip');
+  var feedTabAll = document.getElementById('feed-tab-all');
+  var feedTabFollowing = document.getElementById('feed-tab-following');
   if (DreamStore.getCurrentUser()) {
     DreamStore.getFollowStatus().then(function (status) {
       followingSet = {};
@@ -214,13 +218,21 @@
       if (filter && filter.type === 'following') render();
     });
   }
-  followingChip.addEventListener('click', function(){
+  // "All" clears any active filter (the Following filter OR a style filter) back
+  // to the full feed. "Following" applies the follow filter (signed-out -> the
+  // same signup nudge every gated action uses). render() owns the active-tab
+  // paint, so these just set `filter` and re-render.
+  feedTabAll.addEventListener('click', function(){
+    if(filter){ filter = null; render(); }
+  });
+  feedTabFollowing.addEventListener('click', function(){
     if(!DreamStore.getCurrentUser()){
       signupCta.href = 'login.html?mode=signup&next=' + encodeURIComponent('explore.html');
       signupNudge.classList.add('open');
       return;
     }
-    filter = (filter && filter.type === 'following') ? null : { type: 'following' };
+    if(filter && filter.type === 'following') return; // already on Following
+    filter = { type: 'following' };
     render();
   });
 
@@ -820,17 +832,19 @@
     }
 
     // The dismissable active-filter pill (#filter-chip) is ONLY for the style
-    // filter. For the 'following' filter the highlighted #following-filter-chip
-    // toggle IS the active-state indicator (and its own dismiss: tap it again),
-    // so also showing a "Following ✕" pill duplicated the label and the two
-    // overlapped in the top-left row (founder 2026-08-09). Suppress it here.
+    // filter. For the 'following' filter the highlighted "Following" feed tab
+    // (feed-tab-following) IS the active-state indicator, and "All" is its
+    // dismiss — so a "Following ✕" pill here would just duplicate the label and
+    // overlap the tabs (founder 2026-08-09). Suppress it for the following case.
     if(filter && filter.type !== 'following'){
       chip.style.display = 'flex';
       chip.innerHTML = esc('Style: ' + filter.value) + ' <span class="fc-x">✕</span>';
     } else {
       chip.style.display = 'none';
     }
-    followingChip.classList.toggle('active', !!(filter && filter.type === 'following'));
+    var onFollowing = !!(filter && filter.type === 'following');
+    feedTabFollowing.classList.toggle('active', onFollowing);
+    feedTabAll.classList.toggle('active', !onFollowing);
   }
   render();
 
