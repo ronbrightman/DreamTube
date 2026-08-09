@@ -978,21 +978,22 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 .explore-token-chip-slot .token-chip-compact{ background:rgba(0,0,0,.72); backdrop-filter:blur(6px); border-color:rgba(255,255,255,.2);}
 .explore-token-chip-slot .token-chip-compact .token-chip-balance{ color:#fff;}
 
-/* "Following" filter toggle (Social Layer v2 slice 3 "follow") — same
-   floating-pill visual language as .explore-filter-chip above, sized to a
-   real >=44px tap target via min-height rather than relying on its own
-   (smaller) font-size/padding to get there, matching this feature's other
-   new tap targets (see u.html's own .u-follow-btn/.u-visibility-row
-   comments). `.active` (toggled in explore.html's own render(), the single
-   source of truth for `filter`) gives it the same "currently applied"
-   affordance #filter-chip's own appearance already communicates when a
-   style/user filter is active. */
-.explore-following-chip{
-  display:flex; align-items:center; justify-content:center; min-height:44px; padding:0 14px;
-  background:rgba(0,0,0,.72); backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,.14);
-  border-radius:100px; font-size:12px; font-weight:700; color:#fff; cursor:pointer; white-space:nowrap;
+/* Feed source tabs — "All" / "Following" (Social Layer v2 slice 3 "follow",
+   restyled 2026-08-09 to the founder's Instagram-Reels reference: plain
+   TRANSPARENT text tabs, the active one bright white + the inactive dimmed,
+   NOT a solid pill). `.active` is toggled in explore.html's own render()
+   (the single source of truth for `filter`): the Following tab is active when
+   filter.type==='following', otherwise All. Text-shadow keeps them legible
+   over a bright video frame; generous vertical padding keeps a >=44px tap
+   target without a visible box. */
+.explore-feed-tabs{ display:flex; align-items:center; gap:18px; }
+.feed-tab{
+  background:none; border:none; padding:11px 0; margin:0;
+  font-family:inherit; font-size:15.5px; font-weight:800; line-height:1;
+  color:rgba(255,255,255,.55); cursor:pointer; white-space:nowrap;
+  -webkit-tap-highlight-color:transparent; text-shadow:0 1px 4px rgba(0,0,0,.6);
 }
-.explore-following-chip.active{ background:#fff; color:#000; border-color:#fff;}
+.feed-tab.active{ color:#fff; }
 
 /* Idea #3 — "Dream of the Day". Not a new page, just a badge on top of
    whichever dream the server picked as today's highlight (see

@@ -407,21 +407,25 @@ test('explore.html: the Following chip filters the feed to only accounts the vie
     await page.waitForSelector('[data-id="d-alice"]', { timeout: 5000 });
     await page.waitForSelector('[data-id="d-bob"]', { timeout: 5000 });
 
-    await page.click('#following-filter-chip');
+    await page.click('#feed-tab-following');
     await page.waitForFunction(function () {
       return document.querySelector('[data-id="d-alice"]') && !document.querySelector('[data-id="d-bob"]');
     }, null, { timeout: 3000 });
 
-    var chipText = await page.textContent('#filter-chip');
-    assert.match(chipText, /Following/);
-    var chipActive = await page.evaluate(function () {
-      return document.getElementById('following-filter-chip').classList.contains('active');
+    // Reels-style text tabs (2026-08-09): the Following tab is the active one,
+    // All is not — this replaced the old solid "Following" pill + the duplicate
+    // #filter-chip "Following ✕" that used to render alongside it.
+    var tabState = await page.evaluate(function () {
+      return {
+        following: document.getElementById('feed-tab-following').classList.contains('active'),
+        all: document.getElementById('feed-tab-all').classList.contains('active')
+      };
     });
-    assert.equal(chipActive, true);
+    assert.equal(tabState.following, true);
+    assert.equal(tabState.all, false);
 
-    // Clearing via the active-filter chip's own X restores the full feed --
-    // same generic clear mechanism every other filter type already uses.
-    await page.click('#filter-chip');
+    // Tapping "All" restores the full feed.
+    await page.click('#feed-tab-all');
     await page.waitForSelector('[data-id="d-bob"]', { timeout: 3000 });
     var bothPresent = await page.evaluate(function () {
       return !!document.querySelector('[data-id="d-alice"]') && !!document.querySelector('[data-id="d-bob"]');
@@ -447,7 +451,7 @@ test('explore.html: a signed-out visitor tapping the Following chip sees the sig
 
     await safeGoto(page, baseUrl + '/explore.html');
     await page.waitForSelector('[data-id="d-alice"]', { timeout: 5000 });
-    await page.click('#following-filter-chip');
+    await page.click('#feed-tab-following');
 
     await page.waitForSelector('#modal-signup-nudge.open', { timeout: 2000 });
     assert.equal(followingFetched, false, 'a signed-out visitor should never trigger a get-following fetch');
