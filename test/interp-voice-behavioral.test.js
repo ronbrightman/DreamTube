@@ -10,14 +10,20 @@
 // test.js's own established helpers/conventions (staticServer,
 // blockThirdParty, readPostHogCalls, mockInterpretDream).
 //
-// ASSET STATUS: `talmudic`'s introClipUrl/introVoiceUrl on this branch are
-// the REAL, founder-approved Option D handoff (main commit c0b9202) — see
-// js/interpreter-personas.js's own header comment for the full "silent
-// looping visual + separate paired voice track" story. These tests
-// exercise the MECHANISM (does the intro play, does it crossfade, do the
-// events fire, does the fallback degrade correctly) rather than asserting
-// anything about the clip's actual visual/audio content, so they'd stay
-// valid even if the asset were swapped again later.
+// ASSET STATUS: every persona's `introTalkingHeadUrl` on this branch is a
+// real, individually-cast lip-synced clip (Jung/Freud/Gestalt/Scientist/
+// Sage — see js/interpreter-personas.js's own per-persona comments for
+// each one's casting/voice). This supersedes the original split-file shape
+// (`introClipUrl` silent looping backdrop + `introVoiceUrl` separate
+// spoken-greeting track) the Sage's original Option D handoff (main commit
+// c0b9202) shipped with — that shape, and the runtime code that once
+// handled it, were both fully retired (tracker item
+// auto-cleanup-retire-the-now-unused-split-dwea7w) once every persona had
+// its own talking-head clip. These tests exercise the MECHANISM (does the
+// intro play, does it crossfade, do the events fire, does the fallback
+// degrade correctly) rather than asserting anything about a clip's actual
+// visual/audio content, so they'd stay valid even if any persona's asset
+// were swapped again later.
 //
 // Real `<video>`/`<audio>` autoplay success/failure is deliberately NOT
 // left to depend on this sandbox's actual Chromium autoplay policy (real-

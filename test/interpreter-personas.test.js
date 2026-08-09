@@ -96,6 +96,22 @@ test('client-facing display copy (name/tagline/asksAbout) is never health/therap
   });
 });
 
+// Guards against a future data-file edit silently reviving the retired
+// split intro shape (tracker item
+// auto-cleanup-retire-the-now-unused-split-dwea7w) — js/interpret-
+// experience.js's shouldShowIntro/voiceStageHtml no longer know that shape
+// exists, so a stray introClipUrl/introVoiceUrl on a persona would be
+// silently ignored rather than loudly broken; this test is the loud check.
+test('every voice-eligible persona uses the current one-file talking-head intro shape, never the retired introClipUrl/introVoiceUrl split shape', function () {
+  InterpreterPersonas.ALL.forEach(function (p) {
+    if (!p.voiceId) return;
+    assert.equal(typeof p.introTalkingHeadUrl, 'string', p.key + ' must carry introTalkingHeadUrl');
+    assert.ok(p.introTalkingHeadUrl.trim().length > 0, p.key + '.introTalkingHeadUrl must not be empty');
+    assert.equal(p.introClipUrl, undefined, p.key + ' must not carry the retired split-shape introClipUrl field');
+    assert.equal(p.introVoiceUrl, undefined, p.key + ' must not carry the retired split-shape introVoiceUrl field');
+  });
+});
+
 test('is browser-attachable and Node-require()-able at once (UMD-lite dual export, matching js/wizard-chips.js/js/analytics-config.js\'s convention)', function () {
   var src = require('node:fs').readFileSync(require.resolve('../js/interpreter-personas'), 'utf8');
   assert.match(src, /if\s*\(\s*typeof window !== 'undefined'\s*\)\s*window\.InterpreterPersonas/);

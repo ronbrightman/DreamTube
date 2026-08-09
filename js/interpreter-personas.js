@@ -48,74 +48,61 @@
 // renderPortrait/renderPicker helpers) — never assume the file is there.
 //
 // ── Speaking Sage / voice fields (`voiceId`, `kokoroVoiceId`,
-//    `introClipUrl`, `introVoiceUrl`) — additive, tracker item
+//    `introTalkingHeadUrl`) — additive, tracker item
 //    for-product-build-speaking-sage-wave-fou-8uobuh, founder GO on
 //    "Option D" 2026-08-02/08-03; voice vendor switched 2026-08-04
 //    (tracker for-product-founder-decision-08-04-switc-cqveik) ──
-// `voiceId` is an ElevenLabs Turbo v2.5 voice NAME (confirmed against fal's
-// own live OpenAPI schema at build time, not memory — 2026-08: 'Brian' is a
-// real, valid enum value on that endpoint) used by
-// netlify/functions/generate-interp-audio.js's PRIMARY reading-TTS tier.
-// `kokoroVoiceId` is the ORIGINAL fal-ai/kokoro/american-english voice id
-// ('am_onyx') — kept as the FALLBACK tier's own voice, used only when the
-// ElevenLabs call fails (see that file's fallback-chain comment). Two
-// separate fields, deliberately, rather than overloading one field with
-// two different vendors' voice-naming schemes. Both fields carry the SAME
-// values for all five personas under the interim-voices measure below.
+// `voiceId` is an ElevenLabs voice NAME or voice-library id (confirmed
+// against fal's own live OpenAPI schema at build time, not memory) used by
+// netlify/functions/generate-interp-audio.js's PRIMARY reading-TTS tier,
+// on the fast turbo-v2.5 endpoint. `kokoroVoiceId` is the ORIGINAL
+// fal-ai/kokoro/american-english voice id ('am_onyx') — kept as the
+// FALLBACK tier's own voice, used only when the ElevenLabs call fails (see
+// that file's fallback-chain comment). Two separate fields, deliberately,
+// rather than overloading one field with two different vendors'
+// voice-naming schemes.
 //
-// `introClipUrl`/`introVoiceUrl` are the ONE-TIME, shared, pre-rendered
-// intro greeting (played once per persona-selection commit,
-// js/interpret-experience.js) — as TWO SEPARATE FILES, not one muxed clip:
+// `introTalkingHeadUrl` is the ONE-TIME, per-persona, pre-rendered intro
+// greeting (played once per persona-selection commit, on a dream that
+// hasn't already shown it — js/interpret-experience.js's shouldShowIntro/
+// startIntroPhase): a SINGLE self-contained lip-synced clip that IS the
+// greeting — played once, unmuted, no sibling audio element, and its own
+// 'ended' event is the real "intro complete" signal.
 //
-//   REAL ASSETS, handed off directly on `main` (commit c0b9202, "Add
-//   approved Speaking Sage intro reference cut + voice take (Option D
-//   handoff)") — launch-ready, founder-approved, no longer a placeholder:
-//   - `introClipUrl`  -> assets/interpreters/intro/sage-intro-reference.mp4
-//     — VIDEO-ONLY (confirmed by inspecting its own moov/trak atoms
-//       directly — a single `vide`-handler track, no `soun` track at all),
-//       ~6.68s. Played MUTED and LOOPED as a purely ambient visual
-//       backdrop — this file carries no sound of its own to capability-
-//       detect or unlock.
-//   - `introVoiceUrl` -> assets/interpreters/intro/sage-intro-voice.wav
-//     — the actual spoken-greeting AUDIO (mono, 24kHz, ~7.25s — a Kokoro-
-//       shaped render). THIS is what's capability-detected/tap-to-play-
-//       gated (spec §6) and whose 'ended' event is the real "intro
-//       complete" signal — not the video's, since the two durations don't
-//       match exactly (6.68s video vs 7.25s audio: two separately-
-//       delivered takes, not a single frame-locked mux) and the video is
-//       explicitly just a loop, not the timing source.
+// ── RETIRED: the old split intro shape (`introClipUrl`+`introVoiceUrl`) ──
+// Before every persona had its own individually-cast talking-head clip,
+// the intro mechanism (introduced for the Sage's original Option D
+// handoff, `main` commit c0b9202) was TWO separate files instead of one:
+// `introClipUrl`, a silent, muted, looping visual backdrop, plus
+// `introVoiceUrl`, the actual spoken-greeting audio, whose 'ended' — not
+// the video's — drove real timing/capability-detection (the two files'
+// durations never matched exactly, being separately-delivered takes, not
+// a single frame-locked mux). Under a 2026-08-04 interim-voices measure
+// (tracker for-product-founder-spec-08-04-chamber-m-zf5ufo, part 3), all
+// five personas temporarily borrowed the Sage's own split-shape assets +
+// voice id verbatim so every persona reached a working voice stage before
+// real per-persona casting existed. That interim measure is itself now
+// fully superseded: Jung, Freud, Gestalt, Scientist, and finally the Sage
+// (2026-08-09, "align the video image accordingly") have each been
+// migrated to their own individually-cast `introTalkingHeadUrl` clip — see
+// each persona's own comment below for its specific casting. No persona
+// carries `introClipUrl`/`introVoiceUrl` anymore, and the runtime code
+// that once handled that shape (js/interpret-experience.js's
+// voiceStageHtml split-markup branch, startIntroPhase's muted-loop-
+// backdrop branch, shouldShowIntro's dual-field clause, and the
+// `introAudioEl` state) was removed as dead code, along with the orphaned
+// `assets/interpreters/intro/sage-intro-reference.mp4` /
+// `sage-intro-voice.wav` files (tracker item
+// auto-cleanup-retire-the-now-unused-split-dwea7w). This is kept here as
+// history, not as a currently-supported option — a future need for a
+// non-lip-synced/cheaper intro shape would have to be deliberately
+// re-added, not assumed still wired.
 //
-//   This is the SAME "muted looping visual + separate `<audio>` element
-//   drives real timing/capability-detection" pattern this file's sibling,
-//   js/interpret-experience.js, already uses for the READING phase (bounce-
-//   looped dream video + Kokoro `<audio>`) — the intro isn't a special
-//   case requiring different mechanics, it's the exact same mechanism
-//   pointed at different content. See that file's `startIntroPhase`/
-//   `beginAudioPlayback` for the shared implementation.
-//
-// ── UPDATE 2026-08-04 (tracker for-product-founder-spec-08-04-chamber-m-
-//    zf5ufo, founder's own instruction, part 3 — "INTERIM VOICES") ──
-// All three fields now carry THE SAME VALUES for every persona, not just
-// `talmudic`. This is a deliberate, temporary measure: real per-persona
-// voice casting + a real per-persona lip-synced intro clip is separate,
-// later, founder-approved-per-persona creative effort (tracker item
-// for-product-go-wide-follow-up-voice-the--bvqxvv, explicitly NOT done
-// here) — until that lands, every persona borrows THE SAGE'S OWN asset
-// URLs and voice id verbatim, so the full Speaking-Sage experience
-// (intro -> reading with voice + captions) works for every persona today
-// instead of only `talmudic`. This means a non-Sage persona's intro will
-// visually/aurally show the Sage's own greeting for now (the founder's
-// own explicit, accepted tradeoff, not an oversight) — the four personas
-// below each carry their own short comment marking this as interim.
-// `js/interpret-experience.js` gates BOTH the intro playback and the
-// reading's TTS/captions on `voiceId` (and, for the intro specifically,
-// `introClipUrl`+`introVoiceUrl` together) being set for the active
-// persona — a persona with none of these set (no such persona remains
-// after this update, but the mechanism itself is unchanged and still
-// applies to any FUTURE persona added with no casting yet) behaves
-// EXACTLY like Wave 1 (silent, text-only reading), the same "tolerate a
-// missing asset, never block" convention this file's header already
-// established for `portrait` above, extended to these three fields.
+// `js/interpret-experience.js` gates both the intro playback and the
+// reading's TTS/captions on `voiceId` being set for the active persona —
+// a persona with no `voiceId` behaves EXACTLY like Wave 1 (silent,
+// text-only reading), the same "tolerate a missing asset, never block"
+// convention this file's header already established for `portrait` above.
 //
 // ── Safety / crisis framing lives OUTSIDE this file ──
 // The crisis-language instruction, the universal bans (no clinical/

@@ -52,7 +52,7 @@ test.after(async function () {
   if (server) await server.close();
 });
 
-var TEST_VIDEO_URL = '/assets/interpreters/intro/sage-intro-reference.mp4'; // any real, small, repo-local mp4
+var TEST_VIDEO_URL = '/assets/watermark-overlay-720x1280.mp4'; // any real, small, repo-local mp4 -- was assets/interpreters/intro/sage-intro-reference.mp4, retired+deleted (tracker item auto-cleanup-retire-the-now-unused-split-dwea7w)
 
 async function seedUserWithReadyDream(page, username, dreamId) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
