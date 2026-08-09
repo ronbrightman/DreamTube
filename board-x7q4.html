@@ -6,8 +6,11 @@
      went stale within days — that hand-curated block is DELETED. Now every
      section is derived from the tracker at load time, so nothing here can go
      stale or duplicate what's already done:
-       • Waiting on RON  = open items flagged waitingFor:ron, NOT tagged
-         [for product|growth|manager] (the tag is the gate, not the flag).
+       • Waiting on RON  = Ron's items (tag-gated by isRonItem) that
+         genuinely block him now (waitingFor:ron), expanded. Parked/
+         on-your-radar Ron items (waitingFor≠ron) drop to a collapsed
+         "On your radar — parked" group so the headline count reflects
+         live asks only, not the whole [for ron] backlog (founder 08-09).
        • In flight (per side) = open items tagged [for product|growth|manager],
          title-only, collapsed, click to expand the detail.
      Titles render short (clamped); full text is one tap away. Refresh time is
@@ -17,7 +20,8 @@ html{background:#0c0a1a}body{font-family:system-ui,sans-serif;color:#eae7fb;marg
 h1{font-size:20px;font-weight:800;margin:2px 0 0;color:#fff}
 .sub{color:#a49dc4;font-size:12px;margin:2px 0 16px}
 h2{font-size:14px;font-weight:800;margin:22px 0 8px;letter-spacing:.3px}
-h2.ron{color:#ffd28a} h2.prod{color:#9ab0ff} h2.growth{color:#8ee6c2} h2.mgr{color:#e0b3ff}
+h2.ron{color:#ffd28a} h2.prod{color:#9ab0ff} h2.growth{color:#8ee6c2} h2.mgr{color:#e0b3ff} h2.parked{color:#9a93b8}
+.parked-note{color:#8f88b3;font-size:12px;margin:-2px 0 8px}
 details{background:#161327;border:1px solid rgba(157,144,255,.22);border-radius:12px;margin-bottom:6px;overflow:hidden}
 details.ron{border-color:rgba(217,166,83,.45);background:#1a1712}
 summary{padding:10px 13px;cursor:pointer;font-weight:700;color:#fff;list-style:none;display:flex;gap:8px;align-items:baseline}
@@ -39,6 +43,9 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
 <h2 class="ron" id="h-ron">🔴 Waiting on RON</h2>
 <div id="ron"><div class="note">Loading…</div></div>
+
+<h2 class="parked" id="h-ron-parked" style="display:none">🅿️ On your radar — parked</h2>
+<div id="ron-parked"></div>
 
 <h2 class="prod" id="h-prod">🟡 In flight — PRODUCT</h2>
 <div id="prod"></div>
@@ -77,12 +84,22 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
     var now=new Date().toLocaleString('en-GB',{timeZone:'Asia/Jerusalem',hour:'2-digit',minute:'2-digit',day:'2-digit',month:'short'});
     document.getElementById('sub').textContent='Everything open, live from the tracker · '+now+' IDT';
 
-    // Waiting on RON: waitingFor:ron AND not a worker-tagged item.
-    var ron=items.filter(isRonItem);
-    document.getElementById('h-ron').textContent='🔴 Waiting on RON — '+ron.length;
+    // Ron's items, split by whether they genuinely BLOCK you right now.
+    // Every [for ron] item used to pile into one "Waiting on RON — 16"
+    // list, mixing live asks with long-parked "when you're ready" ones and
+    // making the count read far scarier than reality (founder 2026-08-09).
+    // Now the flag earns its keep: waitingFor:ron = a live ask (shown here,
+    // expanded); anything else = parked/on-your-radar (collapsed below,
+    // explicitly "nothing blocking"). The isRonItem TAG gate still guards
+    // BOTH groups, so no mis-flag by any worker/[auto] process can leak in.
+    var ronAll=items.filter(isRonItem);
+    var ronNow=ronAll.filter(function(i){return i.waitingFor==='ron';});
+    var ronParked=ronAll.filter(function(i){return i.waitingFor!=='ron';});
+
+    document.getElementById('h-ron').textContent='🔴 Waiting on RON — '+ronNow.length;
     var rbox=document.getElementById('ron');
-    if(!ron.length){ rbox.innerHTML='<div class="donebox">✅ Nothing is waiting on you right now — every open flag is with the workers.</div>'; }
-    else { rbox.innerHTML=ron.map(function(i){
+    if(!ronNow.length){ rbox.innerHTML='<div class="donebox">✅ Nothing needs you right now — everything live is with the workers.</div>'; }
+    else { rbox.innerHTML=ronNow.map(function(i){
       var title=esc(strip(i.title,'ron'));
       var detail=i.detail||''; var br=detail.indexOf('\n');
       var action=(br>-1?detail.slice(0,br):detail).trim();
@@ -93,6 +110,17 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
       var body=bodyText?'<div class="mini">'+linkify(esc(bodyText))+'</div>':'';
       return '<details class="ron" open><summary><span class="t">'+title+'</span></summary><div class="body">'+head+body+'</div></details>';
     }).join(''); }
+
+    // Parked — on your radar, nothing blocking. Collapsed, titles only.
+    var ph=document.getElementById('h-ron-parked'), pbox=document.getElementById('ron-parked');
+    if(ronParked.length){
+      ph.style.display=''; ph.textContent='🅿️ On your radar — parked — '+ronParked.length;
+      pbox.innerHTML='<div class="parked-note">Nothing here is blocking — your call, whenever you want it.</div>'+ronParked.map(function(i){
+        var title=esc(strip(i.title,'ron'));
+        var body=i.detail?'<div class="body">'+linkify(esc(i.detail))+'</div>':'';
+        return '<details><summary><span class="t">'+title+'</span></summary>'+body+'</details>';
+      }).join('');
+    } else { ph.style.display='none'; pbox.innerHTML=''; }
 
     // In flight, per worker side — title only, collapsed, tap to expand.
     function renderSide(tag, elId, hId, label){
