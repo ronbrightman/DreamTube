@@ -539,3 +539,52 @@ was rewritten to the live state: its coverage column now describes the
 live-tier-1 + assets-integrity tests that replaced the audition-page
 picking-flow tests (removed with the page), and its gaps column narrowed
 to the one remaining REAL-MODE post-deploy phone check.
+
+2026-08-09, tracker item `follow-up-home-html-checkout-return-has--hm8na5`
+(branch `fix-home-checkout-return-confirmation`): fixed two real weaknesses
+in `home.html`'s `handleCheckoutReturn` (the post-Dodo-checkout token-credit
+confirmation that auto-resumes a generation blocked by out-of-tokens),
+found relative to the already-fixed reference pattern in `shop.html`'s own
+`startCreditConfirmation` (tracker item
+`for-product-webhook-p0-reframed-by-found-peytt8`):
+1. **Threshold bug (the serious one)** — the confirmation threshold used
+   to be just `pendingPurchase.cost` (the blocked action's own cost, e.g.
+   100), so ANY unrelated balance bump clearing that much smaller number
+   (a same-time daily claim, a stale read) could fire the auto-resume
+   before the real purchase webhook (300+ tokens) had actually landed.
+   Rebuilt to mirror shop.html's two-baseline scheme:
+   `Math.min(balanceBefore, arrivalBalance) + packTokens`, never
+   fabricating a baseline when neither is available (falls back to
+   `draftMediaTypeCost()` off the real draft rather than shop.html's flat
+   `1`, since a marker-less return here still has a real action to
+   resume). `js/purchase-sheet.js`'s pending-purchase marker (built in
+   `wireBuyButton`) now also carries `balanceBefore` — the sheet's own
+   `opts.balance` at the moment it opened.
+2. **Timeout UX** — `onTimeout` used to be a single 2.2s toast with no way
+   back to it. Replaced with a small, persistent, on-page card
+   (`#checkout-confirm-card`, new markup/CSS in `home.html`) offering a
+   real "Check again" retry, never silently vanishing; a later real credit
+   (page revisit, or the retry itself) still resolves normally. Ported
+   shop.html's `creditConfirmAttempt`/`isCurrent()` monotonic-attempt
+   guard and its baseline-retry-then-poll two-phase shape (one shared
+   `window.__TEST_POLL_OVERRIDES__` budget across both phases, same as
+   shop.html) so a superseded attempt (dismiss/pagehide/retry) can never
+   resume generation or repaint the card on behalf of a stale attempt.
+   `home.html`'s own auto-resume sequence
+   (`fireBlockedActionResumed`/`beginOptimisticFreshGeneration`/
+   `onGenerationSettled(startFreshGenerationFromDraft())`/
+   `pollForPendingJobToAppear`) and the pre-existing `pagehide`
+   poll-cancellation guard are unchanged, just re-scoped to cover both
+   phases. Grepped the repo for other checkout-return/token-credit-poll
+   call sites while fixing this — `home.html` and `shop.html` remain the
+   only two (`processing.html` no longer exists; nothing else calls
+   `PurchaseSheet.pollForCredit` directly) — no third drifted copy found.
+   `test/out-of-tokens-purchase-sheet-behavioral.test.js`'s checkout-return
+   tests were updated to assert the fixed threshold (adding
+   `balanceBefore` to seeded markers and adjusting mocked balances to the
+   real `baseline + packTokens` target) plus new regression coverage: an
+   unrelated bump clearing the OLD threshold but not the new one, the
+   "Check again" retry actually resuming once the real credit lands, and
+   a true no-baseline-ever (marker-less + persistently failing balance
+   read) case resolving into the honest card rather than a hang or a
+   fabricated confirmation.
