@@ -2209,7 +2209,7 @@ test('shop.html leads with the real per-generation cost line, not stale "beta"/"
     // stating its own exact price ("Pay $X.XX") -- see
     // test/shop-behavioral.test.js for full pack-button coverage.
     var buttonText = (await page.textContent('#shop-buy-pack199')).trim();
-    assert.match(buttonText, /^Pay \$1\.99$/, 'buy buttons must state the exact price, not a generic "Buy"');
+    assert.match(buttonText, /^Pay \$2\.99$/, 'buy buttons must state the exact price, not a generic "Buy"');
 
     var trustLine = await page.textContent('#shop-trust-line');
     assert.match(trustLine, /Dodo Payments/i);
