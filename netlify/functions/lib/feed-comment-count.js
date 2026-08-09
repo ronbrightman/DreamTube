@@ -34,18 +34,16 @@
 // comment-store.js is the source of truth for actual comment content; this
 // module is a read-optimization only, never load-bearing for correctness.
 //
-// KNOWN, ACCEPTED LEAK (tracker item minor-like-dream-js-internal-dedup-
-// marke-8qztvq, low severity, not urgent, checked in the tracker BEFORE
-// writing this file): `_lastCommentCountOp` is internal bookkeeping stamped
-// straight onto the shared feed-index record, and get-feed.js/get-profile.js
-// both return that record with no field whitelist, so this marker leaks
-// into every public feed/profile API response exactly the way that tracker
-// item already documents `_lastLikeOp` (like-dream.js) doing today. NOT a
-// new problem introduced here — the same accepted, pre-existing class,
-// joining the existing item rather than needing a second one. A
-// strip-before-serialize whitelist on get-feed.js/get-profile.js would fix
-// both markers at once; out of scope for this build (see that tracker
-// item's own "not urgent" call).
+// PUBLIC-LEAK FIX (tracker item minor-like-dream-js-internal-dedup-marke-
+// 8qztvq): `_lastCommentCountOp` is internal bookkeeping stamped straight
+// onto the shared feed-index record. It used to leak into every public
+// feed/profile API response (get-feed.js/get-profile.js both returned the
+// raw record with no field whitelist) exactly the way `_lastLikeOp`
+// (like-dream.js) and `_lostLikeRepairs` (admin-repair-feed-likes.js) did
+// too — both endpoints now strip it (and any other `_`-prefixed field) via
+// lib/public-feed-record.js before serializing; see that file's own header
+// comment for the fix and why it strips by naming convention rather than
+// a fixed field list.
 
 var { connectLambda, getStore } = require('@netlify/blobs');
 var crypto = require('crypto');

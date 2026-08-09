@@ -116,3 +116,39 @@ test('CORS headers present on both GET and OPTIONS, matching get-feed.js', async
   var getRes = await handler(fakeEvent({ method: 'GET', query: { handle: 'luna' } }));
   assert.equal(getRes.headers['Access-Control-Allow-Origin'], '*');
 });
+
+// ===== tracker item minor-like-dream-js-internal-dedup-marke-8qztvq =====
+// internal bookkeeping markers must never leak into this public response.
+
+test('internal bookkeeping markers (_lastLikeOp/_lostLikeRepairs/_lastCommentCountOp) stamped on a feed-index record are stripped from the response, while every real public field survives unchanged', async function () {
+  await seedFeed([makeDream({
+    id: 'd1',
+    ownerHandle: '@luna',
+    commentCount: 4,
+    _lastLikeOp: 'a1b2c3d4',
+    _lostLikeRepairs: ['repair-2026-08-01'],
+    _lastCommentCountOp: 'e5f6a7b8'
+  })]);
+  var res = await handler(fakeEvent({ method: 'GET', query: { handle: 'luna' } }));
+  var body = JSON.parse(res.body);
+  var dream = body.dreams[0];
+
+  assert.equal(dream._lastLikeOp, undefined, '_lastLikeOp must not leak into the public response');
+  assert.equal(dream._lostLikeRepairs, undefined, '_lostLikeRepairs must not leak into the public response');
+  assert.equal(dream._lastCommentCountOp, undefined, '_lastCommentCountOp must not leak into the public response');
+  assert.equal(Object.keys(dream).some(function (k) { return k.charAt(0) === '_'; }), false, 'no key starting with "_" should survive at all');
+
+  // Every field a real client reads (js/store.js's DreamStore.decorateFeedDreams
+  // input, and get-profile.js's own header comment field list) must be intact.
+  assert.equal(dream.id, 'd1');
+  assert.equal(dream.ownerHandle, '@luna');
+  assert.equal(dream.caption, 'A dream');
+  assert.equal(dream.style, 'Cinematic');
+  assert.equal(dream.videoUrl, 'https://x/v.mp4');
+  assert.equal(dream.imageUrl, null);
+  assert.equal(dream.mediaType, 'video');
+  assert.equal(dream.avatar, null);
+  assert.equal(dream.likes, 2);
+  assert.equal(dream.publishedAt, 1000);
+  assert.equal(dream.commentCount, 4);
+});
