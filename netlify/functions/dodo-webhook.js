@@ -27,11 +27,12 @@
 // `dodopayments` npm SDK's `client.webhooks.unwrap()`.  Three headers carry
 // the signature: webhook-id, webhook-timestamp, webhook-signature.
 //
-// Handled event: `payment.succeeded` only. Every other event type
-// (payment.failed/.cancelled/.processing, refund.*, dispute.*,
-// subscription.* — the dormant Stripe-equivalent subscription backend has
-// no Dodo counterpart wired up, and this branch never created any Dodo
-// subscription products — credit.*, license_key.*, entitlement_grant.*,
+// Handled events: `payment.succeeded` (one-time token packs AND Dreamer Pass
+// subscription charges — see the Dreamer Pass section further down) plus the
+// Dreamer Pass subscription lifecycle events (subscription.active/.renewed/
+// .plan_changed/.update_payment_method/.on_hold/.paused/.cancelled/.failed/
+// .expired). Every other event type (payment.failed/.cancelled/.processing,
+// refund.*, dispute.*, credit.*, license_key.*, entitlement_grant.*,
 // abandoned_checkout.*, dunning.*) is acknowledged (200) and ignored — same
 // reasoning as stripe-webhook.js: dashboards commonly have many event types
 // enabled on one endpoint, and silently ignoring the ones we don't act on
@@ -329,6 +330,222 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
   }
 }
 
+// ============================================================================
+// Dreamer Pass subscription handling ($9.99/month, 3-day free trial —
+// founder-approved). See lib/entitlements.js's DREAMER PASS doc block for the
+// two token effects (100/day trial claim boost; 3000-token lump per paid
+// charge) and the `subscription` record shape this writes.
+// ----------------------------------------------------------------------------
+// TWO defensive design points, because Dodo's exact trial->paid event
+// ordering and per-event payload field names are under-documented (the human
+// test-purchase will confirm the real shapes from the logSubEvent() output
+// below — see this file's LOGGING note):
+//
+//   1. RECOGNIZING a subscription charge. Primary signal: the payment's
+//      product_id matches DODO_PRODUCT_DREAMER_PASS. Fallbacks:
+//      metadata.dreamtube_plan === 'dreamer_pass' (set at checkout), and — as
+//      a last resort — a payment carrying a subscription_id that resolves to
+//      no known one-time pack (the ONLY subscription product in this system
+//      is the Pass, so a subscription-linked non-pack payment must be it).
+//      resolvePackTokens is always checked first, so a real one-time pack can
+//      never be mis-routed here.
+//
+//   2. GRANTING exactly once per charge. The 3000-token lump is granted via
+//      the SAME creditTokenPackOnce path a pack uses, keyed by the Dodo
+//      payment_id — so a redelivered webhook, OR both a `payment.succeeded`
+//      and a `subscription.renewed` firing for the SAME charge (they share a
+//      payment_id), collapse to exactly ONE 3000 grant. Subscription STATE
+//      writes (updateSubscription) are idempotent overwrites and need no such
+//      dedup.
+// ============================================================================
+
+// Which subscription.* event types map to a terminal (no-longer-subscribed)
+// state — clearing `active` and the trial boost by writing this status.
+var TERMINAL_SUBSCRIPTION_STATUS = {
+  'subscription.on_hold': 'on_hold',
+  'subscription.paused': 'paused',
+  'subscription.cancelled': 'cancelled',
+  'subscription.failed': 'failed',
+  'subscription.expired': 'expired'
+};
+
+// Every subscription.* event this handler acts on (or, for
+// update_payment_method, merely logs).
+var SUBSCRIPTION_EVENT_TYPES = {
+  'subscription.active': true,
+  'subscription.renewed': true,
+  'subscription.plan_changed': true,
+  'subscription.update_payment_method': true,
+  'subscription.on_hold': true,
+  'subscription.paused': true,
+  'subscription.cancelled': true,
+  'subscription.failed': true,
+  'subscription.expired': true
+};
+
+function dreamerPassProductId() {
+  return process.env.DODO_PRODUCT_DREAMER_PASS;
+}
+
+/** All product ids carried by a Payment payload (product_cart entries plus a top-level product_id, if any). */
+function paymentProductIds(payment) {
+  var ids = [];
+  (payment.product_cart || []).forEach(function (item) { if (item && item.product_id) ids.push(item.product_id); });
+  if (payment.product_id) ids.push(payment.product_id);
+  return ids;
+}
+
+/** See design point 1 above. */
+function isDreamerPassPayment(payment) {
+  var passId = dreamerPassProductId();
+  if (passId && paymentProductIds(payment).indexOf(passId) !== -1) return true;
+  var meta = payment.metadata || {};
+  if (meta.dreamtube_plan === entitlements.DREAMER_PASS_PLAN) return true;
+  // Last-resort: a subscription-linked payment that is not any known pack.
+  if (payment.subscription_id && !resolvePackTokens(payment)) return true;
+  return false;
+}
+
+/** Coerces a Dodo timestamp (ISO string, epoch-seconds, or epoch-ms) to epoch-ms, or null. */
+function resolveEpochMs(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return v > 1e12 ? v : v * 1000; // >1e12 already ms; else treat as seconds
+  if (typeof v === 'string') { var t = Date.parse(v); return Number.isFinite(t) ? t : null; }
+  return null;
+}
+
+/** First of `keys` on `obj` that resolves to a real epoch-ms, or null. */
+function firstResolvable(obj, keys) {
+  for (var i = 0; i < keys.length; i++) { var ms = resolveEpochMs(obj[keys[i]]); if (ms) return ms; }
+  return null;
+}
+
+// Field names are guesses across Dodo's documented + plausible shapes — the
+// test purchase's logSubEvent() output confirms which one is real.
+function resolveTrialEnd(sub) {
+  return firstResolvable(sub, ['trial_end_date', 'trial_ends_at', 'trialEndsAt', 'trial_end', 'trialEnd']);
+}
+function resolveNextBilling(sub) {
+  return firstResolvable(sub, ['next_billing_date', 'next_billing_at', 'nextBillingDate', 'current_period_end', 'currentPeriodEnd']);
+}
+function subStatusIsTrialing(sub) {
+  var status = (sub.status || '').toLowerCase();
+  if (status === 'trialing' || status === 'trial' || status === 'on_trial') return true;
+  if (sub.trialing === true) return true;
+  var te = resolveTrialEnd(sub);
+  return !!(te && Date.now() < te);
+}
+function subscriptionEmail(sub) {
+  return (sub.customer && sub.customer.email) || (sub.metadata && sub.metadata.dreamtube_email);
+}
+function subscriptionEventPaymentId(sub) {
+  return sub.payment_id || sub.latest_payment_id || sub.last_payment_id || (sub.payment && sub.payment.payment_id) || null;
+}
+function subscriptionDodoCustomerId(sub) {
+  return sub.customer && sub.customer.customer_id;
+}
+
+/** Logs an event's key (non-secret) fields so the human can read the real Dodo sequence/shapes in Netlify function logs during the test purchase. */
+function logSubEvent(type, fields) {
+  try { console.log('dodo-webhook: ' + type + ' ' + JSON.stringify(fields)); } catch (e) { /* never let logging break the webhook */ }
+}
+
+/**
+ * Grants the 3000-token Dreamer Pass monthly lump for one charge, idempotently
+ * keyed by `paymentId` — reuses creditTokenPackOnce exactly as a pack does, so
+ * a redelivery or a duplicate event (payment.succeeded + subscription.renewed
+ * sharing a payment_id) never double-grants. No-ops when email or paymentId is
+ * missing (nothing safe to key a dedup on — same posture as the pack path).
+ */
+async function grantDreamerPassCharge(event, email, paymentId, dodoCustomerId) {
+  if (!email || !paymentId) return { credited: false };
+  return entitlements.creditTokenPackOnce(event, email, paymentId, entitlements.DREAMER_PASS_MONTHLY_TOKENS, dodoCustomerId);
+}
+
+/** Handles a `payment.succeeded` that is a Dreamer Pass charge (initial trial-end charge or a renewal that arrives as a payment): grant 3000 once, mark the account active (ending any trial boost). */
+async function handleDreamerPassPayment(event, payment) {
+  var payEmail = (payment.customer && payment.customer.email) || (payment.metadata && payment.metadata.dreamtube_email);
+  var dodoCustomerId = payment.customer && payment.customer.customer_id;
+  logSubEvent('payment.succeeded[dreamer_pass]', {
+    payment_id: payment.payment_id || null,
+    subscription_id: payment.subscription_id || null,
+    product_ids: paymentProductIds(payment),
+    email: payEmail || null,
+    total_amount: payment.total_amount,
+    currency: payment.currency
+  });
+  if (!payEmail) return; // acknowledged, nothing credited — same "don't guess" posture as the pack path
+
+  await grantDreamerPassCharge(event, payEmail, payment.payment_id, dodoCustomerId);
+
+  // A real charge means paying, not trialing — status 'active' + trialEnd:null
+  // ends the 100/day boost even if no subscription.active/renewed state event
+  // fires. Idempotent overwrite; richer data from a state event merges on top.
+  await entitlements.updateSubscription(event, payEmail, {
+    status: 'active',
+    subscriptionId: payment.subscription_id,
+    productId: dreamerPassProductId(),
+    trialEnd: null
+  });
+}
+
+/** Handles every subscription.* lifecycle event: writes the resulting subscription state (and, for a renewal, grants that charge's 3000). */
+async function handleSubscriptionEvent(event, type, sub) {
+  var email = subscriptionEmail(sub);
+  var dodoCustomerId = subscriptionDodoCustomerId(sub);
+  logSubEvent(type, {
+    subscription_id: sub.subscription_id || null,
+    product_id: sub.product_id || null,
+    status: sub.status || null,
+    email: email || null,
+    trial_end: resolveTrialEnd(sub),
+    next_billing: resolveNextBilling(sub),
+    payment_id: subscriptionEventPaymentId(sub)
+  });
+
+  // update_payment_method carries no reliable status and must not risk
+  // flipping a trialing account to 'active' (which would end the boost early)
+  // — log only, change no state.
+  if (type === 'subscription.update_payment_method') return;
+
+  if (!email) return; // can't key subscription state without an identity
+
+  if (TERMINAL_SUBSCRIPTION_STATUS[type]) {
+    // cancel/expire/on_hold/paused/failed: clear the active state + trial
+    // boost by writing the terminal status (isTrialActive/isSubscriptionActive
+    // both go false). trialEnd:null explicitly ends any lingering boost.
+    await entitlements.updateSubscription(event, email, {
+      status: TERMINAL_SUBSCRIPTION_STATUS[type],
+      subscriptionId: sub.subscription_id,
+      productId: sub.product_id || dreamerPassProductId(),
+      trialEnd: null
+    });
+    return;
+  }
+
+  // active / renewed / plan_changed: live subscription state.
+  var trialing = subStatusIsTrialing(sub);
+  await entitlements.updateSubscription(event, email, {
+    status: trialing ? 'trialing' : 'active',
+    subscriptionId: sub.subscription_id,
+    productId: sub.product_id || dreamerPassProductId(),
+    nextBillingAt: resolveNextBilling(sub),
+    currentPeriodEnd: resolveNextBilling(sub),
+    // trialing WITH a resolvable end -> set it; trialing WITHOUT -> undefined
+    // (updateSubscription keeps a prior trialEnd, or caps a first sighting to
+    // now + 3 days); not trialing -> null (clear).
+    trialEnd: trialing ? (resolveTrialEnd(sub) || undefined) : null
+  });
+
+  // A renewal is also a charge — grant that charge's 3000, keyed by its own
+  // payment_id so it dedups against any payment.succeeded for the same charge.
+  // No-ops if this payload carries no payment_id (then payment.succeeded is
+  // the grant path).
+  if (type === 'subscription.renewed') {
+    await grantDreamerPassCharge(event, email, subscriptionEventPaymentId(sub), dodoCustomerId);
+  }
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'E1: method_not_allowed' }) };
@@ -368,6 +585,17 @@ exports.handler = async function (event) {
   try {
     if (dodoEvent.type === 'payment.succeeded') {
       var payment = dodoEvent.data || {};
+
+      // Dreamer Pass subscription charge vs. one-time token pack. Checked
+      // FIRST (resolvePackTokens is consulted inside isDreamerPassPayment's
+      // own last-resort branch, so a genuine pack can never be mis-routed
+      // here) — a subscription charge grants the fixed 3000-token monthly
+      // lump, not a pack amount. See this file's Dreamer Pass section.
+      if (isDreamerPassPayment(payment)) {
+        await handleDreamerPassPayment(event, payment);
+        return { statusCode: 200, body: JSON.stringify({ received: true }) };
+      }
+
       var payEmail = (payment.customer && payment.customer.email) ||
         (payment.metadata && payment.metadata.dreamtube_email);
       var dodoCustomerId = payment.customer && payment.customer.customer_id;
@@ -414,6 +642,10 @@ exports.handler = async function (event) {
       // No resolvable email, or no resolvable token amount: acknowledged
       // below, nothing credited — same "don't guess" reasoning as
       // resolvePackTokens' own undefined return.
+    } else if (SUBSCRIPTION_EVENT_TYPES[dodoEvent.type]) {
+      // Dreamer Pass lifecycle event — writes subscription state (and, for a
+      // renewal, grants that charge's 3000). See the Dreamer Pass section.
+      await handleSubscriptionEvent(event, dodoEvent.type, dodoEvent.data || {});
     }
     // Any other event type: acknowledged below, no action taken.
 

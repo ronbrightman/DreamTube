@@ -498,3 +498,67 @@ test('exceeding MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IDENTIFIER_PER_DAY throttles 
   var sentBody = JSON.parse(captured.calls[0].init.body);
   assert.deepEqual(sentBody.customer, { email: 'identcapbuyer@example.com' }, 'per-identifier cap on password attempts must block verification (falling back to bare email) regardless of rotating IPs');
 });
+
+// ============================================================================
+// Dreamer Pass subscription checkout — POST { email, plan: "dreamer_pass" }
+// creates a Dodo checkout referencing DODO_PRODUCT_DREAMER_PASS. Dodo decides
+// subscription-vs-one-time from the product config, so this sends the SAME
+// product_cart shape as a pack (no subscription_data param). See this file's
+// header comment and create-checkout-session-dodo.js's DREAMER PASS note.
+// ============================================================================
+
+test('a Dreamer Pass checkout references DODO_PRODUCT_DREAMER_PASS and returns a checkout url', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_dreamer_pass_test';
+  var captured = stubFetchCapture({ session_id: 'cks_pass', checkout_url: 'https://checkout.dodopayments.com/cks_pass' });
+  var res = await handler(reqEvent({ body: { email: '  Sub@Example.com  ', plan: 'dreamer_pass' } }));
+  assert.equal(res.statusCode, 200);
+  var body = JSON.parse(res.body);
+  assert.equal(body.url, 'https://checkout.dodopayments.com/cks_pass');
+
+  assert.equal(captured.calls.length, 1);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_dreamer_pass_test');
+  assert.equal(sentBody.product_cart[0].quantity, 1);
+  assert.equal(sentBody.customer.email, 'sub@example.com', 'email normalized');
+  assert.equal(sentBody.metadata.dreamtube_plan, 'dreamer_pass', 'the plan tag dodo-webhook.js reads as a fallback signal');
+  assert.equal(sentBody.metadata.dreamtube_pack, undefined, 'no pack metadata on a subscription checkout');
+  assert.equal(sentBody.metadata.dreamtube_tokens, undefined, 'no per-pack token count -- the 3000 monthly grant is a fixed server constant');
+  assert.ok(sentBody.metadata.dreamtube_event_id, 'still carries a shared event_id');
+  // No subscription_data param -- the trial lives on the product itself.
+  assert.equal(sentBody.subscription_data, undefined);
+  // Consumer checkout: business/tax-id option still disabled.
+  assert.equal(sentBody.feature_flags.allow_tax_id, false);
+  delete process.env.DODO_PRODUCT_DREAMER_PASS;
+});
+
+test('a Dreamer Pass checkout with DODO_PRODUCT_DREAMER_PASS unset -> 500 E6 (E6-style missing-product error), Dodo never called', async function () {
+  delete process.env.DODO_PRODUCT_DREAMER_PASS;
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'sub@example.com', plan: 'dreamer_pass' } }));
+  assert.equal(res.statusCode, 500);
+  assert.match(JSON.parse(res.body).error, /^E6: missing_product_id: DODO_PRODUCT_DREAMER_PASS/);
+  assert.equal(captured.calls.length, 0);
+});
+
+test('a Dreamer Pass checkout with no email -> 400 E4 (email required)', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_dreamer_pass_test';
+  var res = await handler(reqEvent({ body: { plan: 'dreamer_pass' } }));
+  assert.equal(res.statusCode, 400);
+  assert.match(JSON.parse(res.body).error, /^E4/);
+  delete process.env.DODO_PRODUCT_DREAMER_PASS;
+});
+
+test('the subscription path does NOT apply the starter-pack E9 one-time guard, even for an account that already purchased', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_dreamer_pass_test';
+  // An account that has completed a pack purchase would be refused pack099
+  // (E9) -- but the Dreamer Pass is a separate recurring product, never gated
+  // by that one-time-starter rule.
+  await entitlements.setEntitlement({}, 'alreadybought@example.com', {
+    tokens: { balance: 500 }, firstPackPurchaseAt: Date.now() - 999999999
+  });
+  var captured = stubFetchCapture({ session_id: 'cks_pass2', checkout_url: 'https://checkout.dodopayments.com/cks_pass2' });
+  var res = await handler(reqEvent({ body: { email: 'alreadybought@example.com', plan: 'dreamer_pass' } }));
+  assert.equal(res.statusCode, 200, 'the subscription checkout is never blocked by the starter E9 guard');
+  assert.equal(captured.calls.length, 1);
+  delete process.env.DODO_PRODUCT_DREAMER_PASS;
+});
