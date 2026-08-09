@@ -132,7 +132,11 @@
 
   /** Whether persona's one-time intro should play right now — has BOTH the visual clip AND its paired voice track (see js/interpreter-personas.js's own header note on why these are two separate files, not one muxed clip) AND hasn't been shown yet for this dream. Pure/no-DOM — unit tested directly (test/interp-voice-captions.test.js). */
   function shouldShowIntro(persona, introAlreadyShown) {
-    return !!(persona && persona.introClipUrl && persona.introVoiceUrl) && !introAlreadyShown;
+    if (!persona || introAlreadyShown) return false;
+    // Two shapes qualify: a self-contained talking-head clip (introTalkingHeadUrl,
+    // Jung onward) OR the Sage's split visual-backdrop + paired voice track
+    // (introClipUrl + introVoiceUrl). The video alone (no voice) never qualifies.
+    return !!(persona.introTalkingHeadUrl || (persona.introClipUrl && persona.introVoiceUrl));
   }
 
   /**
@@ -515,9 +519,14 @@
   function startIntroPhase(vs, persona) {
     vs.phase = 'intro';
     if (vs.skipEl) vs.skipEl.style.display = '';
-    if (vs.introEl) { vs.introEl.muted = true; vs.introEl.loop = true; attemptPlay(vs.introEl); } // ambient visual only — never gated, never tracked
-    var introAudio = vs.introAudioEl;
-    if (!introAudio) { completeIntro(vs, persona, 'ended'); return; } // defensive — shouldn't happen, renderReading only renders the intro markup when introClipUrl+introVoiceUrl are both set
+    // Sage split shape only: introEl is a MUTED, LOOPING visual backdrop while
+    // the separate introAudioEl is the greeting. A talking-head persona has no
+    // separate backdrop — its introEl IS the driver (played once, unmuted, below).
+    if (!vs.introTalkingHead && vs.introEl) { vs.introEl.muted = true; vs.introEl.loop = true; attemptPlay(vs.introEl); } // ambient visual only — never gated, never tracked
+    // The "driver" is whatever element's playback + 'ended' defines the intro:
+    // the talking-head <video> itself, or the Sage's separate greeting <audio>.
+    var introAudio = vs.introTalkingHead ? vs.introEl : vs.introAudioEl;
+    if (!introAudio) { completeIntro(vs, persona, 'ended'); return; } // defensive — shouldShowIntro guarantees the driver element exists
     attemptPlay(introAudio).then(function (ok) {
       if (voiceState !== vs) return;
       if (ok) {
@@ -572,6 +581,7 @@
     hideTapOverlay(vs);
     if (vs.skipEl) vs.skipEl.style.display = 'none';
     if (vs.introAudioEl) { try { vs.introAudioEl.pause(); } catch (e) { /* best-effort */ } }
+    if (vs.introTalkingHead && vs.introEl) { try { vs.introEl.pause(); } catch (e) { /* best-effort */ } } // talking head is the greeting itself — freeze its mouth on complete (Sage's muted loop just fades)
     if (vs.introEl) vs.introEl.classList.add('itp-voice-fade-out');
     if (vs.dreamEl) vs.dreamEl.classList.remove('itp-voice-hidden'); // crossfades IN as the intro crossfades out (spec §5: "genuinely lip-synced video... then crossfades back", adapted to Option D's "into the user's own dream video" target)
     enterReadingPhase(vs, persona);
@@ -847,6 +857,7 @@
       stageEl: document.getElementById('itp-voice-stage'),
       introEl: document.getElementById('itp-voice-intro'),
       introAudioEl: document.getElementById('itp-voice-intro-audio'),
+      introTalkingHead: !!(persona && persona.introTalkingHeadUrl), // single unmuted lip-synced clip drives the intro itself (no separate voice track / backdrop loop)
       dreamEl: document.getElementById('itp-voice-dream-video'),
       loadingEl: document.getElementById('itp-voice-loading'),
       capEl: document.getElementById('itp-voice-caption'),
@@ -1399,15 +1410,20 @@
       '<video class="itp-voice-media' + (showIntro ? ' itp-voice-hidden' : '') + '" id="itp-voice-dream-video" playsinline preload="auto"' +
       (dreamMediaUrl ? ' src="' + esc(dreamMediaUrl) + '"' : '') + '></video>' +
       (showIntro
-        // Two separate elements (js/interpreter-personas.js's own header
-        // note): the video is a silent, looping visual only (muted here
-        // in markup too, not just in JS, so there's never a flash of
-        // real audio before startIntroPhase's own vs.introEl.muted=true
-        // runs) — the actual greeting audio is the sibling <audio>,
-        // hidden (no visual chrome of its own, the tap overlay above it
-        // in the stage is what a blocked-autoplay tap lands on).
-        ? '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" muted src="' + esc(persona.introClipUrl) + '"></video>' +
-          '<audio id="itp-voice-intro-audio" preload="auto" src="' + esc(persona.introVoiceUrl) + '" style="display:none"></audio>'
+        ? (persona.introTalkingHeadUrl
+          // Talking-head intro (Jung onward): ONE self-contained lip-synced
+          // clip that IS the greeting — rendered NOT muted and with NO sibling
+          // audio, so startIntroPhase plays it once, unmuted, and its own
+          // 'ended' completes the intro (see that fn's talking-head branch).
+          ? '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" src="' + esc(persona.introTalkingHeadUrl) + '"></video>'
+          // Sage split shape: two separate elements — the video is a silent,
+          // looping visual only (muted here in markup too, not just in JS, so
+          // there's never a flash of real audio before startIntroPhase's own
+          // vs.introEl.muted=true runs) — the actual greeting audio is the
+          // sibling <audio>, hidden (no visual chrome of its own, the tap
+          // overlay above it in the stage is what a blocked-autoplay tap lands on).
+          : '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" muted src="' + esc(persona.introClipUrl) + '"></video>' +
+            '<audio id="itp-voice-intro-audio" preload="auto" src="' + esc(persona.introVoiceUrl) + '" style="display:none"></audio>')
         : '') +
       // Loading spinner over the black stage while the dream video buffers
       // (founder 08-08: "video still loading shows black area — show

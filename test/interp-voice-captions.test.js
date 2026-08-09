@@ -35,6 +35,12 @@ test('shouldShowIntro: true only when the persona has BOTH the visual clip and i
   assert.equal(shouldShowIntro(null, false), false);
 });
 
+test('shouldShowIntro: a talking-head persona (single self-contained lip-synced clip, Jung onward) qualifies on introTalkingHeadUrl alone -- no separate voice track needed, since the clip carries its own audio', function () {
+  var talkingHead = { introTalkingHeadUrl: 'assets/interpreters/intro/jung-intro.mp4' };
+  assert.equal(shouldShowIntro(talkingHead, false), true);
+  assert.equal(shouldShowIntro(talkingHead, true), false, 'still respects the once-per-dream already-shown gate');
+});
+
 test('computeSentenceFallbackCaptions: distributes duration across sentences proportional to character length', function () {
   var text = 'Short one. This is a longer sentence with more characters in it.';
   var out = computeSentenceFallbackCaptions(text, 10000);

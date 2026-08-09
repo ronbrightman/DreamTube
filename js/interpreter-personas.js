@@ -151,15 +151,18 @@
       method: 'Your interpretive method reads the dream as a message from the dreamer\'s deeper self, often compensating for something one-sided or unacknowledged in their conscious, waking attitude. Look for archetypal figures, symbols, and the emotional charge of the dream, and connect them to what might be seeking balance or integration in the dreamer\'s life right now.',
       questionFocus: 'Ask about the dreamer\'s current life situation and what feels unbalanced or out of alignment for them right now — the compensation your method looks for. Questions should invite a short, honest answer about waking life, not more dream detail.',
       maxQuestions: 3,
-      // INTERIM (2026-08-04, tracker for-product-founder-spec-08-04-
-      // chamber-m-zf5ufo, part 3): borrowing The Sage's own voice/intro
-      // assets verbatim until this persona gets its own real casting
-      // (for-product-go-wide-follow-up-voice-the--bvqxvv) — see this
-      // file's header note for the full reasoning.
+      // Reading-phase TTS still borrows The Sage's Kokoro casting for now
+      // (for-product-go-wide-follow-up-voice-the--bvqxvv) — but Jung is the
+      // FIRST persona with its own real, founder-approved (2026-08-09)
+      // talking-head INTRO: a single self-contained lip-synced clip
+      // (ElevenLabs "Peter Lang" German/Austrian voice + Kling AI Avatar v2
+      // off jung.webp). `introTalkingHeadUrl` is the new one-file intro shape
+      // (played once, unmuted, its own 'ended' completes it) — it supersedes
+      // the Sage's split introClipUrl+introVoiceUrl for this persona. See
+      // js/interpret-experience.js's shouldShowIntro / startIntroPhase.
       voiceId: 'Brian',
       kokoroVoiceId: 'am_onyx',
-      introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
-      introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
+      introTalkingHeadUrl: 'assets/interpreters/intro/jung-intro.mp4'
     },
     {
       key: 'freud',
