@@ -35,6 +35,35 @@
 // { ok:true, sent:true|false, skipped:<reason> }, same contract shape as
 // lib/first-dream-email-sender.js's sendIfEligible for the same reason
 // (every caller here treats this as best-effort).
+//
+// SEND COOLDOWN, 'recently_sent' (fix, tracker item for-product-bug-
+// founder-repro-08-09-veri-g71t7u): opt in via `opts.auto:true`. When set,
+// and lib/email-verification-store.js's createVerification reports
+// { reused:true } (a valid code for this account was already minted+sent
+// within its own SEND_COOLDOWN_MS), this function returns
+// { ok:true, sent:false, skipped:'recently_sent' } WITHOUT calling Resend —
+// the user already has a real, still-valid code in their inbox from the
+// send moments ago, so mailing a second one would only be a duplicate.
+// The caller (resend-verification-code.js) already treats { ok:true } as
+// success regardless of `sent`, so this is invisible to the end user.
+//
+// SCOPE, CORRECTED FROM THE ORIGINAL DESIGN (round-1 self-caught
+// regression, found by running the full test suite before merging, not by
+// review): an EARLIER version of this fix applied the cooldown
+// unconditionally to every caller. That broke two pre-existing, tested
+// invariants: register-account-passwordless.js's RESOLVE branch, which
+// MUST mail a fresh code on every submission (it's a LOGIN mechanism for
+// an account with no session, not a verification nag — see that file's
+// own header comment), and test/passwordless-signup.test.js's "rolling
+// window" tests, which call resend-verification-code.js back-to-back and
+// assert each call mints a genuinely distinct code (a 2026-08-08 fix,
+// still valid for a genuine manual resend). The cooldown is now opt-in
+// specifically so js/email-verify-sheet.js's autoSendOnOpen — the exact
+// automatic, no-user-action chain the tracker item is about — is the ONLY
+// caller that ever sets `auto:true` (via resend-verification-code.js's
+// `auto` request field); every other caller (signup's own first send, a
+// manual "Resend" tap, register-account-passwordless.js's RESOLVE branch)
+// keeps its unmodified prior "always mint fresh" behavior.
 
 var emailVerificationStore = require('./email-verification-store');
 var siteOrigin = require('./site-origin');
@@ -79,6 +108,9 @@ function buildHtml(code, verifyUrl) {
  * OVERWRITING any previous still-pending verification for this account —
  * see that module's own header comment) and sends it. `opts`:
  *   username (required), email (required)
+ *   auto (optional, default false) — opts into the SEND COOLDOWN above
+ *     (see this file's own header comment for exactly who should set
+ *     this: only js/email-verify-sheet.js's autoSendOnOpen chain).
  *
  * Returns { ok:true, sent:true } on an accepted Resend send, or
  * { ok:true, sent:false, skipped:<reason> } for every other outcome
@@ -100,10 +132,13 @@ async function sendVerificationEmail(event, opts) {
     return { ok: true, sent: false, skipped: 'no_resend_key' };
   }
 
-  var minted = await emailVerificationStore.createVerification(event, username, email);
+  var minted = await emailVerificationStore.createVerification(event, username, email, { respectCooldown: !!opts.auto });
   if (!minted.ok) {
     console.error('verification-email-sender: failed to mint a verification record', minted.error);
     return { ok: true, sent: false, skipped: 'mint_failed' };
+  }
+  if (minted.reused) {
+    return { ok: true, sent: false, skipped: 'recently_sent' };
   }
 
   var verifyUrl = buildVerifyLinkUrl(event, minted.linkToken);
