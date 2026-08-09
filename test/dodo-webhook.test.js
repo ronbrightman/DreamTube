@@ -143,6 +143,7 @@ test.beforeEach(function () {
   process.env.DODO_PRODUCT_PACK_SMALL500 = 'pdt_pack199_test';
   process.env.DODO_PRODUCT_PACK_MEDIUM1500 = 'pdt_pack499_test';
   process.env.DODO_PRODUCT_PACK_LARGE4000 = 'pdt_pack999_test';
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_dreamer_pass_test';
   process.env.META_CAPI_ACCESS_TOKEN = REAL_META_TOKEN;
   // Default safe stub -- see the comment block above. Tests that care about
   // the actual analytics calls override this by calling
@@ -156,6 +157,7 @@ test.after(function () {
   delete process.env.DODO_PRODUCT_PACK_SMALL500;
   delete process.env.DODO_PRODUCT_PACK_MEDIUM1500;
   delete process.env.DODO_PRODUCT_PACK_LARGE4000;
+  delete process.env.DODO_PRODUCT_DREAMER_PASS;
   delete process.env.META_CAPI_ACCESS_TOKEN;
   global.fetch = realFetch;
 });
@@ -810,4 +812,255 @@ test('the Purchase event\'s `starter` flag defaults to false (never undefined) w
     metadata: { dreamtube_event_id: 'evt-starter-flag-fallback', dreamtube_tokens: 500, dreamtube_price: 2.99 }
   })));
   assert.equal(spies.posthogCalls[0].body.properties.starter, false, 'an unresolvable starter flag must fail toward false, never undefined -- this is an analytics dimension on an otherwise-fully-resolvable event, not worth losing the whole Purchase fire over');
+});
+
+// ============================================================================
+// Dreamer Pass — the $9.99/month subscription (3-day free trial). Covers the
+// subscription lifecycle events + the 3000-token monthly lump grant added to
+// dodo-webhook.js. See lib/entitlements.js's DREAMER PASS doc block and this
+// handler's own "Dreamer Pass subscription handling" section.
+//
+// DREAMER_PASS_MONTHLY = 3000 (the fixed monthly lump), keyed to the same
+// constant the code uses so a retune flows through here automatically.
+// ============================================================================
+var DREAMER_PASS_MONTHLY = entitlements.DREAMER_PASS_MONTHLY_TOKENS;
+
+/** A Dreamer Pass subscription CHARGE arriving as payment.succeeded (product_id matches DODO_PRODUCT_DREAMER_PASS, plus a subscription_id). */
+function passPaymentPayload(overrides) {
+  return {
+    business_id: 'biz_test',
+    timestamp: new Date().toISOString(),
+    type: 'payment.succeeded',
+    data: Object.assign({
+      payment_id: 'pay_pass_1',
+      subscription_id: 'sub_pass_1',
+      product_cart: [{ product_id: 'pdt_dreamer_pass_test', quantity: 1 }],
+      customer: { customer_id: 'cus_pass_1', email: 'passbuyer@example.com' },
+      metadata: { dreamtube_plan: 'dreamer_pass' },
+      total_amount: 999,
+      currency: 'USD'
+    }, overrides)
+  };
+}
+
+/** A subscription.* lifecycle event carrying a Subscription object. */
+function subEvent(type, dataOverrides) {
+  return {
+    business_id: 'biz_test',
+    timestamp: new Date().toISOString(),
+    type: type,
+    data: Object.assign({
+      subscription_id: 'sub_pass_1',
+      product_id: 'pdt_dreamer_pass_test',
+      status: 'active',
+      customer: { customer_id: 'cus_pass_1', email: 'passbuyer@example.com' }
+    }, dataOverrides)
+  };
+}
+
+var DAY_MS = 24 * 60 * 60 * 1000;
+
+// ----- trial start: subscription.active(trialing) enables the 100/day boost -----
+
+test('subscription.active with a trialing status + trial end enables the 100/day daily-claim boost and stores trialEnd', async function () {
+  var email = 'trialstart@example.com';
+  var trialEnd = Date.now() + 3 * DAY_MS;
+  var res = await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing',
+    trial_end_date: new Date(trialEnd).toISOString(),
+    customer: { customer_id: 'cus_ts', email: email }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.subscription.status, 'trialing');
+  assert.ok(record.subscription.trialEnd, 'trialEnd stored so the boost window is bounded');
+  assert.equal(record.active, true);
+
+  // The daily claim is now boosted to 100.
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 100, 'a live trial boosts the daily claim to 100');
+  var claim = await entitlements.claimDailyTokens({}, email);
+  assert.equal(claim.amountClaimed, 100);
+});
+
+test('subscription.active with no resolvable trial end still caps the trial boost to a bounded window', async function () {
+  var email = 'trialnoend@example.com';
+  var before = Date.now();
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing',
+    customer: { customer_id: 'cus_tne', email: email }
+  })));
+  var record = await entitlements.getEntitlement({}, email);
+  assert.ok(record.subscription.trialEnd >= before + entitlements.TRIAL_WINDOW_MS - 5000, 'boost capped to ~now + the 3-day window even without a payload trial end');
+});
+
+// ----- a subscription payment grants exactly 3000 ONCE -----
+
+test('a Dreamer Pass payment.succeeded grants exactly 3000 tokens, marks the account active (ending the trial boost), and does not touch the pack path', async function () {
+  await seedZeroBalance('passbuyer@example.com');
+  // Put the account into a trial first, then charge it.
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing', trial_end_date: new Date(Date.now() + 3 * DAY_MS).toISOString(),
+    customer: { customer_id: 'cus_pass_1', email: 'passbuyer@example.com' }
+  })));
+
+  var res = await handler(signedEvent(passPaymentPayload({ payment_id: 'pay_pass_grant' })));
+  assert.equal(res.statusCode, 200);
+
+  var record = await entitlements.getEntitlement({}, 'passbuyer@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'the full 3000-token monthly lump lands up front');
+  assert.equal(record.subscription.status, 'active', 'a real charge flips the subscription to active');
+  // Trial boost is now off: the daily claim reverts to 20.
+  var status = await entitlements.getTokenStatus({}, 'passbuyer@example.com');
+  assert.equal(status.dailyClaimAmount, 20, 'a paid subscriber is not trialing -> normal 20 claim');
+});
+
+test('a redelivered Dreamer Pass payment.succeeded (same payment_id) does NOT double-grant the 3000', async function () {
+  await seedZeroBalance('passredeliver@example.com');
+  var payload = passPaymentPayload({
+    payment_id: 'pay_pass_redeliver',
+    customer: { customer_id: 'cus_pr', email: 'passredeliver@example.com' }
+  });
+  var res1 = await handler(signedEvent(payload, { id: 'msg_pass_1' }));
+  assert.equal(res1.statusCode, 200);
+  var afterFirst = await entitlements.getEntitlement({}, 'passredeliver@example.com');
+  assert.equal(afterFirst.tokens.balance, DREAMER_PASS_MONTHLY);
+
+  var res2 = await handler(signedEvent(payload, { id: 'msg_pass_2' }));
+  assert.equal(res2.statusCode, 200);
+  var afterSecond = await entitlements.getEntitlement({}, 'passredeliver@example.com');
+  assert.equal(afterSecond.tokens.balance, DREAMER_PASS_MONTHLY, 'a redelivered subscription charge must credit the 3000 only once');
+});
+
+test('a monthly RENEWAL charge (a new payment_id) grants another 3000', async function () {
+  await seedZeroBalance('passrenew@example.com');
+  await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_month1',
+    customer: { customer_id: 'cus_prn', email: 'passrenew@example.com' }
+  })));
+  var afterM1 = await entitlements.getEntitlement({}, 'passrenew@example.com');
+  assert.equal(afterM1.tokens.balance, DREAMER_PASS_MONTHLY);
+
+  // Next month's charge -> a fresh payment_id -> another lump.
+  await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_month2',
+    customer: { customer_id: 'cus_prn', email: 'passrenew@example.com' }
+  })));
+  var afterM2 = await entitlements.getEntitlement({}, 'passrenew@example.com');
+  assert.equal(afterM2.tokens.balance, DREAMER_PASS_MONTHLY * 2, 'a genuine renewal (new payment_id) grants another 3000');
+});
+
+test('subscription.renewed carrying a payment_id grants that charge\'s 3000, deduped against a payment.succeeded for the same charge', async function () {
+  await seedZeroBalance('renewevent@example.com');
+  var sharedPaymentId = 'pay_shared_charge';
+  // The renewal arrives BOTH as a subscription.renewed and a payment.succeeded
+  // for the same underlying charge (same payment_id) — exactly ONE 3000.
+  await handler(signedEvent(subEvent('subscription.renewed', {
+    payment_id: sharedPaymentId,
+    customer: { customer_id: 'cus_re', email: 'renewevent@example.com' }
+  })));
+  var afterRenewed = await entitlements.getEntitlement({}, 'renewevent@example.com');
+  assert.equal(afterRenewed.tokens.balance, DREAMER_PASS_MONTHLY, 'subscription.renewed with a payment_id grants the charge');
+
+  await handler(signedEvent(passPaymentPayload({
+    payment_id: sharedPaymentId,
+    customer: { customer_id: 'cus_re', email: 'renewevent@example.com' }
+  })));
+  var afterBoth = await entitlements.getEntitlement({}, 'renewevent@example.com');
+  assert.equal(afterBoth.tokens.balance, DREAMER_PASS_MONTHLY, 'a payment.succeeded sharing the SAME payment_id must not add a second 3000');
+});
+
+test('subscription.renewed with NO payment_id updates state but does not grant (the payment.succeeded is the grant path)', async function () {
+  await seedZeroBalance('renewnopayid@example.com');
+  await handler(signedEvent(subEvent('subscription.renewed', {
+    customer: { customer_id: 'cus_rnp', email: 'renewnopayid@example.com' }
+    // no payment_id
+  })));
+  var record = await entitlements.getEntitlement({}, 'renewnopayid@example.com');
+  assert.equal(record.tokens.balance, 0, 'no payment_id -> no grant off the state event alone (avoids a non-idempotent grant)');
+  assert.equal(record.subscription.status, 'active');
+});
+
+// ----- cancel / expire / on_hold clears the boost + state -----
+
+['subscription.cancelled', 'subscription.expired', 'subscription.on_hold', 'subscription.failed', 'subscription.paused'].forEach(function (evtType) {
+  test(evtType + ' clears the active subscription state and the trial boost (daily claim reverts to 20)', async function () {
+    var email = evtType.replace(/[^a-z]/g, '') + '@example.com';
+    // Start in a trial (boost on), then receive the terminal event.
+    await handler(signedEvent(subEvent('subscription.active', {
+      status: 'trialing', trial_end_date: new Date(Date.now() + 3 * DAY_MS).toISOString(),
+      customer: { customer_id: 'cus_term', email: email }
+    })));
+    var trialStatus = await entitlements.getTokenStatus({}, email);
+    assert.equal(trialStatus.dailyClaimAmount, 100, 'boost is on during the trial');
+
+    var res = await handler(signedEvent(subEvent(evtType, { customer: { customer_id: 'cus_term', email: email } })));
+    assert.equal(res.statusCode, 200);
+
+    var record = await entitlements.getEntitlement({}, email);
+    assert.equal(record.active, false, evtType + ' must clear the active flag');
+    assert.equal(entitlements.isSubscriptionActive(record.subscription), false);
+    var status = await entitlements.getTokenStatus({}, email);
+    assert.equal(status.dailyClaimAmount, 20, evtType + ' must revert the daily claim to 20');
+    assert.equal(status.subscription.subscribed, false);
+  });
+});
+
+// ----- a one-time pack still works and never grants 3000 -----
+
+test('a one-time pack payment.succeeded (no subscription context) still credits its pack amount and never 3000', async function () {
+  await seedZeroBalance('stillpack@example.com');
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_still_pack',
+    product_cart: [{ product_id: 'pdt_pack199_test', quantity: 1 }],
+    customer: { customer_id: 'cus_sp', email: 'stillpack@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'stillpack@example.com');
+  assert.equal(record.tokens.balance, 500, 'pack199 still credits 500, not 3000');
+  assert.equal(record.subscription, undefined, 'a pack purchase must not create any subscription state');
+});
+
+test('a Dreamer Pass charge recognized ONLY via metadata.dreamtube_plan (product_cart rotated/absent) still grants 3000', async function () {
+  await seedZeroBalance('passmeta@example.com');
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_meta',
+    product_cart: [{ product_id: 'pdt_rotated_unknown', quantity: 1 }],
+    customer: { customer_id: 'cus_pm', email: 'passmeta@example.com' },
+    metadata: { dreamtube_plan: 'dreamer_pass' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'passmeta@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY);
+});
+
+test('a subscription-linked payment with no product match and no plan metadata is still treated as the Pass (only-subscription-product fallback) and grants 3000', async function () {
+  await seedZeroBalance('passfallback@example.com');
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_fallback',
+    product_cart: [{ product_id: 'pdt_rotated_unknown', quantity: 1 }],
+    subscription_id: 'sub_fallback',
+    customer: { customer_id: 'cus_pf', email: 'passfallback@example.com' },
+    metadata: {}
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'passfallback@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'a subscription_id-bearing non-pack payment is the Pass');
+});
+
+test('subscription.update_payment_method is acknowledged and does not change subscription state', async function () {
+  var email = 'updpay@example.com';
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing', trial_end_date: new Date(Date.now() + 3 * DAY_MS).toISOString(),
+    customer: { customer_id: 'cus_up', email: email }
+  })));
+  var before = await entitlements.getEntitlement({}, email);
+  var res = await handler(signedEvent(subEvent('subscription.update_payment_method', {
+    status: undefined, customer: { customer_id: 'cus_up', email: email }
+  })));
+  assert.equal(res.statusCode, 200);
+  var after = await entitlements.getEntitlement({}, email);
+  assert.equal(after.subscription.status, before.subscription.status, 'update_payment_method must not flip a trialing account to active');
+  assert.equal(after.subscription.status, 'trialing');
 });

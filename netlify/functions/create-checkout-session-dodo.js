@@ -4,6 +4,17 @@
 // one-time DreamTube token-pack purchase and returns { url } for the
 // client to redirect the browser to. `pack` is one of "pack099",
 // "pack199", "pack499", "pack999" (300 tokens / $0.99 one-time starter,
+//
+// DREAMER PASS (subscription): POST { email, plan: "dreamer_pass" } instead
+// creates a checkout for the $9.99/month Dreamer Pass (3-day free trial),
+// referencing DODO_PRODUCT_DREAMER_PASS. Dodo decides one-time-vs-
+// subscription entirely from the product config (the Pass product carries a
+// recurring price + its own trial), so this sends the SAME product_cart
+// shape — no subscription_data/trial param needed (the trial lives on the
+// product; subscription_data.trial_period_days only OVERRIDES it). The
+// 3000-token monthly grant and the trial's 100/day claim boost are applied
+// entirely server-side (dodo-webhook.js + lib/entitlements.js), never here.
+// See lib/entitlements.js's DREAMER PASS doc block.
 // 500 tokens / $1.99, 1500 tokens / $4.99 "Most popular", 4000 tokens /
 // $9.99 "Best value" — see PACK_TOKENS below — see shop.html, "The
 // Vault"). This is the SKU ladder built for tracker item
@@ -88,9 +99,9 @@
 //   E1 method_not_allowed
 //   E2 missing_api_key        — DODO_API_KEY not configured in this environment
 //   E3 invalid_json
-//   E4 email_and_pack_required
-//   E5 invalid_pack           — pack wasn't "pack099", "pack199", "pack499", or "pack999"
-//   E6 missing_product_id     — DODO_PRODUCT_PACK_STARTER300/_SMALL500/_MEDIUM1500/_LARGE4000 not configured for the requested pack
+//   E4 email_and_pack_required (email_required on the subscription path — no pack there)
+//   E5 invalid_pack           — pack wasn't "pack099", "pack199", "pack499", or "pack999" (pack path only)
+//   E6 missing_product_id     — DODO_PRODUCT_PACK_STARTER300/_SMALL500/_MEDIUM1500/_LARGE4000 (pack path), or DODO_PRODUCT_DREAMER_PASS (subscription path), not configured
 //   E7 dodo_request_failed    — Dodo rejected the request or it otherwise failed
 //   E8 invalid_redirect_url   — successUrl/cancelUrl was supplied but isn't a safe relative path (see isSafeRedirectPath below)
 //   E9 starter_already_used   — pack099 requested, but this account has already completed a pack purchase before (hasMadeFirstPurchase) — the one-time starter offer is no longer available to it
@@ -254,30 +265,59 @@ exports.handler = async function (event) {
 
   var email = normalizeEmail(payload.email);
   var pack = (payload.pack || '').trim().toLowerCase();
-  if (!email || !pack) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'E4: email_and_pack_required' }) };
-  }
 
-  var productEnvVar = PACK_PRODUCT_ENV[pack];
-  if (!productEnvVar) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'E5: invalid_pack' }) };
-  }
+  // ── Dreamer Pass subscription vs. one-time token pack ──
+  // The client asks for the $9.99/month Dreamer Pass with `{ plan:
+  // "dreamer_pass" }` instead of a `{ pack }`. Dodo itself decides
+  // one-time-vs-subscription purely from how the referenced product_id is
+  // configured in the dashboard (the Dreamer Pass product carries a
+  // recurring price AND its own 3-day trial) — this function sends the
+  // SAME product_cart shape either way and needs no subscription-specific
+  // params (verified against Dodo's Node SDK: subscription_data.trial_period_days
+  // only OVERRIDES the product's own trial, and the trial already lives on
+  // the product, so it is deliberately not sent). See this file's header
+  // comment and lib/entitlements.js's DREAMER PASS doc block.
+  var isSubscription = (payload.plan || '').trim().toLowerCase() === entitlements.DREAMER_PASS_PLAN;
 
-  var productId = process.env[productEnvVar];
-  if (!productId) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'E6: missing_product_id: ' + productEnvVar + ' not configured' }) };
-  }
+  var productId;
+  if (isSubscription) {
+    // Subscription path: email is the only required field (there is no
+    // `pack`), the product id comes from DODO_PRODUCT_DREAMER_PASS, and the
+    // one-time-starter E9 guard deliberately does NOT apply (the Pass is a
+    // recurring product, not the one-time welcome pack).
+    if (!email) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'E4: email_required' }) };
+    }
+    productId = process.env.DODO_PRODUCT_DREAMER_PASS;
+    if (!productId) {
+      return { statusCode: 500, body: JSON.stringify({ error: 'E6: missing_product_id: DODO_PRODUCT_DREAMER_PASS not configured' }) };
+    }
+  } else {
+    if (!email || !pack) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'E4: email_and_pack_required' }) };
+    }
 
-  // Starter one-time-per-account enforcement (see this file's header
-  // comment) — only ever checked for pack099, so every other pack incurs
-  // no extra read/latency. Reads the SAME signal the old +50%
-  // first-purchase bonus used to key off (hasMadeFirstPurchase, derived
-  // from firstPackPurchaseAt) — see lib/entitlements.js's doc comments on
-  // both for the full "why this exact field, not a new one" reasoning.
-  if (pack === STARTER_PACK_ID) {
-    var tokenStatus = await entitlements.getTokenStatus(event, email);
-    if (tokenStatus && tokenStatus.hasMadeFirstPurchase) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'E9: starter_already_used' }) };
+    var productEnvVar = PACK_PRODUCT_ENV[pack];
+    if (!productEnvVar) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'E5: invalid_pack' }) };
+    }
+
+    productId = process.env[productEnvVar];
+    if (!productId) {
+      return { statusCode: 500, body: JSON.stringify({ error: 'E6: missing_product_id: ' + productEnvVar + ' not configured' }) };
+    }
+
+    // Starter one-time-per-account enforcement (see this file's header
+    // comment) — only ever checked for pack099, so every other pack incurs
+    // no extra read/latency. Reads the SAME signal the old +50%
+    // first-purchase bonus used to key off (hasMadeFirstPurchase, derived
+    // from firstPackPurchaseAt) — see lib/entitlements.js's doc comments on
+    // both for the full "why this exact field, not a new one" reasoning.
+    if (pack === STARTER_PACK_ID) {
+      var tokenStatus = await entitlements.getTokenStatus(event, email);
+      if (tokenStatus && tokenStatus.hasMadeFirstPurchase) {
+        return { statusCode: 400, body: JSON.stringify({ error: 'E9: starter_already_used' }) };
+      }
     }
   }
 
@@ -448,23 +488,38 @@ exports.handler = async function (event) {
       // resolvePackTokens/resolvePackPrice). Dodo echoes metadata back
       // verbatim on the payment.succeeded webhook, which is how
       // dreamtube_event_id makes it from here to dodo-webhook.js.
-      metadata: {
-        dreamtube_email: email,
-        dreamtube_pack: pack,
-        dreamtube_tokens: PACK_TOKENS[pack],
-        dreamtube_price: PACK_PRICES[pack],
-        dreamtube_event_id: eventId,
-        // Threaded through to dodo-webhook.js so its own Purchase
-        // conversion event can carry a `starter: true/false` flag (see
-        // that file's firePurchaseConversion) for growth to measure
-        // starter-pack conversion specifically — same "known at checkout
-        // creation, cheaper to carry through metadata than re-derive
-        // later" reasoning as every other dreamtube_* field here (mirrors
-        // dreamtube_tokens/dreamtube_price's own existing non-string
-        // metadata values, echoed back verbatim by Dodo on
-        // payment.succeeded).
-        dreamtube_starter: pack === STARTER_PACK_ID
-      }
+      // Subscription vs. pack metadata. For the Dreamer Pass, dreamtube_plan
+      // is the tag dodo-webhook.js reads to recognize the charge as a
+      // subscription payment (its primary signal is the product_id matching
+      // DODO_PRODUCT_DREAMER_PASS; this metadata is the belt-and-suspenders
+      // fallback, mirroring dreamtube_pack's role on the pack path). No
+      // dreamtube_tokens/price/starter here — those are pack-specific; the
+      // 3000-token monthly grant is a fixed server-side constant
+      // (DREAMER_PASS_MONTHLY_TOKENS), never derived from client-influenced
+      // metadata.
+      metadata: isSubscription
+        ? {
+            dreamtube_email: email,
+            dreamtube_plan: entitlements.DREAMER_PASS_PLAN,
+            dreamtube_event_id: eventId
+          }
+        : {
+            dreamtube_email: email,
+            dreamtube_pack: pack,
+            dreamtube_tokens: PACK_TOKENS[pack],
+            dreamtube_price: PACK_PRICES[pack],
+            dreamtube_event_id: eventId,
+            // Threaded through to dodo-webhook.js so its own Purchase
+            // conversion event can carry a `starter: true/false` flag (see
+            // that file's firePurchaseConversion) for growth to measure
+            // starter-pack conversion specifically — same "known at checkout
+            // creation, cheaper to carry through metadata than re-derive
+            // later" reasoning as every other dreamtube_* field here (mirrors
+            // dreamtube_tokens/dreamtube_price's own existing non-string
+            // metadata values, echoed back verbatim by Dodo on
+            // payment.succeeded).
+            dreamtube_starter: pack === STARTER_PACK_ID
+          }
     };
 
     // Default false (Dodo's own default) unless this is a verified,
