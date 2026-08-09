@@ -130,13 +130,10 @@
   // unrelated and stays.) Rollback, if ever needed, is a revert of this
   // commit, not a flag.
 
-  /** Whether persona's one-time intro should play right now — has BOTH the visual clip AND its paired voice track (see js/interpreter-personas.js's own header note on why these are two separate files, not one muxed clip) AND hasn't been shown yet for this dream. Pure/no-DOM — unit tested directly (test/interp-voice-captions.test.js). */
+  /** Whether persona's one-time intro should play right now — has a self-contained talking-head clip (introTalkingHeadUrl) AND hasn't been shown yet for this dream. Pure/no-DOM — unit tested directly (test/interp-voice-captions.test.js). */
   function shouldShowIntro(persona, introAlreadyShown) {
     if (!persona || introAlreadyShown) return false;
-    // Two shapes qualify: a self-contained talking-head clip (introTalkingHeadUrl,
-    // Jung onward) OR the Sage's split visual-backdrop + paired voice track
-    // (introClipUrl + introVoiceUrl). The video alone (no voice) never qualifies.
-    return !!(persona.introTalkingHeadUrl || (persona.introClipUrl && persona.introVoiceUrl));
+    return !!persona.introTalkingHeadUrl;
   }
 
   /**
@@ -303,7 +300,6 @@
       if (voiceState.rafId) cancelAnimationFrame(voiceState.rafId);
       if (voiceState.audioEl) { try { voiceState.audioEl.pause(); } catch (e) { /* element may already be detached */ } }
       if (voiceState.introEl) { try { voiceState.introEl.pause(); } catch (e) { /* element may already be detached */ } }
-      if (voiceState.introAudioEl) { try { voiceState.introAudioEl.pause(); } catch (e) { /* element may already be detached */ } }
       // Only pause separately if it was never adopted as the real audioEl
       // above (beginAudioPlayback's own primed-element reuse) — pausing an
       // already-paused element twice is harmless either way, this just
@@ -501,31 +497,18 @@
   }
 
   /**
-   * Intro phase (spec §5) — plays the persona's one-time greeting, tap-to-
-   * play fallback on a detected autoplay block (spec §6), advances to the
-   * reading phase on natural end OR an explicit Skip tap.
+   * Intro phase (spec §5) — plays the persona's one-time greeting talking-
+   * head clip, tap-to-play fallback on a detected autoplay block (spec §6),
+   * advances to the reading phase on natural end OR an explicit Skip tap.
    *
-   * Real founder-approved Option D assets (js/interpreter-personas.js's own
-   * header comment) are TWO separate files, not one muxed clip: `introEl`
-   * (`introClipUrl`) is a silent, looping visual backdrop — played MUTED,
-   * best-effort, fire-and-forget, never capability-detected (a muted
-   * video has nothing for a browser's autoplay policy to block). `introAudioEl`
-   * (`introVoiceUrl`) is the actual spoken greeting — THIS is what's
-   * capability-detected/tap-gated, and its 'ended' event (not the video's)
-   * is the real "intro complete" signal, since the two files' durations
-   * don't match exactly (separately-delivered takes, not a frame-locked
-   * mux).
+   * The intro is a single self-contained lip-synced clip (`introTalkingHeadUrl`,
+   * js/interpreter-personas.js) — played once, unmuted, no sibling audio
+   * element — so its own 'ended' event is the real "intro complete" signal.
    */
   function startIntroPhase(vs, persona) {
     vs.phase = 'intro';
     if (vs.skipEl) vs.skipEl.style.display = '';
-    // Sage split shape only: introEl is a MUTED, LOOPING visual backdrop while
-    // the separate introAudioEl is the greeting. A talking-head persona has no
-    // separate backdrop — its introEl IS the driver (played once, unmuted, below).
-    if (!vs.introTalkingHead && vs.introEl) { vs.introEl.muted = true; vs.introEl.loop = true; attemptPlay(vs.introEl); } // ambient visual only — never gated, never tracked
-    // The "driver" is whatever element's playback + 'ended' defines the intro:
-    // the talking-head <video> itself, or the Sage's separate greeting <audio>.
-    var introAudio = vs.introTalkingHead ? vs.introEl : vs.introAudioEl;
+    var introAudio = vs.introEl;
     if (!introAudio) { completeIntro(vs, persona, 'ended'); return; } // defensive — shouldShowIntro guarantees the driver element exists
     attemptPlay(introAudio).then(function (ok) {
       if (voiceState !== vs) return;
@@ -580,8 +563,7 @@
     window.DreamStore.markIntroShown(vs.dreamId, vs.personaKey);
     hideTapOverlay(vs);
     if (vs.skipEl) vs.skipEl.style.display = 'none';
-    if (vs.introAudioEl) { try { vs.introAudioEl.pause(); } catch (e) { /* best-effort */ } }
-    if (vs.introTalkingHead && vs.introEl) { try { vs.introEl.pause(); } catch (e) { /* best-effort */ } } // talking head is the greeting itself — freeze its mouth on complete (Sage's muted loop just fades)
+    if (vs.introEl) { try { vs.introEl.pause(); } catch (e) { /* best-effort */ } } // freeze its mouth on complete — the talking head IS the greeting
     if (vs.introEl) vs.introEl.classList.add('itp-voice-fade-out');
     if (vs.dreamEl) vs.dreamEl.classList.remove('itp-voice-hidden'); // crossfades IN as the intro crossfades out (spec §5: "genuinely lip-synced video... then crossfades back", adapted to Option D's "into the user's own dream video" target)
     enterReadingPhase(vs, persona);
@@ -824,8 +806,8 @@
    * Mounts the voice stage for the CURRENT reading (called from
    * renderReading below only when the active persona has a `voiceId` and
    * the founder-preview gate is on). Starts whichever phase applies —
-   * intro-first (persona has an unshown introClipUrl) or straight to the
-   * reading phase.
+   * intro-first (persona has an unshown introTalkingHeadUrl) or straight to
+   * the reading phase.
    *
    * Audio sourcing (tracker item
    * for-product-defensive-revisited-readings-dta2ae): a REVISIT of a
@@ -857,9 +839,7 @@
     var vs = {
       dreamId: session.dreamId, personaKey: session.personaKey, readingText: session.readingText,
       stageEl: document.getElementById('itp-voice-stage'),
-      introEl: document.getElementById('itp-voice-intro'),
-      introAudioEl: document.getElementById('itp-voice-intro-audio'),
-      introTalkingHead: !!(persona && persona.introTalkingHeadUrl), // single unmuted lip-synced clip drives the intro itself (no separate voice track / backdrop loop)
+      introEl: document.getElementById('itp-voice-intro'), // single unmuted lip-synced clip drives the intro itself
       dreamEl: document.getElementById('itp-voice-dream-video'),
       loadingEl: document.getElementById('itp-voice-loading'),
       capEl: document.getElementById('itp-voice-caption'),
@@ -1418,11 +1398,11 @@
    *
    * The intro `<video>` (`#itp-voice-intro`) is only present in the markup
    * at all when `showIntro` is true — i.e. the persona actually has an
-   * `introClipUrl` AND it hasn't already played for this dream
+   * `introTalkingHeadUrl` AND it hasn't already played for this dream
    * (shouldShowIntro) — NOT merely whenever the persona has an intro asset
    * at all. This matters for the "reopen an already-read persona" case
    * (spec §5): if the element were unconditionally present whenever
-   * `introClipUrl` is set, the intro's `<video>` would sit in the DOM
+   * `introTalkingHeadUrl` is set, the intro's `<video>` would sit in the DOM
    * (unused, never played) even on a revisit that should show nothing but
    * the reading — the markup itself has to reflect the same "already
    * shown" decision setupVoiceStage's own runtime logic makes, not just
@@ -1449,20 +1429,10 @@
         : '<video class="itp-voice-media' + (showIntro ? ' itp-voice-hidden' : '') + '" id="itp-voice-dream-video" playsinline preload="auto"' +
           (dreamMediaUrl ? ' src="' + esc(dreamMediaUrl) + '"' : '') + '></video>') +
       (showIntro
-        ? (persona.introTalkingHeadUrl
-          // Talking-head intro (Jung onward): ONE self-contained lip-synced
-          // clip that IS the greeting — rendered NOT muted and with NO sibling
-          // audio, so startIntroPhase plays it once, unmuted, and its own
-          // 'ended' completes the intro (see that fn's talking-head branch).
-          ? '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" src="' + esc(persona.introTalkingHeadUrl) + '"></video>'
-          // Sage split shape: two separate elements — the video is a silent,
-          // looping visual only (muted here in markup too, not just in JS, so
-          // there's never a flash of real audio before startIntroPhase's own
-          // vs.introEl.muted=true runs) — the actual greeting audio is the
-          // sibling <audio>, hidden (no visual chrome of its own, the tap
-          // overlay above it in the stage is what a blocked-autoplay tap lands on).
-          : '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" muted src="' + esc(persona.introClipUrl) + '"></video>' +
-            '<audio id="itp-voice-intro-audio" preload="auto" src="' + esc(persona.introVoiceUrl) + '" style="display:none"></audio>')
+        // ONE self-contained lip-synced clip that IS the greeting — rendered
+        // NOT muted and with NO sibling audio, so startIntroPhase plays it
+        // once, unmuted, and its own 'ended' completes the intro.
+        ? '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" src="' + esc(persona.introTalkingHeadUrl) + '"></video>'
         : '') +
       // Loading spinner over the black stage while the dream video buffers
       // (founder 08-08: "video still loading shows black area — show

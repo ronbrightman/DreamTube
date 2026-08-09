@@ -23,22 +23,20 @@ var nextBounceFrame = InterpretExperience._nextBounceFrame;
 var tapOverlayLabel = InterpretExperience._tapOverlayLabel;
 var preparingCaptionText = InterpretExperience._preparingCaptionText;
 
-test('shouldShowIntro: true only when the persona has BOTH the visual clip and its paired voice track AND it hasn\'t been shown yet', function () {
-  var withIntro = { introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4', introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav' };
-  var withoutIntro = { introClipUrl: null, introVoiceUrl: null };
-  var videoOnly = { introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4', introVoiceUrl: null };
+// The old split shape (introClipUrl + introVoiceUrl -- a silent looping
+// visual backdrop plus a separate paired voice track) was retired once
+// every persona migrated to the one-file talking-head clip below (tracker
+// item auto-cleanup-retire-the-now-unused-split-dwea7w) -- shouldShowIntro
+// no longer knows that shape exists, so there's nothing left to test for it.
+test('shouldShowIntro: true only when the persona has a talking-head intro clip (introTalkingHeadUrl, single self-contained lip-synced clip) AND it hasn\'t been shown yet', function () {
+  var withIntro = { introTalkingHeadUrl: 'assets/interpreters/intro/jung-intro.mp4' };
+  var withoutIntro = { introTalkingHeadUrl: null };
   assert.equal(shouldShowIntro(withIntro, false), true);
-  assert.equal(shouldShowIntro(withIntro, true), false);
+  assert.equal(shouldShowIntro(withIntro, true), false, 'still respects the once-per-dream already-shown gate');
   assert.equal(shouldShowIntro(withoutIntro, false), false);
   assert.equal(shouldShowIntro(withoutIntro, true), false);
-  assert.equal(shouldShowIntro(videoOnly, false), false, 'the video alone is not enough -- the paired voice track drives the real timing/capability-detection');
   assert.equal(shouldShowIntro(null, false), false);
-});
-
-test('shouldShowIntro: a talking-head persona (single self-contained lip-synced clip, Jung onward) qualifies on introTalkingHeadUrl alone -- no separate voice track needed, since the clip carries its own audio', function () {
-  var talkingHead = { introTalkingHeadUrl: 'assets/interpreters/intro/jung-intro.mp4' };
-  assert.equal(shouldShowIntro(talkingHead, false), true);
-  assert.equal(shouldShowIntro(talkingHead, true), false, 'still respects the once-per-dream already-shown gate');
+  assert.equal(shouldShowIntro(undefined, false), false);
 });
 
 test('computeSentenceFallbackCaptions: distributes duration across sentences proportional to character length', function () {
