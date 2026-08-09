@@ -916,6 +916,27 @@ test('a Dreamer Pass payment.succeeded grants exactly 3000 tokens, marks the acc
   assert.equal(status.dailyClaimAmount, 20, 'a paid subscriber is not trialing -> normal 20 claim');
 });
 
+test('a $0 trial-start Dreamer Pass payment.succeeded grants NOTHING and keeps the account trialing (does not hand over a free month or end the trial) — founder repro 2026-08-09', async function () {
+  await seedZeroBalance('passtrial@example.com');
+  // Trial begins: subscription.active with status trialing.
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing', trial_end_date: new Date(Date.now() + 3 * DAY_MS).toISOString(),
+    customer: { customer_id: 'cus_trial', email: 'passtrial@example.com' }
+  })));
+  // Dodo ALSO sends a $0 payment.succeeded at trial start (total_amount 0).
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_trial_zero', total_amount: 0,
+    customer: { customer_id: 'cus_trial', email: 'passtrial@example.com' }
+  })));
+  assert.equal(res.statusCode, 200, 'the $0 event is still acknowledged');
+
+  var record = await entitlements.getEntitlement({}, 'passtrial@example.com');
+  assert.equal(record.tokens.balance, 0, 'a $0 trial-start payment must NOT grant the 3000');
+  assert.equal(record.subscription.status, 'trialing', 'the $0 payment must not flip the account out of trialing');
+  var status = await entitlements.getTokenStatus({}, 'passtrial@example.com');
+  assert.equal(status.dailyClaimAmount, 100, 'still trialing -> the 100/day boost stays intact');
+});
+
 test('a redelivered Dreamer Pass payment.succeeded (same payment_id) does NOT double-grant the 3000', async function () {
   await seedZeroBalance('passredeliver@example.com');
   var payload = passPaymentPayload({
