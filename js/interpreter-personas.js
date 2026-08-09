@@ -226,13 +226,16 @@
       // Gestalt is fully cast in its own founder-approved (2026-08-09) voice,
       // same across intro AND reading: ElevenLabs "Opa Johann" (voice-library
       // id R3XXDwKMU2YHwBcuYUH3), an old, warm German storyteller. This voice
-      // speaks slowly, so it OVERRIDES the default 0.9 reading pace with
-      // `readingSpeed: 1.1` (founder: Opa Johann was "too slow" at 0.9, then
-      // "make it 10% faster" — 1.1) — its intro clip below was rendered at 1.1
-      // too, so intro and reading match. Talking-head intro shape (Jung/Freud).
+      // speaks slowly, so it OVERRIDES the default 0.9 reading pace. Founder
+      // pace tuning: 0.9 "too slow" -> intro re-rendered at 1.1 (accepted) ->
+      // then the READING still read "too slow" at 1.1 (2026-08-09), so it is
+      // pushed to 1.2 — the MAX the ElevenLabs `speed` param allows (0.7-1.2).
+      // The intro clip stays at its accepted 1.1; the reading runs a touch
+      // brisker at the ceiling. If 1.2 is still too slow, the only remaining
+      // lever is swapping Opa Johann for a naturally faster voice.
       voiceId: 'R3XXDwKMU2YHwBcuYUH3',
       kokoroVoiceId: 'am_onyx', // FALLBACK tier only (rare turbo outage)
-      readingSpeed: 1.1,
+      readingSpeed: 1.2,
       introTalkingHeadUrl: 'assets/interpreters/intro/gestalt-intro.mp4'
     },
     {
