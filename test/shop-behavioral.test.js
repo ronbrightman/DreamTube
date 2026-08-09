@@ -351,6 +351,44 @@ test('an account with no email on file gets a clear inline message instead of a 
   }
 });
 
+// Un-gate regression (2026-08-09, founder "flip for everyone"): the Dreamer
+// Pass hero used to be shown ONLY to the owner account and its Start button
+// wired ONLY for the owner (a PASS_OWNER_EMAIL/passIsOwner UX gate). That
+// gate is removed — the Pass must now be visible to EVERY signed-in account
+// and its Start button must begin the Pass checkout (plan: "dreamer_pass")
+// for anyone. seedShopPage seeds a plain non-owner account (shopper@example.com).
+test('Dreamer Pass is shown to a non-owner account and its Start button begins the Pass checkout (un-gated for everyone)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // A regular (non-subscribed) account so the buy button — not the status
+    // panel — is what renders.
+    await mockTokenStatus(page, { balance: 50, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, hasMadeFirstPurchase: true });
+    await seedShopPage(page);
+
+    var passHero = page.locator('#shop-pass-hero');
+    var startBtn = page.locator('#shop-start-pass');
+    await assert.doesNotReject(passHero.waitFor({ state: 'visible', timeout: 5000 }), 'the Pass hero must be visible to a non-owner account now that the owner-only gate is removed');
+    assert.equal(await startBtn.isVisible(), true, 'the Start Dreamer Pass button must be visible to a non-owner');
+
+    var capturedBody = null;
+    await page.route('**/.netlify/functions/create-checkout-session-dodo', function (route) {
+      capturedBody = route.request().postDataJSON();
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: baseUrl + '/shop.html?checkout=success', sessionId: 'cks_pass' }) });
+    });
+
+    await startBtn.click();
+    await page.waitForURL(/checkout=success/, { timeout: 5000 });
+    // A subscription checkout — plan, not pack. password is the account's
+    // cached password (returning-buyer prefill, same as the pack path).
+    assert.deepEqual(capturedBody, { email: 'shopper@example.com', plan: 'dreamer_pass', password: 'testpass1' });
+  } finally {
+    await context.close();
+  }
+});
+
 test('per-pack dreams/tokens/value copy is computed correctly on each card', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
