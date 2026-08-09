@@ -151,17 +151,28 @@
       method: 'Your interpretive method reads the dream as a message from the dreamer\'s deeper self, often compensating for something one-sided or unacknowledged in their conscious, waking attitude. Look for archetypal figures, symbols, and the emotional charge of the dream, and connect them to what might be seeking balance or integration in the dreamer\'s life right now.',
       questionFocus: 'Ask about the dreamer\'s current life situation and what feels unbalanced or out of alignment for them right now — the compensation your method looks for. Questions should invite a short, honest answer about waking life, not more dream detail.',
       maxQuestions: 3,
-      // Reading-phase TTS still borrows The Sage's Kokoro casting for now
-      // (for-product-go-wide-follow-up-voice-the--bvqxvv) — but Jung is the
-      // FIRST persona with its own real, founder-approved (2026-08-09)
-      // talking-head INTRO: a single self-contained lip-synced clip
-      // (ElevenLabs "Peter Lang" German/Austrian voice + Kling AI Avatar v2
-      // off jung.webp). `introTalkingHeadUrl` is the new one-file intro shape
-      // (played once, unmuted, its own 'ended' completes it) — it supersedes
-      // the Sage's split introClipUrl+introVoiceUrl for this persona. See
-      // js/interpret-experience.js's shouldShowIntro / startIntroPhase.
-      voiceId: 'Brian',
-      kokoroVoiceId: 'am_onyx',
+      // Jung is the FIRST persona fully cast in its own founder-approved
+      // (2026-08-09) voice — the SAME voice across the intro AND the reading,
+      // per the founder ("keep the same voice"): ElevenLabs "Peter Lang"
+      // (voice-library id EQIVtVkE7IWwwaRgwyPi), a mature German/Austrian
+      // accent that matches the Depth Analyst.
+      //   - INTRO: a single self-contained talking-head clip (this voice via
+      //     elevenlabs/tts/multilingual-v2 + Kling AI Avatar v2 off jung.webp).
+      //     `introTalkingHeadUrl` is the one-file intro shape (played once,
+      //     unmuted, its own 'ended' completes it) — supersedes the Sage's
+      //     split introClipUrl+introVoiceUrl for this persona. See
+      //     js/interpret-experience.js's shouldShowIntro / startIntroPhase.
+      //   - READING: `voiceId` is that SAME Peter Lang id, sent to the fast
+      //     PRIMARY tier (elevenlabs/tts/turbo-v2.5, generate-interp-audio.js).
+      //     turbo accepts a voice-library id, not just a catalog NAME, and is
+      //     fast enough to meet the founder's <5s bar — measured 2.79s to
+      //     generate a full 710-char reading (probe 2026-08-09), so the whole
+      //     reading (well past the first 3 sentences) is ready in under 3s.
+      //     multilingual-v2 was rejected for the reading tier: 7.65s on the
+      //     same text, over the bar. Same speaker either way; the reading uses
+      //     turbo purely for latency.
+      voiceId: 'EQIVtVkE7IWwwaRgwyPi',
+      kokoroVoiceId: 'am_onyx', // FALLBACK tier only (rare turbo outage) — kokoro has no German-accented voice, am_onyx is the closest deep male stand-in
       introTalkingHeadUrl: 'assets/interpreters/intro/jung-intro.mp4'
     },
     {
