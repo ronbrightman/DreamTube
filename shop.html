@@ -797,8 +797,24 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
       });
   }
 
+  // FOUNDER-ONLY GATE (2026-08-09): the Dreamer Pass touches real money and
+  // the payment path is still being verified with a Dodo test-mode purchase.
+  // Until the founder gives an explicit launch go, the whole Pass hero is
+  // shown ONLY to the owner account — every other user sees the token packs
+  // exactly as before, and never a subscription CTA. This is a UX gate, not
+  // the security boundary (create-checkout-session-dodo.js still owns that);
+  // it just makes sure no real customer can start a subscription mid-test.
+  // Flip: delete this block (and the hero shows for everyone) at launch.
+  var PASS_OWNER_EMAIL = 'ronbrightman@gmail.com';
+  var passHeroEl = document.getElementById('shop-pass-hero');
+  var passIsOwner = (function(){
+    var e = DreamStore.getAccountEmail && DreamStore.getAccountEmail();
+    return !!e && e.toLowerCase() === PASS_OWNER_EMAIL;
+  })();
+  if(passHeroEl && !passIsOwner) passHeroEl.style.display = 'none';
+
   var passStartBtn = document.getElementById('shop-start-pass');
-  if(passStartBtn) passStartBtn.addEventListener('click', function(){ purchasePlan(this); });
+  if(passStartBtn && passIsOwner) passStartBtn.addEventListener('click', function(){ purchasePlan(this); });
 
   var topbarBalanceEl = document.getElementById('shop-topbar-balance');
   var heroOfferEl = document.getElementById('shop-hero-offer');
