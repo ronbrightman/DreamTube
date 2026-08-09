@@ -1652,6 +1652,15 @@
 
     ensureMounted();
     discardPrimedAudioEl(); // a still-open session's primed element (see onPersonaPicked) has no home in the brand-new `session` object about to replace it below (switchDream's own re-open-for-a-different-dream path)
+    // Was the overlay ALREADY open? switchDream() (dream-strip tap) re-runs
+    // open() over a live session — a re-open, not a fresh one. The scroll lock
+    // is ref-counted, so it must be lock()'d exactly ONCE per open→close
+    // lifecycle: locking again on a re-open pushes refCount to 2, and the
+    // single close()→unlock() only drops it to 1, leaving .home-scroll frozen
+    // at overflow:hidden after close (founder repro: scroll stuck returning
+    // from interpretation after switching dreams in the strip). Only lock on
+    // the true closed→open transition below.
+    var wasOpen = !!session;
     gen += 1;
     var existing = window.DreamStore.getInterpretations(dreamId) || {};
     var existingKeys = Object.keys(existing).filter(function (k) { return existing[k] && existing[k].text; });
@@ -1686,7 +1695,7 @@
     // pages (home/result) froze the real scroller on iOS after close. See that
     // file's header for the full root cause. Guarded so the overlay still
     // opens even if the helper failed to load.
-    if (window.ScrollLock) window.ScrollLock.lock();
+    if (!wasOpen && window.ScrollLock) window.ScrollLock.lock();
     renderDreamStrip();
     render();
   }

@@ -174,6 +174,15 @@ test('Chamber: tapping a different tile switches the active dream -- the ring mo
     var selectedBefore = await page.locator('#itp-dream-strip .dream-row-tile.is-selected').getAttribute('data-dream-id');
     assert.equal(selectedBefore, 'd-a');
 
+    // Regression (scroll-freeze-after-interpretation, founder repro 08-09): the
+    // ref-counted scroll lock must be held exactly ONCE across an
+    // open -> switchDream -> close lifecycle. switchDream() re-runs open(); a
+    // bug that re-locked on every re-open pushed refCount to 2, so the single
+    // close() -> unlock() only dropped it to 1 and left .home-scroll frozen at
+    // overflow:hidden after returning to Home.
+    assert.equal(await page.evaluate(function () { return window.ScrollLock._refCount(); }), 1,
+      'scroll lock held exactly once after opening the interpretation');
+
     await page.click('#itp-dream-strip .dream-row-tile[data-dream-id="d-b"]');
     await page.waitForFunction(function () {
       var sel = document.querySelector('#itp-dream-strip .dream-row-tile.is-selected');
@@ -192,6 +201,15 @@ test('Chamber: tapping a different tile switches the active dream -- the ring mo
 
     // Switching fires a fresh interp_surface_opened too (open() runs in full).
     assert.equal(captures(phCalls, 'interp_surface_opened').length, 2);
+
+    // The fix: switchDream re-ran open() but must NOT have added a second lock.
+    assert.equal(await page.evaluate(function () { return window.ScrollLock._refCount(); }), 1,
+      'switchDream (a re-open) does NOT add a second scroll lock -- ref-count stays 1');
+
+    // And closing releases fully -> the page is scrollable again (not frozen).
+    await page.evaluate(function () { window.InterpretExperience.close(); });
+    assert.equal(await page.evaluate(function () { return window.ScrollLock._refCount(); }), 0,
+      'close() after a switch releases the scroll lock to 0 -- Home is not frozen');
   } finally {
     await context.close();
   }
