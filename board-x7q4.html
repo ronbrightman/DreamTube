@@ -75,9 +75,15 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
   // flood this queue again.
   function isRonItem(i){
     var t=(i.title||'').trim();
-    if(/^\[for ron\]/i.test(t)) return true;
+    // [for ron] and [for founder] name the SAME audience — the founder.
+    // Growth has tagged items [for founder]; gating only on [for ron] left
+    // those orphaned (invisible on his board — a real fall-through, 08-09
+    // sweep). Treat both as his.
+    if(/^\[for (ron|founder)\]/i.test(t)) return true;
     return i.waitingFor==='ron' && !/^\[/.test(t);
   }
+  // Strip whichever founder tag ([for ron] / [for founder]) leads the title.
+  function stripFounder(t){ return (t||'').replace(/^\s*\[for (ron|founder)\]\s*/i,''); }
 
   fetch('/.netlify/functions/get-tracker-items').then(function(r){return r.json();}).then(function(data){
     var items=(data.items||[]).filter(function(i){return !i.done;});
@@ -100,7 +106,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
     var rbox=document.getElementById('ron');
     if(!ronNow.length){ rbox.innerHTML='<div class="donebox">✅ Nothing needs you right now — everything live is with the workers.</div>'; }
     else { rbox.innerHTML=ronNow.map(function(i){
-      var title=esc(strip(i.title,'ron'));
+      var title=esc(stripFounder(i.title));
       var detail=i.detail||''; var br=detail.indexOf('\n');
       var action=(br>-1?detail.slice(0,br):detail).trim();
       var rest=(br>-1?detail.slice(br):'').trim();
@@ -116,7 +122,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
     if(ronParked.length){
       ph.style.display=''; ph.textContent='🅿️ On your radar — parked — '+ronParked.length;
       pbox.innerHTML='<div class="parked-note">Nothing here is blocking — your call, whenever you want it.</div>'+ronParked.map(function(i){
-        var title=esc(strip(i.title,'ron'));
+        var title=esc(stripFounder(i.title));
         var body=i.detail?'<div class="body">'+linkify(esc(i.detail))+'</div>':'';
         return '<details><summary><span class="t">'+title+'</span></summary>'+body+'</details>';
       }).join('');
