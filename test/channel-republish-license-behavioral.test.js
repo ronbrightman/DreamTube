@@ -167,7 +167,7 @@ test('result.html: passive "may feature it on DreamTube\'s channels" line sits u
     await page.waitForSelector('#modal-publish.open');
 
     var fineText = await page.locator('#modal-publish-fine').innerText();
-    assert.equal(fineText, "Posting makes your dream public and may feature it on DreamTube's channels.");
+    assert.equal(fineText, "By posting, you let DreamTube show your dream in the app and sometimes feature it. You can unpublish whenever you like.");
 
     // Zero-click: the modal must not contain any checkbox/toggle input of its own.
     var inputCount = await page.locator('#modal-publish input, #modal-publish .toggle-switch').count();
