@@ -10,8 +10,8 @@
 //
 // "The Vault" pack ladder (founder-approved 2026-08-02, tracker item
 // for-product-build-ship-today-founder-app-zn9zyy): pack099 ($0.99/300
-// tokens, one-time starter), pack199 ($1.99/500), pack499 ($4.99/1500,
-// "Most popular"), pack999 ($9.99/4000, "Best value") — replaces the
+// tokens, one-time starter), pack199 ($2.99/500), pack499 ($4.99/1000,
+// "Most popular"), pack999 ($9.99/2500, "Best value") — replaces the
 // previous pack100/pack300/pack700 lineup entirely. mockBlobs is needed
 // now (it wasn't before) because the starter-pack E9 one-time-enforcement
 // guard reads the buyer's entitlement record via lib/entitlements.js's
@@ -169,7 +169,7 @@ test('valid request (pack199, not the starter) -> 200 with checkout url + sessio
   assert.equal(sentBody.metadata.dreamtube_email, 'buyer@example.com');
   assert.equal(sentBody.metadata.dreamtube_pack, 'pack199');
   assert.equal(sentBody.metadata.dreamtube_tokens, 500);
-  assert.equal(sentBody.metadata.dreamtube_price, 1.99);
+  assert.equal(sentBody.metadata.dreamtube_price, 2.99);
   assert.equal(sentBody.metadata.dreamtube_starter, false, 'pack199 is not the starter pack');
   // Phase 1 reporting instrumentation's shared Purchase-dedup id (review
   // finding: this exact link previously existed in code but was never
@@ -190,22 +190,22 @@ test('valid request (pack199, not the starter) -> 200 with checkout url + sessio
   assert.equal(sentBody.allow_tax_id, undefined, 'allow_tax_id must NOT be sent as a top-level field -- Dodo\'s API silently ignores it there, leaving the real default (true) in effect');
 });
 
-test('pack499 maps to DODO_PRODUCT_PACK_MEDIUM1500 and carries 1500 tokens/$4.99 in metadata', async function () {
+test('pack499 maps to DODO_PRODUCT_PACK_MEDIUM1500 and carries 1000 tokens/$4.99 in metadata', async function () {
   var captured = stubFetchCapture();
   await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack499' } }));
   var sentBody = JSON.parse(captured.calls[0].init.body);
   assert.equal(sentBody.product_cart[0].product_id, 'pdt_pack499_test');
-  assert.equal(sentBody.metadata.dreamtube_tokens, 1500);
+  assert.equal(sentBody.metadata.dreamtube_tokens, 1000);
   assert.equal(sentBody.metadata.dreamtube_price, 4.99);
   assert.equal(sentBody.metadata.dreamtube_starter, false);
 });
 
-test('pack999 maps to DODO_PRODUCT_PACK_LARGE4000 and carries 4000 tokens/$9.99 in metadata', async function () {
+test('pack999 maps to DODO_PRODUCT_PACK_LARGE4000 and carries 2500 tokens/$9.99 in metadata', async function () {
   var captured = stubFetchCapture();
   await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack999' } }));
   var sentBody = JSON.parse(captured.calls[0].init.body);
   assert.equal(sentBody.product_cart[0].product_id, 'pdt_pack999_test');
-  assert.equal(sentBody.metadata.dreamtube_tokens, 4000);
+  assert.equal(sentBody.metadata.dreamtube_tokens, 2500);
   assert.equal(sentBody.metadata.dreamtube_price, 9.99);
   assert.equal(sentBody.metadata.dreamtube_starter, false);
 });

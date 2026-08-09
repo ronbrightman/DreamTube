@@ -93,9 +93,9 @@
   // ==========================================================================
   var PACK_INFO = {
     pack099: { tokens: 300, price: 0.99 },
-    pack199: { tokens: 500, price: 1.99 },
-    pack499: { tokens: 1500, price: 4.99 },
-    pack999: { tokens: 4000, price: 9.99 }
+    pack199: { tokens: 500, price: 2.99 },
+    pack499: { tokens: 1000, price: 4.99 },
+    pack999: { tokens: 2500, price: 9.99 }
   };
   var PACK_ORDER = ['pack099', 'pack199', 'pack499', 'pack999'];
 

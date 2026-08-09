@@ -143,7 +143,7 @@ function getHeader(event, name) {
 // an OLD pack100/300/700 webhook record as this new lineup). No more +50%
 // first-purchase bonus — retired along with the old lineup; see
 // lib/entitlements.js's creditTokenPackAmountOnce doc comment.
-var PACK_TOKENS = { pack099: 300, pack199: 500, pack499: 1500, pack999: 4000 };
+var PACK_TOKENS = { pack099: 300, pack199: 500, pack499: 1000, pack999: 2500 };
 
 // USD price per pack — same mirrored-copy reasoning as PACK_TOKENS above,
 // and same fallback role: create-checkout-session-dodo.js's own
@@ -151,7 +151,7 @@ var PACK_TOKENS = { pack099: 300, pack199: 500, pack499: 1500, pack999: 4000 };
 // this local copy only matters if that metadata is ever missing (a
 // purchase made before this field existed) AND the product_id -> pack
 // mapping below also fails to resolve — see resolvePackPrice.
-var PACK_PRICES = { pack099: 0.99, pack199: 1.99, pack499: 4.99, pack999: 9.99 };
+var PACK_PRICES = { pack099: 0.99, pack199: 2.99, pack499: 4.99, pack999: 9.99 };
 
 // pack099 is the one-time starter SKU — see create-checkout-session-dodo.js's
 // header comment for the one-time-per-account enforcement (checked THERE,

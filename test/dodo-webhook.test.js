@@ -199,7 +199,7 @@ test('payment.succeeded fires a server-side Purchase to BOTH PostHog and Meta CA
   assert.ok(metaEvent.event_time, 'event_time should be present');
 });
 
-test('pack199 resolves price 1.99 for the Purchase event, and starter:false', async function () {
+test('pack199 resolves price 2.99 for the Purchase event, and starter:false', async function () {
   await seedZeroBalance('purchase300@example.com');
   var spies = installAnalyticsFetchSpy();
   await handler(signedEvent(paymentPayload({
@@ -208,9 +208,9 @@ test('pack199 resolves price 1.99 for the Purchase event, and starter:false', as
     customer: { customer_id: 'cus_300a', email: 'purchase300@example.com' },
     metadata: { dreamtube_event_id: 'evt-300' }
   })));
-  assert.equal(spies.posthogCalls[0].body.properties.value, 1.99);
+  assert.equal(spies.posthogCalls[0].body.properties.value, 2.99);
   assert.equal(spies.posthogCalls[0].body.properties.starter, false);
-  assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 1.99);
+  assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 2.99);
 });
 
 test('pack499 resolves price 4.99 for the Purchase event, and starter:false', async function () {
@@ -429,7 +429,7 @@ test('payment.succeeded for pack199 credits 500 tokens', async function () {
   assert.equal(record.tokens.balance, 500);
 });
 
-test('payment.succeeded for pack499 credits 1500 tokens', async function () {
+test('payment.succeeded for pack499 credits 1000 tokens', async function () {
   await seedZeroBalance('499buyer@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_499',
@@ -438,10 +438,10 @@ test('payment.succeeded for pack499 credits 1500 tokens', async function () {
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, '499buyer@example.com');
-  assert.equal(record.tokens.balance, 1500);
+  assert.equal(record.tokens.balance, 1000);
 });
 
-test('payment.succeeded for pack999 credits 4000 tokens', async function () {
+test('payment.succeeded for pack999 credits 2500 tokens', async function () {
   await seedZeroBalance('700buyer@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_700',
@@ -450,7 +450,7 @@ test('payment.succeeded for pack999 credits 4000 tokens', async function () {
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, '700buyer@example.com');
-  assert.equal(record.tokens.balance, 4000);
+  assert.equal(record.tokens.balance, 2500);
 });
 
 test('tokens stack onto an existing balance rather than replacing it', async function () {
@@ -761,7 +761,7 @@ test('a payment whose customer block carries no customer_id (or no customer bloc
   assert.equal(record.tokens.balance, 300, 'the credit itself must still land even with no customer block present');
 });
 
-test('pack999\'s first-ever purchase also credits the plain 4000 base tokens -- no bonus regardless of pack size', async function () {
+test('pack999\'s first-ever purchase also credits the plain 2500 base tokens -- no bonus regardless of pack size', async function () {
   await seedZeroBalanceNoPriorPurchase('firstbonus700@example.com');
   var res = await handler(signedEvent(paymentPayload({
     payment_id: 'pay_first_bonus_700',
@@ -770,7 +770,7 @@ test('pack999\'s first-ever purchase also credits the plain 4000 base tokens -- 
   })));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'firstbonus700@example.com');
-  assert.equal(record.tokens.balance, 4000, 'plain base amount, no +50% bonus');
+  assert.equal(record.tokens.balance, 2500, 'plain base amount, no +50% bonus');
 });
 
 // ----- `starter` flag on the Purchase conversion event (tracker item
@@ -807,7 +807,7 @@ test('the Purchase event\'s `starter` flag defaults to false (never undefined) w
     payment_id: 'pay_starter_flag_fallback',
     product_cart: [{ product_id: 'pdt_some_rotated_product', quantity: 1 }],
     customer: { customer_id: 'cus_starter_flag_fallback', email: 'starterflagfallback@example.com' },
-    metadata: { dreamtube_event_id: 'evt-starter-flag-fallback', dreamtube_tokens: 500, dreamtube_price: 1.99 }
+    metadata: { dreamtube_event_id: 'evt-starter-flag-fallback', dreamtube_tokens: 500, dreamtube_price: 2.99 }
   })));
   assert.equal(spies.posthogCalls[0].body.properties.starter, false, 'an unresolvable starter flag must fail toward false, never undefined -- this is an analytics dimension on an otherwise-fully-resolvable event, not worth losing the whole Purchase fire over');
 });
