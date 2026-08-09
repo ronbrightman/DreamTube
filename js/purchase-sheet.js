@@ -585,7 +585,25 @@
               purchaseFlow: 'blocked_action',
               source: opts.source || 'blocked_action',
               mediaType: opts.mediaType || null,
-              cost: opts.cost || null
+              cost: opts.cost || null,
+              // This sheet's own opts.balance — the account's token
+              // balance AT THE MOMENT the sheet opened (see show()'s own
+              // doc comment on that field) — carried through as the
+              // pre-purchase baseline home.html's checkout-return
+              // confirmation needs (tracker item follow-up-home-html-
+              // checkout-return-has--hm8na5). Mirrors shop.html's own
+              // identical balanceBefore field on its copy of this marker.
+              // `opts` here is the SAME object show() was called with
+              // (this whole file shares one module-scope `opts`/`current`
+              // per open sheet — see wireBuyButton's own parameter, not a
+              // second/different opts), so opts.balance really is the
+              // sheet's own balance, not something stale. Null when
+              // tokenStatus hadn't loaded yet when the sheet opened (show()
+              // itself already defaults a missing opts.balance to 0 for
+              // its own arithmetic — that 0 must NOT leak into this
+              // marker as a fabricated baseline, so this reads opts.balance
+              // directly rather than the sheet's already-defaulted local).
+              balanceBefore: (typeof opts.balance === 'number' ? opts.balance : null)
             }));
           } catch (e) { /* sessionStorage unavailable (e.g. private mode) — worst case the return trip just won't auto-resume or fire the conversion events */ }
           location.href = data.url;

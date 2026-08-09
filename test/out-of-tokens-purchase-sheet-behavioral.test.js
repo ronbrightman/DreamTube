@@ -513,8 +513,12 @@ test('home.html: a mocked successful checkout return auto-resumes the exact bloc
     var page = await context.newPage();
     await blockThirdParty(page);
     // Balance is already sufficient on the very first poll — the credit
-    // "already landed" by the time this page loads.
-    await mockTokenStatus(page, { balance: 150, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+    // "already landed" by the time this page loads. Set to EXACTLY
+    // balanceBefore(50) + packTokens(300) = 350 -- the real
+    // Math.min(balanceBefore, arrivalBalance) + packTokens threshold this
+    // test is proving (tracker item follow-up-home-html-checkout-return-
+    // has--hm8na5, bug 1 fix), not the old buggy flat-cost(100) threshold.
+    await mockTokenStatus(page, { balance: 350, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
 
     var generateVideoCalls = [];
     await page.route('**/.netlify/functions/generate-video', function (route) {
@@ -530,7 +534,11 @@ test('home.html: a mocked successful checkout return auto-resumes the exact bloc
     await seedAccount(page, {
       username: 'autoresume',
       draft: { caption: 'A dream about flying whales over the ocean', style: 'Cinematic', mediaType: 'video' },
-      pendingPurchase: { pack: 'pack099', tokens: 300, price: 0.99, eventId: 'evt-resume-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
+      // balanceBefore: 50 -- the account's balance when the out-of-tokens
+      // sheet opened, threaded through by js/purchase-sheet.js's
+      // wireBuyButton (see that file's own comment). Combined with
+      // tokens:300 this pins the real confirmation threshold at 350.
+      pendingPurchase: { pack: 'pack099', tokens: 300, price: 0.99, eventId: 'evt-resume-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100, balanceBefore: 50 }
     });
 
     await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
@@ -558,23 +566,97 @@ test('home.html: a mocked successful checkout return auto-resumes the exact bloc
 });
 
 // ============================================================================
-// Honest-degrade path — the credit is still lagging past the poll window.
-// home.html has no dedicated "payment received" resume screen (unlike the
-// now-removed processing.html) -- it degrades to a plain toast instead,
-// since Home is always a fully usable, revisitable surface rather than a
-// wait-screen dead end. There is deliberately no manual "Generate" retry
-// button tied to this specific resume anymore (tracker item for-product-
-// funnel-ending-v2-founder-ins-tfuu0q's own scope decision) -- a user in
-// this state can simply retry from the Tonight hero / create.html once
-// their balance updates, same as any other blocked attempt.
+// Bug 1 regression (tracker item follow-up-home-html-checkout-return-has--
+// hm8na5): the OLD threshold was just pendingPurchase.cost (e.g. 100 for a
+// video) -- a much smaller number than a real pack (300+), reachable by
+// something that has nothing to do with the purchase at all (a daily-claim
+// credit landing around the same time, a stale/racy read). The fix requires
+// a genuine Math.min(balanceBefore, arrivalBalance) + packTokens jump.
 // ============================================================================
-test('home.html: when the token credit is still lagging past the poll window, it degrades honestly (a toast, never a hang or a silent auto-fire) instead of erroring', async function (t) {
+test('home.html: an unrelated balance bump that clears the OLD flat-cost threshold does NOT fire a premature auto-resume', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    // Balance never crosses the needed threshold during the (shrunk) poll window.
+
+    // balanceBefore(90) + packTokens(300) = 390 is the REAL threshold this
+    // test proves. The old buggy threshold was just pendingPurchase.cost
+    // (100) -- bumped to 110 below ("bumped" phase), comfortably clearing
+    // that old number while nowhere near a real pack credit. The old code
+    // would have auto-resumed off this bump alone.
+    var phase = 'before'; // 'before' -> 'bumped' (unrelated, e.g. a daily claim) -> 'realcredit'
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      var balance = phase === 'realcredit' ? 390 : (phase === 'bumped' ? 110 : 90);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: balance, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 }) });
+    });
+
+    var generateVideoCalls = [];
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      var body = null;
+      try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+      generateVideoCalls.push(body);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:veo3.1:bug1-regression' }) });
+    });
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/bug1-video.mp4' }) });
+    });
+
+    await page.addInitScript(function () {
+      window.__TEST_POLL_OVERRIDES__ = { intervalMs: 60, maxMs: 5000 };
+    });
+
+    await seedAccount(page, {
+      username: 'bug1regression',
+      draft: { caption: 'A dream about two moons', style: 'Cinematic', mediaType: 'video' },
+      pendingPurchase: { pack: 'pack099', tokens: 300, price: 0.99, eventId: 'evt-bug1-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100, balanceBefore: 90 }
+    });
+
+    await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return t && t.classList.contains('show') && /resuming your dream/i.test(t.textContent);
+    }, null, { timeout: 3000 });
+
+    // Let a couple of poll ticks pass at the starting balance first.
+    await page.waitForTimeout(150);
+    phase = 'bumped';
+    // Give the bumped (but still-insufficient-for-a-real-pack) balance
+    // several poll ticks to prove it does NOT satisfy the confirmation --
+    // this is exactly what the old cost-only threshold (100) would have
+    // fired on.
+    await page.waitForTimeout(400);
+    assert.equal(generateVideoCalls.length, 0, 'an unrelated balance bump clearing the OLD flat-cost(100) threshold must not fire the resume -- only a genuine pack-sized credit may');
+
+    // Now the REAL pack credit lands.
+    phase = 'realcredit';
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 8000 });
+    await settle(function () { return generateVideoCalls.length >= 1; });
+    assert.equal(generateVideoCalls.length, 1, 'the genuine full pack credit must still resume the blocked generation correctly');
+    assert.equal(generateVideoCalls[0].caption, 'A dream about two moons');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// Honest-degrade path — the credit is still lagging past the poll window.
+// Rebuilt (tracker item follow-up-home-html-checkout-return-has--hm8na5,
+// bug 2) to mirror shop.html's own retryable "still confirming" banner: a
+// 2.2s toast that vanishes forever was the exact "silent give-up" bug this
+// fix closes, so the honest-degrade state now renders the persistent
+// #checkout-confirm-card instead, with a real "Check again" affordance
+// (never a hang, never a silent auto-fire, and never a state that just
+// disappears with no way back to it).
+// ============================================================================
+test('home.html: when the token credit is still lagging past the poll window, it degrades to a persistent, retryable card (never a hang, a silent auto-fire, or a vanishing toast)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Balance never crosses the needed threshold (balanceBefore 40 +
+    // packTokens 300 = 340) during the (shrunk) poll window.
     await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
 
     var generateVideoCalls = [];
@@ -594,16 +676,143 @@ test('home.html: when the token credit is still lagging past the poll window, it
     await seedAccount(page, {
       username: 'degradepath',
       draft: { caption: 'A dream about a lighthouse in the fog', style: 'Realistic', mediaType: 'video' },
-      pendingPurchase: { pack: 'pack099', tokens: 300, price: 0.99, eventId: 'evt-degrade-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100 }
+      pendingPurchase: { pack: 'pack099', tokens: 300, price: 0.99, eventId: 'evt-degrade-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100, balanceBefore: 40 }
     });
 
     await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
 
+    // The initial "Payment received — resuming your dream…" toast still
+    // fires (unchanged) before the poll window elapses.
     await page.waitForFunction(function () {
       var t = document.getElementById('toast');
-      return t && t.classList.contains('show') && /tokens on the way/i.test(t.textContent);
-    }, null, { timeout: 5000 });
+      return t && t.classList.contains('show') && /resuming your dream/i.test(t.textContent);
+    }, null, { timeout: 3000 });
+
+    // THE FIX: once the window elapses, an explicit, persistent, retryable
+    // card appears -- not a toast that's already gone.
+    await page.waitForSelector('#checkout-confirm-card:visible', { timeout: 3000 });
+    var title = await page.textContent('#checkout-confirm-title');
+    assert.match(title, /still confirming/i);
+    var sub = await page.textContent('#checkout-confirm-sub');
+    assert.match(sub, /haven.t reached your balance yet/i);
+    var actionLabel = await page.textContent('#checkout-confirm-action');
+    assert.match(actionLabel, /check again/i);
+    var actionVisible = await page.isVisible('#checkout-confirm-action');
+    assert.equal(actionVisible, true, 'a real retry affordance must be offered, not a state with no way back to it');
+
+    // Give the card plenty of time to prove it does NOT auto-dismiss the
+    // way the old 2.2s toast did.
+    await page.waitForTimeout(1500);
+    var stillVisible = await page.isVisible('#checkout-confirm-card');
+    assert.equal(stillVisible, true, 'the card must stay on screen until the user acts -- never silently vanish like the old toast');
+
     assert.equal(generateVideoCalls.length, 0, 'must never auto-fire generation while the credit is still unconfirmed');
+  } finally {
+    await context.close();
+  }
+});
+
+test('home.html: tapping "Check again" on the unconfirmed card re-polls and resumes normally once the real credit has landed', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Starts short of the threshold (balanceBefore 40 + packTokens 300 =
+    // 340) so the FIRST confirmation attempt times out into the card; the
+    // real credit lands only after that, simulating a slow webhook the
+    // user comes back and manually rechecks for.
+    var creditLanded = false;
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: creditLanded ? 340 : 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 }) });
+    });
+
+    var generateVideoCalls = [];
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      var body = null;
+      try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+      generateVideoCalls.push(body);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:veo3.1:check-again-resume' }) });
+    });
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/check-again-video.mp4' }) });
+    });
+
+    await page.addInitScript(function () {
+      window.__TEST_POLL_OVERRIDES__ = { intervalMs: 60, maxMs: 250 };
+    });
+
+    await seedAccount(page, {
+      username: 'checkagainresume',
+      draft: { caption: 'A dream about a train through the mountains', style: 'Anime', mediaType: 'video' },
+      pendingPurchase: { pack: 'pack099', tokens: 300, price: 0.99, eventId: 'evt-checkagain-1', purchaseFlow: 'blocked_action', source: 'blocked_action', mediaType: 'video', cost: 100, balanceBefore: 40 }
+    });
+
+    await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#checkout-confirm-card:visible', { timeout: 3000 });
+    assert.equal(generateVideoCalls.length, 0, 'must not have fired yet -- the first attempt genuinely timed out unconfirmed');
+
+    // The real credit lands NOW, between the first timeout and the retry.
+    creditLanded = true;
+    await page.click('#checkout-confirm-action');
+
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 8000 });
+    await settle(function () { return generateVideoCalls.length >= 1; });
+    assert.equal(generateVideoCalls.length, 1, 'the retry must resume the exact blocked generation once the real credit is found');
+    assert.equal(generateVideoCalls[0].caption, 'A dream about a train through the mountains');
+    var cardHiddenAfter = await page.isVisible('#checkout-confirm-card');
+    assert.equal(cardHiddenAfter, false, 'the card must clear itself once the retry actually confirms the credit');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// No-baseline fallback — a marker-less return (private-mode / cross-tab
+// checkout) whose FIRST arrival read also fails must retry inside the same
+// shared window and resolve into the same honest "unconfirmed" card if
+// nothing ever succeeds, never a fabricated confirmation and never a hang.
+// Exercises retryArrivalBalance/resolveUnconfirmed('no_baseline'), the one
+// branch of startCreditConfirmation none of the other tests in this file
+// reach (every other test's arrival read succeeds on the first try).
+// ============================================================================
+test('home.html: checkout=success with no marker AND a persistently failing balance read resolves into the honest unconfirmed card, never a hang or a fabricated confirmation', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Every get-token-status read fails -- no baseline is EVER obtainable
+    // (real DreamStore.getTokenStatus() rejects on a data.error response —
+    // see that function's own `if (data.error) throw ...`).
+    await page.route('**/.netlify/functions/get-token-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ error: 'E_FAKE: simulated persistent failure' }) });
+    });
+
+    var generateVideoCalls = [];
+    await page.route('**/.netlify/functions/generate-video', function (route) {
+      generateVideoCalls.push(true);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:veo3.1:should-not-fire-nobaseline' }) });
+    });
+
+    await page.addInitScript(function () {
+      window.__TEST_POLL_OVERRIDES__ = { intervalMs: 60, maxMs: 250 };
+    });
+
+    // Deliberately no pendingPurchase -- no balanceBefore is obtainable
+    // from a marker either, so this exercises the true no-baseline-at-all
+    // path.
+    await seedAccount(page, {
+      username: 'nobaselineever',
+      draft: { caption: 'A dream about an empty train station', style: 'Realistic', mediaType: 'video' }
+    });
+
+    await page.goto(baseUrl + '/home.html?checkout=success', { waitUntil: 'domcontentloaded' });
+
+    await page.waitForSelector('#checkout-confirm-card:visible', { timeout: 3000 });
+    var title = await page.textContent('#checkout-confirm-title');
+    assert.match(title, /still confirming/i);
+    assert.equal(generateVideoCalls.length, 0, 'must never fabricate a confirmation when no real baseline was ever obtainable');
   } finally {
     await context.close();
   }
@@ -645,12 +854,15 @@ test('home.html: pagehide cancels the in-flight credit poll -- a stale poll tick
     // this is what actually proves cancellation (not merely "the balance
     // never happened to cross the threshold") stopped the resume: without
     // the pagehide fix, this credit landing would have satisfied the very
-    // next poll tick and fired runGeneration().
+    // next poll tick and fired runGeneration(). No balanceBefore in the
+    // marker below, so the real (post-fix) baseline comes from the arrival
+    // read (10) -- 10 + packTokens(300) = 310 is the genuine confirmation
+    // threshold this credit landing must clear.
     var creditLanded = false;
     var tokenStatusCallCount = 0;
     await page.route('**/.netlify/functions/get-token-status*', function (route) {
       tokenStatusCallCount++;
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: creditLanded ? 150 : 10, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 }) });
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: creditLanded ? 310 : 10, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 }) });
     });
 
     var generateVideoCalls = [];

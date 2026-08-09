@@ -885,6 +885,35 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
 .toast{ position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px); transform:translate(-50%,10px); background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink); padding:10px 18px; border-radius:99px; font-size:15px; font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; z-index:30; max-width:88%; text-align:center; }
 .toast.show{ opacity:1; transform:translate(-50%,0); }
+
+/* --- Checkout-return confirmation card (tracker item follow-up-home-html-
+   checkout-return-has--hm8na5) --- shown ONLY when a post-purchase token
+   credit genuinely could not be confirmed inside handleCheckoutReturn's
+   poll window (or no real pre-purchase baseline could ever be
+   established) -- see that function's own startCreditConfirmation/
+   resolveUnconfirmed doc comment. A toast would repeat exactly the bug
+   this whole confirmation path exists to fix (shown once, gone in ~2.2s,
+   never seen again if the user blinked) -- this is a small, persistent,
+   on-page card instead, mirroring shop.html's own #shop-checkout-banner
+   in spirit but scaled to this page's own card language, since a lagging
+   credit here still has home.html's normal generating-tile UI as its own
+   real completion signal once it lands -- this card only covers the
+   "still confirming" honesty gap in front of that, not the happy path.
+   Hidden by default; only handleCheckoutReturn ever shows it. --- */
+.checkout-confirm-card{
+  border:1px solid var(--home-line); border-radius:16px;
+  padding:14px 16px; margin-top:16px;
+  background:rgba(157,144,255,.08);
+}
+.checkout-confirm-title{ font-size:14.5px; font-weight:800; color:var(--home-ink); }
+.checkout-confirm-sub{ margin-top:6px; font-size:13px; line-height:1.5; color:var(--home-soft); }
+.checkout-confirm-btn{
+  margin-top:10px; display:inline-flex; align-items:center; gap:6px;
+  min-height:40px; padding:0 16px; border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206; font:800 13.5px var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.checkout-confirm-btn:active{ transform:scale(.97); }
 </style>
 </head>
 <body>
@@ -1150,6 +1179,19 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
            (or leaves empty, if its own gates don't pass — see that file's
            header comment) it. -->
       <div id="notify-card-slot"></div>
+
+      <!-- Dodo-checkout-return confirmation card (tracker item follow-up-
+           home-html-checkout-return-has--hm8na5) -- hidden by default;
+           only shown by handleCheckoutReturn's resolveUnconfirmed() when a
+           post-purchase token credit could not be confirmed inside the
+           poll window (or no real baseline could ever be established).
+           See that function's own doc comment and .checkout-confirm-card's
+           CSS comment for why an on-page card, not a toast. -->
+      <div class="checkout-confirm-card" id="checkout-confirm-card" style="display:none;">
+        <div class="checkout-confirm-title" id="checkout-confirm-title"></div>
+        <div class="checkout-confirm-sub" id="checkout-confirm-sub"></div>
+        <button type="button" class="checkout-confirm-btn" id="checkout-confirm-action" style="display:none;"></button>
+      </div>
 
       <!-- NEW ③ · CONSIDER PUBLISHING — the account's own UNPUBLISHED
            dreams (js/dream-cards.js's unpublishedTileHTML). Conditional:
@@ -3137,19 +3179,247 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     pollForPendingJobToAppear(30);
   })();
 
-  // Holds pollForCredit's own returned cancel() while a poll from the
-  // checkout-return handler below is actually in flight, null otherwise —
-  // ported verbatim from processing.html's own identical fix (tracker item
-  // purchase-sheet-checkout-auto-resume-two--ltinmn, gap 1): without this,
-  // a poll left running when the user navigates away could still fire
-  // onCredited -> a real generation submission later, if the browser
-  // bfcache-restores this exact page with the poll's setTimeout chain
-  // still alive. Same bug class as this codebase's other "async callback
-  // side effects not scoped to the navigation that started it" fixes.
+  // ===== Dodo-checkout-return CREDIT CONFIRMATION (tracker item
+  // follow-up-home-html-checkout-return-has--hm8na5) =====
+  // Rebuilt to mirror shop.html's own startCreditConfirmation — see that
+  // function's extensive doc comment in shop.html (search "WHY A BASELINE
+  // IS NEVER FABRICATED") for the full reasoning; this is a deliberate
+  // port, not a re-derivation, and differs from shop.html only where
+  // called out below. The single-threshold version this replaced had two
+  // real weaknesses, found in review of this exact block:
+  //
+  //  1. (the serious one) neededBalance was just the blocked action's raw
+  //     cost (e.g. 100 tokens for a video) — NOT a real pre-purchase
+  //     baseline plus the purchased pack's token count. Since
+  //     PurchaseSheet.pollForCredit fires onCredited the moment
+  //     `status.balance >= neededBalance` (strict >=, see that function),
+  //     ANY unrelated balance bump that happened to clear that much
+  //     smaller number — a daily-claim credit landing around the same
+  //     time, a stale/racy read — could fire onCredited well before the
+  //     REAL purchase webhook (worth 300+ tokens) had actually landed,
+  //     then submit a fresh generation off a balance the purchase never
+  //     really topped up, which could still fail server-side with E112.
+  //     Fixed the same way shop.html's own bug was fixed: the confirmation
+  //     threshold is now `Math.min(balanceBefore, arrivalBalance) +
+  //     packTokens` — a genuine full pack-sized jump above at least one
+  //     honest baseline, never fabricated (see beginPoll's own comment).
+  //
+  //  2. onTimeout was just a 2.2s toast ("Tokens on the way — try creating
+  //     again in a moment.") and nothing else — gone long before a lagging
+  //     credit could land, with no way back to it. Less severe than
+  //     shop.html's equivalent bug (a successful credit here still visibly
+  //     resumes the dream, a real completion signal — that's why this
+  //     wasn't fixed as part of the shop.html-only PR, not a reason to
+  //     leave it) but the same silent-give-up class. Fixed with the
+  //     on-page #checkout-confirm-card (see its own CSS/markup comments) —
+  //     an explicit, retryable "still confirming" state that never
+  //     silently expires, with a real "Check again" affordance.
+  //
+  // Grepped the rest of this repo for other checkout-return / token-
+  // credit-poll call sites while fixing this (per the tracker item's own
+  // note that the shop.html bug existed because an ad-hoc setInterval sat
+  // next to this shared helper) — home.html and shop.html are the only
+  // two pages with a ?checkout=success handler; processing.html no longer
+  // exists (removed with tracker item for-product-funnel-ending-v2-
+  // founder-ins-tfuu0q) and nothing else in the repo calls
+  // PurchaseSheet.pollForCredit directly. No third drifted copy found.
+
+  // Holds pollForCredit's own returned cancel() while a confirmation
+  // attempt (baseline-establishment OR the poll that follows it) is
+  // genuinely in flight, null otherwise — ported verbatim from
+  // shop.html's identical guard (itself extending the single-phase
+  // version this replaced, tracker item purchase-sheet-checkout-auto-
+  // resume-two--ltinmn): without this, a poll left running when the user
+  // navigates away could still fire onCredited -> a real generation
+  // submission later, if the browser bfcache-restores this exact page
+  // with the poll's setTimeout chain still alive.
   var activeCreditPollCancel = null;
-  window.addEventListener('pagehide', function(){
+
+  // Monotonic id of the CURRENT confirmation attempt — every async step
+  // below (the baseline-read's own continuation, and pollForCredit's own
+  // two callbacks) checks it before touching shared state, so a
+  // superseded attempt (a "Check again" tap, or a dismiss/navigation) can
+  // never resume generation or repaint the card on behalf of an attempt
+  // that no longer exists. Cancelling the in-flight poll alone isn't
+  // sufficient — an arrival read still in flight has no poll to cancel
+  // yet, and would otherwise go on to start one afterwards. Ported
+  // verbatim from shop.html's identical creditConfirmAttempt/isCurrent
+  // pattern (shop.html's own round-2 review fix).
+  var creditConfirmAttempt = 0;
+
+  function abandonCreditConfirmation(){
+    creditConfirmAttempt++;
     if(activeCreditPollCancel){ activeCreditPollCancel(); activeCreditPollCancel = null; }
-  });
+  }
+  window.addEventListener('pagehide', abandonCreditConfirmation);
+
+  var checkoutConfirmCardEl = document.getElementById('checkout-confirm-card');
+  var checkoutConfirmTitleEl = document.getElementById('checkout-confirm-title');
+  var checkoutConfirmSubEl = document.getElementById('checkout-confirm-sub');
+  var checkoutConfirmActionEl = document.getElementById('checkout-confirm-action');
+
+  /** Shows the checkout-confirm card. Omitting `action` hides the button entirely rather than leaving a stale one from a previous state — same contract as shop.html's renderCheckoutBanner. */
+  function renderCheckoutConfirmCard(title, sub, action){
+    checkoutConfirmTitleEl.textContent = title;
+    checkoutConfirmSubEl.textContent = sub;
+    if(action){
+      checkoutConfirmActionEl.textContent = action.label;
+      checkoutConfirmActionEl.style.display = '';
+      checkoutConfirmActionEl.onclick = action.onTap;
+    } else {
+      checkoutConfirmActionEl.style.display = 'none';
+      checkoutConfirmActionEl.onclick = null;
+    }
+    checkoutConfirmCardEl.style.display = '';
+  }
+  function hideCheckoutConfirmCard(){
+    checkoutConfirmCardEl.style.display = 'none';
+    checkoutConfirmActionEl.onclick = null;
+  }
+
+  /**
+   * Polls get-token-status until this purchase's tokens have PROVABLY
+   * landed, then resumes the blocked generation exactly as before. Port of
+   * shop.html's startCreditConfirmation — read that function's own doc
+   * comment for the full two-baseline reasoning ("WHY A BASELINE IS NEVER
+   * FABRICATED"). Differences from shop.html, both deliberate:
+   *
+   *  - onCredited here must still run home.html's own full auto-resume
+   *    sequence (fireBlockedActionResumed, the pendingJob defensive guard,
+   *    beginOptimisticFreshGeneration, refreshHomeState,
+   *    onGenerationSettled(startFreshGenerationFromDraft()),
+   *    pollForPendingJobToAppear(30)) — shop.html has none of that, it
+   *    only refreshes its own balance display.
+   *  - the marker-less fallback (no pendingPurchase.tokens) uses
+   *    draftMediaTypeCost() rather than shop.html's flat `1` — a
+   *    marker-less return HERE still has a real draft to resume with a
+   *    real, known cost (private-mode/cross-tab checkout, same case the
+   *    existing "missing marker" test covers), so "did a full
+   *    action-sized amount land" is the honest, available question, not
+   *    merely "did anything land at all".
+   */
+  function startCreditConfirmation(pendingPurchase){
+    var packTokens = (pendingPurchase && typeof pendingPurchase.tokens === 'number' && pendingPurchase.tokens > 0) ? pendingPurchase.tokens : null;
+    var balanceBefore = (pendingPurchase && typeof pendingPurchase.balanceBefore === 'number') ? pendingPurchase.balanceBefore : null;
+
+    // Supersedes (and cancels) whatever attempt came before, then claims
+    // the new id — every async continuation below bails if this moves on
+    // without it.
+    abandonCreditConfirmation();
+    var attempt = creditConfirmAttempt;
+    function isCurrent(){ return creditConfirmAttempt === attempt; }
+
+    // window.__TEST_POLL_OVERRIDES__ (intervalMs/maxMs) lets
+    // test/out-of-tokens-purchase-sheet-behavioral.test.js shrink the real
+    // ~75s poll window down to something a browser test can actually run
+    // in; undefined/absent in every real page load. Read ONCE here (not
+    // per-phase) so the baseline-establishment phase below and the poll
+    // after it share ONE budget, not two — same reasoning as shop.html's
+    // identical read.
+    var pollOverrides = window.__TEST_POLL_OVERRIDES__ || {};
+    var intervalMs = typeof pollOverrides.intervalMs === 'number' ? pollOverrides.intervalMs : PurchaseSheet.POLL_INTERVAL_MS;
+    var maxMs = typeof pollOverrides.maxMs === 'number' ? pollOverrides.maxMs : PurchaseSheet.POLL_MAX_MS;
+    var deadline = Date.now() + maxMs;
+
+    hideCheckoutConfirmCard();
+    showToast('Payment received — resuming your dream…');
+
+    readArrivalBalance();
+
+    /** Reads the balance as it stands right now — usually becomes the arrival baseline. On failure/malformed response, leans on balanceBefore if the marker carried one, or retries (see retryArrivalBalance). */
+    function readArrivalBalance(){
+      DreamStore.getTokenStatus().then(function(arrival){
+        if(!isCurrent()) return;
+        var arrivalBalance = (arrival && typeof arrival.balance === 'number') ? arrival.balance : null;
+        if(arrivalBalance != null || balanceBefore != null){ beginPoll(arrivalBalance); return; }
+        retryArrivalBalance();
+      }).catch(function(){
+        if(!isCurrent()) return;
+        if(balanceBefore != null){ beginPoll(null); return; }
+        retryArrivalBalance();
+      });
+    }
+
+    function retryArrivalBalance(){
+      if(Date.now() >= deadline){ resolveUnconfirmed('no_baseline'); return; }
+      var timer = setTimeout(function(){
+        if(!isCurrent()) return;
+        activeCreditPollCancel = null;
+        readArrivalBalance();
+      }, intervalMs);
+      // Parked in the same slot the poll's own cancel() uses, so a
+      // pagehide/"Check again" tears this phase down through exactly one
+      // path — the attempt-id guard above already makes the callback
+      // inert, this just stops the timer from lingering too.
+      activeCreditPollCancel = function(){ clearTimeout(timer); };
+    }
+
+    function beginPoll(arrivalBalance){
+      var baselines = [];
+      if(balanceBefore != null) baselines.push(balanceBefore);
+      if(arrivalBalance != null) baselines.push(arrivalBalance);
+      // Invariant, asserted where the arithmetic that depends on it lives
+      // (mirrors shop.html's identical "WHY A BASELINE IS NEVER
+      // FABRICATED" comment) — readArrivalBalance never calls this
+      // without a real baseline. If that ever stops being true, the
+      // honest non-confirming state is the safe direction to fail in,
+      // never a fabricated zero baseline.
+      if(!baselines.length){ resolveUnconfirmed('no_baseline'); return; }
+      var baseline = Math.min.apply(Math, baselines);
+      var neededBalance = baseline + (packTokens != null ? packTokens : draftMediaTypeCost());
+      activeCreditPollCancel = PurchaseSheet.pollForCredit({
+        neededBalance: neededBalance,
+        intervalMs: intervalMs,
+        // Whatever is left of the one shared window, so a slow baseline
+        // phase can't quietly buy the confirmation a second full window.
+        maxMs: Math.max(0, deadline - Date.now()),
+        onCredited: function(){
+          if(!isCurrent()) return;
+          activeCreditPollCancel = null;
+          hideCheckoutConfirmCard();
+          PurchaseSheet.fireBlockedActionResumed((pendingPurchase && pendingPurchase.source) || 'blocked_action');
+          // Same defensive guard handleFreshInAppGeneration above keeps
+          // "kept anyway, defensively, rather than trusted implicitly" —
+          // this path is likewise argued to be structurally exclusive of
+          // an already-real pendingJob, but checking costs nothing and
+          // this codebase has been bitten before by trusting an invariant
+          // instead of verifying it (review finding, funnel-ending-v2).
+          if(pendingJob) return;
+          // Same reasoning as the out-of-tokens image-fallback call site
+          // above — this callback fires well after first paint (it waits
+          // on a real token-credit poll), so it needs its own explicit
+          // optimistic render rather than relying on any priming done at
+          // page-load time.
+          beginOptimisticFreshGeneration();
+          refreshHomeState();
+          onGenerationSettled(startFreshGenerationFromDraft());
+          pollForPendingJobToAppear(30);
+        },
+        onTimeout: function(){ resolveUnconfirmed('timeout'); }
+      });
+    }
+
+    /**
+     * The one honest, non-confirming resolution — reached either because
+     * the window genuinely elapsed with the credit unobserved
+     * (reason: 'timeout') or because no real baseline could ever be
+     * established (reason: 'no_baseline'). Never silently vanishes (the
+     * bug this replaces) — stays on screen with a real "Check again"
+     * affordance until the user acts, and a later real credit (e.g. on a
+     * page revisit, which re-runs handleCheckoutReturn from a fresh
+     * ?checkout=success load — or a tap of Check again itself) still
+     * resolves normally by simply starting a brand-new attempt.
+     */
+    function resolveUnconfirmed(reason){
+      if(!isCurrent()) return;
+      activeCreditPollCancel = null;
+      renderCheckoutConfirmCard(
+        'Still confirming your tokens',
+        'Your payment went through and nothing more is owed — the tokens just haven’t reached your balance yet. This can take a minute.',
+        { label: 'Check again', onTap: function(){ startCreditConfirmation(pendingPurchase); } }
+      );
+    }
+  }
 
   (function handleCheckoutReturn(){
     var checkoutParam = PurchaseSheet.readCheckoutParam();
@@ -3158,46 +3428,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var pendingPurchase = PurchaseSheet.consumePendingPurchaseMarker();
     if(pendingPurchase) PurchaseSheet.fireSuccessPurchaseEvents(pendingPurchase);
 
-    var neededBalance = (pendingPurchase && pendingPurchase.cost) || draftMediaTypeCost();
-    showToast('Payment received — resuming your dream…');
-    // window.__TEST_POLL_OVERRIDES__ (intervalMs/maxMs) lets
-    // test/out-of-tokens-purchase-sheet-behavioral.test.js shrink the real
-    // ~75s poll window down to something a browser test can actually run
-    // in; undefined/absent in every real page load, so pollForCredit just
-    // falls back to its own real defaults — ported verbatim from
-    // processing.html's identical startCreditPoll() (dropping this was a
-    // bug: without it this poll silently used the real 75s/3s window and
-    // test 1036 timed out waiting on onTimeout that was still ~75s away).
-    var pollOverrides = window.__TEST_POLL_OVERRIDES__ || {};
-    activeCreditPollCancel = PurchaseSheet.pollForCredit({
-      neededBalance: neededBalance,
-      intervalMs: pollOverrides.intervalMs,
-      maxMs: pollOverrides.maxMs,
-      onCredited: function(){
-        activeCreditPollCancel = null;
-        PurchaseSheet.fireBlockedActionResumed((pendingPurchase && pendingPurchase.source) || 'blocked_action');
-        // Same defensive guard handleFreshInAppGeneration above keeps
-        // "kept anyway, defensively, rather than trusted implicitly" —
-        // this path is likewise argued to be structurally exclusive of an
-        // already-real pendingJob, but checking costs nothing and this
-        // codebase has been bitten before by trusting an invariant instead
-        // of verifying it (review finding, funnel-ending-v2).
-        if(pendingJob) return;
-        // Same reasoning as the out-of-tokens image-fallback call site
-        // above — this callback fires well after first paint (it waits on
-        // a real token-credit poll), so it needs its own explicit
-        // optimistic render rather than relying on any priming done at
-        // page-load time.
-        beginOptimisticFreshGeneration();
-        refreshHomeState();
-        onGenerationSettled(startFreshGenerationFromDraft());
-        pollForPendingJobToAppear(30);
-      },
-      onTimeout: function(){
-        activeCreditPollCancel = null;
-        showToast('Tokens on the way — try creating again in a moment.');
-      }
-    });
+    startCreditConfirmation(pendingPurchase);
   })();
 </script>
 </body>
