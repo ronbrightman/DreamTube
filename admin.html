@@ -147,6 +147,28 @@
         <div id="admin-reset-result" style="display:none; margin-top:4px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
       </div>
 
+      <!-- Manual Dreamer Pass trial activation — owner-only fallback for when
+           Dodo activated a subscription but the subscription.active webhook
+           didn't register it here (server gate in
+           admin-grant-dreamer-pass-trial.js does the real password + owner
+           check). Sets the account to trialing (100/day, 3-day window); never
+           grants the 3,000 monthly tokens (those come on the first real charge
+           via the webhook). -->
+      <div class="section-label" style="padding:0; margin-top:26px;">Dreamer Pass — manual trial activation</div>
+      <div class="choice-card" style="cursor:default; margin-top:10px; flex-direction:column; align-items:stretch; gap:0;">
+        <div class="choice-text" style="margin-bottom:12px;">
+          <div class="choice-title">Activate a Dreamer Pass trial</div>
+          <div class="admin-row-sub">Owner-only fallback for when Dodo activated a subscription but the webhook didn't register it here. Sets the target account to <b>trialing</b> (100 tokens/day for 3 days) — it does <b>not</b> grant the 3,000 monthly tokens (those land on the first real charge, via the webhook). Paste the Dodo subscription id if you have it.</div>
+        </div>
+        <input class="field" id="admin-trial-source" type="text" placeholder="Your owner username or email (for password check)" autocomplete="off" dir="auto">
+        <input class="field" id="admin-trial-password" type="password" placeholder="Your owner account's real password" autocomplete="current-password">
+        <input class="field" id="admin-trial-target" type="email" placeholder="Account email to activate (e.g. ronbrightman@gmail.com)" autocomplete="off" dir="auto">
+        <input class="field" id="admin-trial-sub" type="text" placeholder="Dodo subscription id (optional, sub_…)" autocomplete="off" dir="auto">
+        <button type="button" class="btn btn-primary btn-block" id="admin-trial-submit">Activate trial</button>
+        <div class="err-text" id="admin-trial-error" style="margin-top:4px;"></div>
+        <div id="admin-trial-result" style="display:none; margin-top:4px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
+      </div>
+
       <div style="margin-top:22px; text-align:center;">
         <a class="link-text" href="tracker.html">Open the tracker (open tasks &amp; ideas) →</a>
       </div>
@@ -488,6 +510,44 @@
         resetErrorEl.textContent = "Couldn't reach the server — check your connection and try again.";
       });
   });
+
+  // ===== Manual Dreamer Pass trial activation (server gate in
+  //       admin-grant-dreamer-pass-trial.js) =====
+  (function () {
+    var btn = document.getElementById('admin-trial-submit');
+    if (!btn) return;
+    var errEl = document.getElementById('admin-trial-error');
+    var resEl = document.getElementById('admin-trial-result');
+    var ERRS = {
+      'E4: missing_fields': 'Enter your owner username/email, password, and the target account email.',
+      'E5: forbidden': "Couldn't verify — that must be the owner account's real username/email + password."
+    };
+    btn.addEventListener('click', function () {
+      errEl.textContent = ''; resEl.style.display = 'none';
+      var usernameOrEmail = document.getElementById('admin-trial-source').value.trim();
+      var password = document.getElementById('admin-trial-password').value;
+      var targetEmail = document.getElementById('admin-trial-target').value.trim();
+      var subscriptionId = document.getElementById('admin-trial-sub').value.trim();
+      if (!usernameOrEmail || !password || !targetEmail) {
+        errEl.textContent = ERRS['E4: missing_fields']; return;
+      }
+      btn.disabled = true; btn.textContent = 'Activating…';
+      fetch('/.netlify/functions/admin-grant-dreamer-pass-trial', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernameOrEmail: usernameOrEmail, password: password, targetEmail: targetEmail, subscriptionId: subscriptionId || undefined })
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) {
+          btn.disabled = false; btn.textContent = 'Activate trial';
+          if (!x.ok || !x.j.ok) { errEl.textContent = ERRS[x.j && x.j.error] || (x.j && x.j.error) || 'Activation failed.'; return; }
+          var sub = x.j.subscription || {};
+          resEl.style.display = 'block';
+          resEl.textContent = '✅ ' + x.j.email + ' is now ' + (sub.trialing ? 'trialing' : sub.status) +
+            '. Daily claim: ' + x.j.dailyClaimAmount + ' tokens/day. Reopen the shop / home to see it.';
+        })
+        .catch(function () { btn.disabled = false; btn.textContent = 'Activate trial'; errEl.textContent = "Couldn't reach the server — try again."; });
+    });
+  })();
 
 </script>
 </body>
