@@ -6,7 +6,7 @@
 // valid-but-non-owner login), (2) that it clears exactly the named once-ever
 // markers a re-signup needs cleared (the token-init-grant marker, the
 // install/verify-email achievement markers, and the entitlement record), (3)
-// that a re-signup after a reset genuinely re-grants the 170 base + re-earns
+// that a re-signup after a reset genuinely re-grants the 150 base + re-earns
 // the bonuses, and (4) — critically — that a NORMAL entitlement deletion
 // (delete-account.js's own teardown) still LEAVES the token-init-grant
 // marker behind, which is what stops a real user from delete-then-re-signup
@@ -55,9 +55,9 @@ async function seedOwner(event) {
   return accountStore.createAccount(event, { username: 'ronbrightman', password: OWNER_PASSWORD, email: OWNER_EMAIL });
 }
 
-/** Materializes a full set of once-ever markers for `email`: the 170-token base grant (writes the token-init-grant marker + record), plus the install and verify-email achievement grants (each writes its outer marker + bumps balance). */
+/** Materializes a full set of once-ever markers for `email`: the 150-token base grant (writes the token-init-grant marker + record), plus the install and verify-email achievement grants (each writes its outer marker + bumps balance). */
 async function seedFullAccountState(event, email) {
-  await entitlements.getTokenStatus(event, email); // -> 170, writes token-init-grant marker
+  await entitlements.getTokenStatus(event, email); // -> 150, writes token-init-grant marker
   await entitlements.applyAchievementGrant(event, email, INSTALL_ID, { type: 'tokens', amount: 20 });
   await entitlements.applyAchievementGrant(event, email, VERIFY_ID, { type: 'tokens', amount: 20 });
 }
@@ -160,7 +160,7 @@ test('a valid owner reset clears the token-init-grant marker, both named achieve
 
 // ---------- Re-signup after a reset genuinely re-grants ----------
 
-test('after a reset, a re-signup genuinely re-grants the 170 base and re-earns the install bonus', function () {
+test('after a reset, a re-signup genuinely re-grants the 150 base and re-earns the install bonus', function () {
   return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
     var ev = fakeEvent({ method: 'POST' });
     await seedOwner(ev);
@@ -174,13 +174,13 @@ test('after a reset, a re-signup genuinely re-grants the 170 base and re-earns t
 
     // Re-signup: a fresh first-ever read re-materializes the base grant.
     var status = await entitlements.getTokenStatus(fakeEvent({ ip: nextIp() }), target);
-    assert.equal(status.balance, 170, 'a fresh read after the reset re-grants the full 170 base, not an echoed/stale value');
+    assert.equal(status.balance, 150, 'a fresh read after the reset re-grants the full 150 base, not an echoed/stale value');
 
     // And the install bonus is claimable again (its outer marker AND the
     // record's inner achievements ledger were both cleared).
     var regrant = await entitlements.applyAchievementGrant(fakeEvent({ ip: nextIp() }), target, INSTALL_ID, { type: 'tokens', amount: 20 });
     assert.equal(regrant.granted, true, 'the install bonus must be re-earnable after a reset');
-    assert.equal(regrant.balance, 190, '170 re-granted base + 20 re-earned install bonus');
+    assert.equal(regrant.balance, 170, '150 re-granted base + 20 re-earned install bonus');
   });
 });
 
@@ -200,7 +200,7 @@ test('a NORMAL entitlement deletion (delete-account.js teardown) LEAVES the toke
     assert.equal(await entitlements.getEntitlement(ev, target), null, 'the record itself is deleted, as expected');
     assert.ok(await readInitMarker(ev, target), 'the token-init-grant marker MUST survive a normal deletion — this is the anti-farm protection');
 
-    // A re-read therefore does NOT re-grant a fresh 170 record: the surviving
+    // A re-read therefore does NOT re-grant a fresh 150 record: the surviving
     // marker routes it into the echo path, which writes nothing new (contrast
     // the reset test above, where the same read re-grants).
     var ev2 = fakeEvent({ ip: nextIp() });
