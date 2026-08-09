@@ -233,6 +233,16 @@ async function openAndPickSage(page) {
   await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
 }
 
+/** Same drive, but to `jung` — the first talking-head-intro persona (introTalkingHeadUrl, a single self-contained lip-synced clip) rather than the Sage's split visual-backdrop + separate voice track. */
+async function openAndPickJung(page) {
+  await page.click('#interp-cta-btn');
+  await page.waitForSelector('.itp-persona-card[data-key="jung"]', { state: 'visible', timeout: 5000 });
+  await page.click('.itp-persona-card[data-key="jung"]');
+  await page.waitForSelector('.itp-chip', { timeout: 5000 });
+  await page.click('.itp-chip >> nth=0');
+  await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+}
+
 // ── Tracker item for-product-p1-bug-founder-repro-sage-re-cbdj3d ──
 // (founder walk 2026-08-03 23:31: the dream video looped silently ~3 times
 // with zero indication a voice reading was coming, then only a bare,
@@ -329,6 +339,36 @@ test('?sagevoice=1: talmudic\'s reading mounts the voice stage, plays the intro 
 
     var phCalls = await readPostHogCalls(page);
     assert.deepEqual(captures(phCalls, 'interp_voice_intro_shown')[0][2], { persona: 'talmudic' });
+  } finally {
+    await context.close();
+  }
+});
+
+test('talking-head persona (jung): the intro is ONE unmuted self-contained clip — no separate #itp-voice-intro-audio element — and it plays + fires interp_voice_intro_shown for jung', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await forcePlayOutcome(page, true);
+    await blockThirdParty(page);
+    await mockInterpretDream(page, {});
+    await mockInterpAudio(page, {});
+    await seedResultPageWithPreviewParam(page, 'd-voice-intro-jung-th');
+    await openAndPickJung(page);
+
+    await page.waitForSelector('#itp-voice-intro', { state: 'attached', timeout: 5000 });
+    // Talking-head shape: the greeting IS the video, so there is no sibling
+    // hidden <audio> (unlike the Sage's split visual-backdrop + voice track),
+    // and the video must NOT be muted (it carries the actual voice).
+    assert.equal(await page.locator('#itp-voice-intro-audio').count(), 0, 'a talking-head intro renders no separate voice <audio> — the single clip carries its own audio');
+    assert.equal(await page.locator('#itp-voice-intro').evaluate(function (v) { return v.muted; }), false, 'the talking-head clip is the greeting itself, so it plays unmuted (never the Sage muted-backdrop path)');
+
+    await page.waitForFunction(function () {
+      var q = window.posthog && window.posthog.slice ? window.posthog.slice() : [];
+      return q.some(function (e) { return e[0] === 'capture' && e[1] === 'interp_voice_intro_shown'; });
+    }, null, { timeout: 5000 });
+    var phCalls = await readPostHogCalls(page);
+    assert.deepEqual(captures(phCalls, 'interp_voice_intro_shown')[0][2], { persona: 'jung' });
   } finally {
     await context.close();
   }
