@@ -50,6 +50,27 @@
 // Records written before this change carried a single `codeHash` field
 // instead of `codeHashes` — both verifyCode and createVerification read
 // that legacy shape transparently (see activeCodeEntries).
+//
+// SEND COOLDOWN (fix, tracker item for-product-bug-founder-repro-08-09-
+// veri-g71t7u, founder repro'd): register-account-passwordless.js sends a
+// verification code at signup; seconds later, js/email-verify-sheet.js's
+// autoSendOnOpen() calls resend-verification-code.js -> sendVerificationEmail
+// -> createVerification again for the SAME account, and this function used
+// to mint+send a genuinely fresh code every single call with no regard for
+// how recently the last one went out — a real second email, not a
+// duplicate-looking artifact. createVerification now tracks `lastSentAt`
+// on the record and, when called again within SEND_COOLDOWN_MS of that
+// timestamp WHILE an existing unexpired code is still active, mints
+// NOTHING and returns `{ ok:true, reused:true }` instead — the caller
+// (lib/verification-email-sender.js) treats that as "don't send, the user
+// already has a valid code in their inbox" rather than firing another
+// email. A record with no `lastSentAt` (written before this change, or one
+// whose only prior codes have all expired) is never treated as
+// recently-sent — this only suppresses a GENUINE back-to-back re-mint, not
+// a legitimately fresh one. Deliberately uniform across every caller
+// (signup, sheet auto-open, AND a manual "Resend" tap) rather than
+// special-casing the manual button — see verification-email-sender.js's
+// own header comment for why.
 //   "t:<link token>" -> "<normalized username>"
 //     — secondary index, same shape/reasoning as account-store.js's "e:"
 //       email index: resolves a bare token (all verify-email-link.js has
@@ -95,6 +116,11 @@ var MAX_CODE_ATTEMPTS = 8;
 // couple of sheet-open/resend sends), without meaningfully enlarging the
 // brute-force surface a single 6-digit code already presents.
 var MAX_ACTIVE_CODES = 3;
+// How soon after a send a re-mint is suppressed as "already just sent"
+// (see the "SEND COOLDOWN" header note). 60s comfortably covers the
+// signup -> sheet-auto-open sequence (seconds apart) without meaningfully
+// delaying a genuinely later resend request.
+var SEND_COOLDOWN_MS = 60 * 1000;
 
 function store() {
   return getStore({ name: STORE_NAME });
@@ -142,6 +168,12 @@ function activeCodeEntries(record, now) {
  * unhashed 6-digit string, returned ONLY so the caller (lib/
  * verification-email-sender.js) can put it in the outbound email; it is
  * never stored in plaintext anywhere.
+ *
+ * SEND COOLDOWN (see header comment): if the existing record was last sent
+ * within SEND_COOLDOWN_MS AND still carries at least one unexpired code,
+ * nothing is minted and this returns { ok:true, reused:true } instead —
+ * the caller must NOT send another email in that case, the user already
+ * has a valid code in their inbox.
  */
 async function createVerification(event, username, email) {
   var key = normalizeUsername(username);
@@ -149,9 +181,18 @@ async function createVerification(event, username, email) {
   connectLambda(event);
   var s = store();
 
+  var now = Date.now();
+  var existing = await s.get('u:' + key, { type: 'json' });
+  var existingStillLive = existing && (typeof existing.expiresAt !== 'number' || existing.expiresAt > now);
+
+  if (existingStillLive && typeof existing.lastSentAt === 'number' &&
+      (now - existing.lastSentAt) < SEND_COOLDOWN_MS &&
+      activeCodeEntries(existing, now).length > 0) {
+    return { ok: true, reused: true };
+  }
+
   var code = randomCode();
   var linkToken = crypto.randomBytes(32).toString('hex');
-  var now = Date.now();
 
   // Rolling window: carry forward whatever prior codes are still valid,
   // append this fresh one, keep only the last MAX_ACTIVE_CODES (see the
@@ -160,9 +201,7 @@ async function createVerification(event, username, email) {
   // same as the old full-overwrite behaviour — a legitimate resend
   // restores the user's guesses, and both entry points that mint codes are
   // themselves authToken-gated + IP-rate-limited.
-  var existing = await s.get('u:' + key, { type: 'json' });
-  var priorEntries = (existing && (typeof existing.expiresAt !== 'number' || existing.expiresAt > now))
-    ? activeCodeEntries(existing, now) : [];
+  var priorEntries = existingStillLive ? activeCodeEntries(existing, now) : [];
   var codeHashes = priorEntries
     .concat([{ hash: hashCode(code), expiresAt: now + TTL_MS }])
     .slice(-MAX_ACTIVE_CODES);
@@ -170,7 +209,7 @@ async function createVerification(event, username, email) {
   await s.setJSON('u:' + key, {
     email: email, codeHashes: codeHashes, linkToken: linkToken,
     createdAt: (existing && existing.createdAt) ? existing.createdAt : now,
-    expiresAt: now + TTL_MS, attempts: 0
+    expiresAt: now + TTL_MS, attempts: 0, lastSentAt: now
   });
   await s.setJSON('t:' + linkToken, key);
 
@@ -297,6 +336,6 @@ async function deleteVerification(s, key, linkToken) {
 }
 
 module.exports = {
-  STORE_NAME, TTL_MS, MAX_CODE_ATTEMPTS, MAX_ACTIVE_CODES,
+  STORE_NAME, TTL_MS, MAX_CODE_ATTEMPTS, MAX_ACTIVE_CODES, SEND_COOLDOWN_MS,
   createVerification, getOrCreateLinkToken, verifyCode, verifyLinkToken
 };

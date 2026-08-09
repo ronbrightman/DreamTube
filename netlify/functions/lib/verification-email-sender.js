@@ -35,6 +35,21 @@
 // { ok:true, sent:true|false, skipped:<reason> }, same contract shape as
 // lib/first-dream-email-sender.js's sendIfEligible for the same reason
 // (every caller here treats this as best-effort).
+//
+// SEND COOLDOWN, 'recently_sent' (fix, tracker item for-product-bug-
+// founder-repro-08-09-veri-g71t7u): when lib/email-verification-store.js's
+// createVerification reports { reused:true } (a valid code for this
+// account was already minted+sent within its own SEND_COOLDOWN_MS), this
+// function returns { ok:true, sent:false, skipped:'recently_sent' }
+// WITHOUT calling Resend — the user already has a real, still-valid code
+// in their inbox from the send moments ago, so mailing a second one would
+// only be a duplicate, not a fix for anything. Every caller here already
+// treats { ok:true } as success regardless of `sent` (register-account-
+// passwordless.js/resend-verification-code.js never branch on it), so this
+// is invisible to the end user — deliberately uniform across signup, the
+// verify sheet's autoSendOnOpen, AND a manual "Resend" tap; no
+// force-bypass flag for the manual button, since a user who tapped it
+// within the last minute already has what they're asking for.
 
 var emailVerificationStore = require('./email-verification-store');
 var siteOrigin = require('./site-origin');
@@ -104,6 +119,9 @@ async function sendVerificationEmail(event, opts) {
   if (!minted.ok) {
     console.error('verification-email-sender: failed to mint a verification record', minted.error);
     return { ok: true, sent: false, skipped: 'mint_failed' };
+  }
+  if (minted.reused) {
+    return { ok: true, sent: false, skipped: 'recently_sent' };
   }
 
   var verifyUrl = buildVerifyLinkUrl(event, minted.linkToken);
