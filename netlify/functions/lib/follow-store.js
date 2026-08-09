@@ -121,10 +121,11 @@ async function isFollowing(event, followerUsername, targetHandle) {
  * comment for the full "why" this specific shape, not a plain blind
  * +delta write, is needed against a false-negative-triggered retry of the
  * SAME request re-deriving "current + delta" from a fresh read that
- * already shows its own just-landed write). `_lastFollowerCountOp` never
- * leaks publicly the way like-dream.js's `_lastLikeOp`/feed-comment-
- * count.js's `_lastCommentCountOp` do (tracker item minor-like-dream-js-
- * internal-dedup-marke-8qztvq) — counts:<username> is never returned
+ * already shows its own just-landed write). `_lastFollowerCountOp` was
+ * never at risk of leaking publicly the way like-dream.js's `_lastLikeOp`/
+ * feed-comment-count.js's `_lastCommentCountOp` used to (tracker item
+ * minor-like-dream-js-internal-dedup-marke-8qztvq, fixed via
+ * lib/public-feed-record.js) — counts:<username> is never returned
  * wholesale to any caller (see get-following.js, which only ever projects
  * out the bare `followers` number), so this marker has no public response
  * to leak into in the first place.

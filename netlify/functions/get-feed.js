@@ -16,6 +16,7 @@
 // social-proof carousels (see that repo's funnel).
 
 var { connectLambda, getStore } = require('@netlify/blobs');
+var publicFeedRecord = require('./lib/public-feed-record');
 
 var CORS_HEADERS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS' };
 
@@ -85,7 +86,7 @@ exports.handler = async function (event) {
     var dreamOfDayId = null;
     try { dreamOfDayId = await resolveDreamOfDay(store, feed); }
     catch (e) { /* feed still returns below without a Dream of the Day */ }
-    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ feed: feed, dreamOfDayId: dreamOfDayId }) };
+    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify({ feed: publicFeedRecord.toPublicFeedRecords(feed), dreamOfDayId: dreamOfDayId }) };
   } catch (e) {
     return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: 'feed_fetch_failed: ' + (e && e.message) }) };
   }

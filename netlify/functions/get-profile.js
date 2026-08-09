@@ -61,6 +61,7 @@
 
 var { connectLambda, getStore } = require('@netlify/blobs');
 var profileStore = require('./lib/profile-store');
+var publicFeedRecord = require('./lib/public-feed-record');
 
 var CORS_HEADERS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS' };
 
@@ -107,7 +108,7 @@ exports.handler = async function (event) {
       body: JSON.stringify({
         exists: exists,
         profile: profile,
-        dreams: dreams,
+        dreams: publicFeedRecord.toPublicFeedRecords(dreams),
         publishedCount: dreams.length,
         commentCounts: commentCounts
       })
