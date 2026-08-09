@@ -128,7 +128,11 @@ function humanizeFalDetail(detail) {
   var messages = detail.map(function (item) {
     if (!item) return null;
     if (item.type === 'content_policy_violation') {
-      var onPhoto = Array.isArray(item.loc) && item.loc.indexOf('image_urls') !== -1;
+      // 'image_urls' is veo's photo field; 'reference_image_urls' is Vidu's
+      // (the default Me-photo model since 2026-08-09). Either being the
+      // flagged location means the REFERENCE PHOTO tripped safety, so show
+      // the photo-specific guidance rather than the description one.
+      var onPhoto = Array.isArray(item.loc) && (item.loc.indexOf('image_urls') !== -1 || item.loc.indexOf('reference_image_urls') !== -1);
       return onPhoto
         ? "The reference photo was flagged by the safety system — this usually happens when the photo appears to show a child or teen. For that character, switch to Describe (text) instead of a photo."
         : 'The description was flagged by the safety system. This usually happens when a real photo is combined with a description of a minor, or another sensitive detail — try removing age or other identifying details, or switch to a non-photorealistic style.';

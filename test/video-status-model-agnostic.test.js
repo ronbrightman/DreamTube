@@ -105,6 +105,20 @@ test('a fal-ai/veo3.1/fast/image-to-video operationName (unchanged upsell path) 
   assert.ok(falApiUrlsOnly(urls).every(function (u) { return u.indexOf('/fal-ai/veo3.1/requests/req-img-1') !== -1; }), JSON.stringify(urls));
 });
 
+test('a fal-ai/vidu/q1/reference-to-video operationName (the new default Me-photo model, founder 2026-08-09) polls the fal-ai/vidu app base', async function () {
+  var urls = stubFalCompleted();
+  var res = await handler(statusEvent('fal:fal-ai/vidu/q1/reference-to-video:req-vidu-1'));
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).done, true);
+  assert.deepEqual(falApiUrlsOnly(urls), [
+    'https://queue.fal.run/fal-ai/vidu/requests/req-vidu-1/status',
+    'https://queue.fal.run/fal-ai/vidu/requests/req-vidu-1'
+  ], 'Vidu has a DIFFERENT app base than veo — the "q1/reference-to-video" segments must be dropped, leaving fal-ai/vidu');
+  // Vidu\'s result video, like veo\'s, lives at video.url (stubFalCompleted
+  // returns exactly that shape) — so checkFalStatus needs no change for it.
+  assert.equal(JSON.parse(res.body).videoUrl, 'https://example.com/vid.mp4');
+});
+
 test('an entirely invented model string is still handled purely structurally (owner/alias segments), proving this is not a hardcoded-model allowlist', async function () {
   var urls = stubFalCompleted();
   var res = await handler(statusEvent('fal:some-owner/some-future-model/some-variant:req-future-1'));
