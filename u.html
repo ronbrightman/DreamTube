@@ -101,7 +101,10 @@
    viewer===handle (isOwner) — see renderFollowButton in the script below.
    Same slot/visual weight as .u-share-btn above (they're mutually
    exclusive: isOwner flips between the two). */
-.u-follow-btn{ margin:14px 20px 0; min-height:48px; display:flex; align-items:center; justify-content:center; }
+/* Compact, centered pill — NOT a full-width CTA (founder 2026-08-09: "the
+   button should be much smaller"). btn-block is dropped from the markup so the
+   base .btn width:100% no longer applies; width:auto + margin auto centers it. */
+.u-follow-btn{ width:auto; min-width:112px; margin:14px auto 4px; min-height:34px; padding:0 26px; display:flex; align-items:center; justify-content:center; font-size:14px; }
 
 /* .scroll-area's shared default (css/styles.css) has no bottom padding of
    its own -- every other page with the overlaid .night-dock (result.html,
@@ -186,7 +189,7 @@
          gated action on this page). Never rendered on your own profile —
          see renderFollowButton in the script below, which also owns the
          Follow/Following label + btn-primary/btn-secondary swap. -->
-    <button type="button" class="btn btn-primary btn-block u-follow-btn" id="u-follow-btn" style="display:none;">Follow</button>
+    <button type="button" class="btn btn-primary u-follow-btn" id="u-follow-btn" style="display:none;">Follow</button>
 
     <!-- PUBLIC/PRIVATE toggle — only rendered when viewer===handle (see
          renderOwnerControls in the script below). PUBLIC starts active
