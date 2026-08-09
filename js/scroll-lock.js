@@ -144,7 +144,21 @@
       // eslint-disable-next-line no-unused-expressions
       void el.offsetHeight; // force synchronous reflow
       el.scrollTop = s.top;  // restore where the user was
-      el.style.webkitOverflowScrolling = '';
+      // Restore momentum on the NEXT frame, not synchronously. iOS Safari
+      // often fails to rebuild the `-webkit-overflow-scrolling:touch` layer
+      // when 'auto' and 'touch' are toggled inside a single frame — the
+      // reflow above hasn't been PAINTED yet, so flipping straight back to
+      // 'touch' can rebuild nothing and leave the scroller frozen anyway.
+      // This is exactly the "scroll stuck after closing the interpretation"
+      // freeze the founder still hit (2026-08-09) even with the ref count
+      // balanced: the single open→close path was correct, but the momentum
+      // rebuild wasn't reliable. Spanning a paint makes it reliable. The
+      // element ref is captured per-iteration, so a scroller re-locked before
+      // this fires is unaffected (overflow, not this hint, is what locks).
+      (function (node) {
+        if (win && win.requestAnimationFrame) win.requestAnimationFrame(function () { node.style.webkitOverflowScrolling = ''; });
+        else node.style.webkitOverflowScrolling = '';
+      })(el);
     });
     lockedScrollers = [];
   }
