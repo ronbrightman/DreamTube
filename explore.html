@@ -819,10 +819,14 @@
       root.innerHTML = '<div class="grid-empty" style="color:#fff;">' + emptyMsg + '</div>';
     }
 
-    if(filter){
+    // The dismissable active-filter pill (#filter-chip) is ONLY for the style
+    // filter. For the 'following' filter the highlighted #following-filter-chip
+    // toggle IS the active-state indicator (and its own dismiss: tap it again),
+    // so also showing a "Following ✕" pill duplicated the label and the two
+    // overlapped in the top-left row (founder 2026-08-09). Suppress it here.
+    if(filter && filter.type !== 'following'){
       chip.style.display = 'flex';
-      var chipLabel = filter.type === 'following' ? 'Following' : 'Style: ' + filter.value;
-      chip.innerHTML = esc(chipLabel) + ' <span class="fc-x">✕</span>';
+      chip.innerHTML = esc('Style: ' + filter.value) + ' <span class="fc-x">✕</span>';
     } else {
       chip.style.display = 'none';
     }
