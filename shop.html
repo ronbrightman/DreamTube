@@ -207,9 +207,15 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 .pass-title{ font-size:25px; font-weight:800; letter-spacing:-.01em; line-height:1.2; text-shadow:0 2px 12px rgba(12,10,26,.55); }
 .pass-price{ margin-top:10px; font-size:20px; font-weight:800; color:#e8e2ff; }
 .pass-price .per{ font-size:15px; font-weight:600; color:var(--home-soft); }
-.pass-features{ margin-top:14px; display:flex; flex-direction:column; gap:8px; }
-.pass-features .feat{ display:flex; align-items:flex-start; gap:9px; font-size:15px; font-weight:600; line-height:1.4; color:#d7d0f2; }
-.pass-features .feat .tick{ color:var(--home-ok); font-weight:800; flex:0 0 auto; }
+.pass-cadence{ margin-top:6px; font-size:14px; font-weight:600; color:#d7d0f2; }
+.pass-perday{ display:inline-block; margin-top:8px; padding:4px 11px; border-radius:99px; font-size:13px; font-weight:800; color:#bff3dd; background:rgba(126,226,168,.12); border:1px solid rgba(126,226,168,.4); }
+.pass-features{ margin-top:16px; display:flex; flex-direction:column; gap:12px; }
+.pass-features .feat{ display:flex; align-items:flex-start; gap:9px; font-size:15px; line-height:1.4; color:#d7d0f2; }
+.pass-features .feat .tick{ color:var(--home-ok); font-weight:800; flex:0 0 auto; font-size:15px; }
+.pass-features .feat .bt{ font-weight:800; color:#f1eeff; }
+.pass-features .feat .bd{ font-weight:500; color:#c5bde6; font-size:13.5px; line-height:1.4; margin-top:2px; }
+.pass-fineprint{ margin-top:14px; font-size:12px; font-weight:600; color:#8f88b3; line-height:1.5; }
+.pass-fineprint .cancel{ display:block; margin-top:2px; color:#b7b1c4; font-weight:700; }
 .pass-status{
   margin-top:14px; padding:14px 16px; border-radius:16px;
   background:rgba(255,255,255,.06); border:1px solid rgba(157,144,255,.4);
@@ -392,13 +398,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
           <div class="pass-eyebrow">Dreamer Pass · membership</div>
           <h2 class="pass-title">Dream every day — 3,000 tokens a month</h2>
           <div class="pass-price">$9.99<span class="per">/month</span></div>
+          <div class="pass-cadence">3,000 tokens — a new dream video every day (30/mo)</div>
+          <span class="pass-perday">Less than 35¢ per daily video</span>
           <div class="pass-features">
-            <div class="feat"><span class="tick">✓</span> 3,000 tokens every month — about 30 dream videos</div>
-            <div class="feat"><span class="tick">✓</span> 3-day free trial — 100 free tokens a day while you try it</div>
-            <div class="feat"><span class="tick">✓</span> Cancel anytime</div>
+            <div class="feat"><span class="tick">✓</span><div><div class="bt">A dream every day</div><div class="bd">30 dream videos a month, refilled automatically — never run dry.</div></div></div>
+            <div class="feat"><span class="tick">✓</span><div><div class="bt">Dream Meaning</div><div class="bd">A personal interpretation of every dream from the great methods — Jungian, Freudian, Gestalt, modern dream science and the Talmudic tradition.</div></div></div>
+            <div class="feat"><span class="tick">✓</span><div><div class="bt">Watch &amp; Share</div><div class="bd">Get inspired by dreams from like-minded dreamers — and choose if and when to share your own.</div></div></div>
+            <div class="feat"><span class="tick">✓</span><div><div class="bt">Your private dream journal</div><div class="bd">Every dream you make, saved and yours forever.</div></div></div>
           </div>
           <button type="button" class="pill pill-violet" id="shop-start-pass">Start Dreamer Pass — $9.99/mo</button>
-          <div class="redirect-cue" id="shop-pass-redirect-cue">3-day free trial · then $9.99/mo · cancel anytime</div>
+          <div class="redirect-cue" id="shop-pass-redirect-cue">3-day free trial · 100 free tokens/day · then $9.99/mo</div>
+          <div class="pass-fineprint">Subscriptions renew automatically each month unless cancelled.<span class="cancel">Free to cancel anytime</span></div>
           <!-- Shown instead of the button once trialing/active. -->
           <div class="pass-status" id="shop-pass-status" style="display:none;">
             <span class="pass-status-badge" id="shop-pass-status-badge">Active</span>
