@@ -183,6 +183,43 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 .offer-anchor .now{ color:#ffe0aa; }
 .offer-sub{ margin-top:6px; font-size:16px; font-weight:500; line-height:1.5; color:#cfc8ea; }
 
+/* ===== Dreamer Pass — the monthly subscription, top-of-store hero ===== */
+.pass-hero{
+  position:relative; width:100%; border-radius:24px; overflow:hidden;
+  padding:24px 22px; margin-bottom:22px;
+  border:1px solid rgba(157,144,255,.6);
+  background:
+    radial-gradient(120px 120px at 84% 12%, rgba(184,166,255,.4), transparent 70%),
+    radial-gradient(95% 70% at 6% 100%, rgba(120,80,220,.42), transparent 64%),
+    linear-gradient(168deg,#2a1856 0%,#3a1f74 48%,#180d3c 100%);
+  box-shadow:0 4px 24px -6px rgba(0,0,0,.55), 0 0 34px -4px rgba(157,144,255,.45);
+}
+.pass-hero .hero-stars{
+  position:absolute; inset:0; pointer-events:none;
+  background-image:
+    radial-gradient(1.3px 1.3px at 12% 18%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(1px 1px at 32% 10%, rgba(207,200,255,.8), transparent 60%),
+    radial-gradient(1.2px 1.2px at 58% 16%, rgba(207,200,255,.8), transparent 60%),
+    radial-gradient(1px 1px at 72% 42%, rgba(255,255,255,.5), transparent 60%);
+}
+.pass-hero .hero-content{ position:relative; z-index:1; }
+.pass-eyebrow{ font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#cfc8ff; font-weight:800; margin-bottom:8px; text-shadow:0 1px 8px rgba(12,10,26,.6); }
+.pass-title{ font-size:25px; font-weight:800; letter-spacing:-.01em; line-height:1.2; text-shadow:0 2px 12px rgba(12,10,26,.55); }
+.pass-price{ margin-top:10px; font-size:20px; font-weight:800; color:#e8e2ff; }
+.pass-price .per{ font-size:15px; font-weight:600; color:var(--home-soft); }
+.pass-features{ margin-top:14px; display:flex; flex-direction:column; gap:8px; }
+.pass-features .feat{ display:flex; align-items:flex-start; gap:9px; font-size:15px; font-weight:600; line-height:1.4; color:#d7d0f2; }
+.pass-features .feat .tick{ color:var(--home-ok); font-weight:800; flex:0 0 auto; }
+.pass-status{
+  margin-top:14px; padding:14px 16px; border-radius:16px;
+  background:rgba(255,255,255,.06); border:1px solid rgba(157,144,255,.4);
+  font-size:15px; font-weight:600; line-height:1.45; color:#e8e2ff;
+}
+.pass-status .pass-status-badge{
+  display:block; margin-bottom:5px;
+  font-size:12px; letter-spacing:.1em; text-transform:uppercase; font-weight:800; color:#bff3dd;
+}
+
 .pill{
   display:flex; align-items:center; justify-content:center; width:100%;
   min-height:56px; margin-top:16px; padding:14px;
@@ -341,6 +378,34 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
              the free-claim card below. -->
         <p class="shop-sub" id="shop-cost-banner"><b>Videos cost 100 tokens, images 10.</b> Claim <span id="shop-cost-banner-claim-amount">20</span> free tokens once a day, and top up below any time.</p>
       </div>
+
+      <!-- Dreamer Pass · monthly subscription — the top-of-store hero. Always
+           visible; renderBalance() swaps the buy button for a status panel
+           once the server confirms this account is trialing/active (via
+           tokenStatus.subscription — see lib/entitlements.js's
+           publicSubscriptionShape). The 3-day trial + 3000/mo grant are
+           applied entirely server-side (dodo-webhook.js); this is purely the
+           entry point. -->
+      <section class="pass-hero" id="shop-pass-hero">
+        <div class="hero-stars"></div>
+        <div class="hero-content">
+          <div class="pass-eyebrow">Dreamer Pass · membership</div>
+          <h2 class="pass-title">Dream every day — 3,000 tokens a month</h2>
+          <div class="pass-price">$9.99<span class="per">/month</span></div>
+          <div class="pass-features">
+            <div class="feat"><span class="tick">✓</span> 3,000 tokens every month — about 30 dream videos</div>
+            <div class="feat"><span class="tick">✓</span> 3-day free trial — 100 free tokens a day while you try it</div>
+            <div class="feat"><span class="tick">✓</span> Cancel anytime</div>
+          </div>
+          <button type="button" class="pill pill-violet" id="shop-start-pass">Start Dreamer Pass — $9.99/mo</button>
+          <div class="redirect-cue" id="shop-pass-redirect-cue">3-day free trial · then $9.99/mo · cancel anytime</div>
+          <!-- Shown instead of the button once trialing/active. -->
+          <div class="pass-status" id="shop-pass-status" style="display:none;">
+            <span class="pass-status-badge" id="shop-pass-status-badge">Active</span>
+            <span id="shop-pass-status-text"></span>
+          </div>
+        </div>
+      </section>
 
       <!-- HERO · one-time welcome offer (pack099) — shown only once the
            server confirms this account has never bought a pack before
@@ -667,8 +732,70 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     if(btn) btn.addEventListener('click', function(){ purchasePack(pack, this); });
   });
 
+  // ============================================================================
+  // Dreamer Pass — the $9.99/month subscription (3-day free trial).
+  // ----------------------------------------------------------------------------
+  // Same endpoint as the one-time packs (create-checkout-session-dodo.js),
+  // just POSTing { email, plan: "dreamer_pass" } instead of a { pack }. Dodo
+  // decides subscription-vs-one-time from the product config — this client
+  // sends no subscription-specific params. No tokens are granted here or on
+  // the return trip: the trial's 100/day claim boost and the 3000/mo lump are
+  // applied entirely server-side (dodo-webhook.js) off Dodo's signed webhook.
+  // ============================================================================
+  var DREAMER_PASS_PLAN = 'dreamer_pass';
+
+  function purchasePlan(button){
+    var email = DreamStore.getAccountEmail();
+    if(!email){
+      showToast('Add an email to your account first (Profile) to start Dreamer Pass');
+      return;
+    }
+    var originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Redirecting…';
+
+    track('checkout_started', { source: shopEntrySource, plan: DREAMER_PASS_PLAN });
+
+    // Returning-buyer prefill — same optional cached-password path the pack
+    // checkout uses (see purchasePack); lets the server attach this buyer's
+    // saved Dodo payment methods after a real ownership check.
+    var cachedPassword = DreamStore.getCachedPassword();
+    var checkoutBody = { email: email, plan: DREAMER_PASS_PLAN };
+    if (cachedPassword) checkoutBody.password = cachedPassword;
+
+    fetch('/.netlify/functions/create-checkout-session-dodo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(checkoutBody)
+    })
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if(data.error || !data.url) throw new Error(data.error || 'no_checkout_url');
+        // A subscription-shaped pending marker: handleCheckoutReturn branches
+        // on plan==='dreamer_pass' so the return trip shows a "trial started"
+        // confirmation and refreshes subscription status, rather than the
+        // pack flow's token-jump poll (a trial credits no tokens up front).
+        try {
+          sessionStorage.setItem(PENDING_PURCHASE_KEY, JSON.stringify({ plan: DREAMER_PASS_PLAN, eventId: data.eventId || null }));
+        } catch(e) { /* private mode — the return trip just won't fire the conversion event */ }
+        location.href = data.url;
+      })
+      .catch(function(err){
+        button.disabled = false;
+        button.textContent = originalLabel;
+        showToast("Couldn't start Dreamer Pass right now — try again soon");
+      });
+  }
+
+  var passStartBtn = document.getElementById('shop-start-pass');
+  if(passStartBtn) passStartBtn.addEventListener('click', function(){ purchasePlan(this); });
+
   var topbarBalanceEl = document.getElementById('shop-topbar-balance');
   var heroOfferEl = document.getElementById('shop-hero-offer');
+  var passRedirectCueEl = document.getElementById('shop-pass-redirect-cue');
+  var passStatusEl = document.getElementById('shop-pass-status');
+  var passStatusBadgeEl = document.getElementById('shop-pass-status-badge');
+  var passStatusTextEl = document.getElementById('shop-pass-status-text');
   var balanceEl = document.getElementById('shop-balance');
   var countdownEl = document.getElementById('shop-countdown');
   var capNoteEl = document.getElementById('shop-cap-note');
@@ -724,6 +851,48 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     // guard is the real enforcement either way — this is purely about not
     // showing a stale/wrong offer, not the security boundary.
     heroOfferEl.style.display = (tokenStatus.hasMadeFirstPurchase === false) ? '' : 'none';
+
+    renderPassHero();
+  }
+
+  /** "in 2 days" / "tomorrow" / "today" from an epoch-ms date, for the trial countdown copy. */
+  function daysUntilCopy(epochMs){
+    if(epochMs == null) return '';
+    var days = Math.ceil((epochMs - Date.now()) / (24 * 60 * 60 * 1000));
+    if(days <= 0) return 'today';
+    if(days === 1) return 'tomorrow';
+    return 'in ' + days + ' days';
+  }
+
+  /** Swaps the Dreamer Pass hero between its buy button and a status panel,
+      driven by tokenStatus.subscription (see lib/entitlements.js's
+      publicSubscriptionShape). A never-subscribed / signed-out account (null
+      subscription, or subscribed:false) always sees the buy button. */
+  function renderPassHero(){
+    if(!passStartBtn) return;
+    var sub = tokenStatus && tokenStatus.subscription;
+    var subscribed = !!(sub && sub.subscribed);
+    if(subscribed){
+      // Trialing or paying — hide the CTA, show the status panel.
+      passStartBtn.style.display = 'none';
+      if(passRedirectCueEl) passRedirectCueEl.style.display = 'none';
+      if(sub.trialing){
+        passStatusBadgeEl.textContent = 'Free trial active';
+        passStatusTextEl.textContent = sub.trialEnd
+          ? ('Claim 100 free tokens a day. Your trial ends ' + daysUntilCopy(sub.trialEnd) + ', then it\'s $9.99/mo — cancel anytime.')
+          : 'Claim 100 free tokens a day during your trial. Cancel anytime.';
+      } else {
+        passStatusBadgeEl.textContent = 'Dreamer Pass active';
+        passStatusTextEl.textContent = sub.nextBillingAt
+          ? ('3,000 tokens a month. Next renewal ' + daysUntilCopy(sub.nextBillingAt) + '. Cancel anytime.')
+          : '3,000 tokens a month. Cancel anytime.';
+      }
+      passStatusEl.style.display = '';
+    } else {
+      passStartBtn.style.display = '';
+      if(passRedirectCueEl) passRedirectCueEl.style.display = '';
+      passStatusEl.style.display = 'none';
+    }
   }
   function loadBalance(autoOpen){
     DreamStore.getTokenStatus().then(function(status){
@@ -1176,18 +1345,24 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
           // starter mirrors the marker's own field (set at buy-click time
           // above); falls back to a plain pack-id check for a marker
           // created before this field existed.
-          var starter = typeof pending.starter === 'boolean' ? pending.starter : pending.pack === STARTER_PACK_ID;
-          // Build props with a real object key only when an eventId
-          // actually exists -- `$insert_id: undefined` would still be an
-          // OWN enumerable property on the object (unlike a key that's
-          // simply absent), which is both semantically sloppy and (this
-          // codebase's own pre-existing purchase-conversion test caught
-          // it) breaks a strict deep-equal check on the exact PostHog
-          // properties shape.
-          var purchaseProps = { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD', starter: starter };
-          if (pending.eventId) purchaseProps.$insert_id = pending.eventId;
-          track('purchase_completed', purchaseProps);
-          fireMetaConversion('Purchase', { custom_data: { value: pending.price, currency: 'USD' } }, false, pending.eventId || undefined);
+          // A Dreamer Pass marker (plan==='dreamer_pass') is NOT a one-time
+          // pack purchase — it fires its own subscription_started event in
+          // the confirmation branch below, never the pack Purchase
+          // conversion (which would carry undefined pack/tokens/value).
+          if(pending.plan !== DREAMER_PASS_PLAN){
+            var starter = typeof pending.starter === 'boolean' ? pending.starter : pending.pack === STARTER_PACK_ID;
+            // Build props with a real object key only when an eventId
+            // actually exists -- `$insert_id: undefined` would still be an
+            // OWN enumerable property on the object (unlike a key that's
+            // simply absent), which is both semantically sloppy and (this
+            // codebase's own pre-existing purchase-conversion test caught
+            // it) breaks a strict deep-equal check on the exact PostHog
+            // properties shape.
+            var purchaseProps = { pack: pending.pack, tokens: pending.tokens, value: pending.price, currency: 'USD', starter: starter };
+            if (pending.eventId) purchaseProps.$insert_id = pending.eventId;
+            track('purchase_completed', purchaseProps);
+            fireMetaConversion('Purchase', { custom_data: { value: pending.price, currency: 'USD' } }, false, pending.eventId || undefined);
+          }
         }
       } catch(e) { /* analytics must never break the app */ }
 
@@ -1202,7 +1377,24 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
       // balance increase and resolves into the honest "still confirming"
       // state — it can't manufacture tokens, since only the webhook ever
       // credits anything.
-      startCreditConfirmation(pending, Date.now());
+      //
+      // Dreamer Pass return: a subscription checkout with a 3-day free trial
+      // credits NO tokens up front, so the pack flow's token-jump poll would
+      // just time out and mislead. Instead, confirm the trial started and
+      // refresh subscription status (which flips the hero to its status
+      // panel). The 100/day trial boost + 3000/mo lump are applied entirely
+      // server-side off Dodo's webhook — nothing to poll for here.
+      if(pending && pending.plan === DREAMER_PASS_PLAN){
+        var passStartedProps = { plan: DREAMER_PASS_PLAN };
+        if(pending.eventId) passStartedProps.$insert_id = pending.eventId;
+        try { track('subscription_started', passStartedProps); } catch(e) { /* analytics must never break the app */ }
+        renderCheckoutBanner('confirmed',
+          'You\'re in — Dreamer Pass trial started',
+          'Claim 100 free tokens a day for the next 3 days. You won\'t be charged until your trial ends — cancel anytime.');
+        loadBalance(false);
+      } else {
+        startCreditConfirmation(pending, Date.now());
+      }
 
       // ===== Post-purchase soft verification prompt (founder reversal
       // 2026-08-07) ===== Replaces the removed pre-checkout E10 hard gate

@@ -505,6 +505,65 @@ var DAILY_CLAIM_AMOUNT = 20;
 // claims to have done.
 var FIRST_CLAIM_BONUS_AMOUNT = 20;
 
+// ============================================================================
+// Dreamer Pass — the $9.99/month subscription (founder-approved, 3-day free
+// trial). See create-checkout-session-dodo.js (checkout) and
+// dodo-webhook.js (subscription lifecycle events) for the plumbing that
+// reads/writes the `subscription` sub-object these constants govern.
+// ----------------------------------------------------------------------------
+// The subscription record shape, a TOP-LEVEL sibling of `tokens` on the same
+// per-email entitlement record (never inside `tokens` — the tokens
+// sub-object stays exactly {balance,lastClaimAt,streak}, a shape other tests
+// assert on):
+//   subscription: {
+//     status,            // 'trialing' | 'active' while subscribed; any
+//                        //   terminal value the webhook writes otherwise
+//                        //   (cancelled / failed / on_hold / paused / lapsed).
+//                        //   The predicates below only ever check for
+//                        //   'trialing'/'active', so the exact terminal
+//                        //   spelling never matters to this file.
+//     subscriptionId,    // Dodo subscription_id
+//     productId,         // Dodo product_id (DODO_PRODUCT_DREAMER_PASS)
+//     trialEnd,          // epoch-ms the free trial ends (the 100/day boost
+//                        //   window) — only meaningful while status ==='trialing'
+//     nextBillingAt,     // epoch-ms of the next scheduled charge (display)
+//     currentPeriodEnd,  // epoch-ms of the current paid period end (display)
+//     updatedAt
+//   }
+//
+// TWO distinct token effects, deliberately kept separate:
+//   1. TRIAL (status 'trialing', now < trialEnd): the existing daily claim
+//      is boosted from DAILY_CLAIM_AMOUNT (20) to TRIAL_DAILY_CLAIM_AMOUNT
+//      (100) — see selectDailyClaimAmount below and claimDailyTokens. NOT a
+//      lump; the subscriber claims 100/day, capped to the trial window.
+//   2. PAID (each confirmed monthly CHARGE): a DREAMER_PASS_MONTHLY_TOKENS
+//      (3000) lump, granted by dodo-webhook.js via the SAME idempotent,
+//      payment_id-keyed creditTokenPackOnce path a one-time pack uses — so a
+//      redelivered webhook can never double-grant. A paid subscriber's daily
+//      claim is NOT boosted (status 'active', not 'trialing'), so it stays
+//      the normal 20 — the 3000 lump is their subscription value, not the
+//      claim.
+//
+// On cancel/lapse/on_hold/paused/failed the status flips to that terminal
+// value: isTrialActive (needs 'trialing') and isSubscriptionActive (needs
+// 'trialing'|'active') both go false, so the boost reverts to 20 and the
+// account stops being treated as subscribed — no separate "clear" flag
+// needed beyond writing the terminal status.
+var TRIAL_DAILY_CLAIM_AMOUNT = 100;
+var DREAMER_PASS_MONTHLY_TOKENS = 3000;
+var DREAMER_PASS_PLAN = 'dreamer_pass';
+
+// Fallback cap on the trial's 100/day boost window, used ONLY when a
+// subscription.active(trialing) webhook doesn't carry a resolvable trial-end
+// timestamp (Dodo's exact field name for it is under-documented — see
+// dodo-webhook.js's resolveTrialEnd). The trial is a known 3 days, so
+// capping the boost to now + 3 days from first sighting guarantees the
+// 100/day can never run unbounded even if the payload's trial-end field is
+// absent/renamed. A resolvable real trial_end from the payload always wins
+// over this fallback; see updateSubscription's mutate for the "set once,
+// never extended on redelivery" handling.
+var TRIAL_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
 // Email-verification bonus (founder-authorized 2026-08-08: "maybe also
 // give 20 tokens for verifying email", surfaced on home.html's
 // bonus-tokens card). Granted via applyAchievementGrant — this pair is
@@ -644,6 +703,16 @@ async function syncTokens(event, email, opts) {
   // happens. Same "never risks leaking into record.tokens" reasoning as
   // firstPackPurchaseAt applies here too.
   var firstClaimAt = record && record.firstClaimAt;
+  // `subscription` (Dreamer Pass state) — same top-level-sibling shape as
+  // firstPackPurchaseAt/firstClaimAt (stamped by updateSubscription, never
+  // inside `record.tokens`), carried through here so getTokenStatus can
+  // project the trial-boosted daily-claim amount and the client-facing
+  // subscription state, and so claimDailyTokens' own mutate has a fallback
+  // base for the narrow not-yet-visible-read window. Same "never risks
+  // leaking into record.tokens" reasoning as firstClaimAt (every caller that
+  // rebuilds `tokens` picks only balance/lastClaimAt/streak back off this
+  // return value).
+  var subscription = record && record.subscription;
 
   if (!record || !record.tokens) {
     // First-ever token read for this email — see the per-IP cap doc block
@@ -708,9 +777,9 @@ async function syncTokens(event, email, opts) {
       // init through" note a few lines below.
       var freshRead = await getEntitlement(event, key);
       if (freshRead && freshRead.tokens) {
-        return Object.assign({}, freshRead.tokens, { firstPackPurchaseAt: freshRead.firstPackPurchaseAt, firstClaimAt: freshRead.firstClaimAt });
+        return Object.assign({}, freshRead.tokens, { firstPackPurchaseAt: freshRead.firstPackPurchaseAt, firstClaimAt: freshRead.firstClaimAt, subscription: freshRead.subscription });
       }
-      return Object.assign({ balance: initMarker.balance }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
+      return Object.assign({ balance: initMarker.balance }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, subscription: subscription });
     }
 
     var maxInitPerIp = parseInt(process.env.MAX_TOKEN_GRANTS_PER_IP_PER_DAY, 10);
@@ -724,7 +793,7 @@ async function syncTokens(event, email, opts) {
     if (!ipCheck.allowed) {
       // Capped for today: NO write of any kind (see REPLAY GUARD above) —
       // return a throwaway zero and let a later read retry the init.
-      return Object.assign({ balance: 0 }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
+      return Object.assign({ balance: 0 }, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, subscription: subscription });
     }
 
     // No lastClaimAt stamped here — a brand-new record deliberately has
@@ -798,7 +867,7 @@ async function syncTokens(event, email, opts) {
       // condition — defensive only, mirrors this file's existing
       // `rec.someField || fallback` discipline elsewhere).
       var wonTokens = (initWrite.current && initWrite.current.tokens) || fresh;
-      return Object.assign({}, wonTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
+      return Object.assign({}, wonTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, subscription: subscription });
     }
 
     if (!initWrite.ok) {
@@ -817,13 +886,13 @@ async function syncTokens(event, email, opts) {
       // always had before this fix.
       var finalInitRead = await getEntitlement(event, key);
       var finalTokens = (finalInitRead && finalInitRead.tokens) || fresh;
-      return Object.assign({}, finalTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
+      return Object.assign({}, finalTokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, subscription: subscription });
     }
 
-    return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
+    return Object.assign({}, fresh, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, subscription: subscription });
   }
 
-  return Object.assign({}, record.tokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt });
+  return Object.assign({}, record.tokens, { firstPackPurchaseAt: firstPackPurchaseAt, firstClaimAt: firstClaimAt, subscription: subscription });
 }
 
 /**
@@ -923,17 +992,91 @@ function isFirstEverClaimEligible(record) {
   return !hasCompletedAnyClaim(record && record.firstClaimAt, record && record.tokens && record.tokens.lastClaimAt);
 }
 
+// ── Dreamer Pass subscription predicates (see the DREAMER PASS constants doc
+//    block above) ──
+
+/**
+ * True only while `subscription` is in a live 3-day free trial: status is
+ * exactly 'trialing' AND a trialEnd is on file AND it hasn't passed yet.
+ * This is the SOLE gate for the 100/day daily-claim boost — a paid ('active')
+ * subscriber is deliberately NOT trial-active, so their claim stays 20 (their
+ * value is the 3000 monthly lump, not a boosted claim). A cancelled/lapsed/
+ * on_hold/paused/failed status is never 'trialing', so this is false the
+ * moment the terminal status is written — no separate boost-clearing step
+ * needed. `now` is passed in (never read off the wall clock here) so a single
+ * claim's amount decision uses one consistent instant across its whole CAS
+ * attempt.
+ */
+function isTrialActive(subscription, now) {
+  return !!(subscription && subscription.status === 'trialing' && subscription.trialEnd && now < subscription.trialEnd);
+}
+
+/**
+ * True when this account should be treated as a live Dreamer Pass subscriber
+ * (trialing OR paying). Drives the record's top-level `active` flag (via
+ * updateSubscription) and the `subscribed` field getTokenStatus exposes to
+ * the client. A terminal status (cancelled/lapsed/on_hold/paused/failed)
+ * is neither 'trialing' nor 'active', so this is false for it.
+ */
+function isSubscriptionActive(subscription) {
+  return !!(subscription && (subscription.status === 'trialing' || subscription.status === 'active'));
+}
+
+/**
+ * The single source of truth for how many tokens a daily claim credits, used
+ * by BOTH getTokenStatus (the pre-claim projection the UI shows) and
+ * claimDailyTokens (the amount actually written) so the two can never drift —
+ * exactly the recurring-bug-class discipline (hardcoded-daily-gran-h6swgy)
+ * this file already follows for DAILY_CLAIM_AMOUNT. During a live trial the
+ * boosted TRIAL_DAILY_CLAIM_AMOUNT (100) always wins; otherwise it's the
+ * normal first-claim/repeat-claim amount (both 20 today).
+ */
+function selectDailyClaimAmount(subscription, isFirstEverClaim, now) {
+  if (isTrialActive(subscription, now)) return TRIAL_DAILY_CLAIM_AMOUNT;
+  return isFirstEverClaim ? FIRST_CLAIM_BONUS_AMOUNT : DAILY_CLAIM_AMOUNT;
+}
+
+/**
+ * The client-facing projection of a subscription sub-object — null when no
+ * subscription record exists at all. Exposes only what a UI legitimately
+ * needs to render the right Dreamer Pass state (buy button vs. "trialing,
+ * N days left" vs. "active"), never internal bookkeeping. `subscribed` /
+ * `trialing` are recomputed live here off `now` rather than trusting a
+ * stored boolean, so a trial that has simply elapsed (status still 'trialing'
+ * but trialEnd passed, before any webhook has flipped it) reads as not
+ * trialing.
+ */
+function publicSubscriptionShape(subscription) {
+  if (!subscription || !subscription.status) return null;
+  var now = Date.now();
+  return {
+    status: subscription.status,
+    subscribed: isSubscriptionActive(subscription),
+    trialing: isTrialActive(subscription, now),
+    trialEnd: subscription.trialEnd || null,
+    nextBillingAt: subscription.nextBillingAt || null,
+    currentPeriodEnd: subscription.currentPeriodEnd || null
+  };
+}
+
 async function getTokenStatus(event, email, opts) {
   var tokens = await syncTokens(event, email, opts);
   var lastClaimAt = tokens.lastClaimAt || 0;
   var nextClaimAt = lastClaimAt + CLAIM_COOLDOWN_MS;
+  var isFirstEverClaim = !hasCompletedAnyClaim(tokens.firstClaimAt, lastClaimAt);
   return {
     balance: tokens.balance,
     claimable: (Date.now() - lastClaimAt) >= CLAIM_COOLDOWN_MS,
     nextClaimAt: nextClaimAt,
-    dailyClaimAmount: hasCompletedAnyClaim(tokens.firstClaimAt, lastClaimAt) ? DAILY_CLAIM_AMOUNT : FIRST_CLAIM_BONUS_AMOUNT,
+    // Reads the trial-boosted amount live (see selectDailyClaimAmount) so
+    // every UI surface shows the real upcoming claim amount — 100 during an
+    // active trial, 20 otherwise.
+    dailyClaimAmount: selectDailyClaimAmount(tokens.subscription, isFirstEverClaim, Date.now()),
     streak: tokens.streak || 0,
-    hasMadeFirstPurchase: !!tokens.firstPackPurchaseAt
+    hasMadeFirstPurchase: !!tokens.firstPackPurchaseAt,
+    // Dreamer Pass state for shop.html (buy button vs. status). null for a
+    // never-subscribed account. See publicSubscriptionShape.
+    subscription: publicSubscriptionShape(tokens.subscription)
   };
 }
 
@@ -1093,7 +1236,16 @@ async function claimDailyTokens(event, email) {
       // account whose tokens.lastClaimAt was already set before
       // firstClaimAt existed, so it's never re-granted the bonus.
       var isFirstEverClaim = !hasCompletedAnyClaim(rec.firstClaimAt, tokens.lastClaimAt);
-      claimAmount = isFirstEverClaim ? FIRST_CLAIM_BONUS_AMOUNT : DAILY_CLAIM_AMOUNT;
+      // Dreamer Pass trial boost (see selectDailyClaimAmount / the DREAMER
+      // PASS constants doc block): during a live trial this credits 100
+      // instead of 20, reverting to 20 the moment the trial ends/converts/
+      // cancels. Read off THIS attempt's own fresh record (rec.subscription),
+      // falling back to the pre-loop syncedTokens.subscription only when this
+      // attempt's read doesn't show a real record yet — same discipline as
+      // the balance/streak fields around it, so a subscription webhook that
+      // landed between our outer syncTokens read and this attempt is reflected.
+      var subscription = rec.subscription || syncedTokens.subscription;
+      claimAmount = selectDailyClaimAmount(subscription, isFirstEverClaim, now);
       newBalance = Math.min(MAX_TOKEN_BALANCE, tokens.balance + claimAmount);
       return Object.assign({}, rec, {
         email: key,
@@ -1125,6 +1277,100 @@ async function claimDailyTokens(event, email) {
   // unambiguous (a rejected CAS write never partially lands, so there is
   // no "maybe it actually landed" case left to rescue with a bonus read).
   throw new Error('claimDailyTokens: exhausted attempts claiming for ' + key + ' — every conditional write was rejected');
+}
+
+/**
+ * Writes/updates the Dreamer Pass `subscription` sub-object on this email's
+ * entitlement record — the ONLY writer of that field. Called by
+ * dodo-webhook.js on every Dreamer Pass subscription lifecycle event (see
+ * that file's TERMINAL_SUBSCRIPTION_STATUS / SUBSCRIPTION_EVENT_TYPES for the
+ * full list — active, renewed, plan_changed, and the terminal ones)
+ * and on a confirmed Dreamer Pass charge (to mark the account active and end
+ * the trial boost). See the DREAMER PASS constants doc block above for the
+ * record shape and what the trial vs. paid states mean.
+ *
+ * `subPatch` is MERGED onto whatever subscription sub-object already exists
+ * (Object.assign onto the prior value), with `undefined` keys dropped first
+ * so an event that doesn't know a particular field (Dodo doesn't echo every
+ * field on every event type) can't blank out a value a previous event
+ * already recorded — same discipline setEntitlement itself already applies.
+ * A key explicitly set to `null` (e.g. `trialEnd: null` on a terminal event)
+ * IS applied, since null is a deliberate clear, not "unknown". The record's
+ * top-level `active` flag and `plan` are kept in sync with the resulting
+ * status (isSubscriptionActive), so the dormant isEntitled()/Stripe-era
+ * fields stay meaningful for a Dreamer Pass subscriber too.
+ *
+ * This is NOT a per-event idempotency guard — subscription STATE is an
+ * idempotent overwrite (replaying subscription.active twice lands the same
+ * end state), exactly like stripe-webhook.js's setEntitlement calls. Only the
+ * token GRANT on a charge needs payment_id dedup, and that goes through
+ * creditTokenPackOnce (dodo-webhook.js), not this function.
+ *
+ * Goes through blobsCas.casWrite — NOT a plain setEntitlement — for the same
+ * reason every other low-frequency writer to this record does (see the
+ * STANDING CHECKLIST comment below spendTokens/addTokens): a plain write here
+ * could silently clobber a concurrent spendTokens/claimDailyTokens/credit
+ * landing in the same window. Throws on genuine exhaustion, same fail-loud
+ * posture as the other CAS writers — dodo-webhook.js's catch turns that into
+ * a 500 so Dodo redelivers the state event.
+ *
+ * A missing/empty email resolves to `{ ok: false }` and writes nothing,
+ * mirroring this file's "an unidentifiable caller never creates a phantom
+ * record" discipline.
+ */
+async function updateSubscription(event, email, subPatch) {
+  var key = normalizeEmail(email);
+  if (!key) return { ok: false };
+
+  // Materialize a brand-new email's tokens sub-object (INITIAL_GRANT) before
+  // this record is touched, and give `mutate` a fallback base for the narrow
+  // not-yet-visible-read window — same sequencing/reasoning as
+  // creditTokenPackAmountOnce/claimDailyTokens above.
+  var syncedTokens = await syncTokens(event, key);
+  var now = Date.now();
+
+  var result = await blobsCas.casWrite(event, STORE_NAME, key, {
+    maxAttempts: MAX_CREDIT_ATTEMPTS,
+    mutate: function (existing) {
+      var rec = existing || { email: key };
+      var baseTokens = rec.tokens || syncedTokens;
+      var prevSub = rec.subscription || {};
+      var clean = {};
+      Object.keys(subPatch || {}).forEach(function (k) {
+        if (subPatch[k] !== undefined) clean[k] = subPatch[k];
+      });
+      var nextSub = Object.assign({}, prevSub, clean, { updatedAt: now });
+      // Trial-window fallback cap (see TRIAL_WINDOW_MS): if we end up trialing
+      // with no known trialEnd (Dodo's payload didn't carry a resolvable one
+      // and none was on file), cap the 100/day boost to a 3-day window from
+      // first sighting. `prevSub.trialEnd` (if already set) is preserved by
+      // the merge above, so a redelivery never EXTENDS the window — the
+      // fallback only ever fires on the very first trialing write that lacks
+      // a real trial-end.
+      if (nextSub.status === 'trialing' && !nextSub.trialEnd) {
+        nextSub.trialEnd = now + TRIAL_WINDOW_MS;
+      }
+      var active = isSubscriptionActive(nextSub);
+      return Object.assign({}, rec, {
+        email: key,
+        // Carried through unchanged (purely additive to the record — a
+        // subscription state change never touches the token balance/claim
+        // state), same discipline as every other full-record rewrite here.
+        tokens: { balance: baseTokens.balance, lastClaimAt: baseTokens.lastClaimAt, streak: baseTokens.streak },
+        subscription: nextSub,
+        active: active,
+        plan: active ? DREAMER_PASS_PLAN : rec.plan,
+        updatedAt: now
+      });
+    }
+  });
+
+  if (result.ok || result.skipped) return { ok: true };
+
+  // Exhausted — fail loud, same as the other CAS writers (see this
+  // function's doc comment): dodo-webhook.js's catch turns this into a 500
+  // so Dodo redelivers the state event.
+  throw new Error('updateSubscription: exhausted attempts updating subscription for ' + key + ' — every conditional write was rejected');
 }
 
 // ── STANDING CHECKLIST for adding a new low-frequency field to this
@@ -2701,6 +2947,11 @@ module.exports = {
   getTokenStatus,
   isFirstEverClaimEligible,
   claimDailyTokens,
+  updateSubscription,
+  isTrialActive,
+  isSubscriptionActive,
+  selectDailyClaimAmount,
+  publicSubscriptionShape,
   spendTokens,
   addTokens,
   creditTokenPackOnce,
@@ -2722,6 +2973,10 @@ module.exports = {
   INITIAL_GRANT,
   DAILY_CLAIM_AMOUNT,
   FIRST_CLAIM_BONUS_AMOUNT,
+  TRIAL_DAILY_CLAIM_AMOUNT,
+  DREAMER_PASS_MONTHLY_TOKENS,
+  DREAMER_PASS_PLAN,
+  TRIAL_WINDOW_MS,
   EMAIL_VERIFIED_ACHIEVEMENT_ID,
   EMAIL_VERIFIED_BONUS_AMOUNT,
   CLAIM_COOLDOWN_MS,
