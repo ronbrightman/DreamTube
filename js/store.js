@@ -67,6 +67,10 @@
 //   getAccountCreatedAt()        -> local read, epoch-ms signup timestamp (null for pre-existing accounts, see its own comment) — feeds Settings' support/feedback form
 //   getSharedFeed()             -> GET  /.netlify/functions/get-feed (real, cross-browser)
 //   toggleSharedLike(id,liked)   -> POST /.netlify/functions/like-dream
+//   getFollowStatus()            -> GET  /.netlify/functions/get-following (Social Layer v2
+//       slice 3 "follow" — the CURRENT account's own following list + follower count, never
+//       anyone else's — see that function's own header comment)
+//   toggleFollow(targetHandle,currentlyFollowing) -> POST /.netlify/functions/follow-user
 //   isBlocked(handle) / getBlockedHandles() -> local reads of this device's block list
 //   blockUser(handle) / unblockUser(handle) -> local write + best-effort POST
 //       /.netlify/functions/block-user (public feed safety, tracker item
@@ -5414,6 +5418,66 @@
         persist();
         return { likes: data.likes, likedByMe: !currentlyLiked };
       });
+    },
+
+    // ===== Follow user (Social Layer v2 slice 3 "follow" —
+    // docs/SOCIAL_LAYER_V2_DESIGN.md, tracker item
+    // for-product-build-social-layer-v2-direct-34047c) =====
+
+    /**
+     * Fetches the CURRENTLY signed-in account's own following list +
+     * follower count from the durable server-side store (netlify/functions/
+     * get-following.js/lib/follow-store.js). Both are OWNER-ONLY private
+     * data (see that endpoint's own header comment for why there is no
+     * `handle` param at all — identity resolves 100% from
+     * state.user.authToken) — this is never used to look up anyone ELSE's
+     * following list or follower count. Resolves to
+     * { following:[...handles], followerCount:N } (both empty/0 when
+     * logged out, signed in with no authToken on file, or on any fetch
+     * failure — same honest-degrade posture as syncBlockedHandlesFromServer).
+     * Never rejects.
+     */
+    getFollowStatus: function () {
+      if (!state.user || !state.user.authToken) return Promise.resolve({ following: [], followerCount: 0 });
+      return fetch('/.netlify/functions/get-following?authToken=' + encodeURIComponent(state.user.authToken))
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          return {
+            following: (data && data.ok && Array.isArray(data.following)) ? data.following : [],
+            followerCount: (data && data.ok && typeof data.followerCount === 'number') ? data.followerCount : 0
+          };
+        }).catch(function () { return { following: [], followerCount: 0 }; });
+    },
+
+    /**
+     * Toggles follow/unfollow against `targetHandle` (e.g. "@luna") for the
+     * CURRENTLY signed-in account — netlify/functions/follow-user.js.
+     * Returns a Promise of { following:bool }, or REJECTS on a real failure
+     * (not signed in, network error, invalid/expired token, self-follow) —
+     * deliberately NOT the "never rejects" honest-degrade shape
+     * getFollowStatus/blockUser use above: unlike a background list
+     * hydration, a follow toggle's caller (u.html's own Follow button) needs
+     * to KNOW when it failed so it can roll back the optimistic
+     * Follow/Following flip it already applied — same "resolve on real
+     * success, reject otherwise" contract as toggleSharedLike.
+     */
+    toggleFollow: function (targetHandle, currentlyFollowing) {
+      if (!state.user || !state.user.authToken) return Promise.reject(new Error('not_signed_in'));
+      return fetch('/.netlify/functions/follow-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ authToken: state.user.authToken, targetHandle: targetHandle, action: currentlyFollowing ? 'unfollow' : 'follow' })
+      }).then(function (res) { return res.json(); })
+        .then(function (data) {
+          // Checks `data.error` too, not just `data.ok === false` -- an
+          // HTTP-level failure (e.g. a 500) returns a bare `{error:...}`
+          // body with no `ok` field at all (see follow-user.js's own error
+          // shapes), which `data.ok === false` alone would miss entirely
+          // and silently treat as success. Mirrors toggleSharedLike's own
+          // `data.error` check above for the identical reason.
+          if (!data || data.error || data.ok === false) throw new Error((data && data.error) || 'follow_toggle_failed');
+          return { following: data.following };
+        });
     },
 
     // ===== Block user (tracker item for-product-public-feed-safety-in-app-re-ppuw77) =====
