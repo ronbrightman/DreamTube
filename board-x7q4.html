@@ -54,7 +54,23 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
   function esc(s){ var d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
   function linkify(s){ return s.replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1">$1</a>'); }
   function strip(t,tag){ return (t||'').replace(new RegExp('^\\s*\\[for '+tag+'\\]\\s*','i'),''); }
-  var WORK=/^\s*\[for (product|growth|manager)\]/i;
+  // Ron's queue gate (2026-08-09, founder: "the board keeps doing this despite
+  // your durable fixes"). The recurrence root cause was trusting the
+  // waitingFor:ron FLAG as the gate — many writers set it (an over-eager
+  // auto-sync, and once a Manager slip on an [auto] item), so mis-flagged
+  // worker/self items leaked onto the founder's queue. The earlier filter only
+  // excluded [for product|growth|manager] and MISSED [auto] (and any future
+  // tag). Fix: the TAG is the gate, the flag never is. An item shows here ONLY
+  // if its title is explicitly [for ron], OR it is a genuinely UNTAGGED item
+  // flagged waitingFor:ron (the safety net for the 2026-08-07 "invisible wait"
+  // escalation). Any bracket-tagged item ([for anything], [auto], …) can never
+  // appear via the flag — so no mis-flag by any process, or by me, can ever
+  // flood this queue again.
+  function isRonItem(i){
+    var t=(i.title||'').trim();
+    if(/^\[for ron\]/i.test(t)) return true;
+    return i.waitingFor==='ron' && !/^\[/.test(t);
+  }
 
   fetch('/.netlify/functions/get-tracker-items').then(function(r){return r.json();}).then(function(data){
     var items=(data.items||[]).filter(function(i){return !i.done;});
@@ -62,7 +78,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
     document.getElementById('sub').textContent='Everything open, live from the tracker · '+now+' IDT';
 
     // Waiting on RON: waitingFor:ron AND not a worker-tagged item.
-    var ron=items.filter(function(i){return i.waitingFor==='ron' && !WORK.test(i.title||'');});
+    var ron=items.filter(isRonItem);
     document.getElementById('h-ron').textContent='🔴 Waiting on RON — '+ron.length;
     var rbox=document.getElementById('ron');
     if(!ron.length){ rbox.innerHTML='<div class="donebox">✅ Nothing is waiting on you right now — every open flag is with the workers.</div>'; }
