@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title>Me-photo video — cost comparison</title>
+<style>
+html{background:#0c0a1a}body{font-family:system-ui,sans-serif;color:#eae7fb;margin:0;padding:16px 14px 60px;max-width:760px;margin-inline:auto;line-height:1.5}
+h1{font-size:20px;margin:2px 0 4px;color:#fff}
+.sub{color:#a49dc4;font-size:13px;margin:0 0 14px}
+.dream{background:#161327;border:1px solid rgba(157,144,255,.22);border-radius:12px;padding:10px 13px;font-size:13px;color:#cfc9ec;margin-bottom:8px}
+.face{display:flex;gap:10px;align-items:center;background:#161327;border:1px solid rgba(157,144,255,.22);border-radius:12px;padding:10px 13px;margin-bottom:18px}
+.face img{width:64px;height:80px;object-fit:cover;border-radius:8px}
+.face .l{font-size:12px;color:#a49dc4}
+.grid{display:flex;flex-direction:column;gap:16px}
+@media(min-width:620px){.grid{flex-direction:row}}
+.card{flex:1;background:#161327;border:1px solid rgba(157,144,255,.22);border-radius:14px;padding:12px;overflow:hidden}
+.card.is-cur{border-color:rgba(217,166,83,.5);background:#1a1712}
+.mtitle{font-size:12px;font-weight:800;color:#fff;word-break:break-word;margin-bottom:6px;line-height:1.3}
+.badge{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:99px;margin-bottom:8px}
+.badge.cur{background:rgba(217,166,83,.15);color:#ffd28a}
+.badge.new{background:rgba(126,226,168,.14);color:#8ee6c2}
+video{width:100%;border-radius:10px;background:#000;display:block;aspect-ratio:9/16}
+.note{font-size:12px;color:#8f88b3;margin-top:8px;line-height:1.45}
+.err{font-size:12px;color:#e88;padding:20px 6px}
+.foot{color:#8f88b3;font-size:12px;margin-top:22px;line-height:1.6}
+.foot b{color:#cfc9ec}
+</style></head><body>
+<h1>Me-photo video — cost comparison</h1>
+<div class="sub">Same reference face, same dream, three models. The Me-photo route is ~80% of model spend.</div>
+<div class="dream">Dream prompt used: The same man walks slowly through a glowing, misty forest at night, carrying a small lantern, looking around in quiet wonder as soft points of light drift past him. Dreamlike, cinematic, gentle motion.</div>
+<div class="face"><img src="https://v3b.fal.media/files/b/0aa5ab5a/aDx55kPNwpS6jlfVeuYaG.jpg" alt="reference"><div class="l">The single synthetic &ldquo;Me-photo&rdquo; reference used for all three (not a real person).</div></div>
+<div class="grid"><div class="card is-cur"><div class="mtitle">veo3.1/fast/reference-to-video (CURRENT)</div><span class="badge cur">CURRENT · $1.20</span><video src="https://v3b.fal.media/files/b/0aa5ab5d/eybIis_GDMYVLgibSsHT6_7417227c56f446a291306ad833bdfe14.mp4" controls playsinline muted loop preload="metadata"></video><div class="note">8s · 9:16 · has audio · strong motion. Decent likeness. What ships today, at 3× the cost.</div></div><div class="card"><div class="mtitle">minimax/video-01-subject-reference</div><span class="badge new">$0.50 · saves ~$147/mo</span><video src="https://v3b.fal.media/files/b/0aa5ab89/TL668zjpmrpM6CUE0D088_Rt6yHuKR.mp4" controls playsinline muted loop preload="metadata"></video><div class="note">~6s · came out 16:9 LANDSCAPE (no vertical control) · no audio · stylised/CGI look, weakest face match. Wrong shape for our vertical dreams.</div></div><div class="card"><div class="mtitle">vidu/q1/reference-to-video</div><span class="badge new">$0.40 · saves ~$168/mo</span><video src="https://v3b.fal.media/files/b/0aa5ab7e/CzelXTPX0CsS_yywDH1pv_output.mp4" controls playsinline muted loop preload="metadata"></video><div class="note">~5s · 9:16 vertical · no audio · BEST face likeness, photorealistic. Gentler motion. Cheapest — my pick.</div></div></div>
+<div class="foot"><b>The lever:</b> the current route is <b>$1.20/video</b> and Me-photo dreams are ~80% of model spend. <b>My pick: Vidu ($0.40, 67% cheaper)</b> &mdash; it kept the face best and is correctly vertical. Minimax ($0.50) followed the scene nicely but came out landscape with a weaker, stylised face &mdash; wrong shape for our format. Trade-off for both cheaper options: <b>no generated audio</b> and a little shorter/gentler motion than veo. Tell me which you like and I wire it behind the existing model env flag (with a clean fallback to veo). If audio matters on these, I can layer our own ambient/music track cheaply.</div>
+</body></html>
