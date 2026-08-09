@@ -95,12 +95,20 @@
 // the cheap one" — fal-ai/veo3.1/lite at 720p is $0.03/s audio-off /
 // $0.05/s audio-on (verified against fal's own pricing, not guessed),
 // roughly 80% cheaper per generation than /fast's $0.10-0.20/sec, same
-// duration presets/aspect ratio/API shape. Deliberately scoped to THIS path
-// only: FAL_MODEL_REFERENCE_TO_VIDEO (the Me-photo path) and
-// FAL_MODEL_IMAGE_TO_VIDEO (the "turn image into video" upsell) stay on
-// their /fast variants below — no Lite reference-to-video variant exists in
-// fal's catalog yet, and switching image-to-video (a Lite variant does
-// exist there) is an explicit separate follow-up, not folded into this.
+// duration presets/aspect ratio/API shape.
+//
+// The Me-photo reference-to-video path is ALSO env-configurable now
+// (FAL_MODEL_REFERENCE_TO_VIDEO) and, as of founder decision 2026-08-09,
+// defaults to a DIFFERENT provider — fal.ai's Vidu Q1 reference-to-video
+// (~$0.40/video vs veo /fast's ~$1.20, this path being ~80% of model spend)
+// — with a transient-failure fallback to the old veo model kept in place.
+// Unlike the text-to-video swap above (all veo variants, one API shape),
+// Vidu and veo take different request bodies, so that path branches on the
+// model id; see FAL_MODEL_REFERENCE_TO_VIDEO / referenceToVideoBody /
+// callFalReferenceToVideo below for the full story. FAL_MODEL_IMAGE_TO_VIDEO
+// (the "turn image into video" upsell) is untouched by all of this and stays
+// on its veo /fast variant — a Lite/alternative image-to-video switch is an
+// explicit separate follow-up, not folded into this.
 
 var STYLE_MODIFIERS = {
   Cartoon:   'in a colorful hand-drawn cartoon animation style',
@@ -260,7 +268,11 @@ function humanizeFalDetail(detail) {
   var messages = detail.map(function (item) {
     if (!item) return null;
     if (item.type === 'content_policy_violation') {
-      var onPhoto = Array.isArray(item.loc) && item.loc.indexOf('image_urls') !== -1;
+      // 'image_urls' is veo's photo field; 'reference_image_urls' is Vidu's
+      // (the default Me-photo model since 2026-08-09). Either being the
+      // flagged location means the REFERENCE PHOTO tripped safety, so show
+      // the photo-specific guidance rather than the description one.
+      var onPhoto = Array.isArray(item.loc) && (item.loc.indexOf('image_urls') !== -1 || item.loc.indexOf('reference_image_urls') !== -1);
       return onPhoto
         ? "The reference photo was flagged by the safety system — this usually happens when the photo appears to show a child or teen. For that character, switch to Describe (text) instead of a photo."
         : 'The description was flagged by the safety system. This usually happens when a real photo is combined with a description of a minor, or another sensitive detail — try removing age or other identifying details, or switch to a non-photorealistic style.';
@@ -436,40 +448,102 @@ async function callFalPixverse(prompt, falKey, duration, generateAudio, webhookU
   return { ok: true, operationName: 'fal:' + FAL_MODEL_PIXVERSE_V6 + ':' + data.request_id };
 }
 
-var FAL_MODEL_REFERENCE_TO_VIDEO = 'fal-ai/veo3.1/fast/reference-to-video';
+// Primary reference-to-video model — the Me-photo path (a self character
+// with an uploaded photo). Env-configurable (FAL_MODEL_REFERENCE_TO_VIDEO),
+// defaulting to fal.ai's Vidu Q1 reference-to-video. Founder decision
+// 2026-08-09: switch the Me-photo path off veo3.1/fast/reference-to-video
+// (~$1.20/video, ~80% of model spend) to Vidu Q1 (~$0.40/video, ~67%
+// cheaper, likeness verified good on the founder's own photo, 9:16
+// vertical). A model swap/revert is a pure env-var flip + redeploy, same
+// convention as FAL_MODEL_TEXT_TO_VIDEO above — but UNLIKE that switch (all
+// veo variants, one identical API shape), Vidu and veo take DIFFERENT
+// request bodies (see referenceToVideoBody), so the submit path branches on
+// the model id (isViduModel) to send each its own correct shape. That keeps
+// an env override back to a veo id working with no code change.
+var FAL_MODEL_REFERENCE_TO_VIDEO = process.env.FAL_MODEL_REFERENCE_TO_VIDEO || 'fal-ai/vidu/q1/reference-to-video';
+
+// The veo reference-to-video model, kept for two jobs: (1) the automatic
+// FALLBACK when the primary (Vidu by default) submission fails with a
+// plausibly-transient error, so a Me-photo generation never just dies
+// because the cheaper model had a bad moment (same "never let a generation
+// silently die" discipline this file already applies elsewhere); (2) the
+// model actually submitted to whenever the resolved primary is itself a veo
+// id (an env rollback of FAL_MODEL_REFERENCE_TO_VIDEO) — in that case there
+// is no second, different model to fall back TO, so the fallback is skipped.
+// Deliberately NOT env-configurable: it's the known-good floor the primary
+// falls back to, not itself a thing to swap.
+var FAL_MODEL_REFERENCE_TO_VIDEO_VEO = 'fal-ai/veo3.1/fast/reference-to-video';
+
+// True for any fal Vidu model id (owner "fal-ai", alias "vidu"). Drives
+// which request-body shape referenceToVideoBody builds — Vidu's own field
+// names/params, or veo's — so FAL_MODEL_REFERENCE_TO_VIDEO can be flipped
+// between a Vidu and a veo id by env alone and each still gets its correct
+// body. Matches on the alias SEGMENT specifically (not a bare substring) so
+// an unrelated model that merely contains the letters "vidu" can't fool it.
+function isViduModel(model) {
+  return String(model).split('/')[1] === 'vidu';
+}
 
 /**
- * Active path when a self character has an uploaded photo. image_urls is a
- * *list* of subject-identity references (fal blends the referenced
- * person's appearance into whatever the text prompt describes) — not a
- * single starting frame, so this is deliberately image_urls: [photo], not
- * the image_url singular that image-to-video takes. fal.ai accepts a
- * base64 data URI directly (it decodes the file for you), so the client's
- * stored photoDataUrl is passed through as-is, no separate upload step
- * needed.
+ * The request body for a reference-to-video submission, shaped for whichever
+ * MODEL it targets. The two supported providers take deliberately different
+ * bodies (this is exactly why FAL_MODEL_REFERENCE_TO_VIDEO can't be a blind
+ * string swap the way FAL_MODEL_TEXT_TO_VIDEO is):
  *
- * video-status.js needs no changes for this: its falAppBase() already
- * derives the polling path from just the first two model segments
- * ("fal-ai/veo3.1"), which is identical across every veo3.1 variant.
+ *   Vidu Q1 (fal-ai/vidu/q1/reference-to-video) — verified against fal's
+ *   Vidu API: the reference-image field is `reference_image_urls` (a LIST,
+ *   name differs from veo's `image_urls`), and Vidu accepts NO
+ *   duration/resolution/generate_audio params (fixed ~5s clip, and its
+ *   output is SILENT). Audio for a Vidu dream comes from the client-side
+ *   style/mood music bed that already plays behind EVERY (structurally
+ *   silent) DreamTube video — see js/music-bed.js; no change needed there,
+ *   a Vidu video is just another silent video to it. `movement_amplitude:
+ *   'auto'` lets Vidu choose the motion intensity. Like veo it accepts a
+ *   base64 data URI directly in the list, so the client's stored
+ *   photoDataUrl passes through as-is.
  *
- * webhookUrl (optional, 5th arg): see callFal's own doc comment above —
- * same withWebhook() no-op-unless-passed behavior.
+ *   veo3.1 (fal-ai/veo3.1/fast/reference-to-video) — the previous active
+ *   path, body unchanged: `image_urls` (plural, subject-identity
+ *   references) plus duration/resolution/generate_audio. duration and
+ *   generateAudio are only meaningful on this shape.
  */
-async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration, generateAudio, webhookUrl) {
-  var res = await fetch(withWebhook(FAL_API_BASE + '/' + FAL_MODEL_REFERENCE_TO_VIDEO, webhookUrl), {
+function referenceToVideoBody(model, prompt, imageDataUrl, duration, generateAudio) {
+  if (isViduModel(model)) {
+    return {
+      prompt: prompt,
+      reference_image_urls: [imageDataUrl],
+      aspect_ratio: '9:16',
+      movement_amplitude: 'auto'
+    };
+  }
+  return {
+    prompt: prompt,
+    image_urls: [imageDataUrl],
+    aspect_ratio: '9:16',
+    duration: duration || DEFAULT_DURATION,
+    resolution: '720p',
+    generate_audio: generateAudio !== false
+  };
+}
+
+/**
+ * Submits ONE reference-to-video job to a specific `model` and returns the
+ * usual { ok: true, operationName } | { ok: false, statusCode, error }.
+ * fal.ai accepts a base64 data URI directly (it decodes the file for you),
+ * so the client's stored photoDataUrl is passed through as-is, no separate
+ * upload step needed. The operationName encodes the exact model used, so
+ * video-status.js polls the right fal app base with no extra plumbing (its
+ * falAppBase() derives "fal-ai/vidu" or "fal-ai/veo3.1" from the first two
+ * model segments — confirmed model-agnostic, no change needed for Vidu).
+ */
+async function submitReferenceToVideo(model, prompt, imageDataUrl, falKey, duration, generateAudio, webhookUrl) {
+  var res = await fetch(withWebhook(FAL_API_BASE + '/' + model, webhookUrl), {
     method: 'POST',
     headers: Object.assign({
       'Content-Type': 'application/json',
       'Authorization': 'Key ' + falKey
     }, FAL_NO_EXPIRY_HEADER),
-    body: JSON.stringify({
-      prompt: prompt,
-      image_urls: [imageDataUrl],
-      aspect_ratio: '9:16',
-      duration: duration || DEFAULT_DURATION,
-      resolution: '720p',
-      generate_audio: generateAudio !== false
-    })
+    body: JSON.stringify(referenceToVideoBody(model, prompt, imageDataUrl, duration, generateAudio))
   });
 
   var data = await res.json();
@@ -478,7 +552,58 @@ async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration, g
     return { ok: false, statusCode: res.status, error: falErrorMessage(data) };
   }
 
-  return { ok: true, operationName: 'fal:' + FAL_MODEL_REFERENCE_TO_VIDEO + ':' + data.request_id };
+  return { ok: true, operationName: 'fal:' + model + ':' + data.request_id };
+}
+
+/**
+ * Active path when a self character has an uploaded photo. Submits to the
+ * primary reference-to-video model (FAL_MODEL_REFERENCE_TO_VIDEO — Vidu by
+ * default) and, on a plausibly-TRANSIENT primary failure, falls back once to
+ * the veo reference-to-video path so a Me-photo generation never just dies
+ * because the cheaper/newer model had a bad moment.
+ *
+ * "Transient" is deliberately narrow: a thrown network/transport error, an
+ * HTTP 5xx (model/infra error), or a 429 (rate limit). A deterministic 4xx
+ * — a bad request, or a content-policy rejection (e.g. the reference photo
+ * looks like a minor) — does NOT fall back: veo would almost certainly
+ * reject the same photo too, and we WANT that surfaced as E106 rather than
+ * silently masked. A blanket "retry veo on any failure" would also hide a
+ * Vidu MISCONFIGURATION by quietly routing 100% of Me-photo traffic back to
+ * the expensive veo model — defeating the entire point of this cost switch
+ * without anyone noticing. Failing loud on 4xx keeps the switch honest.
+ *
+ * The fallback is skipped entirely when the primary already IS the veo model
+ * (an env rollback of FAL_MODEL_REFERENCE_TO_VIDEO) — there'd be no different
+ * model to retry, so the single primary result/throw is returned/propagated
+ * exactly as the veo-only version behaved before this change.
+ *
+ * Signature unchanged from the previous veo-only version (duration/
+ * generateAudio/webhookUrl) so both callers — this file's handler and
+ * start-pending-generation.js — need no change; duration and generateAudio
+ * are simply ignored by the Vidu body (see referenceToVideoBody).
+ */
+async function callFalReferenceToVideo(prompt, imageDataUrl, falKey, duration, generateAudio, webhookUrl) {
+  var primaryIsVeo = FAL_MODEL_REFERENCE_TO_VIDEO === FAL_MODEL_REFERENCE_TO_VIDEO_VEO;
+
+  var primary;
+  try {
+    primary = await submitReferenceToVideo(FAL_MODEL_REFERENCE_TO_VIDEO, prompt, imageDataUrl, falKey, duration, generateAudio, webhookUrl);
+  } catch (e) {
+    // Network/transport throw talking to the primary model — the transient
+    // case the fallback exists for. Nothing different to fall back to when
+    // the primary already IS veo, so re-throw (handler catches it -> E107),
+    // preserving the previous veo-only behavior exactly.
+    if (primaryIsVeo) throw e;
+    return submitReferenceToVideo(FAL_MODEL_REFERENCE_TO_VIDEO_VEO, prompt, imageDataUrl, falKey, duration, generateAudio, webhookUrl);
+  }
+
+  if (primary.ok) return primary;
+
+  var transient = primary.statusCode >= 500 || primary.statusCode === 429;
+  if (!primaryIsVeo && transient) {
+    return submitReferenceToVideo(FAL_MODEL_REFERENCE_TO_VIDEO_VEO, prompt, imageDataUrl, falKey, duration, generateAudio, webhookUrl);
+  }
+  return primary;
 }
 
 // ACTIVE PATH when the request carries a sourceImageUrl (the "Turn this
@@ -1167,6 +1292,9 @@ exports.buildPrompt = buildPrompt;
 exports.callFal = callFal;
 exports.callFalPixverse = callFalPixverse;
 exports.callFalReferenceToVideo = callFalReferenceToVideo;
+exports.submitReferenceToVideo = submitReferenceToVideo;
+exports.referenceToVideoBody = referenceToVideoBody;
+exports.isViduModel = isViduModel;
 exports.callFalImageToVideo = callFalImageToVideo;
 exports.resolveDuration = resolveDuration;
 exports.falErrorMessage = falErrorMessage;
@@ -1176,5 +1304,6 @@ exports.MODEL_KEY_PIXVERSE_V6 = MODEL_KEY_PIXVERSE_V6;
 exports.FAL_MODEL_PIXVERSE_V6 = FAL_MODEL_PIXVERSE_V6;
 exports.FAL_MODEL = FAL_MODEL;
 exports.FAL_MODEL_REFERENCE_TO_VIDEO = FAL_MODEL_REFERENCE_TO_VIDEO;
+exports.FAL_MODEL_REFERENCE_TO_VIDEO_VEO = FAL_MODEL_REFERENCE_TO_VIDEO_VEO;
 exports.FAL_MODEL_IMAGE_TO_VIDEO = FAL_MODEL_IMAGE_TO_VIDEO;
 exports.FAL_NO_EXPIRY_HEADER = FAL_NO_EXPIRY_HEADER;

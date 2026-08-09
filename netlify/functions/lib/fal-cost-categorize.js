@@ -12,7 +12,12 @@
 // uses today, 2026-07-31):
 //   video: generate-video.js — fal-ai/veo3.1/lite (default text-to-video,
 //     env-overridable via FAL_MODEL_TEXT_TO_VIDEO — still always under the
-//     'fal-ai/veo3.1' family), fal-ai/veo3.1/fast/reference-to-video,
+//     'fal-ai/veo3.1' family), fal-ai/vidu/q1/reference-to-video (the
+//     default Me-photo model as of founder decision 2026-08-09 — switched
+//     off veo3.1/fast/reference-to-video for cost; env-overridable via
+//     FAL_MODEL_REFERENCE_TO_VIDEO, with a veo fallback that still lands
+//     under 'fal-ai/veo3.1'), fal-ai/veo3.1/fast/reference-to-video (now the
+//     fallback, and the value the env var reverts to),
 //     fal-ai/veo3.1/fast/image-to-video, fal-ai/wan/v2.2-5b/text-to-video
 //   image: generate-image.js — fal-ai/flux/dev; generate-avatar.js —
 //     fal-ai/flux/schnell
@@ -49,7 +54,13 @@
 // auth_method — see fal-usage-client.js's per-record shape) over this
 // elimination logic, not to keep both.
 
-var APP_VIDEO_PREFIXES = ['fal-ai/veo3.1', 'fal-ai/wan/'];
+// 'fal-ai/vidu/q1/reference-to-video' is deliberately the SPECIFIC Me-photo
+// model id, not a broad 'fal-ai/vidu/' family prefix: it's the only Vidu
+// endpoint this app calls, and keeping it specific avoids ever claiming an
+// unrelated Vidu model that growth's creative pipeline might use as
+// app-video spend (the veo entry can be family-level because every veo3.1
+// variant here is an app call; Vidu doesn't have that property).
+var APP_VIDEO_PREFIXES = ['fal-ai/veo3.1', 'fal-ai/wan/', 'fal-ai/vidu/q1/reference-to-video'];
 var APP_IMAGE_PREFIXES = ['fal-ai/flux/'];
 var APP_OTHER_PREFIXES = ['fal-ai/whisper', 'openrouter/router/'];
 

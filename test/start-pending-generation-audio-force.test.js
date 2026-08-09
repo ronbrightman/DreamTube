@@ -137,7 +137,7 @@ test('a malformed x-nf-geo header: generate_audio is still false (the unconditio
   assert.equal(calls[0].body.generate_audio, false);
 });
 
-test('a self-photo (reference-to-video) submission on this path is also generate_audio:false', function () {
+test('a self-photo (reference-to-video) submission on this path produces no model audio — Vidu Q1, the default Me-photo model (founder 2026-08-09), is structurally silent (no generate_audio param)', function () {
   var calls = installFetchSpy();
   return handler(genEvent({
     body: {
@@ -147,7 +147,16 @@ test('a self-photo (reference-to-video) submission on this path is also generate
   })).then(function (res) {
     assert.equal(res.statusCode, 200);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].body.generate_audio, false);
+    // This wizard pre-signup path reuses generate-video.js's exported
+    // callFalReferenceToVideo, which now defaults to fal.ai Vidu Q1. Vidu's
+    // request body carries no generate_audio param at all (see
+    // referenceToVideoBody) — so the "audio is off on the Me-photo path"
+    // guarantee holds structurally here, even harder than before. (Dream
+    // audio comes from the client-side music bed — js/music-bed.js.)
+    // (URL carries this path's fal_webhook query param, so no end-anchor.)
+    assert.match(calls[0].url, /\/fal-ai\/vidu\/q1\/reference-to-video(\?|$)/);
+    assert.equal(calls[0].body.generate_audio, undefined);
+    assert.deepEqual(calls[0].body.reference_image_urls, ['data:image/png;base64,AAAA']);
   });
 });
 
