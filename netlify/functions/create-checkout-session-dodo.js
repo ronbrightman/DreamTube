@@ -212,7 +212,7 @@ var DEFAULT_MAX_PASSWORD_ATTEMPTS_PER_IDENTIFIER_PER_DAY = 30;
 // env var below, not here; this amount is only used for the metadata
 // fallback dodo-webhook.js reads if its product_id -> pack mapping ever
 // changes after a purchase was made (see that file's resolvePackTokens).
-var PACK_TOKENS = { pack099: 300, pack199: 500, pack499: 1500, pack999: 4000 };
+var PACK_TOKENS = { pack099: 300, pack199: 500, pack499: 1000, pack999: 2500 };
 
 // USD price per pack, mirrors shop.html's own PACK_INFO map — used only for
 // the metadata.dreamtube_price fallback below, the same "belt-and-
@@ -221,7 +221,7 @@ var PACK_TOKENS = { pack099: 300, pack199: 500, pack499: 1500, pack999: 4000 };
 // actual product_id against DODO_PRODUCT_PACK_* first (this is only the
 // fallback path), so this never needs to be the source of truth for what
 // Dodo actually charged.
-var PACK_PRICES = { pack099: 0.99, pack199: 1.99, pack499: 4.99, pack999: 9.99 };
+var PACK_PRICES = { pack099: 0.99, pack199: 2.99, pack499: 4.99, pack999: 9.99 };
 
 // The one-time starter pack's own id — pulled out as a constant (rather
 // than a literal string check below) so the E9 guard reads as "the

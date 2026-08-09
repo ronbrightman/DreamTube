@@ -8,7 +8,7 @@
 // Meta ad spend had no Purchase signal at all. Pack ids/amounts throughout
 // this file use "The Vault" lineup (founder-approved 2026-08-02, tracker
 // item for-product-build-ship-today-founder-app-zn9zyy) — pack099 ($0.99/
-// 300, starter), pack199 ($1.99/500), pack499 ($4.99/1500), pack999
+// 300, starter), pack199 ($2.99/500), pack499 ($4.99/1000), pack999
 // ($9.99/4000) — and additionally pin the `starter` flag this redesign
 // added to the same event.
 //
@@ -179,7 +179,7 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     // has one; this seed matches that reality rather than the pre-Phase-1
     // shape. pack999/$9.99/4000 matches "The Vault" lineup's "Best value"
     // pack (founder-approved 2026-08-02).
-    await markPendingPurchase(page, { pack: 'pack999', tokens: 4000, price: 9.99, starter: false, eventId: 'evt-fixed-test-id' });
+    await markPendingPurchase(page, { pack: 'pack999', tokens: 2500, price: 9.99, starter: false, eventId: 'evt-fixed-test-id' });
 
     await page.goto(baseUrl + '/shop.html?checkout=success', { waitUntil: 'domcontentloaded' });
     // fireMetaConversion's CAPI POST is fire-and-forget -- wait for the
@@ -209,7 +209,7 @@ test('a real checkout return (marker present) fires purchase_completed on PostHo
     var phCalls = await readPostHogCalls(page);
     var purchaseCaptures = phCalls.filter(function (entry) { return entry[0] === 'capture' && entry[1] === 'purchase_completed'; });
     assert.equal(purchaseCaptures.length, 1, 'expected exactly one posthog.capture(\'purchase_completed\', ...) call');
-    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack999', tokens: 4000, value: 9.99, currency: 'USD', starter: false, $insert_id: 'evt-fixed-test-id' });
+    assert.deepEqual(purchaseCaptures[0][2], { pack: 'pack999', tokens: 2500, value: 9.99, currency: 'USD', starter: false, $insert_id: 'evt-fixed-test-id' });
 
     var markerAfter = await page.evaluate(function () { return sessionStorage.getItem('dreamtube_pending_purchase'); });
     assert.equal(markerAfter, null, 'the marker must be consumed (removed) after firing');
@@ -271,7 +271,7 @@ test('a cancelled checkout clears the marker, so a LATER bare/bookmarked ?checko
     // Same marker purchasePack() would have set right before redirecting to
     // Dodo -- but this attempt gets cancelled, not completed.
     await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
-    await markPendingPurchase(page, { pack: 'pack999', tokens: 4000, price: 9.99, starter: false });
+    await markPendingPurchase(page, { pack: 'pack999', tokens: 2500, price: 9.99, starter: false });
 
     await page.goto(baseUrl + '/shop.html?checkout=cancelled', { waitUntil: 'domcontentloaded' });
     var markerAfterCancel = await page.evaluate(function () { return sessionStorage.getItem('dreamtube_pending_purchase'); });

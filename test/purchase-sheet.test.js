@@ -15,12 +15,12 @@ var assert = require('node:assert/strict');
 
 var PurchaseSheet = require('../js/purchase-sheet');
 
-test('PACK_INFO matches shop.html\'s "The Vault" lineup (founder-approved 2026-08-02: $0.99/300 starter, $1.99/500, $4.99/1500, $9.99/4000)', function () {
+test('PACK_INFO matches shop.html\'s "The Vault" lineup (founder-updated 2026-08-09: $0.99/300 starter, $2.99/500, $4.99/1000, $9.99/2500)', function () {
   assert.deepEqual(PurchaseSheet.PACK_INFO, {
     pack099: { tokens: 300, price: 0.99 },
-    pack199: { tokens: 500, price: 1.99 },
-    pack499: { tokens: 1500, price: 4.99 },
-    pack999: { tokens: 4000, price: 9.99 }
+    pack199: { tokens: 500, price: 2.99 },
+    pack499: { tokens: 1000, price: 4.99 },
+    pack999: { tokens: 2500, price: 9.99 }
   });
 });
 
@@ -41,7 +41,7 @@ test('pickContextualPack: offers the starter (pack099) when this account has nev
   assert.equal(PurchaseSheet.pickContextualPack(100, false), 'pack099', 'the real max shortfall (a blocked video) is well within the starter\'s 300 tokens');
 });
 
-test('pickContextualPack: offers the $1.99 pack (pack199), never the starter, once this account has already bought a pack', function () {
+test('pickContextualPack: offers the $2.99 pack (pack199), never the starter, once this account has already bought a pack', function () {
   assert.equal(PurchaseSheet.pickContextualPack(1, true), 'pack199');
   assert.equal(PurchaseSheet.pickContextualPack(100, true), 'pack199');
 });

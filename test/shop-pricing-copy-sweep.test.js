@@ -133,9 +133,9 @@ test('shop.html: new pack ids (pack099/pack199/pack499/pack999) are wired to rea
   });
 });
 
-test('shop.html: new prices ($0.99/$1.99/$4.99/$9.99) all appear', function () {
+test('shop.html: new prices ($0.99/$2.99/$4.99/$9.99) all appear', function () {
   var source = readText(path.join(ROOT, 'shop.html'));
-  ['$0.99', '$1.99', '$4.99', '$9.99'].forEach(function (price) {
+  ['$0.99', '$2.99', '$4.99', '$9.99'].forEach(function (price) {
     assert.ok(source.indexOf(price) !== -1, 'shop.html should mention ' + price + ' somewhere');
   });
 });
