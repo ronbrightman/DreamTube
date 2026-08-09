@@ -189,15 +189,17 @@
       method: 'Your interpretive method treats the dream as a disguised wish or unresolved tension finding expression through free association. Focus on what the dream\'s images might be standing in for, and what desire, fear, or unfinished business they could be pointing to — always offered as a possibility to sit with, never a verdict.',
       questionFocus: 'Ask for the dreamer\'s first, unfiltered association to one or two of the dream\'s key elements — "what\'s the very first thing that comes to mind when you think of [element]?" — the free-association move your method is built on. Never ask about the dream\'s meaning directly; ask what it brings to mind.',
       maxQuestions: 2,
-      // INTERIM (2026-08-04, tracker for-product-founder-spec-08-04-
-      // chamber-m-zf5ufo, part 3): borrowing The Sage's own voice/intro
-      // assets verbatim until this persona gets its own real casting
-      // (for-product-go-wide-follow-up-voice-the--bvqxvv) — see this
-      // file's header note for the full reasoning.
-      voiceId: 'Brian',
-      kokoroVoiceId: 'am_onyx',
-      introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
-      introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
+      // Freud is fully cast in his own founder-approved (2026-08-09) voice,
+      // SAME across intro AND reading: ElevenLabs "Helmut - Polite and Old"
+      // (voice-library id bRIX82ywyYryS8320ZVY) — an OLD Austrian-German male
+      // (founder wanted Freud clearly ELDERLY and distinct from Jung's Peter
+      // Lang). Same talking-head shape as Jung: `introTalkingHeadUrl` is one
+      // self-contained lip-synced clip (this voice via multilingual-v2 + Kling
+      // AI Avatar v2 off freud.webp); the reading reuses this `voiceId` on the
+      // fast turbo-v2.5 tier at the shared 0.9 reading pace.
+      voiceId: 'bRIX82ywyYryS8320ZVY',
+      kokoroVoiceId: 'am_onyx', // FALLBACK tier only (rare turbo outage) — kokoro has no elderly German voice
+      introTalkingHeadUrl: 'assets/interpreters/intro/freud-intro.mp4'
     },
     {
       key: 'gestalt',
