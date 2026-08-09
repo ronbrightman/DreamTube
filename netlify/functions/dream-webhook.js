@@ -28,8 +28,12 @@
 //   error:   { request_id, gateway_request_id, status:"ERROR", error, payload:{...} }
 //   payload-serialization error: { ..., status:"OK", payload:null, payload_error }
 // `payload.video.url` is the same shape video-status.js's checkFalStatus
-// already reads off fal's plain result-fetch endpoint for this exact
-// model family (fal-ai/veo3.1/fast and its reference-to-video variant).
+// already reads off fal's plain result-fetch endpoint for every video model
+// this app uses — the fal-ai/veo3.1 family AND fal.ai's Vidu Q1
+// reference-to-video (the default Me-photo model as of founder decision
+// 2026-08-09, which the pre-signup path here can now submit): all of them
+// return the finished video at payload.video.url, so this handler is
+// model-agnostic and needs no per-model branching.
 //
 // SECURITY: every request here MUST have its ED25519 signature verified
 // (see lib/fal-webhook-verify.js) before anything in the payload is

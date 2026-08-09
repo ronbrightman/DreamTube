@@ -302,7 +302,7 @@ test('GENERATION_TEST_DURATION with an unsupported value falls back to the untou
   assert.equal(calls[0].body.duration, '8s');
 });
 
-test('GENERATION_TEST_DURATION also applies on the self-photo reference-to-video path', async function () {
+test('GENERATION_TEST_DURATION does NOT apply on the self-photo path now that it defaults to Vidu Q1 (Vidu takes no duration param — fixed ~5s clip)', async function () {
   process.env.FAL_KEY = 'test-fal-key';
   process.env.GENERATION_TEST_DURATION = '4s';
   var calls = installFetchSpy();
@@ -311,8 +311,13 @@ test('GENERATION_TEST_DURATION also applies on the self-photo reference-to-video
   }));
   assert.equal(res.statusCode, 200);
   assert.equal(calls.length, 1);
-  assert.match(calls[0].url, /reference-to-video/);
-  assert.equal(calls[0].body.duration, '4s');
+  assert.match(calls[0].url, /vidu\/q1\/reference-to-video$/);
+  // Vidu's request body carries no duration field at all (see
+  // referenceToVideoBody). GENERATION_TEST_DURATION still applies to the veo
+  // reference-to-video FALLBACK body — covered in
+  // test/generate-video-vidu-reference.test.js.
+  assert.equal(calls[0].body.duration, undefined);
+  assert.equal(calls[0].body.movement_amplitude, 'auto');
 });
 
 test('GENERATION_MOCK_MODE wins over GENERATION_TEST_DURATION when both are set — no real call, no duration ever read', async function () {

@@ -31,8 +31,12 @@
 // at the fixed 8s duration and hardcoded 720p resolution every path here
 // requests (no path in this file ever asks for 1080p), audio-on:
 //   - standard text-to-video (now Lite): $0.05/s * 8s = $0.40
-//   - reference-to-video (still Fast):   $0.15/s * 8s = $1.20  <- worst
+//   - reference-to-video (Me-photo): now defaults to Vidu Q1 ~$0.40
+//       (founder 2026-08-09), but its veo FALLBACK is still $1.20, so this
+//       path can STILL cost $1.20 — the reservation must assume that.
 //   - image-to-video (still Fast):       $0.15/s * 8s = $1.20  <- worst
+// The $1.20 worst case is therefore unchanged by the Vidu switch: it's still
+// binding via image-to-video and the veo reference-to-video fallback.
 // ($0.15/s is fal's founder-verified Fast audio-on rate — see style.html's
 // audio-toggle comment — a firmer number than the old "$0.10-0.20/sec"
 // approximate range this constant's previous $1.60 came from.) The

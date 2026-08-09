@@ -127,7 +127,7 @@ test('audioOn:true is NOT honored — generate_audio stays false, overriding the
 
 // ----- Every real call shape this file can produce, not just the default plain path -----
 
-test('reference-to-video (self-photo) call shape: generate_audio is false even with audioOn:true', async function () {
+test('reference-to-video (self-photo) call shape: no model audio at all — Vidu Q1, the default Me-photo model, is structurally silent (no generate_audio param)', async function () {
   var calls = installFetchSpy();
   var res = await handler(genEvent({
     body: {
@@ -138,7 +138,15 @@ test('reference-to-video (self-photo) call shape: generate_audio is false even w
   assert.equal(res.statusCode, 200);
   assert.equal(calls.length, 1);
   assert.match(calls[0].url, /reference-to-video$/);
-  assert.equal(calls[0].body.generate_audio, false);
+  // As of the founder 2026-08-09 switch to Vidu Q1 the Me-photo path can't
+  // produce model audio to begin with: Vidu takes no generate_audio param,
+  // so audioOn is doubly moot here. (Audio for the dream comes from the
+  // client-side music bed — js/music-bed.js — same as every other silent
+  // DreamTube video.) A generate_audio:false guarantee still applies to the
+  // veo reference-to-video FALLBACK body; that is covered in
+  // test/generate-video-vidu-reference.test.js.
+  assert.equal(calls[0].body.generate_audio, undefined, 'Vidu body has no generate_audio param at all');
+  assert.deepEqual(calls[0].body.reference_image_urls, ['data:image/png;base64,AAAA']);
 });
 
 test('PixVerse V6 rotation call shape (requestedModel:"pixverse-v6"): generate_audio is false even with audioOn:true', async function () {
