@@ -281,11 +281,15 @@
       // file's header note ("UPDATE 2026-08-04") for the full reasoning.
       voiceId: 'Brian',
       kokoroVoiceId: 'am_onyx',
-      // Real, founder-approved Option D handoff (main commit c0b9202) —
-      // see this file's header note above for the full "two separate
-      // files, video-only + a separate voice track" story.
-      introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
-      introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
+      // Talking-head intro, aligned with the other four (founder 2026-08-09,
+      // "sage — align the video image accordingly"): the Sage was the last
+      // persona still on the OLD split shape (a silent dream-loop video +
+      // separate voice track), which now looked out of place next to the
+      // per-persona portrait talking-heads. This clip is the SAME approved
+      // Option D take (assets/interpreters/intro/sage-intro-voice.wav, am_onyx
+      // @0.8) lip-synced onto the Sage's own portrait via Kling AI Avatar v2
+      // — voice/line unchanged, only the visual now matches the others.
+      introTalkingHeadUrl: 'assets/interpreters/intro/talmudic-intro.mp4'
     }
   ];
 
