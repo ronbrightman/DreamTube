@@ -51,13 +51,13 @@ test('POST from the owner credits the amount and returns the refreshed token sta
     }));
     assert.equal(res.statusCode, 200);
     var body = JSON.parse(res.body);
-    assert.equal(body.balance, 720, '220 signup grant (first-ever read, materialized by addTokens) + 500 top-up');
+    assert.equal(body.balance, 670, '170 signup grant (first-ever read, materialized by addTokens) + 500 top-up');
     // A never-claimed account still sees the daily claim amount as its
     // next claim amount (first-claim bonus retired 2026-08-08, so it's 20).
     assert.equal(body.dailyClaimAmount, 20);
 
     var record = await entitlements.getEntitlement(fakeEvent({}), OWNER_EMAIL);
-    assert.equal(record.tokens.balance, 720);
+    assert.equal(record.tokens.balance, 670);
   });
 });
 
@@ -70,7 +70,7 @@ test('POST normalizes the owner email the same way admin-paywall-toggle.js does 
     }));
     assert.equal(res.statusCode, 200);
     var body = JSON.parse(res.body);
-    assert.equal(body.balance, 470, '220 signup grant + 250 top-up');
+    assert.equal(body.balance, 420, '170 signup grant + 250 top-up');
   });
 });
 
@@ -186,7 +186,7 @@ test('an amount exactly at the per-call cap (5000) is accepted', function () {
       body: { email: OWNER_EMAIL, amount: 5000 }
     }));
     assert.equal(res.statusCode, 200);
-    assert.equal(JSON.parse(res.body).balance, 5220, '220 signup grant + 5000 top-up');
+    assert.equal(JSON.parse(res.body).balance, 5170, '170 signup grant + 5000 top-up');
   });
 });
 
@@ -232,12 +232,12 @@ test('self-top-up (no targetUsername) still works exactly as before — regressi
     }));
     assert.equal(res.statusCode, 200);
     var body = JSON.parse(res.body);
-    assert.equal(body.balance, 720, '220 signup grant + 500 top-up, same as before targetUsername existed');
+    assert.equal(body.balance, 670, '170 signup grant + 500 top-up, same as before targetUsername existed');
     assert.equal(body.creditedEmail, OWNER_EMAIL);
     assert.equal(body.targetUsername, null);
 
     var record = await entitlements.getEntitlement(fakeEvent({}), OWNER_EMAIL);
-    assert.equal(record.tokens.balance, 720);
+    assert.equal(record.tokens.balance, 670);
   });
 });
 
@@ -260,10 +260,10 @@ test('a top-up with a valid targetUsername credits the target account, NOT the o
     var body = JSON.parse(res.body);
     assert.equal(body.creditedEmail, 'ben@example.com');
     assert.equal(body.targetUsername, 'benbrightman14');
-    assert.equal(body.balance, 1020, '220 signup grant + 800 gift for the target account');
+    assert.equal(body.balance, 970, '170 signup grant + 800 gift for the target account');
 
     var targetRecord = await entitlements.getEntitlement(fakeEvent({}), 'ben@example.com');
-    assert.equal(targetRecord.tokens.balance, 1020, 'the target account was credited');
+    assert.equal(targetRecord.tokens.balance, 970, 'the target account was credited');
 
     var ownerRecord = await entitlements.getEntitlement(fakeEvent({}), OWNER_EMAIL);
     assert.equal(ownerRecord, null, "the owner's own balance must be untouched by a gifted top-up");
@@ -289,7 +289,7 @@ test('a top-up with a targetUsername normalizes case/whitespace the same way acc
     assert.equal(body.creditedEmail, 'ben@example.com');
 
     var targetRecord = await entitlements.getEntitlement(fakeEvent({}), 'ben@example.com');
-    assert.equal(targetRecord.tokens.balance, 1020);
+    assert.equal(targetRecord.tokens.balance, 970);
   });
 });
 
