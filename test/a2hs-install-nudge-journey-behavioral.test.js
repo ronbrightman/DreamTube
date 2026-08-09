@@ -87,7 +87,7 @@ async function seedUser(page, username, extraAccountFields) {
 
 function mockTokenStatus(page) {
   return page.route('**/.netlify/functions/get-token-status*', function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 170, claimable: false, nextClaimAt: 0, dailyClaimAmount: 20, streak: 0 }) });
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 150, claimable: false, nextClaimAt: 0, dailyClaimAmount: 20, streak: 0 }) });
   });
 }
 

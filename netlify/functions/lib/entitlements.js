@@ -396,17 +396,20 @@ async function setEntitlement(event, email, patch) {
 // amount a brand-new email is seeded with on its first-ever read (see
 // syncTokens' `!record.tokens` branch); every already-materialized record
 // keeps whatever balance it already had.
-// 2026-08-09 founder-directed economy retune (220 -> 170): a fresh signup gets
-// 170, so ONE video (100 tokens) leaves 70 — short of a second. To reach a
-// second video the user must collect the engagement bonuses that are good for
-// us anyway: first-login/first-claim (+20 -> 90) plus EITHER email-verify OR
-// add-to-homescreen (+20 -> 110, enough for a 2nd video); doing the remaining
-// action tops up to 130. This uses the token wall to drive the valuable
-// actions instead of just gating purchase, and tightens the free-video runway
-// so the (well-built) out-of-tokens purchase moment actually arrives. New
-// signups only — see the comment above: changing this never rewrites an
+// 2026-08-09 founder-directed economy retune (170 -> 150): the base grant was
+// still too high — a fresh signup could reach a second video by claiming the
+// daily free tokens alone, WITHOUT verifying email or adding to home screen,
+// ending up with too much for free. Cutting the base grant another 20 (to 150)
+// tightens the runway so a fresh signup gets 150: ONE video (100 tokens)
+// leaves 50 — short of a second. Reaching a second video now takes the
+// engagement bonuses that are good for us anyway: first-login/first-claim
+// (+20 -> 70) plus BOTH email-verify AND add-to-homescreen (+20 each -> 110,
+// enough for a 2nd video) — the daily claim alone no longer gets there. This
+// uses the token wall to drive the valuable actions instead of just gating
+// purchase, and pulls the (well-built) out-of-tokens purchase moment closer.
+// New signups only — see the comment above: changing this never rewrites an
 // existing balance.
-var INITIAL_GRANT = 170;
+var INITIAL_GRANT = 150;
 
 // The daily-claim mechanism (claim-daily-tokens.js) — replaces the old
 // DAILY_GRANT_AMOUNT/GRANT_CEILING/GRANT_INTERVAL_MS lazy-drip trio
