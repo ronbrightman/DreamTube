@@ -25,9 +25,38 @@
 // and real recorded speech, all transcribed correctly under the "audio/mpeg"
 // label). So every recording is labeled "audio/mpeg" here regardless of
 // what the browser actually recorded.
+//
+// PRE-SIGNUP ABUSE/COST GUARD (funnel Record-before-signup, 2026-08-08):
+// this endpoint has ALWAYS been account-less — it requires only the
+// server-side FAL_KEY, never a session/auth/account — so today it's already
+// reachable by anyone who POSTs to it. It stayed effectively private only
+// because the sole callers (create.html/result.html) sit behind the app's
+// auth guard. The growth funnel's Record-it path now calls it BEFORE signup
+// (so a recorded dream reaches recap+wall like Build/Write instead of
+// hitting the email wall first), which turns it into a genuinely public,
+// fal.ai-cost-incurring pre-signup surface reachable by cold paid traffic.
+// So it gets the same shape of guard start-pending-generation.js already
+// carries: a per-IP daily rate limit (its OWN 'transcribe' scope, separate
+// from the generation quota — Whisper is far cheaper than a video, so it
+// gets its own, more generous bucket) plus a hard base64 payload-size cap
+// (a few minutes of speech is well under this; it exists to stop someone
+// posting a huge blob to run up Whisper cost). Both are best-effort/fail-
+// open on infra errors: they defend against casual/scripted hammering, not
+// as a hard security boundary — the fal-side spend is the real backstop —
+// and must never block a legitimate short recording. No new secrets, no new
+// endpoint: this hardens the surface that already existed.
+
+var rateLimit = require('./lib/rate-limit');
 
 var FAL_API_BASE = 'https://queue.fal.run';
 var FAL_MODEL = 'fal-ai/whisper';
+
+// Max base64 length of the audio payload. base64 is ~4/3 the byte size, so
+// ~7M chars ≈ ~5.2MB of encoded audio — several minutes of webm/opus speech,
+// comfortably above any real dream description, and itself under Netlify's
+// own ~6MB request-body ceiling (so this is the effective, explicit limit
+// rather than an opaque platform 413). Env-overridable.
+var MAX_AUDIO_BASE64_CHARS = parseInt(process.env.MAX_TRANSCRIBE_AUDIO_BASE64_CHARS, 10) || 7000000;
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -49,6 +78,27 @@ exports.handler = async function (event) {
 
   if (!audio) {
     return { statusCode: 400, body: JSON.stringify({ error: 'audio_required' }) };
+  }
+
+  if (typeof audio !== 'string' || audio.length > MAX_AUDIO_BASE64_CHARS) {
+    return { statusCode: 413, body: JSON.stringify({ error: 'audio_too_large' }) };
+  }
+
+  // Per-IP daily cap, best-effort. Its own 'transcribe' scope (never the
+  // generation quota) so a re-record on the funnel or the logged-in create
+  // flow never eats into a user's video/image budget. Fail-open: any Blobs
+  // error here must not block a real transcription — the fal-side spend cap
+  // is the hard backstop.
+  var maxPerDay = parseInt(process.env.MAX_TRANSCRIPTIONS_PER_IP_PER_DAY, 10);
+  if (!maxPerDay || maxPerDay <= 0) maxPerDay = 60;
+  try {
+    var ip = rateLimit.clientIp(event);
+    var ipLimit = await rateLimit.checkAndIncrement(event, 'transcribe', ip, maxPerDay);
+    if (!ipLimit.allowed) {
+      return { statusCode: 429, body: JSON.stringify({ error: 'rate_limited' }) };
+    }
+  } catch (e) {
+    console.warn('transcribe-audio: rate-limit check failed, allowing (fail-open): ' + (e && e.message));
   }
 
   try {

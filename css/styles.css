@@ -449,6 +449,7 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    see the matching #adv-toggle handler in create.html. */
 #create-write.adv-open #dream-text{ min-height:70px;}
 .char-count{ font-size:11px; color:var(--text-faint); text-align:right; margin-top:-6px; margin-bottom:14px;}
+.char-count.over-limit{ color:var(--danger); font-weight:600;}
 .rec-panel{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; min-height:0; overflow-y:auto;}
 .rec-error{ font-size:12px; color:var(--danger); text-align:center; padding:0 8px;}
 .rec-timer{ font-size:34px; font-weight:700;}
@@ -1138,6 +1139,11 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
   border-radius:100px; padding:12px; background:transparent; color:var(--accent-value); cursor:pointer; margin-bottom:10px;
 }
 .claim-inline-btn:disabled{ opacity:.5; cursor:not-allowed;}
+/* De-emphasized daily-claim escape inside the purchase sheet (founder 2026-08-09):
+   a quiet centered text link BELOW the buy CTA, not the bordered pill that used
+   to compete above it. Scoped modifier so shop.html's own .claim-inline-btn is
+   untouched. */
+.claim-inline-btn.ps-claim-quiet{ width:auto; display:block; margin:8px auto 0; border:none; background:transparent; color:var(--text-muted); font-weight:600; font-size:12.5px; text-decoration:underline; padding:6px 8px; }
 
 /* No `position` override here on purpose -- this class is applied
    alongside the base .sheet class on the SAME element (class="sheet
@@ -1693,7 +1699,12 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
    tag has no CSS equivalent of "fall through to what's underneath" the
    way a failed background-image naturally does). */
 .itp-persona-card .itp-persona-card-fallback{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:46px; font-weight:800; color:rgba(255,255,255,.32);}
-.itp-persona-card .itp-persona-card-bg{ position:absolute; inset:0; background-size:cover; background-position:center top;}
+/* center 38% (not `top`): the 5th persona renders in a full-width LANDSCAPE
+   tile (.itp-persona-card--wide), where `center top` cropped to just the
+   forehead. 38% keeps the face band centred in both the square 2-col tiles
+   and the wide tile — verified against the normalized portrait crops (eyes
+   ~42% down the source square). */
+.itp-persona-card .itp-persona-card-bg{ position:absolute; inset:0; background-size:cover; background-position:center 38%;}
 .itp-persona-card .itp-persona-card-scrim{ position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.92), rgba(0,0,0,.15) 55%, rgba(0,0,0,.35));}
 .itp-persona-card .itp-persona-card-content{ position:absolute; left:11px; right:11px; bottom:11px; z-index:2;}
 .itp-persona-card .itp-persona-card-name{ font-weight:800; font-size:13.5px; color:#fff; line-height:1.2;}
@@ -1795,6 +1806,14 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
   background:var(--surface-alt); border-left-width:3px; /* left border-color set inline per-persona accent */
 }
 .itp-reading-persona-line{ display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+/* Explicit avatar size for the reading-card persona line. Without it the
+   .itp-portrait had NO width/height in this context (only the .itp-topbar and
+   .itp-loading-wrap contexts set one), which was harmless while only the
+   letter-circle fallback rendered — but a REAL portrait <img> (width/height
+   100% of an unsized parent) balloons to its 768px intrinsic size and fills
+   the card. Small round avatar next to the "Name — inspired by X" label. */
+.itp-reading-persona-line .itp-portrait{ width:40px; height:40px;}
+.itp-reading-persona-line .itp-portrait-fallback{ font-size:16px;}
 .itp-reading-persona-name{ font-size:12.5px; font-weight:800;}
 /* .interp-text (reused verbatim) supplies the reading body's own
    typography — no .itp-reading-card override needed beyond spacing. */
@@ -1817,6 +1836,11 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
   border-radius:16px; overflow:hidden; background:#0a0a0a; margin:4px 0 14px;
 }
 .itp-voice-media{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block;}
+/* Buffering spinner over the black stage while the dream video loads
+   (founder 08-08). z-index between the media (0/2) and the caption (3). */
+.itp-voice-loading{ position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center; pointer-events:none;}
+.itp-voice-spinner{ width:34px; height:34px; border-radius:50%; border:3px solid rgba(255,255,255,.25); border-top-color:#fff; animation:itp-voice-spin .8s linear infinite;}
+@keyframes itp-voice-spin{ to{ transform:rotate(360deg);} }
 /* The intro sits ABOVE the dream-video backdrop and crossfades away —
    opacity-only transition (no layout shift), same 0.3s the spec calls for
    throughout (intro->reading, and Wave 1's own crossfade precedent

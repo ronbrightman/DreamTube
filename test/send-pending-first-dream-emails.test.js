@@ -2,9 +2,13 @@
 //
 // Covers netlify/functions/send-pending-first-dream-emails.js's
 // scanAndSend -- tracker item for-product-email-redesign-unsubscribe-l-16ysmp's
-// founder-approved thumbnail-gating follow-up (2026-08-03/04): "wait up
-// to 3 MINUTES for the captured image; if it exists, send with it; if
-// not, SEND ANYWAY at the 3-minute mark." This is the second scheduled
+// thumbnail-gating follow-up, as amended by the founder's 2026-08-08 rule
+// ("do NOT send the email at all until the thumbnail is available"): wait
+// for the captured image; if it lands within the give-up window, send with
+// it; if it NEVER lands, DROP the email (never a thumbnail-less send). The
+// old "SEND ANYWAY at the 3-minute mark" flat-color fallback is gone -- see
+// send-pending-first-dream-emails.js's "DROP, NOT SEND-ANYWAY" header note.
+// This is the second scheduled
 // function in this repo (send-daily-claim-pushes.js was the first — see
 // that file's own header comment for the "why a schedule, not a real
 // in-request wait" reasoning this one shares); there is no way to invoke
@@ -92,10 +96,10 @@ test('a pending record with a thumbnail already synced sends IMMEDIATELY, with t
   var result = await sendPending.scanAndSend(fakeEvent({}));
 
   assert.equal(result.sentWithImage, 1);
-  assert.equal(result.sentFallback, 0);
+  assert.equal(result.droppedNoThumbnail, 0);
   assert.equal(result.stillWaiting, 0);
   assert.equal(spies.resendCalls.length, 1);
-  assert.match(spies.resendCalls[0].body.html, /object-fit:cover/, 'must render the real thumbnail <img>, not the flat-color fallback banner');
+  assert.match(spies.resendCalls[0].body.html, /object-fit:cover/, 'must render the real thumbnail <img>');
   assert.match(spies.resendCalls[0].body.html, /https:\/\/img\.example\/thumb\.jpg/);
 
   // Dequeued -- a later scan must not touch it again.
@@ -112,10 +116,31 @@ test('a pending record with NO thumbnail yet, still within the 3-minute window, 
   var result = await sendPending.scanAndSend(fakeEvent({}));
 
   assert.equal(result.sentWithImage, 0);
-  assert.equal(result.sentFallback, 0);
+  assert.equal(result.droppedNoThumbnail, 0);
   assert.equal(result.stillWaiting, 1);
-  assert.equal(spies.resendCalls.length, 0, 'must not send the flat-color fallback before the deadline -- the founder\'s own explicit ask');
+  assert.equal(spies.resendCalls.length, 0, 'must not send before a thumbnail lands -- the founder\'s own explicit ask');
   assert.ok(await pendingStore.getPending(fakeEvent({}), 'mock:1:waiting'), 'must stay enqueued for a later scan to re-check');
+});
+
+test('DEFERRED THEN SENT: a first scan with no thumbnail defers (no send), and a later scan once the thumbnail has synced sends WITH the real image in the HTML -- the core founder 08-08 flow', async function () {
+  await registerAccount('deferred', 'deferred@example.com');
+  await pendingStore.markPending(fakeEvent({}), 'mock:1:deferred', 'deferred', 'deferred@example.com');
+
+  var spies1 = installFetchSpy();
+  var first = await sendPending.scanAndSend(fakeEvent({}));
+  assert.equal(first.stillWaiting, 1, 'no thumbnail yet -- must defer');
+  assert.equal(spies1.resendCalls.length, 0, 'must NOT send a thumbnail-less email on the first scan');
+  assert.ok(await pendingStore.getPending(fakeEvent({}), 'mock:1:deferred'), 'still enqueued for a later scan');
+
+  // The client's capture finally syncs -- the dream now has a real imageUrl.
+  await seedSyncedDream('deferred', 'mock:1:deferred', 'https://img.example/deferred-thumb.jpg');
+
+  var spies2 = installFetchSpy();
+  var second = await sendPending.scanAndSend(fakeEvent({}));
+  assert.equal(second.sentWithImage, 1, 'the thumbnail landed -- now it sends');
+  assert.equal(spies2.resendCalls.length, 1);
+  assert.match(spies2.resendCalls[0].body.html, /<img src="https:\/\/img\.example\/deferred-thumb\.jpg"/, 'the deferred-then-sent email must carry the real thumbnail');
+  assert.equal(await pendingStore.getPending(fakeEvent({}), 'mock:1:deferred'), null, 'dequeued once sent');
 });
 
 test('a synced dream with no imageUrl yet (captured but not uploaded, or never captured) is treated the same as no dream at all -- waits, does not send', async function () {
@@ -130,44 +155,43 @@ test('a synced dream with no imageUrl yet (captured but not uploaded, or never c
   assert.equal(spies.resendCalls.length, 0);
 });
 
-test('a pending record past the 3-minute deadline with still no thumbnail SENDS ANYWAY, using the no-thumbnail fallback template -- the founder\'s own explicit instruction', async function () {
+test('a pending record past the give-up window with still no thumbnail is DROPPED -- never sent thumbnail-less (founder rule 2026-08-08)', async function () {
   await registerAccount('deadline', 'deadline@example.com');
   await pendingStore.markPending(fakeEvent({}), 'mock:1:deadline', 'deadline', 'deadline@example.com');
 
-  // Force the enqueued record to look like it was triggered well over 3
-  // minutes ago, without this test actually waiting 3 real minutes.
+  // Force the enqueued record to look like it was triggered well past the
+  // give-up window, without this test actually waiting for it.
   var record = await pendingStore.getPending(fakeEvent({}), 'mock:1:deadline');
   mockBlobs.seed(pendingStore.STORE_NAME, 'mock:1:deadline', Object.assign({}, record, {
-    triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
+    triggeredAt: Date.now() - sendPending.GIVE_UP_AFTER_MS - 5000
   }));
 
   var spies = installFetchSpy();
   var result = await sendPending.scanAndSend(fakeEvent({}));
 
-  assert.equal(result.sentFallback, 1);
+  assert.equal(result.droppedNoThumbnail, 1);
   assert.equal(result.sentWithImage, 0);
-  assert.equal(spies.resendCalls.length, 1);
-  assert.doesNotMatch(spies.resendCalls[0].body.html, /object-fit:cover/, 'past the deadline with no thumbnail must use the flat-color fallback banner, not a broken/missing image');
+  assert.equal(spies.resendCalls.length, 0, 'past the window with no thumbnail must send NOTHING, not a bare email');
 
-  assert.equal(await pendingStore.getPending(fakeEvent({}), 'mock:1:deadline'), null, 'must be dequeued once acted on');
+  assert.equal(await pendingStore.getPending(fakeEvent({}), 'mock:1:deadline'), null, 'must be dequeued once dropped');
 });
 
-test('a pending record exactly AT the deadline (elapsed >= THUMBNAIL_WAIT_MS) sends the fallback -- the boundary is inclusive, matching "at the 3-minute mark"', async function () {
+test('a pending record exactly AT the give-up window (elapsed >= GIVE_UP_AFTER_MS) is dropped -- the boundary is inclusive', async function () {
   await registerAccount('exact', 'exact@example.com');
   await pendingStore.markPending(fakeEvent({}), 'mock:1:exact', 'exact', 'exact@example.com');
   var record = await pendingStore.getPending(fakeEvent({}), 'mock:1:exact');
   mockBlobs.seed(pendingStore.STORE_NAME, 'mock:1:exact', Object.assign({}, record, {
-    triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS
+    triggeredAt: Date.now() - sendPending.GIVE_UP_AFTER_MS
   }));
 
   var spies = installFetchSpy();
   var result = await sendPending.scanAndSend(fakeEvent({}));
 
-  assert.equal(result.sentFallback, 1);
-  assert.equal(spies.resendCalls.length, 1);
+  assert.equal(result.droppedNoThumbnail, 1);
+  assert.equal(spies.resendCalls.length, 0);
 });
 
-test('multiple pending records in one scan are each decided independently -- one sends with image, one still waits, one falls back', async function () {
+test('multiple pending records in one scan are each decided independently -- one sends with image, one still waits, one is dropped', async function () {
   await registerAccount('multia', 'multia@example.com');
   await registerAccount('multib', 'multib@example.com');
   await registerAccount('multic', 'multic@example.com');
@@ -180,7 +204,7 @@ test('multiple pending records in one scan are each decided independently -- one
   await pendingStore.markPending(fakeEvent({}), 'mock:1:multi-c', 'multic', 'multic@example.com');
   var recordC = await pendingStore.getPending(fakeEvent({}), 'mock:1:multi-c');
   mockBlobs.seed(pendingStore.STORE_NAME, 'mock:1:multi-c', Object.assign({}, recordC, {
-    triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 1000
+    triggeredAt: Date.now() - sendPending.GIVE_UP_AFTER_MS - 1000
   }));
 
   var spies = installFetchSpy();
@@ -189,29 +213,30 @@ test('multiple pending records in one scan are each decided independently -- one
   assert.equal(result.scanned, 3);
   assert.equal(result.sentWithImage, 1);
   assert.equal(result.stillWaiting, 1);
-  assert.equal(result.sentFallback, 1);
-  assert.equal(spies.resendCalls.length, 2, 'two of the three should have actually sent (a and c), b is still waiting');
+  assert.equal(result.droppedNoThumbnail, 1);
+  assert.equal(spies.resendCalls.length, 1, 'only a (the one with a synced thumbnail) actually sends; b is still waiting, c is dropped');
 });
 
-test('a record for an account that already got its once-ever email via a different path (e.g. the client-triggered fallback winning first) is a harmless no-op, still dequeued', async function () {
+test('a record whose thumbnail lands, for an account that already got its once-ever email via a different path (client-triggered fallback winning first), is a harmless no-op via the guard, still dequeued', async function () {
   var firstDreamEmailStore = require('../netlify/functions/lib/first-dream-email-store');
   await registerAccount('racer', 'racer@example.com');
   await firstDreamEmailStore.markSentOnce(fakeEvent({}), 'racer'); // simulates the OTHER path already having won
+  // A thumbnail HAS now synced, so this scan hits the send-with-image branch
+  // (the only path that actually calls sendIfEligible) -- which the once-ever
+  // guard no-ops, proving the guard, not this scan, is what prevents a
+  // second real send.
+  await seedSyncedDream('racer', 'mock:1:racer', 'https://img.example/racer.jpg');
   await pendingStore.markPending(fakeEvent({}), 'mock:1:racer', 'racer', 'racer@example.com');
-  var record = await pendingStore.getPending(fakeEvent({}), 'mock:1:racer');
-  mockBlobs.seed(pendingStore.STORE_NAME, 'mock:1:racer', Object.assign({}, record, {
-    triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 1000
-  }));
 
   var spies = installFetchSpy();
   var result = await sendPending.scanAndSend(fakeEvent({}));
 
   assert.equal(spies.resendCalls.length, 0, 'the once-ever guard must prevent a second real send');
-  assert.equal(result.sentFallback, 1, 'this scan still attempted/dequeued it -- sendIfEligible itself is what no-ops, not this scan skipping it');
+  assert.equal(result.sentWithImage, 1, 'this scan still attempted/dequeued it -- sendIfEligible itself is what no-ops, not this scan skipping it');
   assert.equal(await pendingStore.getPending(fakeEvent({}), 'mock:1:racer'), null);
 });
 
 test('an empty pending store is a harmless no-op scan', async function () {
   var result = await sendPending.scanAndSend(fakeEvent({}));
-  assert.deepEqual(result, { scanned: 0, sentWithImage: 0, sentFallback: 0, stillWaiting: 0 });
+  assert.deepEqual(result, { scanned: 0, sentWithImage: 0, droppedNoThumbnail: 0, stillWaiting: 0 });
 });

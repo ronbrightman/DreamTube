@@ -505,7 +505,7 @@ test('generate-video: an owner bypass also lets a brand-new email skip the token
     assert.equal(alreadyCapped.balance, 0, 'sanity check: the token-init cap is genuinely exhausted on this IP now');
 
     // A brand-new OWNER email, same capped IP, WITH the bypass -- must
-    // still get the real 320-token INITIAL_GRANT, then spend exactly 100
+    // still get the real 170-token INITIAL_GRANT, then spend exactly 100
     // on this successful generation (never more than a normal grant would
     // allow).
     var res = await handler(fakeEvent({
@@ -515,7 +515,7 @@ test('generate-video: an owner bypass also lets a brand-new email skip the token
     global.fetch = realFetch;
     assert.equal(res.statusCode, 200);
     var record = await entitlements.getEntitlement({}, OWNER_EMAIL);
-    assert.equal(record.tokens.balance, 220, '320 granted (bypassing the token-init cap), 100 spent on this generation -- never more than the normal grant');
+    assert.equal(record.tokens.balance, 70, '170 granted (bypassing the token-init cap), 100 spent on this generation -- never more than the normal grant');
   });
 });
 

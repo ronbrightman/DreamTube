@@ -119,10 +119,16 @@ var BED_ELIGIBLE_DREAM = {
   dur: '0:08', isPublished: false, likes: 0, likedByMe: false
 };
 
+// The only bed-INELIGIBLE case left after the 2026-08-08 tier-3 default bed
+// (js/music-bed.js): a non-video dream. Every VIDEO dream now resolves a bed
+// (mood -> style -> neutral default), so an unrecognized style no longer
+// yields silence — the way to have "no eligible bed" is to have no video to
+// loop a bed against at all. An image-only dream shows no mute button on
+// result.html, so the sound nudge has nothing to point at and never fires.
 var NO_BED_DREAM = {
-  id: 'dream-nudge-no-bed', ownerHandle: '@nudgetester', caption: 'An unrecognized style',
-  style: 'Surrealist', mediaType: 'video', videoUrl: '/assets/music-beds/anime.wav',
-  dur: '0:08', isPublished: false, likes: 0, likedByMe: false
+  id: 'dream-nudge-no-bed', ownerHandle: '@nudgetester', caption: 'An image, no video',
+  style: 'Surrealist', mediaType: 'image', imageUrl: '/assets/fake-test-image.png', videoUrl: null,
+  dur: null, isPublished: false, likes: 0, likedByMe: false
 };
 
 test('result.html: the sound nudge fires exactly once on a fresh device for a bed-eligible video', async function (t) {
@@ -238,7 +244,7 @@ test('result.html: the nudge does NOT fire when a pre-existing sound preference 
   }
 });
 
-test('result.html: the nudge never fires for a dream with no eligible music bed (unrecognized style)', async function (t) {
+test('result.html: the nudge never fires for a dream with no eligible music bed (an image-only dream — the only bed-ineligible case after the tier-3 default bed)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -249,7 +255,7 @@ test('result.html: the nudge never fires for a dream with no eligible music bed 
     await page.waitForTimeout(500);
 
     var state = await readNudgeState(page, '#mute-btn');
-    assert.equal(state.toastShown, false, 'a dream with no known-style bed must never trigger the nudge');
+    assert.equal(state.toastShown, false, 'an image-only dream has no video to loop a bed against, so the nudge must never fire');
     var flags = await page.evaluate(function () { return { seen: DreamStore.hasSeenSoundNudge() }; });
     assert.equal(flags.seen, false, 'the "seen" flag must stay false so a LATER bed-eligible dream can still nudge');
   } finally {

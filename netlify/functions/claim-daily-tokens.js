@@ -14,11 +14,13 @@
 //
 // Response shapes:
 //   200 { claimed: true,  balance, streak, nextClaimAt, amountClaimed } —
-//        a genuine claim just landed. amountClaimed (2026-07-28 first-
-//        claim-bonus amendment — see lib/entitlements.js's
+//        a genuine claim just landed. amountClaimed (see lib/entitlements.js's
 //        FIRST_CLAIM_BONUS_AMOUNT doc comment) is the REAL amount just
-//        credited (100 on a genuine first-ever claim for this account, 20
-//        otherwise) — the client shows this, never assumes a flat 20.
+//        credited — 20 as of the 2026-08-08 retune, whether or not it's the
+//        account's first-ever claim (the larger first-claim bonus was
+//        retired then); the client shows this field live rather than
+//        assuming a hardcoded value, so a future bonus reinstatement flows
+//        through automatically.
 //   200 { claimed: false, nextClaimAt }                  — not yet
 //        claimable (the 20h rolling cooldown hasn't elapsed). This is
 //        DELIBERATELY a 200, not a 4xx/E-code — a client tapping the claim
@@ -64,12 +66,22 @@
 // (20/day) sits comfortably above any real usage while still bounding a
 // scripted attacker.
 //
+// NOTE (2026-08-08 economy retune): the first-ever claim now grants the
+// SAME +20 as every subsequent claim (FIRST_CLAIM_BONUS_AMOUNT was pulled
+// back to equal DAILY_CLAIM_AMOUNT — see entitlements.js). The separate
+// "first-ever claim" rate-limit bucketing described below is KEPT (it still
+// serves its fresh-signup relief-valve purpose), but the "+100"/"+80 delta"
+// abuse figures in this essay are now historical — a disposable email's
+// first claim is worth no more than any ordinary claim. Read the numbers
+// below as the pre-retune analysis, retained for history and in case a
+// larger first-claim bonus is ever reinstated.
+//
 // FIRST-EVER-CLAIM EXEMPTION (2026-08-05, round 2 of tracker item
 // for-product-p1-urgent-fresh-signup-can-d-qhrrqy — founder-hit fresh-
 // signup dead-end; ceiling corrected in round 3 per review finding, see
 // below). Round 1 closed the permanent-0 hole in syncTokens' init branch
 // (see entitlements.js), on the documented assumption that a capped-at-
-// signup account's relief valve is "it can still claim its first +100
+// signup account's relief valve is "it can still claim its first grant
 // immediately". That relief valve turned out to be blockable by THIS SAME
 // "claim-ip" bucket above — shared across every claim ANY account makes
 // from an IP, whether a genuine daily repeat or a never-before-claimed
@@ -89,13 +101,13 @@
 // CEILING (round 3 correction — round 2 originally shipped this at 50,
 // above the general bucket's 20, on the theory that the exposure was
 // "already bounded by MAX_TOKEN_GRANTS_PER_IP_PER_DAY, the same cap that
-// guards the 320-token signup grant". Review caught that this doesn't
+// guards the 220-token signup grant". Review caught that this doesn't
 // hold: entitlements.js's syncTokens returns a THROWAWAY `{balance:0}`
 // (no throw, no block) once that per-IP init cap trips for a brand-new
 // email — the account is still created normally, and NOTHING in
 // claimDailyTokens checks whether its own init grant actually succeeded
 // before crediting FIRST_CLAIM_BONUS_AMOUNT (100). So farming this path
-// needs nothing but disposable emails and never needs the 320-token init
+// needs nothing but disposable emails and never needs the 220-token init
 // grant to land at all — MAX_TOKEN_GRANTS_PER_IP_PER_DAY does not bound
 // it. What actually bounds this vector today is ONLY this file's own
 // per-IP rate limit, exactly the ceiling this exemption is about to

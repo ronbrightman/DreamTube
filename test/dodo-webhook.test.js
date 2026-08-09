@@ -683,6 +683,84 @@ test('a redelivered FIRST-purchase event (same payment_id) does not double-credi
   assert.equal(afterSecond.tokens.balance, 300, 'a redelivered event for the SAME payment_id must not double-credit');
 });
 
+// ----- dodoCustomerId capture (tracker item
+// for-product-repeat-purchase-friction-dod-b6pzs6) -----
+
+test('payment.succeeded stamps payment.customer.customer_id onto the entitlement record as dodoCustomerId', async function () {
+  await seedZeroBalance('customeridcapture@example.com');
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_customerid_capture',
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
+    customer: { customer_id: 'cus_captured_abc', email: 'customeridcapture@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'customeridcapture@example.com');
+  assert.equal(record.dodoCustomerId, 'cus_captured_abc');
+  assert.equal(record.tokens.balance, 300, 'the token credit itself must be unaffected by also capturing the customer id (300 = pack099\'s base amount)');
+});
+
+test('a redelivered payment.succeeded event re-stamps the SAME dodoCustomerId (a harmless no-op), and does not affect the balance dedup', async function () {
+  await seedZeroBalance('customeridredelivered@example.com');
+  var payload = paymentPayload({
+    payment_id: 'pay_customerid_redelivered',
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
+    customer: { customer_id: 'cus_redelivered_id', email: 'customeridredelivered@example.com' }
+  });
+
+  await handler(signedEvent(payload, { id: 'msg_cid_first' }));
+  var afterFirst = await entitlements.getEntitlement({}, 'customeridredelivered@example.com');
+  assert.equal(afterFirst.dodoCustomerId, 'cus_redelivered_id');
+  assert.equal(afterFirst.tokens.balance, 300);
+
+  await handler(signedEvent(payload, { id: 'msg_cid_second' }));
+  var afterSecond = await entitlements.getEntitlement({}, 'customeridredelivered@example.com');
+  assert.equal(afterSecond.dodoCustomerId, 'cus_redelivered_id');
+  assert.equal(afterSecond.tokens.balance, 300, 'balance must still not double-credit on the redelivery');
+});
+
+test('a LATER purchase under a NEW dodo customer_id overwrites the previously stored one with the latest value', async function () {
+  await seedZeroBalance('customeridrotates@example.com');
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_customerid_rotate_1',
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
+    customer: { customer_id: 'cus_old_id', email: 'customeridrotates@example.com' }
+  })));
+  var afterFirst = await entitlements.getEntitlement({}, 'customeridrotates@example.com');
+  assert.equal(afterFirst.dodoCustomerId, 'cus_old_id');
+
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_customerid_rotate_2',
+    product_cart: [{ product_id: 'pdt_pack199_test', quantity: 1 }],
+    customer: { customer_id: 'cus_new_id', email: 'customeridrotates@example.com' }
+  })));
+  var afterSecond = await entitlements.getEntitlement({}, 'customeridrotates@example.com');
+  assert.equal(afterSecond.dodoCustomerId, 'cus_new_id', 'the most recent purchase\'s customer_id must be what\'s on file');
+});
+
+test('a payment whose customer block carries no customer_id (or no customer block at all) leaves dodoCustomerId untouched -- must not stamp undefined/null over a previously stored value', async function () {
+  await seedZeroBalance('nocustomerid@example.com');
+  await entitlements.setEntitlement({}, 'nocustomerid@example.com', { dodoCustomerId: 'cus_preexisting' });
+
+  // Deliberately does not override product_cart, so this credits via
+  // paymentPayload's own default product_cart (pdt_pack099_test -> pack099
+  // -> 300 tokens), NOT via the metadata.dreamtube_tokens fallback --
+  // resolvePackTokens' product-id branch always wins first when the
+  // product_cart resolves (see that function's own doc comment). Kept
+  // metadata.dreamtube_tokens numerically consistent with the credited
+  // amount anyway so it doesn't mislead a future reader.
+  var payload = paymentPayload({
+    payment_id: 'pay_no_customer_id',
+    metadata: { dreamtube_email: 'nocustomerid@example.com', dreamtube_pack: 'pack099', dreamtube_tokens: 300 }
+  });
+  delete payload.data.customer;
+  var res = await handler(signedEvent(payload));
+  assert.equal(res.statusCode, 200);
+
+  var record = await entitlements.getEntitlement({}, 'nocustomerid@example.com');
+  assert.equal(record.dodoCustomerId, 'cus_preexisting', 'setEntitlement\'s own undefined-key-dropping merge must leave the prior value intact, not blank it out');
+  assert.equal(record.tokens.balance, 300, 'the credit itself must still land even with no customer block present');
+});
+
 test('pack999\'s first-ever purchase also credits the plain 4000 base tokens -- no bonus regardless of pack size', async function () {
   await seedZeroBalanceNoPriorPurchase('firstbonus700@example.com');
   var res = await handler(signedEvent(paymentPayload({

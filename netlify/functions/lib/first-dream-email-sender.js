@@ -47,52 +47,59 @@
 // gate handles that exactly like any other direct link into the app
 // would — not something this feature needs to solve itself.
 //
-// Content is best-effort/optional (caption/style), same "trust the client
-// for non-identity CONTENT, never for identity" split this codebase
-// already establishes elsewhere (see send-first-dream-email.js's own
-// header comment) — the automatic path has no caption/style available at
-// its choke point (mark-generation-completed.js only ever independently
-// re-verifies a job's COMPLETION status, deliberately never fetches the
-// full result payload — see that file's own header comment on why), so it
-// calls this with neither, and gets the generic copy below instead of a
-// personalized one. That's an accepted, deliberate scope trade for this
-// task, not an oversight — keeping mark-generation-completed.js's own
-// request contract from processing.html completely unchanged (still just
-// `{ operationName }`) means this automatic send needs no new client-
-// trusted input at all at that exact choke point.
+// Content is best-effort/optional (caption), same "trust the client for
+// non-identity CONTENT, never for identity" split this codebase already
+// establishes elsewhere (see send-first-dream-email.js's own header
+// comment) — the automatic path has no caption available at its choke
+// point (mark-generation-completed.js only ever independently re-verifies a
+// job's COMPLETION status, deliberately never fetches the full result
+// payload — see that file's own header comment on why), so it calls this
+// without one, and gets the generic copy below instead of a personalized
+// one. That's an accepted, deliberate scope trade for this task, not an
+// oversight — keeping mark-generation-completed.js's own request contract
+// from processing.html completely unchanged (still just `{ operationName }`)
+// means this automatic send needs no new client-trusted input at all at
+// that exact choke point. (`style` used to be passed too, for the flat-
+// color fallback banner's tint — that banner is gone now, so style no
+// longer affects this email; callers may still pass it harmlessly.)
 //
 // REAL THUMBNAIL (added 2026-08-02, tracker item
 // for-product-dream-ready-email-real-first-qr9fbj, founder request — a
-// real first-frame image instead of the flat STYLE_COLORS banner below):
-// `opts.imageUrl` is the SAME best-effort/optional-content class as
-// caption/style above, not identity — an account's own dream.imageUrl
-// (see js/store.js's DreamStore.saveThumbnailBestEffort for how that
-// field gets populated: result.html captures the video element's own
-// first real frame to a <canvas> client-side and uploads it, since
-// there's no thumbnail field anywhere in fal's veo3.1 result payload and
-// a second paid fal image-generation call per video isn't worth it for a
-// cosmetic email detail). buildHtml falls back to the flat-color banner
-// whenever it's absent.
+// real first-frame image): `opts.imageUrl` is an account's own
+// dream.imageUrl (see js/store.js's DreamStore.saveThumbnailBestEffort for
+// how that field gets populated: result.html captures the video element's
+// own first real frame to a <canvas> client-side and uploads it, since
+// there's no thumbnail field anywhere in fal's veo3.1 result payload and a
+// second paid fal image-generation call per video isn't worth it).
 //
-// CORRECTED (2026-08-04, same tracker item's founder-approved thumbnail-
-// gating follow-up): this paragraph used to say the automatic path
-// (mark-generation-completed.js) "has no dreamId at all... so it has no
-// way to look up a dream's imageUrl even when one exists" and therefore
-// ALWAYS fell back to the flat-color banner in practice. That's no longer
-// true — mark-generation-completed.js no longer calls sendIfEligible
-// directly at all; it only enqueues (lib/first-dream-email-pending-
-// store.js's markPending), and send-pending-first-dream-emails.js's
-// scheduled scan is what actually calls this function, after resolving a
-// real dreamId/imageUrl (via lib/dream-store.js, once the client's own
-// thumbnail capture has synced) whenever one is available within the
-// founder's 3-minute window — see that file's own header comment for the
-// full mechanism. The flat-color banner is still the deliberate, honest
-// fallback for whenever no thumbnail lands within that window (client
-// never reached result.html, capture failed, sync never landed, etc.) —
-// this template is NOT dead code, it's the one path that intentionally
-// still reaches it. The client-triggered send-first-dream-email.js path
-// (which has the actual dream object on hand at request time) can also
-// still realistically supply a real thumbnail, same as before.
+// THUMBNAIL-GATED SEND (founder rule 2026-08-08, tracker item
+// for-product-p1-regression-evidence-found-7lbwkx follow-up — "do NOT send
+// the email at all until the thumbnail is available"): this email is now
+// NEVER sent without a real video thumbnail. The founder received one
+// first-dream email WITH a thumbnail and a later one WITHOUT (just the logo
+// + button) and ruled that a thumbnail-less send must not happen in the
+// normal path. sendIfEligible therefore GATES on a present, valid
+// thumbnail (below) BEFORE claiming the once-ever guard, so a not-yet-ready
+// send defers instead of going out bare — and, crucially, doesn't burn the
+// account's one-and-only marker, so a later attempt (once the client's
+// capture syncs, or the next scheduled scan finds the imageUrl) can still
+// send the real thing. Because this is the single choke point BOTH trigger
+// paths funnel through, the guarantee lives here once:
+//   - the client-triggered send-first-dream-email.js path fires the moment
+//     result.html loads, when dream.imageUrl is usually STILL NULL (it
+//     loses the race with saveThumbnailBestEffort's upload — see
+//     js/store.js's own comment) — so that path now simply no-ops here
+//     until the capture has synced, rather than sending a bare email;
+//   - the automatic path enqueues (mark-generation-completed.js ->
+//     lib/first-dream-email-pending-store.js) and
+//     send-pending-first-dream-emails.js's scheduled scan retries every
+//     minute, sending the moment a thumbnail lands and DROPPING (never
+//     sending bare) if none lands within its give-up window — see that
+//     file's own header comment for the full mechanism and the "drop vs.
+//     send-anyway" decision.
+// The old flat-color STYLE_COLORS fallback banner is consequently gone —
+// it was the exact thing that produced the founder's thumbnail-less email,
+// so it's removed rather than left as reachable dead code.
 //
 // PostHog event: fires 'first_dream_email_sent' server-side (via
 // lib/posthog-capture.js, the same server-side-capture pattern
@@ -135,20 +142,6 @@ var RESEND_API_BASE = 'https://api.resend.com/emails';
 // established convention over one shared constants module).
 var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
 
-// Same style -> color mapping as js/store.js's STYLE_GRADIENTS, flattened
-// to a single flat hex for an email client — see send-first-dream-email.js's
-// original header comment (this table moved here unchanged) for why a flat
-// color stands in for a real video-frame thumbnail.
-var STYLE_COLORS = {
-  Cartoon: '#FFB199',
-  Cinematic: '#22405c',
-  Anime: '#9F8FFF',
-  Realistic: '#2A2F4A'
-};
-function colorForStyle(style) {
-  return STYLE_COLORS[style] || STYLE_COLORS.Cinematic;
-}
-
 function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -190,14 +183,12 @@ function absoluteImageUrl(event, url) {
 }
 
 function buildHtml(opts) {
-  // Real thumbnail when one's on hand (see this file's own header comment
-  // "REAL THUMBNAIL" paragraph) -- falls back to the original flat
-  // STYLE_COLORS banner otherwise, same visual weight/footprint (160px
-  // tall, same border-radius/margin) so the rest of the email's layout is
-  // unaffected either way.
-  var media = opts.imageUrl
-    ? '<img src="' + esc(opts.imageUrl) + '" width="480" alt="" style="display:block;width:100%;max-width:480px;height:160px;object-fit:cover;border-radius:14px;margin-bottom:18px;" />'
-    : '<div style="height:160px;border-radius:14px;background:' + colorForStyle(opts.style) + ';margin-bottom:18px;"></div>';
+  // The real video-frame thumbnail. This email is NEVER built (let alone
+  // sent) without one now (founder rule 2026-08-08 — see this file's own
+  // "THUMBNAIL-GATED SEND" header paragraph and sendIfEligible's own gate),
+  // so there is no flat-color fallback branch here anymore: opts.imageUrl
+  // is always a present, absolute https:// url by the time buildHtml runs.
+  var media = '<img src="' + esc(opts.imageUrl) + '" width="480" alt="" style="display:block;width:100%;max-width:480px;height:160px;object-fit:cover;border-radius:14px;margin-bottom:18px;" />';
   // COPY FIX (tracker.html's for-product-bug-founder-affects-all-funn-
   // 0efe7t, gap #5): this used to read "Your first dream is ready to
   // watch." here, but the ONLY guard behind this send is
@@ -281,18 +272,20 @@ async function reportSkip(username, email, reason, auto) {
  *             file's own header comment on why callers must resolve this
  *             themselves before calling in)
  *   dreamId   (optional) — purely for the guard's own bookkeeping record
- *   caption/style (optional) — cosmetic personalization only, see header
- *             comment on why the automatic path omits these
- *   imageUrl  (optional) — cosmetic real-thumbnail content, same class as
- *             caption/style above (see header comment's "REAL THUMBNAIL"
- *             paragraph) — resolved to an absolute url internally
- *             (absoluteImageUrl) before ever reaching buildHtml
+ *   caption   (optional) — cosmetic personalization only, see header
+ *             comment on why the automatic path omits it
+ *   imageUrl  (REQUIRED for an actual send) — the dream's real video
+ *             thumbnail. Resolved to an absolute url internally
+ *             (absoluteImageUrl); if it resolves to nothing, this defers
+ *             (skipped:'no_thumbnail') WITHOUT sending or burning the
+ *             once-ever guard — see the header's "THUMBNAIL-GATED SEND"
+ *             paragraph
  *
  * Returns { ok:true, sent:true } ONLY when Resend actually accepted the
  * send, or { ok:true, sent:false, skipped:<reason> } for every other case
- * (already sent, no RESEND_API_KEY, missing identity, this email having
- * unsubscribed via lib/email-suppression-store.js, or Resend itself
- * rejecting/failing the request) — this function itself never signals
+ * (already sent, no thumbnail yet, no RESEND_API_KEY, missing identity,
+ * this email having unsubscribed via lib/email-suppression-store.js, or
+ * Resend itself rejecting/failing the request) — this function itself never signals
  * failure to its caller; every caller here treats this as best-effort,
  * exactly like the rest of this codebase's other analytics-adjacent/
  * notification sends. A 'first_dream_email_skipped' PostHog event fires
@@ -333,6 +326,24 @@ async function sendIfEligible(event, opts) {
     return { ok: true, sent: false, skipped: 'suppressed' };
   }
 
+  // THUMBNAIL GATE (founder rule 2026-08-08 — see this file's own
+  // "THUMBNAIL-GATED SEND" header paragraph): never send this email
+  // without a real video thumbnail. Checked BEFORE claiming the once-ever
+  // guard below, exactly like the suppression check above, so a send that
+  // can't legitimately go out yet never BURNS the account's one-time-ever
+  // marker — a later attempt (the client-triggered path once its capture
+  // has synced, or send-pending-first-dream-emails.js's next scan once the
+  // thumbnail lands) can still succeed. This is the single choke point both
+  // trigger paths funnel through, so it's the one place the guarantee has
+  // to live. absoluteImageUrl returns null only when there's genuinely no
+  // url to show (see its own doc comment), which is precisely "no thumbnail
+  // available".
+  var absImageUrl = absoluteImageUrl(event, opts.imageUrl);
+  if (!absImageUrl) {
+    await reportSkip(username, email, 'no_thumbnail', opts.auto);
+    return { ok: true, sent: false, skipped: 'no_thumbnail' };
+  }
+
   var guard = await firstDreamEmailStore.markSentOnce(event, username, opts.dreamId);
   if (!guard.ok) {
     var guardReason = guard.alreadySent ? 'already_sent' : (guard.error || 'guard_failed');
@@ -357,10 +368,9 @@ async function sendIfEligible(event, opts) {
   var html = buildHtml({
     event: event,
     caption: opts.caption,
-    style: opts.style,
     profileUrl: profileUrl(event),
     createUrl: createUrl(event),
-    imageUrl: absoluteImageUrl(event, opts.imageUrl),
+    imageUrl: absImageUrl,
     unsubscribeUrl: unsubscribeToken.buildUnsubscribeUrl(event, email)
   });
 

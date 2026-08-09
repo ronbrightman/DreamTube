@@ -13,6 +13,13 @@ var assert = require('node:assert/strict');
 var mockBlobs = require('./helpers/mock-blobs');
 mockBlobs.install();
 
+// Content-tier safety gate (netlify/functions/lib/content-classifier.js) —
+// force the classifier to a deterministic 'clean' verdict with no network
+// call so THIS file's fal-call-shape / fal-never-called assertions aren't
+// perturbed by the classifier's own LLM fetch. The gate itself is covered
+// in test/content-classifier.test.js and test/content-gate-generation.test.js.
+process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'clean';
+
 var { fakeEvent } = require('./helpers/fake-event');
 var entitlements = require('../netlify/functions/lib/entitlements');
 var pendingDreams = require('../netlify/functions/lib/pending-dreams');
@@ -71,7 +78,7 @@ test('missing caption/style -> E5', async function () {
   assert.match(JSON.parse(res.body).error, /^E5:/);
 });
 
-test('a brand-new email gets the 320-token signup grant and a successful submission spends 100 of it, returning pendingId + operationName', async function () {
+test('a brand-new email gets the 170-token signup grant and a successful submission spends 100 of it, returning pendingId + operationName', async function () {
   stubFetchOk();
   var res = await handler(genEvent({ body: { email: 'fresh-wizard@example.com' } }));
   assert.equal(res.statusCode, 200);
@@ -80,7 +87,7 @@ test('a brand-new email gets the 320-token signup grant and a successful submiss
   assert.match(data.operationName, /^fal:/);
 
   var status = await entitlements.getTokenStatus({}, 'fresh-wizard@example.com');
-  assert.equal(status.balance, 220); // 320 granted - 100 spent
+  assert.equal(status.balance, 70); // 170 granted - 100 spent
 
   var record = await pendingDreams.get({}, data.pendingId);
   assert.equal(record.status, 'pending');
@@ -154,7 +161,7 @@ test('GENERATION_MOCK_MODE=true skips fal entirely and still returns a working p
   assert.match(data.operationName, /^mock:/);
   assert.equal(calls, 0);
   var status = await entitlements.getTokenStatus({}, 'mock-wizard@example.com');
-  assert.equal(status.balance, 220); // 320 granted - 100 spent
+  assert.equal(status.balance, 70); // 170 granted - 100 spent
 });
 
 test('rate limit (E6) is enforced per-IP, same cap as generate-video.js', async function () {
@@ -180,7 +187,7 @@ test('mediaType omitted -> pending record defaults to mediaType "video" (backwar
   assert.equal(record.mediaType, 'video');
 });
 
-test('mediaType "image": a brand-new email gets the 320-token signup grant and a successful submission spends only 10 of it', async function () {
+test('mediaType "image": a brand-new email gets the 170-token signup grant and a successful submission spends only 10 of it', async function () {
   stubFetchOk();
   var res = await handler(genEvent({ body: { email: 'fresh-image@example.com', mediaType: 'image' } }));
   assert.equal(res.statusCode, 200);
@@ -189,7 +196,7 @@ test('mediaType "image": a brand-new email gets the 320-token signup grant and a
   assert.match(data.operationName, /^fal:/);
 
   var status = await entitlements.getTokenStatus({}, 'fresh-image@example.com');
-  assert.equal(status.balance, 310); // 320 granted - 10 spent
+  assert.equal(status.balance, 160); // 170 granted - 10 spent
 
   var record = await pendingDreams.get({}, data.pendingId);
   assert.equal(record.mediaType, 'image');
@@ -223,7 +230,7 @@ test('mediaType "image": GENERATION_MOCK_MODE=true skips fal entirely, still spe
   assert.match(data.operationName, /^mock:/);
   assert.equal(calls, 0);
   var status = await entitlements.getTokenStatus({}, 'mock-image@example.com');
-  assert.equal(status.balance, 310); // 320 granted - 10 spent
+  assert.equal(status.balance, 160); // 170 granted - 10 spent
 });
 
 test('mediaType "image": the fal submission URL never carries a fal_webhook query param (unlike the video path) — see docs/IMAGE_GENERATION_SPEC.md §7', async function () {

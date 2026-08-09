@@ -4135,6 +4135,29 @@
       return currentAccountEmail();
     },
 
+    /**
+     * The CURRENTLY signed-in account's own already-cached local password,
+     * or null if there is none to give (not signed in, or this account has
+     * no locally-cached password at all — e.g. one established purely via
+     * a session-transfer token, see commitTransferredSession's own doc
+     * comment). Same "no new re-auth prompt, the password is already on
+     * hand" shape as mintSessionTransferToken above — added for shop.html's
+     * returning-buyer checkout prefill (create-checkout-session-dodo.js's
+     * OPTIONAL password field, tracker item
+     * for-product-repeat-purchase-friction-dod-b6pzs6): that endpoint only
+     * ever attaches a stored Dodo customer_id / enables saved payment
+     * methods after verifying this password server-side, and falls back
+     * silently to today's plain checkout if it's missing or wrong — so
+     * handing it over here is a pure convenience, never something whose
+     * absence should surface as an error to the caller.
+     */
+    getCachedPassword: function () {
+      if (!state.user) return null;
+      var key = state.user.username.toLowerCase();
+      var account = state.accounts[key];
+      return (account && account.password) || null;
+    },
+
     /** The current user's account-creation timestamp (epoch ms), or null if unknown — either not logged in, or (the common case for now) an account that was created before this field existed, since there's no real history to backfill for those (same "don't fabricate" reasoning as tracker-store.js's createdAt/doneAt/startedAt). Used by the Settings support/feedback form to report "days since signup" as real context, never a guessed one. */
     getAccountCreatedAt: function () {
       return currentAccountCreatedAt();
@@ -4331,7 +4354,10 @@
      *                     for-product-funnel-ending-v2-founder-ins-tfuu0q's
      *                     combined ritual-module state (home.html:
      *                     "🔥 1 night" / "Your streak starts tonight" +
-     *                     the distinct +100 first-claim bonus) keys off
+     *                     the first-claim bonus eyebrow, shown only when the
+     *                     server's first-claim amount exceeds the normal 20 —
+     *                     as of the 2026-08-08 retune it equals 20, so the
+     *                     eyebrow stays hidden) keys off
      *                     `isFirstEverNight && loggedToday` — deliberately
      *                     a SEPARATE flag from hasEverLogged (which is also
      *                     true tonight, but stays true forever afterward)
@@ -6020,7 +6046,7 @@
     /**
      * Per-account "Make DreamTube yours" install-bonus claimed flag
      * (tracker item for-product-build-ship-founder-approved--9ta1j0, "Home
-     * round 4"). The real, once-ever grant of the +100 token reward lives
+     * round 4"). The real, once-ever grant of the +20 token reward lives
      * server-side (claim-install-bonus.js -> lib/entitlements.js's
      * applyAchievementGrant, the SAME idempotent once-per-account-per-id
      * marker pattern FIRST_CLAIM_BONUS_AMOUNT/the achievement ledger
@@ -6051,7 +6077,7 @@
     },
 
     /**
-     * Claims the "Make DreamTube yours" verified-install +100 token bonus
+     * Claims the "Make DreamTube yours" verified-install +20 token bonus
      * — thin wrapper around POST claim-install-bonus.js, same shape as
      * claimDailyTokens above. The server enforces the real once-per-account
      * grant (lib/entitlements.js's applyAchievementGrant); this call is
@@ -6323,8 +6349,8 @@
     /**
      * Reads the signed-in account's current token balance — see
      * netlify/functions/lib/entitlements.js's getTokenStatus for the full
-     * mechanism (320 on first-ever read; the daily grant — 100 on an
-     * account's first-ever claim ever, 20 on every claim after that, see
+     * mechanism (220 on first-ever read; the daily grant — 20 per claim,
+     * including the first-ever claim as of the 2026-08-08 retune, see
      * FIRST_CLAIM_BONUS_AMOUNT's own doc comment — must be actively
      * CLAIMED via claimDailyTokens/claim-daily-tokens.js, never applied
      * lazily by this read — see that file's 2026-07-28 "daily token claim"
@@ -6481,8 +6507,14 @@
             // first-qr9fbj) -- whatever this dream's OWN imageUrl already
             // is at the moment this fires, which is usually still null
             // (see saveThumbnailBestEffort below's own doc comment on the
-            // race this loses most of the time) -- optional/cosmetic, see
-            // lib/first-dream-email-sender.js's "REAL THUMBNAIL" comment.
+            // race this loses most of the time). As of the founder's
+            // 2026-08-08 thumbnail-gate rule the server now DEFERS rather
+            // than sends when this is null (see lib/first-dream-email-
+            // sender.js's "THUMBNAIL-GATED SEND" header note) -- so this
+            // client-triggered call is usually a no-op that leaves the
+            // real send to the thumbnail-waiting scheduled path, and only
+            // wins the send outright in the rarer case where the capture
+            // has already synced by the time this fires.
             imageUrl: dream.imageUrl || null
           })
         }).catch(function () { /* best-effort, must never break the app */ });

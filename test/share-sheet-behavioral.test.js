@@ -103,6 +103,27 @@ function capturedEventsNamed(page, name) {
 var MEDIA_URL = 'https://example.com/fake-video.mp4';
 var IMAGE_URL = 'https://example.com/fake-image.png';
 
+/**
+ * Mocks netlify/functions/download-video.js's "ready immediately" response
+ * — js/watermark-download.js's resolveVideoUrl() short-circuits straight
+ * to the resolved url when download-video.js itself already reports
+ * status:'ready' (the cached-twin path), so this reproduces every
+ * pre-existing "Save to device" test's original single-fetch shape
+ * unchanged downstream, while still routing through the real
+ * watermark-on-download mechanism (tracker item
+ * for-product-founder-ruling-08-07-every-u-g81h7v) the way production
+ * does. `urlFor(id)` lets one route serve different dreams different
+ * "watermarked" urls (see the stale/abandoned test below, which needs two
+ * dreams answered differently from the same route).
+ */
+function routeDownloadVideoReady(page, urlFor) {
+  return page.route('**/.netlify/functions/download-video?*', function (route) {
+    var reqUrl = new URL(route.request().url());
+    var id = reqUrl.searchParams.get('id');
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ready', url: urlFor(id) }) });
+  });
+}
+
 async function seedResultPageWithDream(page, opts) {
   opts = opts || {};
   await safeGoto(page, baseUrl + '/login.html');
@@ -324,6 +345,7 @@ test('share mini-sheet: Save to device fetches the media as a blob and calls nav
       navigator.share = function (data) { window.__shareCalls.push(data); return Promise.resolve(); };
       navigator.canShare = function (data) { return !!(data && data.files); };
     });
+    await routeDownloadVideoReady(page, function () { return MEDIA_URL; });
     await page.route(MEDIA_URL, function (route) {
       route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('fake-video-bytes') });
     });
@@ -361,6 +383,7 @@ test('share mini-sheet: Save to device falls back to a real file download when c
       navigator.share = function () { return Promise.resolve(); };
       navigator.canShare = function () { return false; }; // browser has navigator.share, but declines this file
     });
+    await routeDownloadVideoReady(page, function () { return MEDIA_URL; });
     await page.route(MEDIA_URL, function (route) {
       route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('fake-video-bytes') });
     });
@@ -398,6 +421,7 @@ test('share mini-sheet: Save to device opens the raw media URL in a new tab when
     // reach an arbitrary external host (see CLAUDE.md) -- registered at
     // the CONTEXT level (not page-level) so it also covers the new
     // popup page's own navigation request, not just the original page's.
+    await routeDownloadVideoReady(page, function () { return MEDIA_URL; });
     await context.route(MEDIA_URL, function (route) {
       route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('fake-video-bytes') });
     });
@@ -477,6 +501,10 @@ test('share mini-sheet: Save to device dismissed before its fetch resolves, then
     var STALE_MEDIA_URL = 'https://example.com/fake-video-stale.mp4';
     var OTHER_MEDIA_URL = 'https://example.com/fake-video-other.mp4';
 
+    await routeDownloadVideoReady(page, function (id) {
+      return id === 'd-share-stale-A' ? STALE_MEDIA_URL : OTHER_MEDIA_URL;
+    });
+
     var resolveStaleFetch;
     var staleFetchGate = new Promise(function (resolve) { resolveStaleFetch = resolve; });
     await page.route(STALE_MEDIA_URL, function (route) {
@@ -535,6 +563,126 @@ test('share mini-sheet: Save to device dismissed before its fetch resolves, then
     assert.match(labelAfter, /Save to device/, 'dream B\'s sheet must still show its own normal idle label -- dream A\'s stale resolution must not touch it');
     var sheetStillOpen = await page.evaluate(function () { return document.getElementById('share-sheet-overlay').classList.contains('open'); });
     assert.ok(sheetStillOpen, 'dream B\'s sheet must still be open -- the stale resolution must not have called hide() on it');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// 3b. Watermark-on-download (founder ruling, tracker item
+//     for-product-founder-ruling-08-07-every-u-g81h7v): video Save to
+//     device must resolve a WATERMARKED url via download-video.js/
+//     download-video-status.js (js/watermark-download.js), never fetch
+//     dream.videoUrl directly, and must never fall back to the raw video
+//     on a watermark failure.
+// ============================================================================
+
+test('share mini-sheet: Save to device on a video polls download-video-status while "processing" and shares the WATERMARKED url, not the raw dream.videoUrl', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await installPosthogStub(page);
+    await page.addInitScript(function () {
+      window.__shareCalls = [];
+      navigator.share = function (data) { window.__shareCalls.push(data); return Promise.resolve(); };
+      navigator.canShare = function (data) { return !!(data && data.files); };
+    });
+
+    var WATERMARKED_URL = 'https://example.com/fake-video-watermarked.mp4';
+    var downloadVideoCalls = [];
+    var statusPollCount = 0;
+
+    await page.route('**/.netlify/functions/download-video?*', function (route) {
+      downloadVideoCalls.push(new URL(route.request().url()).searchParams);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'processing' }) });
+    });
+    await page.route('**/.netlify/functions/download-video-status?*', function (route) {
+      statusPollCount++;
+      // First poll: still running. Second poll: done -- resolves to a URL
+      // that is DELIBERATELY different from dream.videoUrl (MEDIA_URL), so
+      // this test can prove the app fetched the watermarked twin, not the
+      // clean original.
+      var body = statusPollCount < 2 ? { status: 'processing' } : { status: 'ready', url: WATERMARKED_URL };
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    });
+    // MEDIA_URL is still mocked here (so result.html's own <video> player,
+    // which legitimately sets video.src = dream.videoUrl for ordinary
+    // IN-APP PLAYBACK the instant the page loads — unrelated to Save, and
+    // exactly what this ruling requires stay untouched/clean — doesn't hit
+    // the real network), but this test deliberately does NOT assert it's
+    // "never fetched" page-wide, since that legitimate playback request
+    // would make such an assertion flaky/wrong. The real, ruling-relevant
+    // proof is the SHARED FILE's own bytes below: its size exactly matches
+    // the watermarked fixture, not the differently-sized clean one, so it
+    // can only have come from WATERMARKED_URL.
+    await page.route(MEDIA_URL, function (route) { route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('clean-bytes') }); });
+    await page.route(WATERMARKED_URL, function (route) {
+      route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('watermarked-bytes') });
+    });
+
+    await seedResultPageWithDream(page, { id: 'd-share-wm-1', videoUrl: MEDIA_URL });
+    await openShareSheetFromResult(page);
+
+    await page.click('#share-opt-save');
+    await page.waitForSelector('#share-opt-save-label:has-text("Watermarking")', { timeout: 5000 });
+    await page.waitForFunction(function () { return (window.__shareCalls || []).length > 0; }, null, { timeout: 5000 });
+
+    assert.equal(downloadVideoCalls.length, 1, 'download-video.js must be called exactly once to submit/check the job');
+    assert.equal(downloadVideoCalls[0].get('id'), 'd-share-wm-1');
+    assert.equal(downloadVideoCalls[0].get('src'), MEDIA_URL, 'the clean original url must be passed through as the src to watermark');
+    assert.ok(statusPollCount >= 2, 'must have polled download-video-status at least until it reported ready');
+
+    var fileInfo = await page.evaluate(function () {
+      var call = window.__shareCalls[0];
+      var file = call.files && call.files[0];
+      return file ? { size: file.size, name: file.name } : null;
+    });
+    assert.ok(fileInfo, 'navigator.share must have been called with a real files:[...] payload');
+    assert.equal(fileInfo.size, Buffer.from('watermarked-bytes').length, 'the shared file\'s bytes must be the WATERMARKED fixture specifically, not the (differently-sized) clean one -- proves Save fetched WATERMARKED_URL, not the raw dream.videoUrl');
+  } finally {
+    await context.close();
+  }
+});
+
+test('share mini-sheet: Save to device on a video shows a real error and NEVER falls back to the raw dream.videoUrl when the watermark job fails', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // window.open is this app's OWN fallback-download mechanism (see
+    // chooseSave's "no File-share support"/blob-fetch-failure branches) --
+    // stubbing and asserting it's never called is a direct, precise proof
+    // that a watermark failure triggers no fallback download of the raw
+    // url, unlike page-wide network tracking on MEDIA_URL itself (which
+    // would also fire from result.html's own <video> player loading it for
+    // ordinary, unrelated, correctly-unchanged in-app playback).
+    await page.addInitScript(function () {
+      window.__openCalls = [];
+      window.open = function (url) { window.__openCalls.push(url); return null; };
+    });
+    await page.route('**/.netlify/functions/download-video?*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'error', error: 'WD04: submit_failed: fal_down' }) });
+    });
+    await page.route(MEDIA_URL, function (route) { route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('clean-bytes') }); });
+
+    await seedResultPageWithDream(page, { id: 'd-share-wm-err-1', videoUrl: MEDIA_URL });
+    await openShareSheetFromResult(page);
+
+    await page.click('#share-opt-save');
+    await page.waitForSelector('#share-sheet-error:not([style*="display: none"])', { timeout: 5000 });
+    assert.match(await page.textContent('#share-sheet-error'), /watermarked copy/i);
+
+    await page.waitForTimeout(300);
+    var openCalls = await page.evaluate(function () { return window.__openCalls; });
+    assert.deepEqual(openCalls, [], 'a watermark failure must never silently fall back to opening/serving the unwatermarked original');
+
+    var labelAfter = await page.textContent('#share-opt-save-label');
+    assert.match(labelAfter, /Save to device/, 'the Save button must reset to its normal idle label so the user can retry');
+    var disabledAfter = await page.evaluate(function () { return document.getElementById('share-opt-save').disabled; });
+    assert.equal(disabledAfter, false);
   } finally {
     await context.close();
   }

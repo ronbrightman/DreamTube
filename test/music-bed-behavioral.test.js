@@ -125,7 +125,7 @@ test('the four style-matched music-bed WAV files resolve as real static assets a
   }
 });
 
-test('js/music-bed.js: urlForStyle resolves all 4 real styles and fails closed on anything else; eligible() requires only a real videoUrl and a known style -- no musicBedOn check at all, so any historical value (or its total absence) never opts a dream out', async function (t) {
+test('js/music-bed.js: urlForStyle resolves all 4 real styles and fails closed on anything else; eligible() needs only a real videoUrl (a bed always resolves now via the tier-3 default) -- no musicBedOn check at all, so any historical value (or its total absence) never opts a dream out', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -164,7 +164,10 @@ test('js/music-bed.js: urlForStyle resolves all 4 real styles and fails closed o
         staleFalse: MusicBed.eligible({ musicBedOn: false, videoUrl: 'x.mp4', style: 'Cartoon' }),
         missingField: MusicBed.eligible({ videoUrl: 'x.mp4', style: 'Cartoon' }), // pre-feature dream
         noVideo: MusicBed.eligible({ musicBedOn: false, videoUrl: null, style: 'Cartoon', imageUrl: 'x.jpg' }),
+        // Unknown style + no mood: now eligible via the tier-3 default bed
+        // (2026-08-08 founder repro — a video dream must never be silent).
         unknownStyle: MusicBed.eligible({ videoUrl: 'x.mp4', style: 'Surrealist' }),
+        unknownStyleUrl: MusicBed.urlForDream({ videoUrl: 'x.mp4', style: 'Surrealist' }),
         nullDream: MusicBed.eligible(null)
       };
     });
@@ -172,7 +175,8 @@ test('js/music-bed.js: urlForStyle resolves all 4 real styles and fails closed o
     assert.equal(eligibility.staleFalse, true, 'a stale musicBedOn:false left over from the retired toggle must NOT silently opt this dream out -- music is always on now');
     assert.equal(eligibility.missingField, true, 'a dream that predates this feature entirely (no musicBedOn at all) must ALSO get a bed now -- no lingering opt-out from before the feature existed');
     assert.equal(eligibility.noVideo, false, 'an image-only dream has nothing to loop a bed against, regardless of any musicBedOn value');
-    assert.equal(eligibility.unknownStyle, false);
+    assert.equal(eligibility.unknownStyle, true, 'an unknown-style video dream is eligible now via the tier-3 default bed -- never silent');
+    assert.equal(eligibility.unknownStyleUrl, 'assets/music-beds/moods/dreamy.wav', 'unknown style + no mood resolves to the neutral default bed');
     assert.equal(eligibility.nullDream, false);
   } finally {
     await context.close();
@@ -237,7 +241,7 @@ test('result.html: an eligible dream gets a real, style-matched bed that plays/p
   }
 });
 
-test('result.html: a pre-feature dream (no musicBedOn field at all) gets a bed just like a brand-new one -- no lingering opt-out from before the feature existed; only a real ineligibility reason (unknown style) still yields silence', async function (t) {
+test('result.html: a pre-feature dream (no musicBedOn field at all) gets its style bed just like a brand-new one; an unknown-style dream now gets the tier-3 neutral default bed instead of silence (2026-08-08 founder repro)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -263,7 +267,7 @@ test('result.html: a pre-feature dream (no musicBedOn field at all) gets a bed j
 
     await page.goto(baseUrl + '/result.html?id=dream-bed-unknown-style', { waitUntil: 'domcontentloaded' });
     var unknownStyleSrc = await page.locator('#result-music-bed').evaluate(function (a) { return a.getAttribute('src'); });
-    assert.equal(unknownStyleSrc, null, 'an unrecognized style must still fail closed to no bed -- that check is untouched by the always-on simplification');
+    assert.equal(unknownStyleSrc, 'assets/music-beds/moods/dreamy.wav', 'an unrecognized style now resolves to the tier-3 neutral default bed -- a real video dream is never silent');
   } finally {
     await context.close();
   }

@@ -55,13 +55,13 @@ test('missing/empty email rejected E3', async function () {
 test('a brand-new account claims successfully -- 200, granted:true, real post-grant balance', async function () {
   var email = 'installbonushandler@example.com';
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.getTokenStatus(ev, email); // materializes the 320-token INITIAL_GRANT record so the +100 has something to add to
+  await entitlements.getTokenStatus(ev, email); // materializes the 170-token INITIAL_GRANT record so the +20 has something to add to
 
   var res = await claimHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { email: email } }));
   assert.equal(res.statusCode, 200);
   var body = JSON.parse(res.body);
   assert.equal(body.granted, true);
-  assert.equal(body.balance, 420, '320 + 100 install bonus');
+  assert.equal(body.balance, 190, '170 + 20 install bonus');
 });
 
 test('claiming again for the same account -- 200 (NOT a 4xx/error), granted:false, never double-credits', async function () {
@@ -77,7 +77,7 @@ test('claiming again for the same account -- 200 (NOT a 4xx/error), granted:fals
   assert.equal(JSON.parse(res2.body).granted, false);
 
   var record = await entitlements.getEntitlement(fakeEvent({ ip: nextIp() }), email);
-  assert.equal(record.tokens.balance, 420, 'the second call must never re-credit the +100');
+  assert.equal(record.tokens.balance, 190, 'the second call must never re-credit the +20');
 });
 
 test('email is normalized (trimmed/lowercased) the same way every other entitlements-backed function does', async function () {

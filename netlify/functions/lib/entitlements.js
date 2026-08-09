@@ -10,7 +10,8 @@
 //
 // Backed by a single Netlify Blobs store ("dreamtube-entitlements"),
 // ONE RECORD PER NORMALIZED EMAIL:
-//   { email, active, plan, stripeCustomerId, stripeSubscriptionId, updatedAt,
+//   { email, active, plan, stripeCustomerId, stripeSubscriptionId,
+//     dodoCustomerId, updatedAt,
 //     tokens: { balance, lastClaimAt, streak },
 //     appliedTokenPackPaymentIds, refundedJobIds,
 //     firstPackPurchaseAt,
@@ -29,6 +30,30 @@
 // images) that capability-type achievement grants add to. Deliberately no
 // ACTUAL achievement ids or grant sizes are wired to any real user-facing
 // trigger yet — see that doc block's own "SHIPS NO GRANTS" note.
+//
+// dodoCustomerId: the Dodo Payments customer id (payment.customer.customer_id
+// on a payment.succeeded webhook) for this email's most recent completed
+// Dodo purchase — threaded through dodo-webhook.js's creditTokenPackOnce
+// call into creditTokenPackAmountOnce, which folds the stamp into the SAME
+// atomic blobsCas.casWrite that applies the token credit (see that
+// function's own doc comment for why this can't be a separate plain write:
+// this record's balance is also touched by spendTokens/addTokens, the
+// highest-frequency writers to this store, and a second unguarded write
+// racing them could silently clobber a concurrent spend — see the STANDING
+// CHECKLIST comment above spendTokens/addTokens for the general rule this
+// follows). Mirrors stripeCustomerId's own role for the dormant Stripe
+// backend, just for Dodo. Tracker item
+// for-product-repeat-purchase-friction-dod-b6pzs6: this is what lets
+// create-checkout-session-dodo.js attach a RETURNING buyer's checkout to
+// their existing Dodo customer (`customer_id` instead of a bare `email`)
+// and show their saved payment methods — but ONLY after this codebase's own
+// real-password verification (accountStore.verifyLogin, same bar
+// create-session-transfer.js already holds), never on a bare client-claimed
+// email alone. See that file's own header comment for the full security
+// reasoning: Dodo auto-attaches any checkout to an existing customer purely
+// by email match, so unconditionally passing customer_id/show_saved_payment_
+// methods off a bare email would let anyone who knows/guesses a real user's
+// email see THAT PERSON's saved payment methods at checkout.
 //
 // tokens.lastClaimAt / tokens.streak (added 2026-07-28, "daily token
 // claim" — replaces the old lazy background +20/24h drip entirely, see
@@ -102,16 +127,16 @@
 // an edit/regenerate, or a style change — all three already funnel through
 // the same generate-video.js call site, see that file; a cheaper 10-token
 // image generation was added later, see generate-image.js). Balance is
-// earned partly for free and partly by claiming: 320 on first read of a
+// earned partly for free and partly by claiming: 220 on first read of a
 // never-before-seen email (the funnel's free onboarding video (100) plus
-// one additional day-1 video (100) plus 2 images (20), plus a further
-// +100 headroom — 2026-08-01 founder-directed bump, tracker xostu6), plus a
-// further +20/day the user must actively CLAIM (claim-daily-tokens.js) —
-// EXCEPT the account's first-ever claim ever, which grants +100 instead
-// (2026-07-28 founder amendment — "enough to make more videos on the
-// second day" — see FIRST_CLAIM_BONUS_AMOUNT's own doc comment below for
-// the full reasoning and why this is keyed off a once-only firstClaimAt
-// marker, not a streak day). This REPLACES the old lazy background +20/24h drip entirely (2026-07-28,
+// one additional day-1 video (100) plus 2 images (20) — 2026-08-08
+// founder-directed retune, down from the earlier 320 that carried a further
+// +100 headroom, tracker xostu6, since removed), plus a further +20/day the
+// user must actively CLAIM (claim-daily-tokens.js). The first-ever claim
+// grants the same +20 as every subsequent claim (the larger first-claim
+// bonus was retired in the same 2026-08-08 retune — see
+// FIRST_CLAIM_BONUS_AMOUNT's own doc comment below, which now equals the
+// normal DAILY_CLAIM_AMOUNT). This REPLACES the old lazy background +20/24h drip entirely (2026-07-28,
 // "daily token claim", founder decision, replacing part of "Token Economy
 // C"). The old drip (and its ≥200 grant ceiling — see the retired
 // GRANT_CEILING) auto-materialized tokens on any read with nothing for the
@@ -134,7 +159,7 @@
 // default-off until real Stripe checkout existed — being entitled there
 // required having actually paid, so gating on it before a checkout flow
 // existed would have hard-blocked everyone. This model can never fully
-// block anyone (the 320-token signup grant plus a daily claim guarantee
+// block anyone (the 220-token signup grant plus a daily claim guarantee
 // continued access), it just rate-limits free usage to a sustainable
 // level, now gated behind an active tap rather than a silent drip. See
 // generate-video.js's E112 doc block and AGENT_POLICY.md for the full
@@ -363,13 +388,25 @@ async function setEntitlement(event, email, patch) {
   return record;
 }
 
-// 320 initial = free funnel video (100) + one additional day-1 video (100)
-// + 2 images (20) + a further +100 headroom (2026-08-01 founder-directed
-// bump, tracker xostu6 — "add 100 tokens to the base balance of every new
-// user so they get some more capabilities") — unchanged by the
-// daily-claim switch (2026-07-28), see the doc block at the top of this
-// file for the full retune history.
-var INITIAL_GRANT = 320;
+// 220 initial signup grant (2026-08-08 founder-directed economy retune —
+// down from 320). Covers the free funnel video (100) + one additional
+// day-1 video (100) + 2 images (20); the extra +100 headroom added on
+// 2026-08-01 (tracker xostu6) was pulled back out in this retune. EXISTING
+// balances are never rewritten by changing this constant — it only sets the
+// amount a brand-new email is seeded with on its first-ever read (see
+// syncTokens' `!record.tokens` branch); every already-materialized record
+// keeps whatever balance it already had.
+// 2026-08-09 founder-directed economy retune (220 -> 170): a fresh signup gets
+// 170, so ONE video (100 tokens) leaves 70 — short of a second. To reach a
+// second video the user must collect the engagement bonuses that are good for
+// us anyway: first-login/first-claim (+20 -> 90) plus EITHER email-verify OR
+// add-to-homescreen (+20 -> 110, enough for a 2nd video); doing the remaining
+// action tops up to 130. This uses the token wall to drive the valuable
+// actions instead of just gating purchase, and tightens the free-video runway
+// so the (well-built) out-of-tokens purchase moment actually arrives. New
+// signups only — see the comment above: changing this never rewrites an
+// existing balance.
+var INITIAL_GRANT = 170;
 
 // The daily-claim mechanism (claim-daily-tokens.js) — replaces the old
 // DAILY_GRANT_AMOUNT/GRANT_CEILING/GRANT_INTERVAL_MS lazy-drip trio
@@ -401,14 +438,17 @@ var CLAIM_COOLDOWN_MS = 20 * 60 * 60 * 1000;
 var STREAK_CONTINUITY_MS = 48 * 60 * 60 * 1000;
 var DAILY_CLAIM_AMOUNT = 20;
 
-// FIRST_CLAIM_BONUS_AMOUNT (2026-07-28, founder-approved economy amendment,
-// tracker item for-product-daily-claim-bugs-founder-rea-kei2ub, relayed via
-// Manager): the account's FIRST-EVER successful daily claim grants 100
-// tokens instead of the usual 20 — founder's own words, "I want users to
-// have enough to make more videos on the second day so let's make the free
-// tokens on the second day be 100". A returning day-2 user who claims for
-// the very first time can then afford another full video (100 tokens) on
-// top of whatever they still have left from the 320-token signup grant.
+// FIRST_CLAIM_BONUS_AMOUNT (2026-08-08 founder-directed economy retune —
+// down from 100 to 20, matching the normal DAILY_CLAIM_AMOUNT): the bigger
+// first-claim bonus is effectively RETIRED — the account's first-ever
+// successful daily claim now grants the same 20 as every subsequent claim.
+// (Originally introduced 2026-07-28, tracker item
+// for-product-daily-claim-bugs-founder-rea-kei2ub, granting 100 on the
+// first claim; the founder pulled it back to 20 in the 2026-08-08 retune.)
+// The constant is kept (rather than deleted) so getTokenStatus' and
+// claimDailyTokens' first-claim-vs-normal-claim projection logic stays
+// intact and reads a single named value — it simply now equals
+// DAILY_CLAIM_AMOUNT.
 //
 // Deliberately a CLAIM-COUNT/`firstClaimAt` rule, NOT a streak-day-2 rule:
 // a streak-based "day 2 of a streak gets 100" would re-grant the bonus
@@ -425,7 +465,15 @@ var DAILY_CLAIM_AMOUNT = 20;
 // class documented in tracker item
 // recurring-bug-class-hardcoded-daily-gran-h6swgy).
 //
-// Abuse exposure (CORRECTED 2026-08-05, round 3 of tracker item
+// Abuse exposure — LARGELY MOOT as of the 2026-08-08 retune: with
+// FIRST_CLAIM_BONUS_AMOUNT now equal to DAILY_CLAIM_AMOUNT (both 20), a
+// first-ever claim grants no more than any ordinary claim, so the "extra
+// delta a disposable email is worth over a normal claim" this section
+// analyzes is now zero. The analysis below is retained for history (and in
+// case a larger first-claim bonus is ever reinstated); its "+80 delta" /
+// "100 tokens" figures describe the pre-retune 100-vs-20 gap, not today's.
+//
+// (CORRECTED 2026-08-05, round 3 of tracker item
 // for-product-p1-urgent-fresh-signup-can-d-qhrrqy — a prior version of
 // this comment claimed the one-time +80 delta was bounded by the SAME
 // per-IP cap that guards the 320-token signup grant
@@ -455,7 +503,7 @@ var DAILY_CLAIM_AMOUNT = 20;
 // capping the rate-limit ceiling downstream) is a real, still-open
 // follow-up, not something this comment or the round-3 ceiling fix
 // claims to have done.
-var FIRST_CLAIM_BONUS_AMOUNT = 100;
+var FIRST_CLAIM_BONUS_AMOUNT = 20;
 
 // Email-verification bonus (founder-authorized 2026-08-08: "maybe also
 // give 20 tokens for verifying email", surfaced on home.html's
@@ -554,7 +602,7 @@ effectiveConfig.logEffectiveConfigOnce('entitlements', [
  * in this function or file — it has no effect on the daily claim,
  * spendTokens, addTokens, or (critically) the E112/E412 balance-threshold
  * check itself, which callers apply completely independently of this — a
- * bypassed IP still gets exactly INITIAL_GRANT (320) tokens, no more, same
+ * bypassed IP still gets exactly INITIAL_GRANT (220) tokens, no more, same
  * as any other brand-new email that simply wasn't IP-capped.
  *
  * Return value used to also carry a `justSeeded` flag (2026-07-29, tracker
@@ -779,7 +827,7 @@ async function syncTokens(event, email, opts) {
 }
 
 /**
- * Reads this email's current token status, applying the one-time 320-token
+ * Reads this email's current token status, applying the one-time 220-token
  * first-ever-read grant if needed (see syncTokens above) — the daily +20 is
  * a separate, explicit CLAIM (claimDailyTokens below), never applied
  * lazily by this read. Returns
@@ -1370,7 +1418,7 @@ var MAX_CREDIT_ATTEMPTS = 3;
  * existing catch block already does the right thing once this function
  * actually throws instead of quietly returning success-shaped false.
  */
-async function creditTokenPackOnce(event, email, paymentId, tokens) {
+async function creditTokenPackOnce(event, email, paymentId, tokens, dodoCustomerId) {
   if (!paymentId) {
     // Hardening fix (store-launch copy-sweep companion pass,
     // for-product-store-launch-copy-sweep-purc-m6xhkx): this used to
@@ -1453,7 +1501,15 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
   // propagates straight out of this function too — deliberately, for the
   // same "let dodo-webhook.js's catch turn this into a retry" reason as
   // the marker write above.
-  await creditTokenPackAmountOnce(event, email, paymentId, tokens);
+  //
+  // `dodoCustomerId` (optional, undefined for every pre-existing caller)
+  // is threaded straight through to creditTokenPackAmountOnce, which folds
+  // it into this SAME write rather than dodo-webhook.js doing a second,
+  // separate, unguarded setEntitlement call — see that function's own doc
+  // comment on why a standalone write here would be a real data-integrity
+  // hazard (a review round-2 finding: it would race spendTokens, the
+  // highest-frequency writer to this same record).
+  await creditTokenPackAmountOnce(event, email, paymentId, tokens, dodoCustomerId);
 
   // At this point the balance credit is guaranteed to have landed exactly
   // once (creditTokenPackAmountOnce's own guarantee), regardless of how
@@ -1530,6 +1586,26 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
  * paymentId only ever applies the balance increment once. Used by
  * creditTokenPackOnce to make its 'pending'-marker resume path safe (see
  * that function's doc comment for the hazard this closes).
+ *
+ * `dodoCustomerId` (optional) is folded into this SAME write when present —
+ * NOT a separate setEntitlement call. This is deliberate (review round-2
+ * finding on tracker item for-product-repeat-purchase-friction-dod-b6pzs6):
+ * this entitlement record's `tokens.balance` is also written by
+ * spendTokens/addTokens, both plain unguarded read -> Object.assign ->
+ * setJSON calls (no retry, no verify) — and spendTokens is the single
+ * highest-frequency writer to this store (it fires on every generation). A
+ * standalone `setEntitlement(event, email, {dodoCustomerId})` call sitting
+ * right next to this credit (as dodo-webhook.js's first draft did) is
+ * exactly the same shape as spendTokens' own write: read -> merge -> write,
+ * no protection. Two such plain writes racing the SAME record can each read
+ * before the other writes and then each write back a patch built from a now-
+ * stale `existing` — whichever lands second silently reverts whatever field
+ * the other one had just changed (a balance dropping back to its pre-spend
+ * value, or a dodoCustomerId stamp disappearing). Folding the stamp into
+ * THIS retryingWrite's `mutate` instead means the customer-id write only
+ * ever happens as part of the same hardened read -> mutate -> write ->
+ * verify cycle that already defends the balance/appliedTokenPackPaymentIds
+ * fields below — one atomic write per payment credit, not two.
  *
  * WHY THIS NEEDS ITS OWN WRITE, NOT JUST "check a flag, then call
  * addTokens": recording "this paymentId's tokens were applied" and
@@ -1631,7 +1707,7 @@ async function creditTokenPackOnce(event, email, paymentId, tokens) {
 // on every attempt — a wrong guess can never commit, so there's nothing
 // left for a "trust this only on attempt 0" rule to protect against.
 
-async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
+async function creditTokenPackAmountOnce(event, email, paymentId, amount, dodoCustomerId) {
   var key = normalizeEmail(email);
   if (!key) return { ok: false };
 
@@ -1666,13 +1742,21 @@ async function creditTokenPackAmountOnce(event, email, paymentId, amount) {
       var creditAmount = amount;
       var baseTokens = rec.tokens || syncedTokens;
       var newBalance = Math.min(MAX_TOKEN_BALANCE, baseTokens.balance + creditAmount);
-      return Object.assign({}, rec, {
+      var patch = {
         email: key,
         tokens: { balance: newBalance, lastClaimAt: baseTokens.lastClaimAt, streak: baseTokens.streak },
         appliedTokenPackPaymentIds: appliedList.concat([paymentId]),
         firstPackPurchaseAt: rec.firstPackPurchaseAt || Date.now(),
         updatedAt: Date.now()
-      });
+      };
+      // Only ever set when a truthy customer id was actually passed in --
+      // never write an explicit `undefined` here, which would otherwise
+      // blank out a customer id a previous call already stamped on `rec`
+      // (Object.assign copies own-enumerable keys regardless of value, so
+      // an unconditional `dodoCustomerId: dodoCustomerId` would clobber it
+      // with undefined on every call that doesn't carry one).
+      if (dodoCustomerId) patch.dodoCustomerId = dodoCustomerId;
+      return Object.assign({}, rec, patch);
     }
   });
 
@@ -2547,6 +2631,34 @@ async function applyAchievementGrantOnce(event, email, achievementId, grantSpec)
  * semantics as account-store.js's deleteAccount and
  * @netlify/blobs' own store.delete().
  */
+/**
+ * Deletes ONE outer (email, achievementId) grant marker from
+ * ACHIEVEMENT_GRANTS_STORE_NAME — the delete twin of the marker
+ * applyAchievementGrant writes. Owner-only reset-tool use
+ * (admin-reset-account-markers.js): after a founder's test account is
+ * deleted, its entitlement RECORD is gone (so the inner `achievements`
+ * ledger goes with it), but this lets the reset tool ALSO clear the outer
+ * dedup marker for a specifically-named achievement so a re-signup can
+ * genuinely re-earn that bonus from scratch. Best-effort/idempotent —
+ * deleting a missing marker is a safe no-op, matching deleteEntitlement's
+ * own marker-cleanup posture. Deliberately NOT called by any normal user
+ * flow (delete-account.js only reaches deleteEntitlement, which clears
+ * markers off a still-present record's own ledger) — a real user must never
+ * get a fresh-start re-grant, which is exactly the farm this endpoint's
+ * owner gate exists to keep to the founder alone.
+ */
+async function deleteAchievementGrantMarker(event, email, achievementId) {
+  var key = normalizeEmail(email);
+  if (!key || !validateAchievementId(achievementId)) return { ok: false };
+  connectLambda(event);
+  try {
+    await achievementGrantsStore().delete(achievementGrantMarkerKey(key, achievementId));
+  } catch (e) {
+    // Best-effort — see this function's own doc comment.
+  }
+  return { ok: true };
+}
+
 async function deleteEntitlement(event, email) {
   var key = normalizeEmail(email);
   if (!key) return { ok: false, error: 'email_required' };
@@ -2599,6 +2711,7 @@ module.exports = {
   forgetRefundedJobId,
   applyAchievementGrant,
   applyAchievementGrantOnce,
+  deleteAchievementGrantMarker,
   deleteEntitlement,
   // Exported so callers that need the live values (get-token-status.js's
   // no-email fast path, which never reaches getTokenStatus itself — see

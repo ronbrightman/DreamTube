@@ -204,6 +204,12 @@ async function callFalImage(prompt, falKey) {
 //                                     lib/entitlements.js. Unconditional, same as generate-video.js's
 //                                     E112 — no flag, no owner bypass.
 //   E413 turnstile_verification_failed — same conditional check as generate-video.js's E113
+//   E116 content_policy_blocked    — the shared content-tier safety gate (lib/content-classifier.js).
+//                                     Deliberately NOT an E4xx code: it reuses generate-video.js's OWN
+//                                     E116 so an image block surfaces through the exact same client
+//                                     content-policy branch a video block does ("image and video behave
+//                                     identically", founder 2026-08-08). Returned 422, no fal call, no
+//                                     token spend. See the gate's own call site below.
 //
 // Mock mode: see generate-video.js's own "Mock mode & test-duration
 // override" doc block and docs/TESTING.md — identical discipline here.
@@ -219,6 +225,7 @@ var turnstile = require('./lib/turnstile');
 var jobOwners = require('./lib/job-owners');
 var ownerBypass = require('./lib/owner-bypass');
 var effectiveConfig = require('./lib/effective-config');
+var contentClassifier = require('./lib/content-classifier');
 
 // Logs this function's resolved rate-limit/cost-control config once per
 // cold start (tracker item for-product-damage-assessment-env-var-ca-
@@ -338,6 +345,49 @@ exports.handler = async function (event) {
   var tokenStatus = await entitlements.getTokenStatus(event, email, { ownerBypass: ownerBypassActive });
   if (tokenStatus.balance < IMAGE_TOKEN_COST) {
     return { statusCode: 402, body: JSON.stringify({ error: 'E412: insufficient_tokens: not enough tokens to generate an image' }) };
+  }
+
+  // CONTENT-TIER SAFETY GATE (founder directive 2026-08-08: "same gate for
+  // both image and video") — mirrors generate-video.js's E116 gate EXACTLY,
+  // see that file's own call site for the full policy writeup. Classifies the
+  // dream text (caption + folded-in character descriptions, so explicit text
+  // can't hide in a "description" field) into explicit/romantic/clean BEFORE
+  // any fal image call and BEFORE any token spend:
+  //   - normal request:            block EXPLICIT only (romantic/clean pass —
+  //                                the loosened rubric lives entirely in
+  //                                lib/content-classifier.js, so suggestive/
+  //                                lingerie/romantic images generate fine;
+  //                                only genuinely explicit ones are blocked).
+  //   - named-other-person photo:  block ANY sexual/romantic content (the
+  //                                anti-NCII safeguard — a non-self character
+  //                                with both a name and a photo).
+  // Placed AFTER the token-balance check but BEFORE the spend guard's
+  // checkAndReserve AND before the mock-mode early-return below, so a block
+  // (a) never reserves against the daily spend cap and (b) never spends
+  // tokens — in mock mode or real. The named-person flag is STRUCTURED data
+  // from the character payload, never inferred by the LLM. FAIL-SAFE: the
+  // normal case fails OPEN on a classifier error/timeout; the named-other-
+  // person-photo case fails CLOSED — both directions live in
+  // evaluateGenerationGate.
+  //
+  // CODE: deliberately reuses generate-video.js's OWN E116 rather than
+  // minting an image-range (E4xx) code — the content-policy block is one
+  // shared cross-cutting policy, and the client keys entirely on this "E116:
+  // content_policy_blocked" string (home.html's/result.html's content-policy
+  // catch branches). Reusing it makes an image block surface the block
+  // message through the exact same client path a video block already does —
+  // "image and video behave identically," per the founder directive — with
+  // zero client change. Returned 422, same as the video path.
+  var hasNamedOtherPersonPhoto = contentClassifier.detectNamedOtherPersonPhoto(characters);
+  var classifiableText = contentClassifier.buildClassifiableText(caption, characters);
+  var gate = await contentClassifier.evaluateGenerationGate({
+    text: classifiableText,
+    hasNamedOtherPersonPhoto: hasNamedOtherPersonPhoto,
+    falKey: falKey
+  });
+  if (!gate.allowed) {
+    console.log('generate-image: content_gate_blocked reason=' + gate.reason + (gate.error ? (' error=' + gate.error) : '') + ' named_photo=' + hasNamedOtherPersonPhoto);
+    return { statusCode: 422, body: JSON.stringify({ error: 'E116: content_policy_blocked: ' + gate.message }) };
   }
 
   var dailyCapUsd = parseFloat(process.env.DAILY_SPEND_CAP_USD);

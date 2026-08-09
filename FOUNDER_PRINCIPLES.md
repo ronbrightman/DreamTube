@@ -16,6 +16,14 @@ tight (curate, don't dump).
 
 ## How Ron operates (the meta)
 
+- **Self-directed text goes in *italics* (founder communication agreement,
+  re-affirmed 2026-08-08).** In any message to Ron, set the parts written
+  FOR THE AGENT — status narration, "I'm building/merging X now", working
+  notes, internal reasoning — in italics, so he can visually skip past them.
+  Anything written FOR HIM — answers, questions, decisions he must make,
+  things to test — stays in normal (non-italic) font. The italics are the
+  "you can ignore this line" signal; normal font is "this is for you."
+
 - **He dictates — read his messages phonetically (standing rule, his
   "always", 2026-08-08).** Ron usually speaks his messages through
   transcription, so expect sound-alike substitutions, wrong capitals, and
@@ -195,6 +203,16 @@ tight (curate, don't dump).
   link edge case where something must be shown) was a good instinct but the
   wrong default — hiding the impossible choice up front is simpler and never
   disappoints a user who never saw it as an option.
+- **Never specify an ethnicity when generating a video or image unless the
+  user asked for it (standing rule, founder 2026-08-08).** In the whole
+  creation process — the product's own video/image generation prompts and
+  anything an agent generates — do NOT inject a specific ethnicity, race, or
+  skin tone into a person's description. Leave it unspecified and let the
+  model render freely; only include an ethnicity the user themselves named.
+  This generalizes the creative-side rule below ("no specific ethnic group as
+  the main person in creative") to the entire generation pipeline. Applies to
+  buildPrompt / buildImagePrompt scaffolding, persona/asset generation, and ad
+  creative alike.
 
 ## Creative
 
@@ -213,6 +231,21 @@ tight (curate, don't dump).
   now.
 
 ## Design & engineering process
+
+- **Batch merges into few deploys — production deploys cost Netlify
+  credits (learned the hard way 2026-08-08).** Netlify's credit model
+  charges per production deploy; ~362 deploys in a billing cycle
+  exhausted the allowance and PAUSED all production deploys mid-session,
+  freezing the live app two commits behind main while everything looked
+  merged and correct. The cause was this session's habit of merge→push→
+  deploy for each fix as its own deploy (six separate deploys for one
+  afternoon's batch alone). Standing rule: when several branches are
+  ready, MERGE THEM ALL to main locally and push ONCE so Netlify runs a
+  single deploy — don't deploy per-fix. Deploy on a meaningful cadence
+  (a batch, a milestone), not on every commit. Watch for the "operational
+  credits / production deploys paused" banner as the tell. Auto-recharge
+  is off by design (a money decision) — so credit exhaustion presents as
+  a silent deploy freeze, not an error in our code.
 
 - **STANDING RULE (founder said ALWAYS, 2026-07-24): before laying out any
   SUBSTANTIAL new user-facing feature or screen, run research → design

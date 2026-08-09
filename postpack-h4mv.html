@@ -40,6 +40,10 @@
   .pp-copied{ color: var(--accent-growth); font-size:11px; margin-left:2px; align-self:center; opacity:0; transition:opacity .15s; }
   .pp-copied.show{ opacity:1; }
   .pp-empty{ padding:40px 20px; text-align:center; color:var(--text-muted); font-size:13px; }
+  /* Video download error (founder ruling, tracker item
+     for-product-founder-ruling-08-07-every-u-g81h7v — watermark-on-
+     download): shown if the server-side watermark job fails/times out. */
+  .pp-dl-error{ color: var(--danger); font-size:11px; margin-left:2px; align-self:center; max-width:100%; }
 </style>
 </head>
 <body>
@@ -98,6 +102,7 @@
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/pwa.js"></script>
+<script src="js/watermark-download.js"></script>
 <script>
   document.getElementById('pp-back').innerHTML = Icons.back;
   document.getElementById('pp-unauthorized-icon').innerHTML = Icons.lock;
@@ -192,8 +197,20 @@
         (hashtagsText ? '<div class="pp-hashtags">' + esc(hashtagsText) + '</div>' : '') +
         '<div class="pp-actions">' +
           '<button type="button" class="btn btn-ghost pp-copy-btn" data-item-id="' + esc(item.id) + '"><span class="icon"></span>Copy</button>' +
-          '<a class="btn btn-ghost pp-download-btn" href="' + esc(item.mediaUrl) + '" download target="_blank" rel="noopener"><span class="icon"></span>Download</a>' +
+          // Video downloads must carry the logo watermark (founder ruling,
+          // tracker item for-product-founder-ruling-08-07-every-u-g81h7v)
+          // — routed through the SAME watermark-twin mechanism
+          // result.html/explore.html's "Save to device" uses (js/
+          // watermark-download.js), reusing the twin cached under this
+          // item's own dreamId. A plain static <a href download> can't do
+          // that (the watermarked url isn't known until the async job
+          // resolves), so video items get a button instead; images are
+          // untouched -- this ruling only concerns video.
+          (item.mediaType === 'video'
+            ? '<button type="button" class="btn btn-ghost pp-download-btn pp-download-video-btn" data-item-id="' + esc(item.id) + '"><span class="icon"></span>Download</button>'
+            : '<a class="btn btn-ghost pp-download-btn" href="' + esc(item.mediaUrl) + '" download target="_blank" rel="noopener"><span class="icon"></span>Download</a>') +
           '<span class="pp-copied" id="pp-copied-' + esc(item.id) + '">Copied!</span>' +
+          (item.mediaType === 'video' ? '<span class="pp-dl-error" id="pp-dl-error-' + esc(item.id) + '"></span>' : '') +
         '</div>' +
       '</div>' +
     '</div>';
@@ -230,7 +247,54 @@
   // permission granted) without needing a permission prompt at all, and
   // the textarea itself is always there as a manual select-all/copy
   // fallback even if the button's own attempt silently does nothing.
+  // Video download (founder ruling, tracker item for-product-founder-
+  // ruling-08-07-every-u-g81h7v) — resolves the watermarked twin via
+  // js/watermark-download.js, keyed by this item's own dreamId (the SAME
+  // key result.html/explore.html's "Save to device" uses for the same
+  // dream, so both surfaces share one cached twin per dream, per the
+  // ruling's own "IG/TikTok postpack exports reuse the same twins").
+  function handleVideoDownload(btn) {
+    var itemId = btn.getAttribute('data-item-id');
+    var item = allItems.filter(function (it) { return it.id === itemId; })[0];
+    var errorEl = document.getElementById('pp-dl-error-' + itemId);
+    if (errorEl) errorEl.textContent = '';
+    if (!item) return;
+
+    // Captured via innerHTML (not textContent) so the icon <span> markup
+    // survives the busy state -- restoring with textContent instead would
+    // permanently replace the whole button (icon included) with a plain
+    // text node the first time this ever runs. Same pattern PR #29's own
+    // (now-closed/superseded) client-side watermark button used for
+    // exactly this reason.
+    var originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = 'Preparing…';
+
+    WatermarkDownload.resolveVideoUrl(item.dreamId, item.mediaUrl, {
+      onStatus: function (status) { if (status === 'processing') btn.textContent = 'Watermarking…'; }
+    }).then(function (url) {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'dreamtube-' + (item.dreamId || 'dream') + '.mp4';
+      a.target = '_blank';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }).catch(function (err) {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+      if (err && err.cancelled) return;
+      if (errorEl) errorEl.textContent = "Couldn't prepare a watermarked copy — try again in a moment.";
+    });
+  }
+
   document.getElementById('pp-grid').addEventListener('click', function (e) {
+    var dlBtn = e.target.closest('.pp-download-video-btn');
+    if (dlBtn) { handleVideoDownload(dlBtn); return; }
+
     var btn = e.target.closest('.pp-copy-btn');
     if (!btn) return;
     var itemId = btn.getAttribute('data-item-id');

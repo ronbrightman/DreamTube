@@ -24,7 +24,7 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
 </style></head><body>
 <h1>🗂 The Board</h1>
-<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-08 13:05 IDT</div>
+<div class="sub">Everything open, on every side · maintained by Manager, refreshed every cycle · updated 2026-08-09 10:08 IDT</div>
 
 <h2 class="ron">🔴 Waiting on RON — 1</h2>
 
@@ -33,7 +33,21 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 (function(){
   var box = document.getElementById('live-ron-queue');
   fetch('/.netlify/functions/get-tracker-items').then(function(r){ return r.json(); }).then(function(data){
-    var items = (data.items || []).filter(function(i){ return !i.done && i.waitingFor === 'ron'; });
+    // DURABLE BOARD-HYGIENE FILTER (founder 2026-08-09: "find a durable
+    // solution to clean it"). Show an item on the founder's queue ONLY when it
+    // is flagged waitingFor:ron AND it is NOT a work-side item tagged
+    // [for product] / [for growth] / [for manager]. Product's automated
+    // "Board-visibility hygiene" sync repeatedly set waitingFor:ron on its OWN
+    // [for product] work-items, flooding this page — clearing them by hand was
+    // whack-a-mole because the sync re-flagged them. This makes the Board
+    // itself the source of truth: a mislabeled work item can never appear here
+    // no matter what flag any session writes. A [for product] item that
+    // GENUINELY needs the founder must be re-tagged [for ron] (per the tracker
+    // protocol) to surface — the tag, not the flag, is the gate.
+    var WORK_TAG = /^\s*\[for (product|growth|manager)\]/i;
+    var items = (data.items || []).filter(function(i){
+      return !i.done && i.waitingFor === 'ron' && !WORK_TAG.test(i.title || '');
+    });
     var h2 = document.querySelector('h2.ron');
     if (h2) h2.textContent = '🔴 Waiting on RON — ' + items.length + ' (live from the tracker)';
     if (!items.length) { box.innerHTML = '<div class="donebox">✅ Nothing is waiting on you right now — every open flag is with the workers.</div>'; return; }

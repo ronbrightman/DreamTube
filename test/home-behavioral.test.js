@@ -374,7 +374,8 @@ test('home.html: the ritual module stays the exact same element across locked ->
     await seedHomeUser(page, { dreams: [makeDream('wk-1')], noRecallDates: [TEN_DAYS_AGO] });
     await page.waitForSelector('#ritual', { timeout: 5000 });
     assert.equal(await page.locator('#ritual').count(), 1);
-    assert.equal(await page.locator('#ritual').getAttribute('class'), 'ritual', 'locked state should not yet carry the warm class');
+    var lockedClass = await page.locator('#ritual').getAttribute('class');
+    assert.doesNotMatch(lockedClass, /\bwarm\b/, 'locked state should not yet carry the warm class (got: ' + lockedClass + ')');
     var lockedBig = await page.locator('#ritual-big').textContent();
     assert.match(lockedBig, /🔥 ?1 night/);
     var lockedSub = await page.locator('#ritual-sub').textContent();
@@ -935,15 +936,22 @@ test('home.html: the bare Tonight CTA button has the founder\'s exact "What did 
     assert.equal(await page.locator('#choice-write').isVisible(), true, '"Write it" choice card must be offered');
     assert.equal(await page.locator('#choice-record').isVisible(), true, '"Record it" choice card must be offered');
 
-    // Build it -> the chip-first wizard, same rigor as the old test:
-    // step 1 of 5 (subject chips) must actually render, not just an
-    // empty/generic build screen.
+    // Build it -> the chip-first wizard, same rigor as the old test: the
+    // Subject step (step 1) must actually render, not just an empty/
+    // generic build screen. The Layout-B redesign replaced the old "step 1
+    // of 5" text progress indicator with #build-dots (pill/dot styling,
+    // same as wizard.html) -- no text equivalent exists to pin anymore, so
+    // this now checks the real, still-meaningful properties: landing on
+    // the actual Subject step content, and dot 1 (of 5) marked current.
     await page.click('#choice-build');
     await page.waitForSelector('#create-build', { state: 'visible', timeout: 5000 });
     assert.equal(await page.locator('#create-select').isVisible(), false);
-    var stepBodyText = await page.locator('#build-step-body').textContent();
-    assert.match(stepBodyText, /step 1 of 5/i, 'must land showing the chip-first wizard\'s first step, not just an empty/generic build screen');
-    assert.equal(await page.locator('#build-subject-chip-row').isVisible(), true, 'the chip row itself -- not just the step heading -- must be visible');
+    assert.equal(await page.locator('#build-subject-chip-row').isVisible(), true, 'the Subject step\'s chip row must be visible -- not just an empty/generic build screen');
+    var dots = await page.locator('#build-dots i').evaluateAll(function (els) {
+      return els.map(function (el) { return el.className; });
+    });
+    assert.equal(dots.length, 5, 'the Build-it wizard should show 5 progress dots');
+    assert.match(dots[0], /\bon\b/, 'dot 1 (Subject) should be marked current on first landing');
   } finally {
     await context.close();
   }

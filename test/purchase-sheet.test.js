@@ -74,11 +74,11 @@ test('waitLineText: the honest free-path escape line, read live off tokenStatus 
   );
 });
 
-test('waitLineText: claimable renders a "claim now" line, never a stale countdown (tracker item for-product-build-the-daily-token-claim--fngrwd)', function () {
+test('waitLineText: when claimable, renders NOTHING — the de-emphasized quiet claim link below the buy CTA is the affordance now (founder 2026-08-09), and it must never fall through to a stale countdown', function () {
   var now = Date.now();
   assert.equal(
     PurchaseSheet.waitLineText({ dailyClaimAmount: 20, nextClaimAt: now - 999999, claimable: true }),
-    'Or claim 20 free tokens above'
+    ''
   );
 });
 
@@ -87,11 +87,11 @@ test('waitLineText: no tokenStatus / no nextClaimAt -> empty, never throws', fun
   assert.equal(PurchaseSheet.waitLineText({ dailyClaimAmount: 20, nextClaimAt: null, claimable: false }), '');
 });
 
-test('waitLineText: reads the live 100-token first-claim-bonus amount when the server reports it, not a hardcoded 20 (2026-07-28 first-claim-bonus amendment)', function () {
+test('waitLineText: the not-yet-claimable countdown reads the live first-claim-bonus amount when the server reports it, not a hardcoded 20 (2026-07-28 amendment; claimable amount now lives on the quiet claim button)', function () {
   var now = Date.now();
-  assert.equal(
-    PurchaseSheet.waitLineText({ dailyClaimAmount: 100, nextClaimAt: now - 999999, claimable: true }),
-    'Or claim 100 free tokens above'
+  assert.match(
+    PurchaseSheet.waitLineText({ dailyClaimAmount: 100, nextClaimAt: now + 999999, claimable: false }),
+    /^Or claim 100 free tokens in /
   );
 });
 

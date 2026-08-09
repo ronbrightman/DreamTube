@@ -200,7 +200,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 /* One long scroll — content scrolls BEHIND the overlaid night dock. 20px
    side gutters (memo's global rule); bottom padding reserves the dock's
    own footprint via the shared --nav-clearance token. */
-.home-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 20px calc(var(--nav-clearance) + 32px); }
+.home-scroll{ flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 20px calc(var(--nav-clearance) + 76px); }/* bottom pad bumped 32->76 so the Tonight-dream quiet action row (Post/Make another/Edit/Delete) clears the night dock instead of hiding behind it (founder 08-08) */
 
 /* ===== hero card DNA (the approved result-mock's treatment, radius 24) ===== */
 .hero-card{
@@ -505,9 +505,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 .ritual.warm .constel .st.lit{ filter:drop-shadow(0 0 4px rgba(255,224,170,.6)); }
 /* First-claim bonus eyebrow (tracker item
    for-product-funnel-ending-v2-founder-ins-tfuu0q) — shown only when
-   tokenStatus.dailyClaimAmount is the account's very first-ever claim
-   (see lib/entitlements.js's FIRST_CLAIM_BONUS_AMOUNT), distinguishing the
-   +100 first-claim bonus from every ordinary +20 daily claim. */
+   tokenStatus.dailyClaimAmount exceeds the ordinary 20-token daily claim
+   (see lib/entitlements.js's FIRST_CLAIM_BONUS_AMOUNT). As of the 2026-08-08
+   economy retune that constant equals the normal 20, so this eyebrow stays
+   hidden unless a larger first-claim bonus is reinstated. */
 .ritual-claim-eyebrow{
   margin-top:18px; font-size:11.5px; font-weight:800; letter-spacing:.08em;
   text-transform:uppercase; color:var(--home-warn);
@@ -1115,7 +1116,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
            the old "Add DreamTube to your phone" quiet row entirely — same
            real install mechanism (js/install-nudge.js/js/pwa.js), now an
            accordion of 3 rows (install/copy-link/bookmark) plus a
-           verified-install +100 claim. Retires (hidden entirely) once
+           verified-install +20 claim. Retires (hidden entirely) once
            DreamStore.getInstallBonusClaimed() is true on a later visit —
            see refreshMky() below. -->
       <section class="mky" id="mky" data-card="makeityours">
@@ -1169,11 +1170,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
               </button>
             </div>
           </div>
-          <div class="mky-reward gold" id="mky-reward-line">Add DreamTube to your home screen, then open it from the new icon — that first open unlocks +100 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
+          <div class="mky-reward gold" id="mky-reward-line">Add DreamTube to your home screen, then open it from the new icon — that first open unlocks +20 <span class="tok-ico" id="mky-reward-icon" aria-hidden="true"></span></div>
           <button type="button" class="mky-claim" id="mky-claim" disabled></button>
         </div>
         <div id="mky-done" hidden>
-          <div class="mky-done-line">Added to your phone ✓ · +100 claimed</div>
+          <div class="mky-done-line">Added to your phone ✓ · +20 claimed</div>
           <div class="mky-done-note">This card says goodbye — it won't be here next visit.</div>
         </div>
       </section>
@@ -1211,6 +1212,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<script src="js/content-block-panel.js"></script>
 <script src="js/dream-cards.js"></script>
 <script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
@@ -1218,6 +1220,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script src="js/email-verify-sheet.js"></script>
+<script src="js/scroll-lock.js"></script>
 <script src="js/interpreter-personas.js"></script>
 <script src="js/interpret-experience.js"></script>
 <!-- Push-subscribe ask (ORPHAN (a), rehomed from processing.html — see
@@ -1939,7 +1942,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     PurchaseSheet.showClaimSheet({
       source: 'home_ritual_module',
       tokenStatus: lastTokenStatus,
-      onClaimed: function(){ refreshTokenStatus(false); }
+      onClaimed: function(data){ applyClaimedStatus(data); }
     });
   });
 
@@ -2232,6 +2235,43 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         return;
       }
 
+      // E116 (content-tier safety gate — generate-video.js's content
+      // classifier blocked this dream: explicit content, or any sexual/
+      // romantic content featuring a named+photographed real other person).
+      // This is a deliberate policy decision, NOT a bug or a transient
+      // failure — so it must surface as the server's own clear, specific,
+      // non-preachy message on its own, never wrapped in the "Something went
+      // wrong generating your video — nothing was lost" bug framing below.
+      // Nothing was spent (the gate blocks before any token spend server-
+      // side — see generate-video.js's E116), so there's no refund note and
+      // no store to open; the user just edits the dream text and retries.
+      if(code === 'E116'){
+        // Persistent recovery panel, NOT a toast (founder upgrade 2026-08-08):
+        // a modal that stays until the user acts, offering Soften/Edit/Discard.
+        // match[2] is the server's "content_policy_blocked: <human message>" —
+        // strip the internal reason token so the panel shows only the clean,
+        // founder-specified sentence. The named-other-person block (stricter
+        // anti-NCII rule) is detected from the message copy so the panel can
+        // hide "Soften it for me" (softening can't unblock a named real
+        // person). onApplyText routes the softened/edited text back into the
+        // Write field via the existing `restore` path (create.html), where
+        // the normal Generate flow re-gates server-side once more.
+        var e116msg = ((match && match[2]) || '').replace(/^content_policy_blocked:\s*/, '') || 'That dream can’t be turned into a video.';
+        var draftNow = DreamStore.getDraft();
+        var blockedText = (draftNow && (draftNow.storyText || draftNow.caption)) || '';
+        var isNamedBlock = /real person you.?ve named/i.test(e116msg);
+        ContentBlockPanel.show({
+          message: e116msg,
+          namedPerson: isNamedBlock,
+          originalText: blockedText,
+          onApplyText: function(text){
+            DreamStore.setDraft({ restore: true, caption: text, storyText: text, sourceDreamId: null });
+            location.href = 'create.html';
+          }
+        });
+        return;
+      }
+
       // Media-aware fallback copy (mirrors processing.html's own
       // applyMediaTypeCopy/#proc-fail-copy, which showed BOTH a static
       // "Something went wrong generating your video/image" line AND a
@@ -2510,7 +2550,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // founder-approved--9ta1j0). Same real capability-detect/copy logic as
   // before (js/install-nudge.js/js/pwa.js), reused rather than
   // duplicated — now inside an accordion (one row open at a time), plus a
-  // verified-install +100 claim gated on DreamStore.getInstallVerified().
+  // verified-install +20 claim gated on DreamStore.getInstallVerified().
   //
   // STEP 2 OF 2 (carried over from the old install-qrow, tracker item
   // for-product-install-first-door-founder-d-b60cls): when this exact
@@ -2563,7 +2603,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       exp.innerHTML = stepLabel + InstallNudge.buildAndroidMenuFallbackHtml();
     } else {
       exp.innerHTML = stepLabel +
-        '<div class="mky-step">One tap and you’re set — open your dreams like any other app, no browser tabs. Adding it to your home screen verifies your +100 ' + tok() + '.</div>' +
+        '<div class="mky-step">One tap and you’re set — open your dreams like any other app, no browser tabs. Adding it to your home screen verifies your +20 ' + tok() + '.</div>' +
         '<button type="button" class="mky-inline-install-btn" id="mky-inline-install-btn">Add to home screen <span class="icon" id="mky-inline-install-icon"></span></button>';
       document.getElementById('mky-inline-install-icon').innerHTML = window.Icons ? Icons.download : '';
       document.getElementById('mky-inline-install-btn').addEventListener('click', function(){
@@ -2642,8 +2682,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // browser tab, and read the dead button as broken — the disabled
     // state now SAYS what unlocks it instead of silently waiting.
     claimBtn.innerHTML = installed
-      ? ('Claim +100&nbsp;' + tok())
-      : ('Open from your icon to claim +100&nbsp;' + tok());
+      ? ('Claim +20&nbsp;' + tok())
+      : ('Open from your icon to claim +20&nbsp;' + tok());
     document.getElementById('mky-reward-icon').innerHTML = window.Icons ? Icons.token : '';
     renderMkyInstallExp();
     renderMkyBookmarkExp();
@@ -2689,8 +2729,18 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       mkyJustClaimed = true;
       refreshMky();
       if(data.granted){
-        showToast('+100 tokens added to your Vault');
-        refreshTokenStatus(false);
+        showToast('+20 tokens added to your Vault');
+        // Use the grant's OWN returned balance, not a stale refetch (same
+        // Blobs eventual-consistency issue applyClaimedStatus documents).
+        // Balance-only here — an install claim must NOT touch the daily
+        // claim's own claimable/streak state.
+        if(typeof data.balance === 'number'){
+          lastTokenStatus = Object.assign({}, lastTokenStatus || {}, { balance: data.balance });
+          renderRitualModule();
+          renderRitualClaim(lastTokenStatus);
+        } else {
+          refreshTokenStatus(false);
+        }
       }
     }).catch(function(){
       showToast("Couldn't claim right now — try again in a moment.");
@@ -2708,6 +2758,35 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // claim logic here at all: js/store.js's getTokenStatus/claimDailyTokens
   // + js/purchase-sheet.js's claim sheet, exactly as explore.html/
   // profile.html/shop.html already use). =====
+  // Applies a successful claim's OWN returned balance directly, instead of
+  // re-fetching (founder repro 2026-08-08: "claimed the bonus, balance
+  // didn't change until I refreshed"). getTokenStatus refetch hits Blobs
+  // eventual-consistency and reads the PRE-claim balance, so the claim
+  // looked like it did nothing; the claim response
+  // ({claimed, balance, streak, nextClaimAt}) is authoritative. A delayed
+  // reconciliation refetch settles nextClaimAt/streak, guarded so a stale
+  // read can never DROP the balance we just set.
+  function applyClaimedStatus(data){
+    if(!data || typeof data.balance !== 'number'){ refreshTokenStatus(false); return; }
+    lastTokenStatus = Object.assign({}, lastTokenStatus || {}, {
+      balance: data.balance,
+      claimable: false,
+      streak: (data.streak != null ? data.streak : (lastTokenStatus && lastTokenStatus.streak)),
+      nextClaimAt: (data.nextClaimAt != null ? data.nextClaimAt : (lastTokenStatus && lastTokenStatus.nextClaimAt))
+    });
+    renderRitualModule();
+    renderRitualClaim(lastTokenStatus);
+    setTimeout(function(){
+      DreamStore.getTokenStatus().then(function(status){
+        if(status && typeof status.balance === 'number' && lastTokenStatus && status.balance < lastTokenStatus.balance){
+          status.balance = lastTokenStatus.balance; // never let a stale read undo the claim
+        }
+        lastTokenStatus = status;
+        renderRitualModule(); renderRitualClaim(status); maybeTrackStreakFreeze(status);
+      }).catch(function(){});
+    }, 2500);
+  }
+
   function refreshTokenStatus(autoOpen){
     DreamStore.getTokenStatus().then(function(status){
       lastTokenStatus = status;
@@ -2716,7 +2795,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       maybeTrackStreakFreeze(status);
       if(autoOpen){
         PurchaseSheet.maybeAutoOpenClaimSheet(status, {
-          onClaimed: function(){ refreshTokenStatus(false); }
+          onClaimed: function(data){ applyClaimedStatus(data); }
         });
       }
     }).catch(function(){ /* leave whatever was last rendered — never block the page on this */ });

@@ -268,6 +268,27 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 @media (prefers-reduced-motion:reduce){
   .dreamvideo .form-sweep, .dreamvideo .form-arc{ animation:none !important; }
 }
+/* Image load-failure state (founder repro 2026-08-08: an image dream whose
+   <img> failed to load used to collapse silently to the dark frame backing =
+   a "black blank square" with no explanation). Shown by render()'s image
+   branch only after the one self-heal retry still fails — a real, tappable
+   "couldn't load" surface over a soft gradient instead of a black void. */
+.dreamvideo .image-error{
+  position:absolute; inset:0; z-index:4; display:none;
+  flex-direction:column; align-items:center; justify-content:center; gap:6px;
+  text-align:center; padding:0 20px; cursor:pointer;
+  background:
+    radial-gradient(70% 70% at 30% 30%, rgba(163,90,255,.34), transparent 68%),
+    radial-gradient(60% 60% at 78% 74%, rgba(83,140,255,.28), transparent 65%),
+    linear-gradient(155deg,#241348,#2c1a5e 55%,#141040);
+}
+.dreamvideo.image-failed .image-error{ display:flex; }
+.dreamvideo .image-error .ie-title{
+  font:700 14px var(--font-body); color:#eae7fb; text-shadow:0 1px 6px rgba(12,10,26,.8);
+}
+.dreamvideo .image-error .ie-sub{
+  font:600 12px var(--font-body); color:#cfc8ea; opacity:.9; text-shadow:0 1px 6px rgba(12,10,26,.8);
+}
 /* Quiet row (and the hero's own interpretation/turn-video CTAs) go visible-
    but-muted while regenerating, same "waiting" treatment home.html's day0-
    card quiet row already uses -- there is nothing for any of them to act
@@ -472,6 +493,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
             <div class="form-sweep"></div>
             <svg class="form-arc" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="10.5"/></svg>
             <div class="form-caption">Your dream is regenerating…</div>
+          </div>
+          <!-- Image load-failure state (founder repro 2026-08-08) — shown by
+               render()'s image branch after the one self-heal retry still
+               fails, so a broken image never silently reads as a black
+               square. Tap to try loading it again. -->
+          <div class="image-error" id="result-image-error" role="button" tabindex="0" aria-label="Image couldn’t load — tap to try again">
+            <div class="ie-title">This image couldn’t load</div>
+            <div class="ie-sub">Tap to try again</div>
           </div>
         </div>
 
@@ -815,13 +844,16 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/music-bed.js"></script>
+<script src="js/content-block-panel.js"></script>
 <script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/install-nudge.js"></script>
 <script src="js/sheet-dismiss.js"></script>
+<script src="js/watermark-download.js"></script>
 <script src="js/share-sheet.js"></script>
 <script src="js/purchase-sheet.js"></script>
 <script src="js/dream-cards.js"></script>
+<script src="js/scroll-lock.js"></script>
 <script src="js/interpreter-personas.js"></script>
 <script src="js/interpret-experience.js"></script>
 <script>
@@ -1282,12 +1314,19 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // priority once a dream has both (post "Turn this into a video"). Only
     // a video dream gets the play badge/watch pill/mute chip — there's
     // nothing to "watch" or mute on a plain image.
+    // The image load-failure surface (see wireImageErrorRecovery below and
+    // the .image-error CSS) is per-render state: any fresh render clears it,
+    // and only the image branch (with a real src that then errors) ever
+    // brings it back. A video/gradient dream can never be in this state.
+    var mediaFrame = document.getElementById('dreamvideo-frame');
     if(dream.videoUrl){
       video.src = dream.videoUrl;
       delete video.dataset.retried; // new src — the one-retry-on-error budget resets
       video.style.display = 'block';
       image.removeAttribute('src');
       image.style.display = 'none';
+      mediaFrame.classList.remove('image-failed');
+      delete image.dataset.retried;
       playBadge.style.display = 'flex';
       watchPill.style.display = 'flex';
       muteBtn.style.display = 'flex';
@@ -1302,6 +1341,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     } else if(dream.imageUrl){
       video.removeAttribute('src');
       video.style.display = 'none';
+      // Clear any prior failure state BEFORE (re)assigning src so this
+      // render gets a clean one-retry budget — a real reassignment (a
+      // genuine reload/tap-retry) can then re-evaluate the load from
+      // scratch rather than staying stuck in the failed surface.
+      mediaFrame.classList.remove('image-failed');
+      delete image.dataset.retried;
       image.src = dream.imageUrl;
       image.style.display = 'block';
       playBadge.style.display = 'none';
@@ -1315,6 +1360,8 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       video.style.display = 'none';
       image.removeAttribute('src');
       image.style.display = 'none';
+      mediaFrame.classList.remove('image-failed');
+      delete image.dataset.retried;
       playBadge.style.display = 'none';
       watchPill.style.display = 'none';
       muteBtn.style.display = 'none';
@@ -1526,12 +1573,42 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       render(); // drops back out of the regenerating state -- finalizeDream never ran, so `dream` is exactly what it was before this attempt; nothing was silently lost
       var raw = (err && err.message) || 'E399: unknown_error';
       var match = /^([A-Z]\d+):\s*([\s\S]*)$/.exec(raw);
+      var code = match ? match[1] : null;
+      // E116 (content-tier safety gate — see generate-video.js's E116 and
+      // home.html's own identical branch): a deliberate policy block, not a
+      // bug, so it surfaces as the server's own clear message on its own
+      // rather than under the "Something went wrong regenerating" framing.
+      // Nothing was spent (the gate blocks before any token spend), so no
+      // refund note is shown.
+      if(code === 'E116'){
+        // Persistent recovery panel, NOT a toast (founder upgrade 2026-08-08)
+        // — same shared component and treatment as home.html's E116 branch.
+        // A logged-in generation's E116 actually surfaces on home.html (every
+        // edit/regenerate persists a draft and submits via home.html?generate=1
+        // — see this driver's own header), so this branch is the defensive
+        // duplicate; it still gets the full panel so the message is never a
+        // silent vanish here either. onApplyText routes the softened/edited
+        // text into the Write field via the existing `restore` path.
+        var e116msg = ((match && match[2]) || '').replace(/^content_policy_blocked:\s*/, '') || 'That dream can’t be turned into a video.';
+        var isNamedBlock = /real person you.?ve named/i.test(e116msg);
+        ContentBlockPanel.show({
+          message: e116msg,
+          namedPerson: isNamedBlock,
+          originalText: (dream && (dream.storyText || dream.caption)) || '',
+          onApplyText: function(text){
+            DreamStore.setDraft({ restore: true, caption: text, storyText: text, sourceDreamId: null });
+            location.href = 'create.html';
+          }
+        });
+        track('generation_blocked', { reason: code, source: 'result' });
+        return;
+      }
       var mediaTypeForCopy = (dream.mediaType === 'image') ? 'picture' : 'video';
       var baseCopy = 'Something went wrong regenerating your ' + mediaTypeForCopy + ' — nothing was lost.';
       var reasonSuffix = (match && match[2]) ? (' (' + match[2] + ')') : '';
       var refundNote = (err && err.tokensRefunded) ? ' Your tokens were returned.' : '';
       showToast(baseCopy + reasonSuffix + refundNote);
-      track('generation_blocked', { reason: (match && match[1]) || raw, source: 'result' });
+      track('generation_blocked', { reason: code || raw, source: 'result' });
     });
   }
 
@@ -1612,6 +1689,50 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       video.dataset.retried = '1';
       video.load();
       video.play().catch(function(){});
+    });
+
+    // Image load-failure recovery (founder repro 2026-08-08: a "black blank
+    // square" for an image dream whose <img> failed to load). The <img> had
+    // no error handling at all -- unlike the <video> above -- so a broken
+    // imageUrl (fal CDN hiccup/expiry, image-file.mjs serving failure, or a
+    // dropped connection) collapsed silently to the dark frame backing with
+    // no explanation. Mirror the video's one-shot self-heal, then surface a
+    // real, tappable error state instead of a silent void. render() clears
+    // both the .image-failed class and the retried flag on every fresh
+    // render / new src, so this budget resets exactly like the video's.
+    var image = document.getElementById('result-image');
+    var frame = document.getElementById('dreamvideo-frame');
+    var imageError = document.getElementById('result-image-error');
+    image.addEventListener('error', function(){
+      // Ignore a spurious 'error' on an empty/cleared src (render() removes
+      // the attribute for video/gradient dreams) -- nothing actually failed.
+      if(!image.getAttribute('src')) return;
+      if(!image.dataset.retried){
+        image.dataset.retried = '1';
+        // Reassign the same src to force one fresh load attempt (cache-
+        // busted so a transient CDN/network blip genuinely re-fetches).
+        var src = image.getAttribute('src');
+        image.setAttribute('src', src + (src.indexOf('?') === -1 ? '?' : '&') + 'r=' + Date.now());
+        return;
+      }
+      // Second failure -- show the real error surface, not a black square.
+      frame.classList.add('image-failed');
+    });
+    image.addEventListener('load', function(){
+      // A successful (re)load clears any error surface that was showing.
+      frame.classList.remove('image-failed');
+    });
+    function retryImageLoad(){
+      if(!frame.classList.contains('image-failed')) return;
+      var current = dream && dream.imageUrl;
+      if(!current) return;
+      frame.classList.remove('image-failed');
+      delete image.dataset.retried;
+      image.setAttribute('src', current + (current.indexOf('?') === -1 ? '?' : '&') + 'r=' + Date.now());
+    }
+    imageError.addEventListener('click', retryImageLoad);
+    imageError.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); retryImageLoad(); }
     });
 
     // Music-bed sync (tracker item for-product-build-founder-approved-08-03-
@@ -1893,11 +2014,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       video.style.display = 'block';
       playerOverlay.classList.add('open');
       playerOverlay.setAttribute('aria-hidden', 'false');
+      // Freeze the page behind this full-screen fallback player via the same
+      // shared, iOS-robust, ref-counted scroll lock the interpretation
+      // overlay uses (js/scroll-lock.js) — see the tracker item
+      // for-product-bug-founder-video-08-07-resu-f4u8zy in that file's header.
+      // Only this in-app overlay path locks; the native-fullscreen tiers of
+      // openFullscreenVideo() never call this, and don't need it.
+      if(window.ScrollLock) window.ScrollLock.lock();
       video.play().catch(function(){});
     }
     function closeOverlayPlayer(){
+      var wasOpen = playerOverlay.classList.contains('open');
       playerOverlay.classList.remove('open');
       playerOverlay.setAttribute('aria-hidden', 'true');
+      if(wasOpen && window.ScrollLock) window.ScrollLock.unlock();
       if(videoHomeParent){
         videoHomeParent.insertBefore(video, videoHomeNext);
         videoHomeParent = null;

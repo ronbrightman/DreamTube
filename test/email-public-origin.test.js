@@ -165,11 +165,11 @@ function assertEveryUrlIsPublic(html, label) {
 
 test('REGRESSION (blank square): the scheduled first-dream send with NO host header must still emit a loadable logo <img>, not https:///assets/logo-v4.png', async function () {
   await registerAccount('nohost', 'nohost@example.com');
+  // A synced thumbnail is the only thing that makes the scheduled scan send
+  // now (founder 08-08 thumbnail-gate rule) -- seed one so this URL-
+  // resolution regression still exercises a real send.
+  await seedSyncedDream('nohost', 'mock:1:nohost', 'https://img.example/nohost-thumb.jpg');
   await pendingStore.markPending(fakeEvent({}), 'mock:1:nohost', 'nohost', 'nohost@example.com');
-  var record = await pendingStore.getPending(fakeEvent({}), 'mock:1:nohost');
-  mockBlobs.seed(pendingStore.STORE_NAME, 'mock:1:nohost', Object.assign({}, record, {
-    triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
-  }));
 
   var spies = installFetchSpy();
   // fakeEvent({}) is exactly what a real Netlify scheduled invocation looks
@@ -187,11 +187,8 @@ test('REGRESSION (blank square): the scheduled first-dream send with NO host hea
 
 test('REGRESSION: EVERY url in a header-less scheduled send (logo, CTAs, unsubscribe) is publicly resolvable', async function () {
   await registerAccount('allurls', 'allurls@example.com');
+  await seedSyncedDream('allurls', 'mock:1:allurls', 'https://img.example/allurls-thumb.jpg');
   await pendingStore.markPending(fakeEvent({}), 'mock:1:allurls', 'allurls', 'allurls@example.com');
-  var record = await pendingStore.getPending(fakeEvent({}), 'mock:1:allurls');
-  mockBlobs.seed(pendingStore.STORE_NAME, 'mock:1:allurls', Object.assign({}, record, {
-    triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
-  }));
 
   var spies = installFetchSpy();
   await sendPending.scanAndSend(fakeEvent({}));
@@ -201,11 +198,8 @@ test('REGRESSION: EVERY url in a header-less scheduled send (logo, CTAs, unsubsc
 
 test('REGRESSION: the legally-required unsubscribe link is a real, clickable url on a header-less scheduled send', async function () {
   await registerAccount('unsub', 'unsub@example.com');
+  await seedSyncedDream('unsub', 'mock:1:unsub', 'https://img.example/unsub-thumb.jpg');
   await pendingStore.markPending(fakeEvent({}), 'mock:1:unsub', 'unsub', 'unsub@example.com');
-  var record = await pendingStore.getPending(fakeEvent({}), 'mock:1:unsub');
-  mockBlobs.seed(pendingStore.STORE_NAME, 'mock:1:unsub', Object.assign({}, record, {
-    triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
-  }));
 
   var spies = installFetchSpy();
   await sendPending.scanAndSend(fakeEvent({}));
@@ -246,11 +240,8 @@ test('REGRESSION: a REAL relative durable thumbnail url still becomes a real thu
 
 test('a request arriving on the Netlify alias still emails CANONICAL links -- the request host is ignored (08-08 rule)', async function () {
   await registerAccount('realhost', 'realhost@example.com');
+  await seedSyncedDream('realhost', 'mock:1:realhost', 'https://img.example/realhost-thumb.jpg');
   await pendingStore.markPending(fakeEvent({}), 'mock:1:realhost', 'realhost', 'realhost@example.com');
-  var record = await pendingStore.getPending(fakeEvent({}), 'mock:1:realhost');
-  mockBlobs.seed(pendingStore.STORE_NAME, 'mock:1:realhost', Object.assign({}, record, {
-    triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
-  }));
 
   var spies = installFetchSpy();
   await sendPending.scanAndSend(fakeEvent({ headers: { 'x-forwarded-host': 'dreamtube1.netlify.app' } }));

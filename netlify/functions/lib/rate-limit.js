@@ -89,4 +89,31 @@ async function writeMarker(event, key, value) {
   await store.setJSON(key, value);
 }
 
-module.exports = { clientIp, checkAndIncrement, readMarker, writeMarker };
+/**
+ * Deletes a raw marker (or any key) from this lib's store — the delete
+ * twin of readMarker/writeMarker. Deleting a missing key is a safe no-op
+ * (@netlify/blobs' own store.delete semantics). Added for
+ * admin-reset-account-markers.js's owner-only "genuine fresh start" testing
+ * tool, which clears the once-ever token-init-grant marker (the one thing
+ * normal account deletion deliberately LEAVES behind, so real users can't
+ * delete-then-re-signup to re-farm the base grant).
+ */
+async function deleteMarker(event, key) {
+  connectLambda(event);
+  var store = getStore({ name: STORE_NAME });
+  await store.delete(key);
+}
+
+/**
+ * Deletes TODAY's per-identifier daily counter for a given scope (the
+ * "<scope>:<YYYY-MM-DD>:<identifier>" key checkAndIncrement maintains), so a
+ * later request from that identifier starts today's count fresh. Owner-only
+ * reset-tool use (admin-reset-account-markers.js) — lets a founder re-test a
+ * flow whose daily bucket they'd already spent, without waiting for the UTC
+ * day to roll over. Deleting a missing key is a safe no-op.
+ */
+async function clearDailyCount(event, scope, identifier) {
+  await deleteMarker(event, scope + ':' + todayUtc() + ':' + identifier);
+}
+
+module.exports = { clientIp, checkAndIncrement, readMarker, writeMarker, deleteMarker, clearDailyCount };

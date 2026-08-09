@@ -122,6 +122,31 @@
         <div id="admin-diagnose-result" style="display:none; margin-top:4px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
       </div>
 
+      <!-- Reset account markers — TESTING ONLY (admin-reset-account-markers.js,
+           founder-authorized 2026-08-08). Clears the once-ever markers that
+           normal account deletion deliberately LEAVES behind (the anti-farm
+           token-init-grant marker + the install/verify-email achievement
+           markers + today's per-email claim/bonus rate-limit buckets), so the
+           founder can delete his OWN test account and re-sign-up as a genuine
+           fresh start. Same real-password + OWNER_EMAIL gate as the diagnose
+           tool above; the endpoint refuses anyone who isn't the owner. This
+           does NOT change deletion behavior for real users — the markers still
+           survive a normal deletion, which is what stops a real user from
+           delete→re-signup farming the base grant + all bonuses. -->
+      <div class="section-label" style="padding:0; margin-top:26px;">Reset account markers (testing only)</div>
+      <div class="choice-card" style="cursor:default; margin-top:10px; flex-direction:column; align-items:stretch; gap:0;">
+        <div class="choice-text" style="margin-bottom:12px;">
+          <div class="choice-title">Fresh-start a test email</div>
+          <div class="admin-row-sub">Owner-only. Clears the token-init-grant marker, the install/verify-email achievement markers, and today's per-email claim/bonus buckets for the target email, and deletes its token record — so a re-signup re-grants 220 + re-earns the bonuses. Normal deletion still leaves these (real users can't farm this).</div>
+        </div>
+        <input class="field" id="admin-reset-source" type="text" placeholder="Your owner username or email (for password check)" autocomplete="off" dir="auto">
+        <input class="field" id="admin-reset-password" type="password" placeholder="Your owner account's real password" autocomplete="current-password">
+        <input class="field" id="admin-reset-target" type="email" placeholder="Target email to reset (e.g. your test address)" autocomplete="off" dir="auto">
+        <button type="button" class="btn btn-primary btn-block" id="admin-reset-submit">Reset markers</button>
+        <div class="err-text" id="admin-reset-error" style="margin-top:4px;"></div>
+        <div id="admin-reset-result" style="display:none; margin-top:4px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
+      </div>
+
       <div style="margin-top:22px; text-align:center;">
         <a class="link-text" href="tracker.html">Open the tracker (open tasks &amp; ideas) →</a>
       </div>
@@ -409,6 +434,58 @@
       .catch(function () {
         diagnoseSubmitBtn.disabled = false;
         diagnoseErrorEl.textContent = "Couldn't reach the server — check your connection and try again.";
+      });
+  });
+
+  // ===== Reset account markers (admin-reset-account-markers.js) — TESTING ONLY =====
+  var resetSourceEl = document.getElementById('admin-reset-source');
+  var resetPasswordEl = document.getElementById('admin-reset-password');
+  var resetTargetEl = document.getElementById('admin-reset-target');
+  var resetSubmitBtn = document.getElementById('admin-reset-submit');
+  var resetErrorEl = document.getElementById('admin-reset-error');
+  var resetResultEl = document.getElementById('admin-reset-result');
+
+  var RESET_ERROR_COPY = {
+    'E2: missing_owner_email': "Server isn't configured with an owner email yet.",
+    'E4: missing_fields': 'Enter your owner username/email, password, and a target email.',
+    'E5: forbidden': "Couldn't verify — must be the owner account's real credentials."
+  };
+
+  resetSubmitBtn.addEventListener('click', function () {
+    resetErrorEl.textContent = '';
+    resetResultEl.style.display = 'none';
+    var usernameOrEmail = resetSourceEl.value.trim();
+    var password = resetPasswordEl.value;
+    var targetEmail = resetTargetEl.value.trim();
+    if (!usernameOrEmail || !password || !targetEmail) {
+      resetErrorEl.textContent = 'Enter your owner username/email, password, and a target email.';
+      return;
+    }
+
+    resetSubmitBtn.disabled = true;
+
+    fetch('/.netlify/functions/admin-reset-account-markers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernameOrEmail: usernameOrEmail, password: password, targetEmail: targetEmail })
+    })
+      .then(function (res) {
+        return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+      })
+      .then(function (result) {
+        resetSubmitBtn.disabled = false;
+        var data = result.data;
+        if (!data.ok) {
+          resetErrorEl.textContent = RESET_ERROR_COPY[data.error] || (data.error && data.error.indexOf('E6') === 0 ? data.error.replace(/^E6:\s*/, '') : (data.error || "Something went wrong — try again."));
+          return;
+        }
+        resetResultEl.style.display = 'block';
+        resetResultEl.textContent = 'Reset ' + data.targetEmail + ' — cleared: ' + (data.cleared || []).join(', ') + '.\nRe-signup with this email now gets a genuine fresh start (220 grant + re-earnable bonuses).';
+        resetPasswordEl.value = '';
+      })
+      .catch(function () {
+        resetSubmitBtn.disabled = false;
+        resetErrorEl.textContent = "Couldn't reach the server — check your connection and try again.";
       });
   });
 

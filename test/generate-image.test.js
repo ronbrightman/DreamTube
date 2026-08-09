@@ -71,11 +71,18 @@ test.beforeEach(async function () {
   delete process.env.DAILY_SPEND_CAP_USD;
   delete process.env.MAX_GENERATIONS_PER_IP_PER_DAY;
   delete process.env.TURNSTILE_SECRET_KEY;
+  // Content-tier gate (generate-image.js's E116, added 2026-08-08): force a
+  // deterministic no-network 'clean' verdict here so the classifier never
+  // fires its own fetch — this suite counts/inspects the FAL submission
+  // fetch specifically and is not the gate's own coverage (that lives in
+  // test/content-gate-generation.test.js). Cleared in test.after.
+  process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'clean';
   await entitlements.setEntitlement({}, DEFAULT_EMAIL, { tokens: { balance: 100000, lastClaimAt: Date.now() } });
 });
 
 test.after(function () {
   global.fetch = realFetch;
+  delete process.env.CONTENT_CLASSIFIER_MOCK_TIER;
 });
 
 // ----- Validation -----
@@ -191,12 +198,12 @@ test('a request with no email at all -> E412 (balance resolves to 0)', async fun
   assert.match(JSON.parse(res.body).error, /^E412:/);
 });
 
-test('a brand-new email gets its 320-token signup grant materialized right here and proceeds', async function () {
+test('a brand-new email gets its 170-token signup grant materialized right here and proceeds', async function () {
   stubFetchOk();
   var res = await handler(genEvent({ body: { email: 'first-time-image@example.com' } }));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'first-time-image@example.com');
-  assert.equal(record.tokens.balance, 310, '320 granted, 10 spent on this successful generation');
+  assert.equal(record.tokens.balance, 160, '170 granted, 10 spent on this successful generation');
 });
 
 // ----- spendTokens on success (10, not 100) -----

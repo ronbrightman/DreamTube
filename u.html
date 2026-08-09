@@ -103,6 +103,15 @@
    exclusive: isOwner flips between the two). */
 .u-follow-btn{ margin:14px 20px 0; min-height:48px; display:flex; align-items:center; justify-content:center; }
 
+/* .scroll-area's shared default (css/styles.css) has no bottom padding of
+   its own -- every other page with the overlaid .night-dock (result.html,
+   profile.html) reserves clearance for it on their own scroll container so
+   the last item/action stays reachable and tappable instead of sitting
+   under the bar. u.html never had this override, so the comments-teaser
+   on the last card (and the card itself) could sit partly/fully behind
+   the dock and swallow taps -- mirrors result.html's own nav-clearance
+   + 26px convention. */
+.scroll-area{ padding-bottom:calc(var(--nav-clearance) + 26px); }
 .dj-list{ padding:18px 0 24px; }
 .dj-card{ margin:0 0 26px; padding:0 16px; }
 .dj-media{ position:relative; width:100%; aspect-ratio:9/14; border-radius:16px; overflow:hidden; background:var(--surface); }
@@ -589,7 +598,10 @@
         // Owner-only per the founder's slice-1 review call — see the
         // button's own comment above.
         document.getElementById('u-share-btn').style.display = isOwner ? 'flex' : 'none';
-        document.getElementById('u-priv-note').style.display = 'block';
+        // Owner-only: "Your interpretations stay private to you" only makes
+        // sense on your OWN profile. A visitor viewing someone else's profile
+        // has no interpretations here to keep private (founder 2026-08-08).
+        document.getElementById('u-priv-note').style.display = isOwner ? 'block' : 'none';
 
         // Follow button — shows immediately as "Follow" (the correct
         // default for a signed-out visitor, or the safe starting guess for

@@ -176,18 +176,36 @@ var MusicBed = (function () {
     return file ? 'assets/music-beds/moods/' + file : null;
   }
 
+  // The neutral default bed (2026-08-08 founder repro — a text/Write-path
+  // dream came back SILENT). Tiers 1 (mood) and 2 (style) each "fail closed
+  // to null" when they don't recognize their input, which is correct for
+  // CHOOSING between real signals — but at the whole-dream level a null bed
+  // means a genuinely silent video, and the founder's standing rule is that
+  // music is ALWAYS ON for every dream (see this file's 2026-08-03
+  // simplification note). A dream can still reach urlForDream with NEITHER a
+  // recognized mood NOR a recognized style: a Write/Record-path dream whose
+  // style value is somehow absent, a legacy dream that predates the style
+  // field, or any future style value this build doesn't know yet. Rather
+  // than let those play silently, tier 3 is a fixed neutral mood bed so
+  // there is always SOME ambient audio. 'dreamy' is chosen as the most
+  // genre-neutral of the six committed mood beds — it fits an unspecified
+  // dream better than any single visual-style bed would. This never changes
+  // a dream that already resolves a mood or style bed (tiers 1/2 still win),
+  // so chip/Build dreams and any styled dream keep exactly the bed they had.
+  var DEFAULT_MOOD = 'dreamy';
+
   /**
-   * THE bed URL for a whole dream — the two-tier resolution described in
-   * this file's header comment: the dream's own chosen mood first, the
-   * visual-style bed as the permanent fallback. Every playback surface
-   * (result.html, explore.html) calls this rather than urlForStyle
-   * directly, so switching tier 1 on later needs no change at any call
-   * site. Returns null only when NEITHER tier resolves (an unrecognized
-   * style with no usable mood).
+   * THE bed URL for a whole dream — the three-tier resolution: the dream's
+   * own chosen mood first, its visual-style bed second, and a fixed neutral
+   * default bed (DEFAULT_MOOD) last so a real video dream is NEVER silent
+   * (2026-08-08 founder repro). Every playback surface (result.html,
+   * explore.html) calls this rather than urlForStyle/urlForMood directly.
+   * Returns null only for a falsy `dream` — a real dream always resolves a
+   * bed now.
    */
   function urlForDream(dream) {
     if (!dream) return null;
-    return urlForMood(dream.mood) || urlForStyle(dream.style);
+    return urlForMood(dream.mood) || urlForStyle(dream.style) || urlForMood(DEFAULT_MOOD);
   }
 
   /**
@@ -203,6 +221,11 @@ var MusicBed = (function () {
    * on dreams generated across this feature's three history phases) — this
    * is what makes a dream generated before this simplification also always
    * play its bed now, with no stale opt-out surviving from the toggle era.
+   * As of the 2026-08-08 tier-3 default bed (see urlForDream), urlForDream
+   * resolves for every real dream, so in practice every video dream is now
+   * eligible — the urlForDream guard is kept anyway so a future change that
+   * could return null (e.g. the default track itself going missing) still
+   * fails closed to "no bed" rather than a broken <audio> src.
    */
   function eligible(dream) {
     return !!(dream && dream.videoUrl && urlForDream(dream));
@@ -219,6 +242,7 @@ var MusicBed = (function () {
     urlForMood: urlForMood,
     urlForDream: urlForDream,
     eligible: eligible,
+    DEFAULT_MOOD: DEFAULT_MOOD,
     MOOD_KEYS: MOOD_KEYS,
     MOOD_FILES: MOOD_FILES
   };

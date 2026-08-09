@@ -68,6 +68,116 @@
     fbq('track', 'PageView');
   }
 </script>
+
+<style id="build-layout-b">
+  /* ===================================================================
+     "Build it" — Layout-B ("Flo pattern") skin, ported from wizard.html's
+     founder-approved redesign (tracker item
+     for-product-founder-picked-layout-b-flo--lks7mj) so this logged-in
+     copy reaches visual/behavioral parity with the pre-signup wizard and
+     the ad funnel. EVERY rule here is scoped to #create-build (the Build
+     panel) or #app.build-active (the shell + character sheet, only while
+     Build is on screen) so css/styles.css keeps serving every OTHER page
+     — and create.html's own Write/Record panels — completely untouched.
+
+     Tighter than wizard.html's own spacing on purpose: create.html's
+     shell keeps its logged-in topbar (balance chip), so the founder's
+     "every step fits one 390x700 viewport, no scroll" rule leaves a hair
+     less room here — shorter pills / tighter gaps close the gap without
+     dropping any option (see the build report's per-step fit table).
+     =================================================================== */
+  #app.build-active{
+    background:linear-gradient(180deg,#2A2150,#1B1438 55%,#141028);
+    --lb-ink:#F2EEFC; --lb-ink-soft:#B7AEDE; --lb-ink-faint:#8F88B3;
+    --lb-card:rgba(255,255,255,0.07); --lb-line:rgba(255,255,255,0.14);
+    --lb-pink:#FF8BB3; --lb-purple:#B783FF; --lb-pink-tint:rgba(255,139,179,0.16);
+    --lb-grad:linear-gradient(90deg,#FF8BB3,#B783FF);
+  }
+  /* Topbar sits on the gradient now — its own black-on-black chrome would
+     read as a seam. The icon-btn back + token chip stay legible as-is. */
+  #app.build-active .topbar{ background:transparent;}
+  #app.build-active #create-heading{ color:#fff;}
+
+  #create-build{ color:var(--lb-ink); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Manrope,var(--font-body); padding-bottom:calc(18px + env(safe-area-inset-bottom,0px));}
+  #build-step-body{ padding-top:2px;}
+
+  /* Progress DOTS (mock grammar): 8px circles, active = elongated pink
+     pill, completed = purple. One per in-page Build step. */
+  #create-build .build-dots{ display:flex; gap:6px; justify-content:center; margin:0 0 8px;}
+  #create-build .build-dots i{ width:8px; height:8px; flex:none; border-radius:99px; background:#463D78; display:block; transition:all .2s;}
+  #create-build .build-dots i.done{ background:#8F7BDC;}
+  #create-build .build-dots i.on{ background:var(--lb-pink); width:22px;}
+
+  #create-build .fn-headline{ font-size:22px; font-weight:800; letter-spacing:-0.005em; line-height:1.25; text-wrap:balance; text-align:center; margin:2px 0 4px; color:#fff;}
+  #create-build .fn-body-copy{ font-size:13px; color:var(--lb-ink-soft); line-height:1.5; text-align:center; margin:0 0 14px;}
+  #create-build .fn-mini-label{ font-size:10.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--lb-ink-faint); margin:7px 0 5px;}
+  #create-build .fn-mini-label:first-child{ margin-top:0;}
+  #create-build .fn-spacer{ flex:1; min-height:6px;}
+
+  /* Option rows: full-width TRUE-PILL, leading 34px circular emoji chip,
+     stacked single column. Selected = pink border + tinted fill. */
+  #create-build .fn-chip-row{ display:block; margin-bottom:10px;}
+  #create-build .fn-chip{ display:flex; align-items:center; gap:12px; width:100%; box-sizing:border-box; padding:7px 15px; border-radius:999px; background:var(--lb-card); border:1.5px solid var(--lb-line); font-size:15.5px; font-weight:600; color:var(--lb-ink); cursor:pointer; margin-bottom:6px; transition:all .12s; -webkit-tap-highlight-color:transparent;}
+  #create-build .fn-chip.sel{ border-color:var(--lb-pink); background:var(--lb-pink-tint); color:var(--lb-ink);}
+  #create-build .lb-chip{ width:32px; height:32px; border-radius:99px; background:var(--lb-pink-tint); display:flex; align-items:center; justify-content:center; font-size:17px; flex:none;}
+  #create-build .fn-chip.lb-ghost{ opacity:.75; font-weight:500;}
+  /* Day/Night — auxiliary half-width pair sharing one row. */
+  #create-build .fn-chip-row.lb-half-row{ display:flex; gap:10px;}
+  #create-build .lb-half-row .fn-chip{ width:auto; flex:1; margin-bottom:0;}
+
+  /* "+N more" / "Show less" expander (Action step). */
+  #create-build .fn-chip-more{ display:block; width:100%; box-sizing:border-box; text-align:center; padding:7px 15px; border-radius:999px; background:transparent; border:1.5px dashed var(--lb-line); font-size:13.5px; font-weight:700; color:var(--lb-ink-soft); cursor:pointer; margin-bottom:7px; -webkit-tap-highlight-color:transparent;}
+  #create-build .fn-chip-more:hover{ border-color:var(--lb-pink); color:var(--lb-ink);}
+
+  /* Character rows (Subject step) — the same .char-chip/.chip-check/
+     .chip-edit-area/.char-chip-add machinery create.html already uses,
+     restyled into Layout-B pills: .chip-check becomes the leading emoji
+     circle (its checkmark icon hidden — selection reads off the row's
+     pink border/fill), .chip-edit-area keeps the name + pencil. Base
+     .char-chip rules in css/styles.css still serve profile.html etc. */
+  #create-build .char-chip-row{ display:block;}
+  #create-build .char-chip{ display:flex; align-items:center; gap:12px; width:100%; box-sizing:border-box; padding:7px 15px; border-radius:999px; background:var(--lb-card); border:1.5px solid var(--lb-line); color:var(--lb-ink); font-size:15.5px; font-weight:600; margin-bottom:7px; cursor:pointer; transition:all .12s;}
+  #create-build .char-chip .chip-check{ width:32px; height:32px; border-radius:99px; border:none; background:var(--lb-pink-tint); display:flex; align-items:center; justify-content:center; font-size:17px; flex:none;}
+  #create-build .char-chip .chip-check .icon{ display:none;}
+  #create-build .char-chip.selected{ background:var(--lb-pink-tint); color:var(--lb-ink); border-color:var(--lb-pink);}
+  #create-build .char-chip.selected .chip-check{ background:var(--lb-pink-tint); border-color:transparent;}
+  #create-build .char-chip .chip-edit-area{ display:flex; align-items:center; gap:8px; flex:1; min-width:0;}
+  #create-build .char-chip .chip-edit{ color:var(--lb-ink-faint); margin-left:auto; width:14px; height:14px;}
+  #create-build .char-chip.selected .chip-edit{ color:var(--lb-ink-soft); opacity:1;}
+  #create-build .char-chip-add{ display:flex; align-items:center; gap:12px; width:100%; box-sizing:border-box; padding:7px 15px; border-radius:999px; background:transparent; border:1.5px dashed var(--lb-line); color:var(--lb-ink-soft); font-size:15.5px; font-weight:500; margin-bottom:7px; cursor:pointer;}
+  #create-build .char-chip-add .lb-chip{ background:rgba(255,255,255,.05);}
+  #create-build .char-chip-add:hover{ border-color:var(--lb-pink); color:var(--lb-ink);}
+
+  /* Pill single-line write-ins; textarea stays a soft rectangle. */
+  #create-build .fn-other-reveal{ margin:-4px 0 12px;}
+  #create-build input.fn-field, #create-build textarea.fn-field{ background:var(--lb-card); border:1.5px solid var(--lb-line); border-radius:999px; padding:11px 16px; font-family:inherit; color:var(--lb-ink); font-size:15.5px; width:100%; box-sizing:border-box; margin-bottom:10px; display:block;}
+  #create-build .fn-other-reveal input.fn-field{ border-color:var(--lb-pink); margin-bottom:0;}
+  #create-build textarea.fn-field{ resize:none; line-height:1.5; border-radius:20px; padding:14px 16px;}
+  #create-build input.fn-field::placeholder, #create-build textarea.fn-field::placeholder{ color:var(--lb-ink-faint);}
+  #create-build input.fn-field:focus, #create-build textarea.fn-field:focus{ outline:2px solid var(--lb-pink); border-color:transparent;}
+
+  /* POV toggle — accessible checkbox styled as a switch, off by default. */
+  #create-build .fn-toggle-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; border-radius:14px; background:var(--lb-card); border:1px solid var(--lb-line); margin:12px 0;}
+  #create-build .fn-toggle-row span{ font-size:13.5px; font-weight:700; color:var(--lb-ink);}
+  #create-build .fn-switch{ position:relative; width:42px; height:24px; flex:none;}
+  #create-build .fn-switch input{ opacity:0; width:0; height:0;}
+  #create-build .fn-switch .fn-switch-track{ position:absolute; inset:0; background:var(--lb-line); border-radius:100px; transition:.15s; cursor:pointer;}
+  #create-build .fn-switch .fn-switch-track:before{ content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.15s; box-shadow:0 1px 3px rgba(0,0,0,.25);}
+  #create-build .fn-switch input:checked + .fn-switch-track{ background:var(--lb-grad);}
+  #create-build .fn-switch input:checked + .fn-switch-track:before{ transform:translateX(18px);}
+
+  /* Pink->purple gradient CTA pill + underline skip link. */
+  #create-build .fn-btn-primary{ background:var(--lb-grad); color:#fff; font-weight:800; font-size:16.5px; border:none; border-radius:999px; padding:15px; text-align:center; width:100%; box-shadow:0 12px 30px -8px rgba(255,139,179,.45); cursor:pointer; font-family:inherit; -webkit-tap-highlight-color:transparent;}
+  #create-build .fn-btn-primary:disabled{ opacity:.42; cursor:not-allowed; box-shadow:none;}
+  #create-build .fn-btn-primary.lb-cta{ position:sticky; bottom:0;}
+  #create-build .fn-small-link{ background:none; border:none; color:var(--lb-ink-soft); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:9px 0 2px; cursor:pointer; display:block;}
+
+  /* Character sheet (bottom sheet) — only tinted while Build is active so
+     its Describe/Upload-photo segmented control matches the pink accent;
+     the sheet's own dark surface already resolves from css/styles.css. */
+  #app.build-active #build-char-mode-row .char-mode-btn{ background:rgba(255,255,255,.05); border-color:var(--lb-line); color:var(--lb-ink-soft);}
+  #app.build-active #build-char-mode-row .char-mode-btn.active{ background:var(--lb-grad); color:#fff; border-color:transparent;}
+</style>
 </head>
 <body>
 
@@ -119,6 +229,7 @@
        addition isolated and risk-free against the existing, already-
        tested Write/Record flows. -->
   <div class="px" id="create-build" style="flex:1; display:none; flex-direction:column; padding-top:10px; overflow-y:auto; min-height:0;">
+    <div class="build-dots" id="build-dots"></div>
     <div id="build-step-body" style="flex:1; display:flex; flex-direction:column; min-height:0;"></div>
   </div>
 
@@ -129,7 +240,7 @@
          here — this app's whole premise. Do not remove this class thinking it's unused/dead;
          removing it would let raw dream text into replay recordings by default. -->
     <textarea class="field ph-no-capture" id="dream-text" dir="auto" placeholder="I was flying over a city made of glass..."></textarea>
-    <div class="char-count" id="char-count">0 characters</div>
+    <div class="char-count" id="char-count">0 / 50 words</div>
     <div class="err-text" id="dream-text-error" style="display:none;"></div>
 
     <div class="adv-section" id="adv-section">
@@ -886,15 +997,37 @@
     return (plausible.length / words.length) < 0.5;
   }
 
+  // Founder cap (2026-08-08): a dream renders as a single ~8s Veo scene, so an
+  // extremely long dream can't actually be represented on screen. Cap the
+  // free-text input at ~50 words. Longer, multi-scene videos priced at more
+  // coins are a parked future feature (tracker item
+  // "longer-videos-multi-scene-2-scenes-dream"). Enforced on the two free-text
+  // surfaces — Write (#dream-text) and the Record transcript (#transcript-text);
+  // the chip Build flow is short by construction.
+  var WORD_LIMIT = 50;
+  var WORD_LIMIT_MESSAGE = 'Keep your dream to about ' + WORD_LIMIT + ' words — it becomes one short scene. Longer multi-scene videos are coming soon.';
+  function countWords(s){
+    var t = (s || '').trim();
+    return t ? t.split(/\s+/).filter(Boolean).length : 0;
+  }
+
   function updateCharCount(){
-    var n = textArea.value.length;
-    charCount.textContent = n + ' character' + (n===1?'':'s');
+    var val = textArea.value;
+    var n = val.length;
+    var w = countWords(val);
+    charCount.textContent = w + ' / ' + WORD_LIMIT + ' words';
+    charCount.classList.toggle('over-limit', w > WORD_LIMIT);
     if(n < 8){
       writeContinue.disabled = true;
       hideError('dream-text-error');
       return;
     }
-    if(looksLikeGibberish(textArea.value.trim())){
+    if(w > WORD_LIMIT){
+      writeContinue.disabled = true;
+      showError('dream-text-error', WORD_LIMIT_MESSAGE);
+      return;
+    }
+    if(looksLikeGibberish(val.trim())){
       writeContinue.disabled = true;
       showError('dream-text-error', "That doesn't look like a real dream description yet — try describing what happened.");
     } else {
@@ -1207,6 +1340,7 @@
     if(buildEl.style.display === 'flex'){
       if(buildPrev()) return;
       buildEl.style.display = 'none';
+      document.getElementById('app').classList.remove('build-active');
       selectEl.style.display = 'block';
       clearChoicePillSelection();
       heading.textContent = 'New Dream';
@@ -1250,7 +1384,64 @@
   // ===================================================================
   var buildEl = document.getElementById('create-build');
   var buildStepBody = document.getElementById('build-step-body');
+  var buildDotsEl = document.getElementById('build-dots');
   var buildCur = 0;
+
+  // Layout-B ("Flo pattern") skin helpers, ported verbatim from
+  // wizard.html so this logged-in Build copy renders the same emoji-chip
+  // pill rows (tracker item for-product-founder-picked-layout-b-flo--
+  // lks7mj). LB_EMOJI keys mirror js/wizard-chips.js's own chip keys — an
+  // unknown key falls back to sparkles rather than an empty circle.
+  var LB_EMOJI = {
+    subject: { me: '🙋', someone: '👥', stranger: '🕶️', animal: '🐺', none: '🏞️', other: '✨' },
+    place: { urban: '🏙️', nature: '🌲', house: '🏠', water: '🌊', sky: '🌌', unreal: '🌀', other: '✨' },
+    action: { flying: '🕊️', running: '🏃', magical: '🪄', meeting: '🫂', exploring: '🗺️', calm: '🧘', other: '✨',
+      falling: '🪂', exam: '📝', late: '⏰', trying: '🔁', newroom: '🚪', child: '🧸' },
+    mood: { peaceful: '🕊️', joyful: '😊', dreamy: '🌫️', mysterious: '🔮', tense: '😨', epic: '🏔️', other: '✨' },
+    time: { Day: '☀️', Night: '🌙' }
+  };
+  function lbChip(group, key){
+    return '<span class="lb-chip">' + ((LB_EMOJI[group] && LB_EMOJI[group][key]) || '✨') + '</span>';
+  }
+
+  // Auto-advance (Layout-B, founder mock round 4): on a single-select step
+  // whose answer carries NO secondary field — Mood only, here — tapping a
+  // chip advances ~260ms later, long enough for the pink selected state to
+  // register. Deliberately NOT wired to Setting (place tap must NOT skip
+  // past the Day/Night pick) or Action (must NOT skip past the POV toggle)
+  // — the founder ruled both of those carry a secondary choice, so they
+  // require a Continue tap (Style, the other no-secondary single-select,
+  // lives on style.html and is out of this page's scope). Single-flight and
+  // step-scoped: a second tap re-arms it (still exactly one advance), and
+  // both manual nav paths (buildNext, the Back handler) cancel it first, so
+  // a Continue/Back inside the window can't double-advance or fire into the
+  // wrong screen. Analytics-neutral: it calls the SAME buildNext a Continue
+  // tap does. The ~260ms beat matches wizard.html and choicePillFlashThen.
+  var buildAutoAdvanceTimer = null;
+  function cancelBuildAutoAdvance(){
+    if(buildAutoAdvanceTimer !== null){ clearTimeout(buildAutoAdvanceTimer); buildAutoAdvanceTimer = null; }
+  }
+  function scheduleBuildAutoAdvance(){
+    cancelBuildAutoAdvance();
+    var stepAtArm = buildCur;
+    buildAutoAdvanceTimer = setTimeout(function(){
+      buildAutoAdvanceTimer = null;
+      if(buildCur !== stepAtArm) return; // navigated away meanwhile
+      buildNext();
+    }, 260);
+  }
+  // Progress DOTS across the five in-page Build steps (Subject/Setting/
+  // Action/Mood/Free text). Pure presentation — SCREEN order and every
+  // analytics call are unchanged. Style (step 5 proper) happens on
+  // style.html afterward and carries its own chrome, so it's not dotted here.
+  function renderBuildDots(){
+    if(!buildDotsEl) return;
+    var n = BUILD_RENDERERS.length, out = '';
+    for(var i = 0; i < n; i++){
+      out += '<i class="' + (i < buildCur ? 'done' : i === buildCur ? 'on' : '') + '"></i>';
+    }
+    buildDotsEl.innerHTML = out;
+  }
   var buildSubjectCharacterId = null;
   var buildSubjectOtherKind = null;
   var buildSubjectOtherText = '';
@@ -1303,8 +1494,11 @@
 
   function buildCharChipDisplayName(c){ return c.name || (c.isSelf ? 'Me' : ''); }
   function buildCharChipHTML(c, selected){
+    // Layout-B: .chip-check is now the leading emoji circle (its checkmark
+    // icon is CSS-hidden inside #create-build); selection reads off the
+    // row's pink border/fill like every other option row.
     return '<div class="char-chip'+(selected?' selected':'')+'" data-build-char-select="'+c.id+'">' +
-      '<span class="chip-check"><span class="icon">'+Icons.check+'</span></span>' +
+      '<span class="chip-check">'+(c.isSelf ? LB_EMOJI.subject.me : LB_EMOJI.subject.someone)+'<span class="icon">'+Icons.check+'</span></span>' +
       '<span class="chip-edit-area" data-build-char-edit="'+c.id+'">' +
         '<span>'+esc(buildCharChipDisplayName(c))+'</span>' +
         '<span class="chip-edit icon">'+Icons.pencil+'</span>' +
@@ -1317,15 +1511,15 @@
     var characters = DreamStore.getCharacters();
     var hasSelf = characters.some(function(c){ return c.isSelf; });
     var html = characters.map(function(c){ return buildCharChipHTML(c, buildSubjectCharacterId === c.id); }).join('');
-    if(!hasSelf) html += '<div class="char-chip-add" id="build-subj-add-self"><span class="icon">'+Icons.userPlus+'</span> Me</div>';
-    html += '<div class="char-chip-add" id="build-subj-add-other"><span class="icon">'+Icons.plus+'</span> Someone I know</div>';
+    if(!hasSelf) html += '<div class="char-chip-add" id="build-subj-add-self">'+lbChip('subject','me')+'Me</div>';
+    html += '<div class="char-chip-add" id="build-subj-add-other">'+lbChip('subject','someone')+'Someone I know</div>';
     row.innerHTML = html;
     var addSelfBtn = document.getElementById('build-subj-add-self');
     if(addSelfBtn) addSelfBtn.addEventListener('click', function(){ openBuildCharSheet('self', null); });
     document.getElementById('build-subj-add-other').addEventListener('click', function(){ openBuildCharSheet('other', null); });
 
-    Array.prototype.forEach.call(document.querySelectorAll('#build-subject-other-row .opt-chip'), function(chipEl){
-      chipEl.classList.toggle('selected', chipEl.dataset.buildSubjOther === buildSubjectOtherKind);
+    Array.prototype.forEach.call(document.querySelectorAll('#build-subject-other-row .fn-chip'), function(chipEl){
+      chipEl.classList.toggle('sel', chipEl.dataset.buildSubjOther === buildSubjectOtherKind);
     });
     var reveal = document.getElementById('build-subject-other-reveal');
     if(reveal) reveal.style.display = buildSubjectOtherKind === 'other' ? 'block' : 'none';
@@ -1433,20 +1627,21 @@
 
   function renderBuildSubject(el){
     el.innerHTML =
-      '<div class="section-label" style="margin-top:0;">Who’s the dream about? &middot; Step 1 of 5</div>' +
-      '<div class="char-chip-row" id="build-subject-chip-row" style="margin:10px 0 14px;"></div>' +
-      '<div class="opt-chip-row" id="build-subject-other-row" style="margin-bottom:8px;">' +
-        '<div class="opt-chip" data-build-subj-other="stranger">A stranger</div>' +
-        '<div class="opt-chip" data-build-subj-other="animal">An animal or creature</div>' +
-        '<div class="opt-chip" data-build-subj-other="none">No people</div>' +
-        '<div class="opt-chip" data-build-subj-other="other">+ Something else</div>' +
+      '<div class="fn-headline">Who’s the dream about?</div>' +
+      '<div class="fn-body-copy">Pick who was there — or open up a face for the video to match.</div>' +
+      '<div class="char-chip-row" id="build-subject-chip-row" style="margin:0 0 4px;"></div>' +
+      '<div class="fn-chip-row" id="build-subject-other-row">' +
+        '<div class="fn-chip" data-build-subj-other="stranger">'+lbChip('subject','stranger')+'A stranger</div>' +
+        '<div class="fn-chip" data-build-subj-other="animal">'+lbChip('subject','animal')+'An animal or creature</div>' +
+        '<div class="fn-chip" data-build-subj-other="none">'+lbChip('subject','none')+'No people — just a place/thing</div>' +
+        '<div class="fn-chip lb-ghost" data-build-subj-other="other">'+lbChip('subject','other')+'+ Something else</div>' +
       '</div>' +
-      '<div id="build-subject-other-reveal" style="display:none;">' +
-        '<input class="field" id="build-subject-other-input" placeholder="Who (or what) is this dream about?" dir="auto">' +
+      '<div class="fn-other-reveal" id="build-subject-other-reveal" style="display:none;">' +
+        '<input class="fn-field" id="build-subject-other-input" placeholder="Who (or what) is this dream about?" dir="auto">' +
       '</div>' +
-      '<div style="flex:1"></div>' +
-      '<button class="btn btn-primary btn-block" id="build-subject-continue" style="margin-bottom:10px;">Continue</button>' +
-      '<span class="link-text" id="build-subject-skip" style="cursor:pointer; margin-bottom:14px;">Skip</span>';
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary lb-cta" id="build-subject-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="build-subject-skip" style="cursor:pointer;">Skip</span>';
 
     document.getElementById('build-subject-chip-row').addEventListener('click', function(e){
       var editTarget = e.target.closest('[data-build-char-edit]');
@@ -1462,7 +1657,7 @@
       renderBuildSubjectChips();
     });
     document.getElementById('build-subject-other-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.opt-chip');
+      var chip = e.target.closest('.fn-chip');
       if(!chip) return;
       buildSubjectOtherKind = buildSubjectOtherKind === chip.dataset.buildSubjOther ? null : chip.dataset.buildSubjOther;
       buildSubjectCharacterId = null;
@@ -1479,38 +1674,42 @@
 
   function renderBuildSetting(el){
     var chips = WizardChips.SETTING_PLACE_CHIPS.map(function(c){
-      return '<div class="opt-chip" data-build-place="'+c.key+'">'+esc(c.label)+'</div>';
+      return '<div class="fn-chip'+(c.key === 'other' ? ' lb-ghost' : '')+'" data-build-place="'+c.key+'">'+lbChip('place', c.key)+esc(c.label)+'</div>';
     }).join('');
     el.innerHTML =
-      '<div class="section-label" style="margin-top:0;">Where does it take place? &middot; Step 2 of 5</div>' +
-      '<div class="adv-sub-label">Time of day</div>' +
-      '<div class="opt-chip-row" id="build-time-row" style="margin-bottom:10px;">' +
-        '<div class="opt-chip" data-build-time="Day">Day</div>' +
-        '<div class="opt-chip" data-build-time="Night">Night</div>' +
+      // Sub-copy deliberately omitted on THIS step only: it's the tallest
+      // (Day/Night + seven place pills + two mini-labels), and the founder's
+      // one-viewport rule leaves no room for it here — the headline alone
+      // reads fine. Every other step keeps its sub.
+      '<div class="fn-headline" style="margin-bottom:8px;">Where did it happen?</div>' +
+      '<div class="fn-mini-label">Time of day</div>' +
+      '<div class="fn-chip-row lb-half-row" id="build-time-row">' +
+        '<div class="fn-chip" data-build-time="Day">'+lbChip('time','Day')+'Day</div>' +
+        '<div class="fn-chip" data-build-time="Night">'+lbChip('time','Night')+'Night</div>' +
       '</div>' +
-      '<div class="adv-sub-label">Place</div>' +
-      '<div class="opt-chip-row" id="build-place-row">' + chips + '</div>' +
-      '<div id="build-place-other-reveal" style="display:none; margin-top:8px;">' +
-        '<input class="field" id="build-place-other-input" placeholder="Describe the place" dir="auto">' +
+      '<div class="fn-mini-label">Place</div>' +
+      '<div class="fn-chip-row" id="build-place-row">' + chips + '</div>' +
+      '<div class="fn-other-reveal" id="build-place-other-reveal" style="display:none;">' +
+        '<input class="fn-field" id="build-place-other-input" placeholder="Describe the place" dir="auto">' +
       '</div>' +
-      '<div style="flex:1"></div>' +
-      '<button class="btn btn-primary btn-block" id="build-setting-continue" style="margin-bottom:10px;">Continue</button>' +
-      '<span class="link-text" id="build-setting-skip" style="cursor:pointer; margin-bottom:14px;">Skip</span>';
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary lb-cta" id="build-setting-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="build-setting-skip" style="cursor:pointer;">Skip</span>';
 
     function renderTime(){
       var draft = DreamStore.getDraft();
-      Array.prototype.forEach.call(document.querySelectorAll('#build-time-row .opt-chip'), function(el2){
-        el2.classList.toggle('selected', el2.dataset.buildTime === draft.sceneryTime);
+      Array.prototype.forEach.call(document.querySelectorAll('#build-time-row .fn-chip'), function(el2){
+        el2.classList.toggle('sel', el2.dataset.buildTime === draft.sceneryTime);
       });
     }
     function renderPlace(){
-      Array.prototype.forEach.call(document.querySelectorAll('#build-place-row .opt-chip'), function(el2){
-        el2.classList.toggle('selected', el2.dataset.buildPlace === buildSettingPlaceKey);
+      Array.prototype.forEach.call(document.querySelectorAll('#build-place-row .fn-chip'), function(el2){
+        el2.classList.toggle('sel', el2.dataset.buildPlace === buildSettingPlaceKey);
       });
       document.getElementById('build-place-other-reveal').style.display = buildSettingPlaceKey === 'other' ? 'block' : 'none';
     }
     document.getElementById('build-time-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.opt-chip');
+      var chip = e.target.closest('.fn-chip');
       if(!chip) return;
       var val = chip.dataset.buildTime;
       var current = DreamStore.getDraft().sceneryTime;
@@ -1518,8 +1717,12 @@
       renderTime();
     });
     document.getElementById('build-place-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.opt-chip');
+      var chip = e.target.closest('.fn-chip');
       if(!chip) return;
+      // Founder ruling: the place tap must NOT auto-advance — this step
+      // carries the Day/Night secondary pick, so a tap that jumped to the
+      // next screen would skip it. Continue (or Skip) advances. Tap-again
+      // still deselects, exactly as before the restyle.
       buildSettingPlaceKey = buildSettingPlaceKey === chip.dataset.buildPlace ? null : chip.dataset.buildPlace;
       renderPlace();
       if(buildSettingPlaceKey === 'other') document.getElementById('build-place-other-input').focus();
@@ -1543,37 +1746,41 @@
     var expanded = buildActionExpanded || moreChips.some(function(c){ return c.key === buildActionKey; });
 
     function chipHtml(c){
-      return '<div class="opt-chip" data-build-action="'+c.key+'">'+esc(c.label)+'</div>';
+      return '<div class="fn-chip'+(c.key === 'other' ? ' lb-ghost' : '')+'" data-build-action="'+c.key+'">'+lbChip('action', c.key)+esc(c.label)+'</div>';
     }
     var chips = defaultChips.map(chipHtml).join('');
     if(moreChips.length){
       chips += expanded
         ? moreChips.map(chipHtml).join('') +
-          '<div class="opt-chip-more" id="build-action-more-toggle" role="button" tabindex="0" aria-expanded="true">Show less</div>'
-        : '<div class="opt-chip-more" id="build-action-more-toggle" role="button" tabindex="0" aria-expanded="false">+' + moreChips.length + ' more</div>';
+          '<div class="fn-chip-more" id="build-action-more-toggle" role="button" tabindex="0" aria-expanded="true">Show less</div>'
+        : '<div class="fn-chip-more" id="build-action-more-toggle" role="button" tabindex="0" aria-expanded="false">+' + moreChips.length + ' more</div>';
     }
     el.innerHTML =
-      '<div class="section-label" style="margin-top:0;">What’s happening? &middot; Step 3 of 5 &middot; Required</div>' +
-      '<div class="opt-chip-row" id="build-action-row">' + chips + '</div>' +
-      '<div id="build-action-other-reveal" style="display:none; margin-top:8px;">' +
-        '<input class="field" id="build-action-other-input" placeholder="What happens?" dir="auto">' +
+      '<div class="fn-headline">What was happening?</div>' +
+      '<div style="height:6px"></div>' +
+      '<div class="fn-chip-row" id="build-action-row">' + chips + '</div>' +
+      '<div class="fn-other-reveal" id="build-action-other-reveal" style="display:none;">' +
+        '<input class="fn-field" id="build-action-other-input" placeholder="What happens?" dir="auto">' +
       '</div>' +
-      '<label style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); margin:14px 0;">' +
-        '<span style="font-size:13.5px; font-weight:700;">See it through their eyes (POV)</span>' +
-        '<input type="checkbox" id="build-pov-toggle">' +
+      '<label class="fn-toggle-row">' +
+        '<span>See it through their eyes (POV)</span>' +
+        '<span class="fn-switch"><input type="checkbox" id="build-pov-toggle"><span class="fn-switch-track"></span></span>' +
       '</label>' +
-      '<div style="flex:1"></div>' +
-      '<button class="btn btn-primary btn-block" id="build-action-continue" style="margin-bottom:14px;">Continue</button>';
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary lb-cta" id="build-action-continue" type="button">Continue</button>';
 
     function renderChips(){
-      Array.prototype.forEach.call(document.querySelectorAll('#build-action-row .opt-chip'), function(el2){
-        el2.classList.toggle('selected', el2.dataset.buildAction === buildActionKey);
+      Array.prototype.forEach.call(document.querySelectorAll('#build-action-row .fn-chip'), function(el2){
+        el2.classList.toggle('sel', el2.dataset.buildAction === buildActionKey);
       });
       document.getElementById('build-action-other-reveal').style.display = buildActionKey === 'other' ? 'block' : 'none';
     }
     document.getElementById('build-action-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.opt-chip');
+      var chip = e.target.closest('.fn-chip');
       if(!chip) return;
+      // Founder ruling: the action tap must NOT auto-advance — this step
+      // carries the POV secondary toggle, so a tap that jumped ahead would
+      // skip it. Continue advances (Action is required — no Skip).
       buildActionKey = chip.dataset.buildAction;
       renderChips();
       if(buildActionKey === 'other') document.getElementById('build-action-other-input').focus();
@@ -1602,33 +1809,42 @@
 
   function renderBuildMood(el){
     var chips = WizardChips.MOOD_CHIPS.map(function(c){
-      return '<div class="opt-chip" data-build-mood="'+c.key+'">'+esc(c.label)+'</div>';
+      return '<div class="fn-chip'+(c.key === 'other' ? ' lb-ghost' : '')+'" data-build-mood="'+c.key+'">'+lbChip('mood', c.key)+esc(c.label)+'</div>';
     }).join('');
     el.innerHTML =
-      '<div class="section-label" style="margin-top:0;">What’s the mood? &middot; Step 4 of 5</div>' +
-      '<div class="opt-chip-row" id="build-mood-row">' + chips + '</div>' +
-      '<div id="build-mood-other-reveal" style="display:none; margin-top:8px;">' +
-        '<input class="field" id="build-mood-other-input" placeholder="Describe the mood" dir="auto">' +
+      '<div class="fn-headline">How did the dream feel?</div>' +
+      '<div class="fn-body-copy">This shapes your video’s music and light.</div>' +
+      '<div class="fn-chip-row" id="build-mood-row">' + chips + '</div>' +
+      '<div class="fn-other-reveal" id="build-mood-other-reveal" style="display:none;">' +
+        '<input class="fn-field" id="build-mood-other-input" placeholder="Describe the mood" dir="auto">' +
       '</div>' +
-      '<div style="flex:1"></div>' +
-      '<button class="btn btn-primary btn-block" id="build-mood-continue" style="margin-bottom:10px;">Continue</button>' +
-      '<span class="link-text" id="build-mood-skip" style="cursor:pointer; margin-bottom:14px;">Skip</span>';
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary lb-cta" id="build-mood-continue" type="button">Continue</button>' +
+      '<span class="fn-small-link" id="build-mood-skip" style="cursor:pointer;">Skip</span>';
 
     function renderChips(){
-      Array.prototype.forEach.call(document.querySelectorAll('#build-mood-row .opt-chip'), function(el2){
-        el2.classList.toggle('selected', el2.dataset.buildMood === buildMoodKey);
+      Array.prototype.forEach.call(document.querySelectorAll('#build-mood-row .fn-chip'), function(el2){
+        el2.classList.toggle('sel', el2.dataset.buildMood === buildMoodKey);
       });
       document.getElementById('build-mood-other-reveal').style.display = buildMoodKey === 'other' ? 'block' : 'none';
     }
     document.getElementById('build-mood-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.opt-chip');
+      var chip = e.target.closest('.fn-chip');
       if(!chip) return;
       buildMoodKey = chip.dataset.buildMood;
       // Tapping any chip is a real answer — clears a Skip recorded on an
       // earlier pass through this step (the user can come Back to it).
       buildMoodSkipped = false;
       renderChips();
-      if(buildMoodKey === 'other') document.getElementById('build-mood-other-input').focus();
+      if(buildMoodKey === 'other'){
+        // Write-in — no auto-advance while typing (mock round 2).
+        cancelBuildAutoAdvance();
+        document.getElementById('build-mood-other-input').focus();
+        return;
+      }
+      // Layout-B: Mood is the one single-select Build step with no secondary
+      // field, so it auto-advances ~260ms after a tap (founder mock round 4).
+      scheduleBuildAutoAdvance();
     });
     document.getElementById('build-mood-other-input').addEventListener('input', function(e){ buildMoodOtherText = e.target.value; });
     if(buildMoodOtherText) document.getElementById('build-mood-other-input').value = buildMoodOtherText;
@@ -1644,11 +1860,12 @@
 
   function renderBuildFreeText(el){
     el.innerHTML =
-      '<div class="section-label" style="margin-top:0;">Anything to add? &middot; Optional</div>' +
-      '<textarea class="field" id="build-freetext-input" placeholder="Anything else about your dream..." dir="auto" style="min-height:110px;"></textarea>' +
-      '<div style="flex:1"></div>' +
-      '<button class="btn btn-primary btn-block" id="build-freetext-continue" style="margin-bottom:10px;">Looks good</button>' +
-      '<span class="link-text" id="build-freetext-skip" style="cursor:pointer; margin-bottom:14px;">Skip</span>';
+      '<div class="fn-headline">Anything to add?</div>' +
+      '<div class="fn-body-copy">A few extra words — totally optional.</div>' +
+      '<textarea class="fn-field" id="build-freetext-input" placeholder="Anything else about your dream..." dir="auto" style="min-height:110px;"></textarea>' +
+      '<div class="fn-spacer"></div>' +
+      '<button class="fn-btn-primary lb-cta" id="build-freetext-continue" type="button">Looks good →</button>' +
+      '<span class="fn-small-link" id="build-freetext-skip" style="cursor:pointer;">Skip</span>';
     var input = document.getElementById('build-freetext-input');
     input.value = buildFreeText;
     input.addEventListener('input', function(){ buildFreeText = input.value; });
@@ -1742,13 +1959,16 @@
 
   var BUILD_RENDERERS = [renderBuildSubject, renderBuildSetting, renderBuildAction, renderBuildMood, renderBuildFreeText];
   function renderBuild(){
+    renderBuildDots();
     BUILD_RENDERERS[buildCur](buildStepBody);
   }
   function buildNext(){
+    cancelBuildAutoAdvance(); // a Continue tap inside the auto-advance window must advance exactly once
     if(buildCur < BUILD_RENDERERS.length - 1){ buildCur++; renderBuild(); }
     else finishBuildWizard();
   }
   function buildPrev(){
+    cancelBuildAutoAdvance(); // an advance armed on the step being left must never fire into the wrong screen
     if(buildCur > 0){ buildCur--; renderBuild(); return true; }
     return false;
   }
@@ -1758,6 +1978,7 @@
     choicePillFlashThen(e, function(){
       selectEl.style.display = 'none';
       buildEl.style.display = 'flex';
+      document.getElementById('app').classList.add('build-active');
       heading.textContent = 'Build your dream';
       buildCur = 0;
       renderBuild();
@@ -1953,6 +2174,10 @@
     var edited = transcriptTextArea.value.trim();
     if(!edited){
       showError('transcript-error', 'Type something before continuing — or re-record.');
+      return;
+    }
+    if(countWords(edited) > WORD_LIMIT){
+      showError('transcript-error', WORD_LIMIT_MESSAGE);
       return;
     }
     // storyText -- same "already the human dream description, verbatim"

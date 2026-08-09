@@ -478,13 +478,17 @@
 
   // ===================================================================
   // Auto-advance (mock behavior, founder round 4 extended it to Style):
-  // on a SINGLE-select step (Setting's place pick, Action, Mood, Style),
+  // on a single-select step with NO secondary field — Mood and Style —
   // tapping an option row advances ~260ms later — long enough for the
   // pink selected state to visibly register, short enough to feel
   // instant. Explicitly NOT wired to: multi-select Subject rows (Continue
-  // advances, per founder round 3), any "+ Something else" row (the user
-  // is about to type — mock round 2), Day/Night (an auxiliary toggle, not
-  // the step's answer), the POV switch, or the "+N more" expander.
+  // advances, per founder round 3); any "+ Something else" row (the user
+  // is about to type — mock round 2); and — since founder 08-08 —
+  // Setting and Action, because each carries a SECOND choice on the same
+  // screen (Setting has Day/Night, Action has the POV toggle) that a tap-
+  // to-advance would skip past before the visitor could reach it, so those
+  // two now require Continue like Subject. Day/Night, the POV switch, and
+  // the "+N more" expander were never advance triggers.
   //
   // The timer is single-flight and step-scoped: a second tap re-arms it
   // (still exactly one advance), and BOTH manual navigation paths cancel
@@ -1228,21 +1232,20 @@
     document.getElementById('setting-place-row').addEventListener('click', function(e){
       var chip = e.target.closest('.fn-chip');
       if(!chip) return;
-      // Layout-B: a place tap SELECTS and auto-advances (mock grammar) —
-      // the old tap-again-to-deselect toggle is gone on this row, since a
-      // tap now leaves the screen before a second tap could happen;
-      // "answered nothing" is still fully reachable via Skip, exactly as
-      // before. Day/Night above keeps its toggle (auxiliary, no advance).
+      // This step carries a SECOND choice on the same screen — Day/Night
+      // above — so a place tap must NOT auto-advance (founder 08-08: "it
+      // goes to the next page without letting you choose day or night").
+      // A place tap only SELECTS; the visitor then picks Day/Night and taps
+      // Continue, which is the only way forward. "Answered nothing" stays
+      // reachable via Skip. (Single-select, no deselect — Skip covers the
+      // empty answer, same as before.)
       settingPlaceKey = chip.dataset.settingPlace;
       renderPlaceChips();
       if(settingPlaceKey === 'other'){
-        // Mock round 2: "+ Something else" opens its write-in instead of
-        // advancing — Continue advances with whatever was typed.
-        cancelAutoAdvance();
+        // "+ Something else" opens its write-in; Continue advances with
+        // whatever was typed.
         document.getElementById('setting-other-input').focus();
-        return;
       }
-      scheduleAutoAdvance();
     });
     document.getElementById('setting-other-input').addEventListener('input', function(e){ settingOtherText = e.target.value; });
     if(settingOtherText) document.getElementById('setting-other-input').value = settingOtherText;
@@ -1291,7 +1294,13 @@
       '<div class="fn-other-reveal" id="action-other-reveal" style="display:none;">' +
         '<input class="fn-field" id="action-other-input" placeholder="What happens?" dir="auto">' +
       '</div>' +
-      '<label class="fn-toggle-row">' +
+      // POV is a SECONDARY choice on this screen, not one of the action
+      // pills. Its own labeled "Point of view" section + on/off switch set
+      // it clearly apart (founder 08-08: "not clear this is a separate
+      // field — have a toggle for on/off"). Layout/interaction only — the
+      // povOn state and how it feeds generation are unchanged.
+      '<div class="fn-mini-label" id="pov-label" style="margin-top:16px;">Point of view</div>' +
+      '<label class="fn-toggle-row" id="pov-row">' +
         '<span>See it through their eyes (POV)</span>' +
         '<span class="fn-switch"><input type="checkbox" id="pov-toggle"><span class="fn-switch-track"></span></span>' +
       '</label>' +
@@ -1309,13 +1318,13 @@
       if(!chip) return;
       actionKey = chip.dataset.action; // single-select, required -- no deselect-to-null
       renderChips();
+      // This step carries a SECOND choice on the same screen — the POV
+      // toggle below — so an action tap must NOT auto-advance (founder
+      // 08-08 hit the same skip problem as the setting step). An action
+      // tap only SELECTS; Continue is the only way forward.
       if(actionKey === 'other'){
-        // Write-in — no auto-advance while typing (mock round 2).
-        cancelAutoAdvance();
         document.getElementById('action-other-input').focus();
-        return;
       }
-      scheduleAutoAdvance();
     });
     document.getElementById('action-other-input').addEventListener('input', function(e){ actionOtherText = e.target.value; });
     if(actionOtherText) document.getElementById('action-other-input').value = actionOtherText;
@@ -1323,10 +1332,6 @@
     var moreToggle = document.getElementById('action-more-toggle');
     if(moreToggle){
       moreToggle.addEventListener('click', function(){
-        // A disclosure tap right after an option tap means the visitor is
-        // still browsing — don't let the armed auto-advance yank the
-        // screen away mid-expand.
-        cancelAutoAdvance();
         actionExpanded = !expanded;
         renderAction(el);
       });
@@ -1339,7 +1344,6 @@
     povInput.checked = povOn;
     povInput.addEventListener('change', function(){
       povOn = povInput.checked;
-      cancelAutoAdvance(); // adjusting POV right after an option tap = still composing the answer
     });
 
     renderChips();
@@ -2356,8 +2360,15 @@
       // OWN step now — renderRecap, the screen right before this one —
       // founder round 8: "it was supposed to be editable in a previous
       // page". currentStoryText arrives here already computed/edited.)
-      // Screen 13 passwordless's own reassurance copy, verbatim.
-      '<div class="fn-microcopy" style="margin:0;">Free to start, no card needed — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.</div>',
+      // Screen 13 passwordless's own reassurance copy, verbatim — now A/B
+      // tested (wall_subtext_arm='shown'|'hidden', assigned once before
+      // boot below). 'hidden' drops the whole line: fnStageHtml filters
+      // falsy groups, so the wall renders byte-identically to never having
+      // had it (no empty group, no spacer). Nothing else on the wall
+      // changes. See the wall_subtext_arm block near boot() for the metric.
+      wallSubtextArm === 'shown'
+        ? '<div class="fn-microcopy" style="margin:0;">Free to start, no card needed — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.</div>'
+        : '',
       facebookSignupButtonHtml(),
       facebookOrDividerHtml(),
       '<input class="fn-field" id="contact-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto">' +
@@ -3086,6 +3097,74 @@
       });
     }, 0);
   }
+
+  // ===================================================================
+  // Signup-wall subtext A/B test (wall-subtext) -- LIVE 50/50
+  // Tests whether the wall's reassurance line ("Free to start, no card
+  // needed — we'll email you your dream the moment it's ready, that's the
+  // only reason we ask.") helps or hurts signup conversion. Two arms:
+  //   'shown'  -- the line renders (today's behavior).
+  //   'hidden' -- the line is dropped; the wall is otherwise identical.
+  //
+  // WHY here, in wizard.html: the signup wall (renderWallEmailStep) lives
+  // ON THIS PAGE for EVERY arrival — direct app visitors AND funnel
+  // arrivals, which the flo-arm wall routing lands on this same wizard.
+  // So this is the one shared spot where the wall renders, and the arm is
+  // decided here, once, before boot() paints anything. Persisted in
+  // localStorage (app-origin-scoped, exactly where the wall renders) so
+  // it's STABLE per visitor/browser across re-renders and repeat visits —
+  // no reassignment, no flicker.
+  //
+  // Mirrors the funnel's funnel-lb-skin machinery exactly (dreamtube-
+  // growth/index.html assignSkinArm): a founder/QA override (?wallsubtext=
+  // shown|hidden), else a persisted deterministic 50/50 seeded from the
+  // PostHog distinct_id when it's resolved synchronously, else a random
+  // 50/50 — either way persisted, so the seed source never changes the arm
+  // after first assignment. Recorded the SAME way: a PostHog super property
+  // (wall_subtext_arm) registered BEFORE render so it rides EVERY
+  // subsequent event (the wall's wizard_step_viewed {step:7} and the
+  // eventual signed_up), plus one experiment_exposure event. NO other
+  // event or param changes.
+  //
+  // METRIC / QUERY: signup-wall -> signed_up conversion, split by arm.
+  //   Denominator: wizard_step_viewed where step = 7 (the wall reached).
+  //   Numerator:   signed_up (either signup_method).
+  //   Break down both by the super property `wall_subtext_arm`
+  //   ('shown' vs 'hidden'); or read the exposure directly
+  //   (experiment='wall-subtext', variant='shown'|'hidden'). Decision
+  //   point ~2 days out, once each arm has enough wall views.
+  // ===================================================================
+  var WALL_SUBTEXT_ARM_KEY = 'dt_wall_subtext_arm';
+  function wsHashStr(s){ var h = 0; for(var i = 0; i < s.length; i++){ h = ((h << 5) - h + s.charCodeAt(i)) | 0; } return h; }
+  function assignWallSubtextArm(){
+    // Founder/QA preview override (?wallsubtext=shown|hidden): forces the
+    // arm and persists it so the whole session stays consistent. Real
+    // visitors never carry this param; founder traffic is already excluded
+    // from arm analysis by the IL/alias filters — so its exposure can't
+    // pollute the read.
+    try{
+      var forced = new URLSearchParams(location.search).get('wallsubtext');
+      if(forced === 'shown' || forced === 'hidden'){
+        try{ localStorage.setItem(WALL_SUBTEXT_ARM_KEY, forced); }catch(e){}
+        return forced;
+      }
+    }catch(e){ /* URLSearchParams unavailable — fall through to normal assignment */ }
+    var arm = null;
+    try{ arm = localStorage.getItem(WALL_SUBTEXT_ARM_KEY); }catch(e){ /* storage blocked (private mode) */ }
+    if(arm !== 'shown' && arm !== 'hidden'){
+      var did = null;
+      try{ if(window.posthog && typeof posthog.get_distinct_id === 'function') did = posthog.get_distinct_id(); }catch(e){}
+      var bucket = (typeof did === 'string' && did) ? (Math.abs(wsHashStr(did)) % 2) : (Math.random() < 0.5 ? 0 : 1);
+      arm = bucket === 0 ? 'hidden' : 'shown';
+      try{ localStorage.setItem(WALL_SUBTEXT_ARM_KEY, arm); }catch(e){ /* not persisted this load; still stable within it */ }
+    }
+    return arm;
+  }
+  var wallSubtextArm = assignWallSubtextArm();
+  // Attach the arm to every event (rides the deferred wall wizard_step_viewed
+  // + signed_up) + fire the matching exposure, BEFORE boot() renders.
+  try{ if(window.posthog && typeof posthog.register === 'function') posthog.register({ wall_subtext_arm: wallSubtextArm }); }catch(e){ /* analytics must never break the wizard */ }
+  track('experiment_exposure', { experiment: 'wall-subtext', variant: wallSubtextArm });
 
   boot();
 })();

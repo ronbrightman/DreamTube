@@ -251,7 +251,8 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     await page.click('#fn-subject-continue');
     await page.click('#fn-setting-skip');
     await page.waitForSelector('[data-action="flying"]');
-    await page.click('[data-action="flying"]'); // auto-advances (Layout-B single-select)
+    await page.click('[data-action="flying"]'); // selects; Action needs Continue (compound step)
+    await page.click('#fn-action-continue');
     await page.click('#fn-mood-skip');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
@@ -340,9 +341,18 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     assert.ok(markCompletions.length >= 1, 'the real mark-generation-completed.js handler must have actually resolved before its enqueue is asserted on');
     var pendingRecord = await pendingStore.getPending(fakeEvent({}), markCalls[0].operationName);
     assert.ok(pendingRecord, 'the real mark-generation-completed.js call must have enqueued a pending record for this exact operationName');
-    mockBlobs.seed(pendingStore.STORE_NAME, markCalls[0].operationName, Object.assign({}, pendingRecord, {
-      triggeredAt: Date.now() - sendPending.THUMBNAIL_WAIT_MS - 5000
-    }));
+    // Seed the synced thumbnail this operationName is waiting on -- since
+    // the founder's 08-08 thumbnail-gate rule, a real thumbnail is the only
+    // thing that makes the scheduled scan actually send (no thumbnail =
+    // defer, then drop -- never a bare send). Model it landing so this
+    // real-chain test still exercises a genuine retention send.
+    var dreamStore = require('../netlify/functions/lib/dream-store');
+    await dreamStore.upsertPrivateDream(fakeEvent({}), pendingRecord.username, {
+      id: 'dream-' + markCalls[0].operationName, ownerHandle: '@' + pendingRecord.username,
+      caption: 'Funnel dream', style: 'Cinematic', mediaType: 'video',
+      videoUrl: 'https://example.com/v.mp4', imageUrl: 'https://img.example/funnel-thumb.jpg',
+      sourceOperationName: markCalls[0].operationName
+    });
     // register-account-passwordless.js's new-account branch fires its own
     // fire-and-forget VERIFICATION email through the same Resend spy (see
     // that file's FIRE-AND-FORGET note) -- count only what the retention

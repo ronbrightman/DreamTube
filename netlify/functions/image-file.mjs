@@ -52,13 +52,62 @@ export default async (req) => {
     });
   }
 
-  var result;
+  var store;
   try {
     var getStore = await loadGetStore();
-    var store = getStore('dreamtube-images');
+    store = getStore('dreamtube-images');
+  } catch (e) {
+    console.error('image-file: blobs SDK load failed', e && e.name, e && e.message);
+    return new Response(JSON.stringify({ error: 'store_unavailable' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // METADATA-FIRST (founder repro 2026-08-08, image black-square): the
+  // redirect decision only needs metadata, so read metadata ALONE first
+  // rather than pulling the whole blob body as a stream just to inspect
+  // `sourceUrl`. That earlier `getWithMetadata(key,{type:'stream'})` call
+  // initiated a full body fetch on EVERY request — including the redirect
+  // path that never consumes it — which is exactly the "streaming 502s in
+  // production for all sizes" fragility the redirect-first posture (tracker
+  // cyp8np) was introduced to route around. A re-hosted image is the
+  // overwhelmingly common case here and always carries `sourceUrl`, so this
+  // now serves it with a cheap metadata-only read + 302, no body stream at
+  // all. Only a legacy sourceUrl-less record ever falls through to the
+  // stream read below.
+  var metadata;
+  try {
+    var meta = await store.getMetadata(key);
+    if (!meta) {
+      return new Response(JSON.stringify({ error: 'not_found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    metadata = meta.metadata || {};
+  } catch (e) {
+    console.error('image-file: blobs metadata read failed', e && e.name, e && e.message);
+    return new Response(JSON.stringify({ error: 'store_unavailable' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+
+  // Defense in depth — see header comment above.
+  // EMERGENCY SERVING POSTURE — same as video-file.mjs (see its header +
+  // tracker cyp8np): redirect-first whenever a sourceUrl exists; streaming
+  // is the fallback for sourceUrl-less records only.
+  if (metadata.sourceUrl) {
+    return Response.redirect(metadata.sourceUrl, 302);
+  }
+
+  // Legacy sourceUrl-less record — stream the stored bytes back directly.
+  var result;
+  try {
     result = await store.getWithMetadata(key, { type: 'stream' });
   } catch (e) {
-    console.error('image-file: blobs read failed', e && e.name, e && e.message);
+    console.error('image-file: blobs body read failed', e && e.name, e && e.message);
     return new Response(JSON.stringify({ error: 'store_unavailable' }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
@@ -71,17 +120,7 @@ export default async (req) => {
     });
   }
 
-  var metadata = result.metadata || {};
-  var contentType = metadata.contentType || 'image/jpeg';
-
-  // Defense in depth — see header comment above.
-  // EMERGENCY SERVING POSTURE — same as video-file.mjs tonight (see its
-  // header + tracker cyp8np): redirect-first whenever a sourceUrl exists;
-  // streaming is the fallback for sourceUrl-less records only.
-  if (metadata.sourceUrl) {
-    return Response.redirect(metadata.sourceUrl, 302);
-  }
-
+  var contentType = (result.metadata && result.metadata.contentType) || metadata.contentType || 'image/jpeg';
   return new Response(result.data, {
     status: 200,
     headers: { 'Content-Type': contentType }

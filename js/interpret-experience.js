@@ -132,7 +132,11 @@
 
   /** Whether persona's one-time intro should play right now — has BOTH the visual clip AND its paired voice track (see js/interpreter-personas.js's own header note on why these are two separate files, not one muxed clip) AND hasn't been shown yet for this dream. Pure/no-DOM — unit tested directly (test/interp-voice-captions.test.js). */
   function shouldShowIntro(persona, introAlreadyShown) {
-    return !!(persona && persona.introClipUrl && persona.introVoiceUrl) && !introAlreadyShown;
+    if (!persona || introAlreadyShown) return false;
+    // Two shapes qualify: a self-contained talking-head clip (introTalkingHeadUrl,
+    // Jung onward) OR the Sage's split visual-backdrop + paired voice track
+    // (introClipUrl + introVoiceUrl). The video alone (no voice) never qualifies.
+    return !!(persona.introTalkingHeadUrl || (persona.introClipUrl && persona.introVoiceUrl));
   }
 
   /**
@@ -515,9 +519,14 @@
   function startIntroPhase(vs, persona) {
     vs.phase = 'intro';
     if (vs.skipEl) vs.skipEl.style.display = '';
-    if (vs.introEl) { vs.introEl.muted = true; vs.introEl.loop = true; attemptPlay(vs.introEl); } // ambient visual only — never gated, never tracked
-    var introAudio = vs.introAudioEl;
-    if (!introAudio) { completeIntro(vs, persona, 'ended'); return; } // defensive — shouldn't happen, renderReading only renders the intro markup when introClipUrl+introVoiceUrl are both set
+    // Sage split shape only: introEl is a MUTED, LOOPING visual backdrop while
+    // the separate introAudioEl is the greeting. A talking-head persona has no
+    // separate backdrop — its introEl IS the driver (played once, unmuted, below).
+    if (!vs.introTalkingHead && vs.introEl) { vs.introEl.muted = true; vs.introEl.loop = true; attemptPlay(vs.introEl); } // ambient visual only — never gated, never tracked
+    // The "driver" is whatever element's playback + 'ended' defines the intro:
+    // the talking-head <video> itself, or the Sage's separate greeting <audio>.
+    var introAudio = vs.introTalkingHead ? vs.introEl : vs.introAudioEl;
+    if (!introAudio) { completeIntro(vs, persona, 'ended'); return; } // defensive — shouldShowIntro guarantees the driver element exists
     attemptPlay(introAudio).then(function (ok) {
       if (voiceState !== vs) return;
       if (ok) {
@@ -572,6 +581,7 @@
     hideTapOverlay(vs);
     if (vs.skipEl) vs.skipEl.style.display = 'none';
     if (vs.introAudioEl) { try { vs.introAudioEl.pause(); } catch (e) { /* best-effort */ } }
+    if (vs.introTalkingHead && vs.introEl) { try { vs.introEl.pause(); } catch (e) { /* best-effort */ } } // talking head is the greeting itself — freeze its mouth on complete (Sage's muted loop just fades)
     if (vs.introEl) vs.introEl.classList.add('itp-voice-fade-out');
     if (vs.dreamEl) vs.dreamEl.classList.remove('itp-voice-hidden'); // crossfades IN as the intro crossfades out (spec §5: "genuinely lip-synced video... then crossfades back", adapted to Option D's "into the user's own dream video" target)
     enterReadingPhase(vs, persona);
@@ -847,7 +857,9 @@
       stageEl: document.getElementById('itp-voice-stage'),
       introEl: document.getElementById('itp-voice-intro'),
       introAudioEl: document.getElementById('itp-voice-intro-audio'),
+      introTalkingHead: !!(persona && persona.introTalkingHeadUrl), // single unmuted lip-synced clip drives the intro itself (no separate voice track / backdrop loop)
       dreamEl: document.getElementById('itp-voice-dream-video'),
+      loadingEl: document.getElementById('itp-voice-loading'),
       capEl: document.getElementById('itp-voice-caption'),
       tapOverlay: document.getElementById('itp-voice-tap-overlay'),
       tapLabelEl: document.getElementById('itp-voice-tap-label'),
@@ -876,6 +888,22 @@
     };
     session.primedAudioEl = null;
     voiceState = vs;
+
+    // Hide the buffering spinner once the dream video can actually paint a
+    // frame (or on error / a non-playable image-only dream) so the stage
+    // never sits as a black box while the video loads (founder 08-08).
+    if (vs.loadingEl) {
+      var hideLoading = function () { if (vs.loadingEl) { vs.loadingEl.style.display = 'none'; } };
+      if (vs.dreamEl && vs.dreamEl.tagName === 'VIDEO' && vs.dreamEl.getAttribute('src')) {
+        if (vs.dreamEl.readyState >= 2) hideLoading();
+        else {
+          vs.dreamEl.addEventListener('loadeddata', hideLoading, { once: true });
+          vs.dreamEl.addEventListener('error', hideLoading, { once: true });
+        }
+      } else {
+        hideLoading();
+      }
+    }
 
     if (!savedEntry) requestVoiceAudio(vs, persona);
 
@@ -1382,16 +1410,28 @@
       '<video class="itp-voice-media' + (showIntro ? ' itp-voice-hidden' : '') + '" id="itp-voice-dream-video" playsinline preload="auto"' +
       (dreamMediaUrl ? ' src="' + esc(dreamMediaUrl) + '"' : '') + '></video>' +
       (showIntro
-        // Two separate elements (js/interpreter-personas.js's own header
-        // note): the video is a silent, looping visual only (muted here
-        // in markup too, not just in JS, so there's never a flash of
-        // real audio before startIntroPhase's own vs.introEl.muted=true
-        // runs) — the actual greeting audio is the sibling <audio>,
-        // hidden (no visual chrome of its own, the tap overlay above it
-        // in the stage is what a blocked-autoplay tap lands on).
-        ? '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" muted src="' + esc(persona.introClipUrl) + '"></video>' +
-          '<audio id="itp-voice-intro-audio" preload="auto" src="' + esc(persona.introVoiceUrl) + '" style="display:none"></audio>'
+        ? (persona.introTalkingHeadUrl
+          // Talking-head intro (Jung onward): ONE self-contained lip-synced
+          // clip that IS the greeting — rendered NOT muted and with NO sibling
+          // audio, so startIntroPhase plays it once, unmuted, and its own
+          // 'ended' completes the intro (see that fn's talking-head branch).
+          ? '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" src="' + esc(persona.introTalkingHeadUrl) + '"></video>'
+          // Sage split shape: two separate elements — the video is a silent,
+          // looping visual only (muted here in markup too, not just in JS, so
+          // there's never a flash of real audio before startIntroPhase's own
+          // vs.introEl.muted=true runs) — the actual greeting audio is the
+          // sibling <audio>, hidden (no visual chrome of its own, the tap
+          // overlay above it in the stage is what a blocked-autoplay tap lands on).
+          : '<video class="itp-voice-media itp-voice-intro" id="itp-voice-intro" playsinline preload="auto" muted src="' + esc(persona.introClipUrl) + '"></video>' +
+            '<audio id="itp-voice-intro-audio" preload="auto" src="' + esc(persona.introVoiceUrl) + '" style="display:none"></audio>')
         : '') +
+      // Loading spinner over the black stage while the dream video buffers
+      // (founder 08-08: "video still loading shows black area — show
+      // loading"). Visible by default when there's a video to load; the
+      // dream-video's loadeddata/error/an image-only dream removes it (see
+      // setupVoiceStage's wiring). No media at all = plain backdrop, no
+      // spinner.
+      (dreamMediaUrl ? '<div class="itp-voice-loading" id="itp-voice-loading"><span class="itp-voice-spinner" aria-label="Loading your dream"></span></div>' : '') +
       '<div class="itp-voice-caption" id="itp-voice-caption"></div>' +
       '<div class="itp-voice-tap-overlay off" id="itp-voice-tap-overlay">' +
       '<div class="itp-voice-tap-btn"><span class="icon">' + Icons.play + '</span></div>' +
@@ -1628,6 +1668,15 @@
 
     ensureMounted();
     discardPrimedAudioEl(); // a still-open session's primed element (see onPersonaPicked) has no home in the brand-new `session` object about to replace it below (switchDream's own re-open-for-a-different-dream path)
+    // Was the overlay ALREADY open? switchDream() (dream-strip tap) re-runs
+    // open() over a live session — a re-open, not a fresh one. The scroll lock
+    // is ref-counted, so it must be lock()'d exactly ONCE per open→close
+    // lifecycle: locking again on a re-open pushes refCount to 2, and the
+    // single close()→unlock() only drops it to 1, leaving .home-scroll frozen
+    // at overflow:hidden after close (founder repro: scroll stuck returning
+    // from interpretation after switching dreams in the strip). Only lock on
+    // the true closed→open transition below.
+    var wasOpen = !!session;
     gen += 1;
     var existing = window.DreamStore.getInterpretations(dreamId) || {};
     var existingKeys = Object.keys(existing).filter(function (k) { return existing[k] && existing[k].text; });
@@ -1656,7 +1705,13 @@
     trackLocal('interp_surface_opened', { has_existing: hasExisting });
 
     document.getElementById(ROOT_ID).classList.add('open');
-    document.body.style.overflow = 'hidden'; // matches this app's other full-screen overlays' scroll-lock intent
+    // Freeze the page behind this full-screen overlay via the shared,
+    // iOS-robust, ref-counted scroll lock (js/scroll-lock.js) — NOT a raw
+    // `document.body.style.overflow` toggle, which on this app's inner-scroller
+    // pages (home/result) froze the real scroller on iOS after close. See that
+    // file's header for the full root cause. Guarded so the overlay still
+    // opens even if the helper failed to load.
+    if (!wasOpen && window.ScrollLock) window.ScrollLock.lock();
     renderDreamStrip();
     render();
   }
@@ -1687,7 +1742,7 @@
     trackLocal('interp_closed', { phase: session.phase });
     var root = document.getElementById(ROOT_ID);
     if (root) root.classList.remove('open');
-    document.body.style.overflow = '';
+    if (window.ScrollLock) window.ScrollLock.unlock();
     resetVoiceState();
     discardPrimedAudioEl();
     session = null;
@@ -1713,46 +1768,30 @@
   InterpretExperience._preparingCaptionText = preparingCaptionText;
 
   // ── Scroll-lock release safety net (tracker item
-  //    for-product-bug-founder-video-08-07-resu-f4u8zy, founder screen
-  //    recording: result.html sometimes becomes entirely unscrollable —
-  //    swiping down only rubber-bands into Safari's pull-to-refresh bubble,
-  //    intermittently). Root cause: open() (below) is the ONLY place in
-  //    this whole app that locks document.body.style.overflow — every
-  //    OTHER overlay/sheet on result.html (.player-overlay, .sheet-overlay,
-  //    .modal-overlay) is a position:fixed/absolute layer that goes
-  //    pointer-events:none when closed, so a stuck `.open` class there is
-  //    at worst a visibly-stuck overlay, never an invisible scroll block —
-  //    confirmed by reading every such overlay's CSS/JS on this page; this
-  //    module is the sole scroll-lock owner. close() already releases the
-  //    lock correctly on its three explicit triggers (topbar X, the
-  //    post-reading Close link, the error-state Close link) — the gap is
-  //    every OTHER way the page can go away while the lock is held: real
-  //    navigation elsewhere, and critically iOS Safari's native edge-swipe
-  //    back gesture, which does not run this page's click handlers and can
-  //    freeze the page into the back/forward cache (bfcache) exactly as it
-  //    stood — lock still on — to be restored verbatim on a later visit,
-  //    with no fresh page load to ever reset it.
+  //    for-product-bug-founder-video-08-07-resu-f4u8zy, plus the same-family
+  //    home.html repro returning from this overlay). The scroll lock itself
+  //    now lives in the shared js/scroll-lock.js (ref-counted, iOS-robust,
+  //    with its OWN pagehide/pageshow backstops) — see that file's header for
+  //    the full root cause (mutating body overflow froze the real inner
+  //    scroller on iOS). This module just has to make sure its own session is
+  //    torn down and its lock() is matched by an unlock() on the one path an
+  //    explicit close() button can't reach: iOS Safari's edge-swipe back
+  //    gesture, which runs no click handlers and can freeze the page into the
+  //    back/forward cache (bfcache) mid-session.
   //
-  //    `pagehide` is the standard, portable event for "this page is about
-  //    to be hidden, possibly for bfcache storage" — it fires for both a
-  //    real unload AND a bfcache-store, on iOS Safari too (unlike
-  //    `beforeunload`, which iOS Safari does not reliably fire on
-  //    gesture-driven navigation). Releasing the lock here — via the SAME
-  //    `close()` every other dismiss path already uses, not a second
-  //    bespoke reset — means a bfcache-restored copy of this page can never
-  //    come back locked. `pageshow`'s `persisted:true` case below is pure
-  //    defense-in-depth for the should-be-impossible case a restore
-  //    happens anyway with the lock still set (e.g. an already-frozen
-  //    bfcache entry from before this fix shipped) — same "release
-  //    unconditionally, in one centralized place" principle this comment
-  //    block opened with, just covering the one path `close()` itself
-  //    can't reach after the fact.
+  //    `pagehide` is the standard, portable event for "this page is about to
+  //    be hidden, possibly for bfcache storage" — it fires for both a real
+  //    unload AND a bfcache-store, on iOS Safari too (unlike `beforeunload`,
+  //    which iOS Safari does not reliably fire on gesture-driven navigation).
+  //    Running the SAME close() every explicit dismiss uses both fires the
+  //    right analytics/voice-lifecycle teardown AND releases the scroll lock
+  //    (close() calls ScrollLock.unlock()). scroll-lock.js additionally
+  //    force-releases on its own pagehide/pageshow{persisted} as a second,
+  //    independent net, so a restored page can never come back locked even if
+  //    this handler somehow didn't run.
   if (typeof window !== 'undefined') {
     window.addEventListener('pagehide', function () {
       if (session) close();
-    });
-    window.addEventListener('pageshow', function (e) {
-      if (e.persisted) document.body.style.overflow = '';
     });
   }
 

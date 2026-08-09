@@ -8,7 +8,7 @@
 // enforcement is still generate-video.js's server-side E112 check — this
 // endpoint only exists so the client has something to show/check without
 // guessing. This is also the point that actually materializes a brand-new
-// email's 320-token signup grant the *first* time it's ever read (see
+// email's 220-token signup grant the *first* time it's ever read (see
 // entitlements.js's syncTokens) — which is exactly why it's passed the
 // real request `event`, not just the email string: the per-IP daily cap on
 // new-signup-bonus grants needs the real client IP. It does NOT, itself,

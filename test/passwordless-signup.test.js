@@ -320,6 +320,71 @@ test('verify-email-code: too many wrong guesses is rejected as E7 (not another E
   assert.match(JSON.parse(last.body).error, /^E7: too_many_attempts/);
 });
 
+// ROLLING WINDOW (fix, founder repro 2026-08-08): opening the verify sheet
+// auto-sends a fresh code (js/email-verify-sheet.js autoSendOnOpen, added
+// 2026-08-07), and each send used to OVERWRITE the single stored code, so
+// an older-but-real code the user typed was wrongly rejected with "that
+// code didn't match". lib/email-verification-store.js now keeps the last
+// MAX_ACTIVE_CODES valid — see that file's own "MULTIPLE RECENT CODES"
+// header note. These two tests are the regression proof: the exact
+// previously-failing case now verifies, and the window is still bounded.
+test('verify-email-code: an EARLIER code still verifies after a NEWER code was sent (rolling window) -- the exact founder 08-08 case that used to be rejected', async function () {
+  return withEnv({ RESEND_API_KEY: RESEND_KEY }, async function () {
+    var calls = installFetchSpy(true);
+    var registerHandler = require('../netlify/functions/register-account-passwordless').handler;
+    var signup = JSON.parse((await registerHandler(reqEvent({ body: { email: 'rolling@example.com' } }))).body);
+    var code1 = /(\d{6})/.exec(calls[0].body.html)[1];
+
+    // A NEWER code is sent (models the sheet's autoSendOnOpen, or a manual
+    // Resend, landing after code1). Under the old single-code store this
+    // silently invalidated code1. Resend until it's genuinely a different
+    // value so the test actually proves the window (bounded — a 6-digit
+    // collision is ~1e-6, so a few tries makes a spurious match negligible).
+    var resendHandler = require('../netlify/functions/resend-verification-code').handler;
+    var code2 = code1;
+    for (var i = 0; i < 5 && code2 === code1; i++) {
+      await resendHandler(reqEvent({ body: { authToken: signup.authToken } }));
+      code2 = /(\d{6})/.exec(calls[calls.length - 1].body.html)[1];
+    }
+    assert.notEqual(code2, code1, 'test setup: the newer send must be a genuinely different code');
+
+    // The OLDER code (code1) must STILL verify -- this is precisely what
+    // used to fail.
+    var verifyHandler = require('../netlify/functions/verify-email-code').handler;
+    var res = await verifyHandler(reqEvent({ body: { authToken: signup.authToken, code: code1 } }));
+    assert.equal(res.statusCode, 200);
+    assert.equal(JSON.parse(res.body).ok, true, 'an earlier-but-real code must still verify after a newer one was sent');
+  });
+});
+
+test('verify-email-code: the rolling window is bounded to MAX_ACTIVE_CODES -- a code evicted by newer sends no longer verifies, but a code still inside the window does', async function () {
+  return withEnv({ RESEND_API_KEY: RESEND_KEY }, async function () {
+    var calls = installFetchSpy(true);
+    var emailVerificationStore = require('../netlify/functions/lib/email-verification-store');
+    var registerHandler = require('../netlify/functions/register-account-passwordless').handler;
+    var resendHandler = require('../netlify/functions/resend-verification-code').handler;
+    var verifyHandler = require('../netlify/functions/verify-email-code').handler;
+
+    var signup = JSON.parse((await registerHandler(reqEvent({ body: { email: 'bounded@example.com' } }))).body);
+    var codes = [/(\d{6})/.exec(calls[0].body.html)[1]];
+    // Send MAX_ACTIVE_CODES more codes so the very first one is pushed out
+    // of the window entirely.
+    for (var i = 0; i < emailVerificationStore.MAX_ACTIVE_CODES; i++) {
+      await resendHandler(reqEvent({ body: { authToken: signup.authToken } }));
+      codes.push(/(\d{6})/.exec(calls[calls.length - 1].body.html)[1]);
+    }
+
+    // The first code is now beyond the last MAX_ACTIVE_CODES sends -- it
+    // must be rejected (the window is not unbounded).
+    var evicted = await verifyHandler(reqEvent({ body: { authToken: signup.authToken, code: codes[0] } }));
+    assert.equal(JSON.parse(evicted.body).ok, false, 'a code evicted by newer sends must no longer verify');
+
+    // The newest code is still inside the window and must verify.
+    var newest = await verifyHandler(reqEvent({ body: { authToken: signup.authToken, code: codes[codes.length - 1] } }));
+    assert.equal(JSON.parse(newest.body).ok, true, 'the newest code must still verify');
+  });
+});
+
 test('verify-email-code: rejects missing authToken/code and non-POST methods', async function () {
   var handler = require('../netlify/functions/verify-email-code').handler;
   var noToken = await handler(reqEvent({ body: { code: '123456' } }));

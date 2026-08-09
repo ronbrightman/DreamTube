@@ -124,7 +124,13 @@ function dreamPayload(overrides) {
     caption: 'Flying over the ocean',
     style: 'Cinematic',
     videoUrl: 'https://example.com/fake-video.mp4',
-    mediaType: 'video'
+    mediaType: 'video',
+    // A real captured thumbnail by default -- since the founder's 08-08
+    // thumbnail-gate rule (lib/first-dream-email-sender.js), the email only
+    // sends when one is present, so the "does a send happen" tests below
+    // supply one. Pass `imageUrl: null` explicitly to exercise the
+    // no-thumbnail deferral path.
+    imageUrl: 'https://fal.media/files/default-thumb.jpg'
   }, overrides || {});
 }
 
@@ -316,25 +322,38 @@ test('send-first-dream-email: an already-absolute imageUrl is used as-is, not do
   });
 });
 
-test('send-first-dream-email: no imageUrl (the common case, especially right after generation) falls back to the original flat-color banner', function () {
+// THUMBNAIL-GATED SEND (founder rule 2026-08-08 -- see lib/first-dream-
+// email-sender.js's "THUMBNAIL-GATED SEND" header note): the email must
+// NEVER go out without a real thumbnail. The client-triggered path fires
+// the moment result.html loads, when dream.imageUrl is usually still null
+// (it loses the race with the thumbnail upload -- see js/store.js), so this
+// path must now DEFER (no send) rather than send a bare email. It must also
+// not burn the once-ever guard, so a later attempt (once the capture syncs,
+// or the scheduled scan) can still send the real thing.
+test('send-first-dream-email: no imageUrl (the common case, right after generation) does NOT send -- it defers, without burning the once-ever guard', function () {
   return withEnv(ENV, async function () {
     await registerAccount('nora', 'nora@example.com');
     var sentCalls = installFetchSpy(true);
 
     var handler = require('../netlify/functions/send-first-dream-email').handler;
-    await handler(fakeEvent({
+    var res = await handler(fakeEvent({
       method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
-      body: dreamPayload() // no imageUrl field at all
+      body: dreamPayload({ imageUrl: null }) // no thumbnail captured yet
     }));
 
-    var html = sentCalls[0].body.html;
-    // NOTE: the redesigned shell (tracker item
-    // for-product-email-redesign-unsubscribe-l-16ysmp) always renders its
-    // own header <img> (the logo) regardless of thumbnail state -- so this
-    // no-longer asserts "no <img> anywhere", only "no THUMBNAIL <img>"
-    // (the real-thumbnail branch's own distinct object-fit:cover style).
-    assert.doesNotMatch(html, /object-fit:cover/, 'no imageUrl on the dream -- must fall back to the color banner, not a thumbnail <img>');
-    assert.match(html, /background:#22405c;margin-bottom:18px/, 'Cinematic style\'s own flat color, unchanged from before this feature');
+    assert.equal(res.statusCode, 200);
+    assert.equal(JSON.parse(res.body).ok, true, 'a deferred send is a normal, non-error outcome for the caller');
+    assert.equal(sentCalls.length, 0, 'no thumbnail yet -- must not send a thumbnail-less email');
+
+    // The guard was NOT burned: a LATER call WITH a thumbnail (e.g. once the
+    // capture has synced) must still be able to send the real email.
+    var later = await handler(fakeEvent({
+      method: 'POST', ip: nextIp(), headers: { host: 'dreamtube1.netlify.app' },
+      body: dreamPayload({ imageUrl: 'https://fal.media/files/synced-thumb.jpg' })
+    }));
+    assert.equal(JSON.parse(later.body).ok, true);
+    assert.equal(sentCalls.length, 1, 'a deferred (no-thumbnail) attempt must never consume the account\'s one-and-only send');
+    assert.match(sentCalls[0].body.html, /<img src="https:\/\/fal\.media\/files\/synced-thumb\.jpg"/, 'the later send must carry the real thumbnail');
   });
 });
 

@@ -24,13 +24,32 @@
 // Backed by a single Netlify Blobs store ("dreamtube-email-verifications"),
 // with TWO kinds of keys sharing that store (same "one store, a couple of
 // key prefixes" shape account-store.js/paywall-settings.js already use):
-//   "u:<normalized username>" -> { email, codeHash, linkToken, createdAt,
-//                                  expiresAt, attempts }
+//   "u:<normalized username>" -> { email, codeHashes:[{hash,expiresAt}...],
+//                                  linkToken, createdAt, expiresAt, attempts }
 //     — the one active verification record for this account. A fresh
-//       createVerification() call OVERWRITES whatever was there before
-//       (same "retried signup self-heals" posture as account-store.js's
-//       own createAccount) — there is only ever one code/link pair worth
-//       trusting per account, the most recently sent one.
+//       createVerification() call CARRIES FORWARD the still-valid recent
+//       codes and appends the new one, keeping a rolling window of the last
+//       MAX_ACTIVE_CODES (see "MULTIPLE RECENT CODES" below). The link
+//       token is still latest-only (a fresh call mints a new one and
+//       orphans the previous, same "retried signup self-heals" posture as
+//       account-store.js's own createAccount).
+//
+// MULTIPLE RECENT CODES (fix, founder repro 2026-08-08): each send used to
+// OVERWRITE the single stored `codeHash`, so the moment a newer code was
+// sent every earlier one silently stopped verifying. That collided badly
+// with js/email-verify-sheet.js's autoSendOnOpen (added 2026-08-07 —
+// opening the verify sheet auto-sends a fresh code): a user with several
+// verification emails in their inbox (signup + each sheet-open/resend,
+// minutes apart) who typed an OLDER-but-real code got "that code didn't
+// match", because only the single latest hash was ever checked. verifyCode
+// now accepts a match against ANY of the last MAX_ACTIVE_CODES codes still
+// within their own TTL, so a slightly-stale code the user legitimately
+// received still works. This barely widens the brute-force surface (a
+// handful of valid targets out of 1,000,000, and MAX_CODE_ATTEMPTS still
+// caps total wrong guesses), while removing a real, founder-hit failure.
+// Records written before this change carried a single `codeHash` field
+// instead of `codeHashes` — both verifyCode and createVerification read
+// that legacy shape transparently (see activeCodeEntries).
 //   "t:<link token>" -> "<normalized username>"
 //     — secondary index, same shape/reasoning as account-store.js's "e:"
 //       email index: resolves a bare token (all verify-email-link.js has
@@ -70,6 +89,12 @@ var STORE_NAME = 'dreamtube-email-verifications';
 // password-reset-style window. 7 days.
 var TTL_MS = 7 * 24 * 60 * 60 * 1000;
 var MAX_CODE_ATTEMPTS = 8;
+// How many of the most-recent codes stay simultaneously valid (see the
+// "MULTIPLE RECENT CODES" header note). Small on purpose: enough to cover
+// a real user with a few verification emails open at once (signup + a
+// couple of sheet-open/resend sends), without meaningfully enlarging the
+// brute-force surface a single 6-digit code already presents.
+var MAX_ACTIVE_CODES = 3;
 
 function store() {
   return getStore({ name: STORE_NAME });
@@ -86,6 +111,28 @@ function hashCode(code) {
 /** Generates a random 6-digit code, zero-padded (e.g. "004821"), matching the "6-digit code" spec literally rather than a 6-digit NUMBER that could start with a leading digit 1-9 only. */
 function randomCode() {
   return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+}
+
+/**
+ * The still-valid code hashes on a record, newest last — the rolling
+ * window verifyCode matches against and createVerification carries forward
+ * (see the "MULTIPLE RECENT CODES" header note). Transparently reads BOTH
+ * the current `codeHashes:[{hash,expiresAt}]` shape and the legacy single
+ * `codeHash` field written before this change (treated as a one-entry
+ * window governed by the record's own expiresAt), so an in-flight record
+ * minted by the old code still verifies after this deploys.
+ */
+function activeCodeEntries(record, now) {
+  if (!record) return [];
+  if (Array.isArray(record.codeHashes)) {
+    return record.codeHashes.filter(function (e) {
+      return e && typeof e.hash === 'string' && (typeof e.expiresAt !== 'number' || e.expiresAt > now);
+    });
+  }
+  if (typeof record.codeHash === 'string' && record.codeHash) {
+    return [{ hash: record.codeHash, expiresAt: record.expiresAt }];
+  }
+  return [];
 }
 
 /**
@@ -106,9 +153,24 @@ async function createVerification(event, username, email) {
   var linkToken = crypto.randomBytes(32).toString('hex');
   var now = Date.now();
 
+  // Rolling window: carry forward whatever prior codes are still valid,
+  // append this fresh one, keep only the last MAX_ACTIVE_CODES (see the
+  // "MULTIPLE RECENT CODES" header note). An expired existing record
+  // contributes nothing (a genuinely fresh start). attempts resets to 0,
+  // same as the old full-overwrite behaviour — a legitimate resend
+  // restores the user's guesses, and both entry points that mint codes are
+  // themselves authToken-gated + IP-rate-limited.
+  var existing = await s.get('u:' + key, { type: 'json' });
+  var priorEntries = (existing && (typeof existing.expiresAt !== 'number' || existing.expiresAt > now))
+    ? activeCodeEntries(existing, now) : [];
+  var codeHashes = priorEntries
+    .concat([{ hash: hashCode(code), expiresAt: now + TTL_MS }])
+    .slice(-MAX_ACTIVE_CODES);
+
   await s.setJSON('u:' + key, {
-    email: email, codeHash: hashCode(code), linkToken: linkToken,
-    createdAt: now, expiresAt: now + TTL_MS, attempts: 0
+    email: email, codeHashes: codeHashes, linkToken: linkToken,
+    createdAt: (existing && existing.createdAt) ? existing.createdAt : now,
+    expiresAt: now + TTL_MS, attempts: 0
   });
   await s.setJSON('t:' + linkToken, key);
 
@@ -168,12 +230,23 @@ async function verifyCode(event, username, code) {
   }
 
   var candidateHash = hashCode(typeof code === 'string' ? code.trim() : '');
-  // Constant-time compare — same reasoning as facebook-oauth-callback.js's
-  // safeEqual for its CSRF nonce: a 6-digit code's hash is exactly as
-  // secret as any other token compared here, and a timing side-channel on
-  // a byte-by-byte string compare is cheap defense-in-depth to close.
-  var match = candidateHash.length === record.codeHash.length &&
-    crypto.timingSafeEqual(Buffer.from(candidateHash), Buffer.from(record.codeHash));
+  var candidateBuf = Buffer.from(candidateHash);
+  // Match against ANY still-valid code in the rolling window (see the
+  // "MULTIPLE RECENT CODES" header note) — not just the newest, so a
+  // slightly-stale but real code still verifies. Constant-time compare per
+  // entry — same reasoning as facebook-oauth-callback.js's safeEqual for
+  // its CSRF nonce — and the loop never short-circuits (a match on an
+  // OLDER code takes the same time as one on the newest), keeping that
+  // guarantee across the whole window.
+  var entries = activeCodeEntries(record, Date.now());
+  var match = false;
+  for (var i = 0; i < entries.length; i++) {
+    var storedHash = entries[i].hash;
+    if (candidateHash.length === storedHash.length &&
+        crypto.timingSafeEqual(candidateBuf, Buffer.from(storedHash))) {
+      match = true;
+    }
+  }
 
   if (!match) {
     await s.setJSON('u:' + key, Object.assign({}, record, { attempts: (record.attempts || 0) + 1 }));
@@ -224,6 +297,6 @@ async function deleteVerification(s, key, linkToken) {
 }
 
 module.exports = {
-  STORE_NAME, TTL_MS, MAX_CODE_ATTEMPTS,
+  STORE_NAME, TTL_MS, MAX_CODE_ATTEMPTS, MAX_ACTIVE_CODES,
   createVerification, getOrCreateLinkToken, verifyCode, verifyLinkToken
 };
