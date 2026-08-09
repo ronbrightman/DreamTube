@@ -223,15 +223,17 @@
       method: 'Your interpretive method treats every person, object, and place in the dream as a disowned or unacknowledged part of the dreamer themselves. Rather than explaining symbols, you invite the dreamer to inhabit one element of their own dream and speak as it, then reflect what that voice reveals about a part of them that wants attention.',
       questionFocus: 'Ask the dreamer to pick one element of the dream — a person, object, or place — and briefly speak AS it, in first person ("I am the ___, and I..."). This is the core Gestalt move your method uses; keep the invitation short and concrete.',
       maxQuestions: 2,
-      // INTERIM (2026-08-04, tracker for-product-founder-spec-08-04-
-      // chamber-m-zf5ufo, part 3): borrowing The Sage's own voice/intro
-      // assets verbatim until this persona gets its own real casting
-      // (for-product-go-wide-follow-up-voice-the--bvqxvv) — see this
-      // file's header note for the full reasoning.
-      voiceId: 'Brian',
-      kokoroVoiceId: 'am_onyx',
-      introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
-      introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
+      // Gestalt is fully cast in its own founder-approved (2026-08-09) voice,
+      // same across intro AND reading: ElevenLabs "Opa Johann" (voice-library
+      // id R3XXDwKMU2YHwBcuYUH3), an old, warm German storyteller. This voice
+      // speaks slowly, so it OVERRIDES the default 0.9 reading pace with
+      // `readingSpeed: 1.1` (founder: Opa Johann was "too slow" at 0.9, then
+      // "make it 10% faster" — 1.1) — its intro clip below was rendered at 1.1
+      // too, so intro and reading match. Talking-head intro shape (Jung/Freud).
+      voiceId: 'R3XXDwKMU2YHwBcuYUH3',
+      kokoroVoiceId: 'am_onyx', // FALLBACK tier only (rare turbo outage)
+      readingSpeed: 1.1,
+      introTalkingHeadUrl: 'assets/interpreters/intro/gestalt-intro.mp4'
     },
     {
       key: 'scientist',
@@ -247,15 +249,14 @@
       method: 'Your interpretive method draws on the continuity hypothesis (dreams often echo waking-life concerns, emotions, and unresolved problems the mind is processing) and related ideas like threat simulation and emotional memory consolidation. Connect the dream\'s content to plausible waking-life stress or preoccupation, framed as "some research suggests" or "one idea is," never as settled fact. Cite general ideas by name, never a fabricated study, journal, or statistic.',
       questionFocus: 'Ask about the dreamer\'s current waking concerns or stressors — what has been on their mind, or what they\'ve been dealing with lately — the continuity-hypothesis link your method looks for.',
       maxQuestions: 3,
-      // INTERIM (2026-08-04, tracker for-product-founder-spec-08-04-
-      // chamber-m-zf5ufo, part 3): borrowing The Sage's own voice/intro
-      // assets verbatim until this persona gets its own real casting
-      // (for-product-go-wide-follow-up-voice-the--bvqxvv) — see this
-      // file's header note for the full reasoning.
-      voiceId: 'Brian',
-      kokoroVoiceId: 'am_onyx',
-      introClipUrl: 'assets/interpreters/intro/sage-intro-reference.mp4',
-      introVoiceUrl: 'assets/interpreters/intro/sage-intro-voice.wav'
+      // Scientist is fully cast in its own founder-approved (2026-08-09) voice,
+      // same across intro AND reading: ElevenLabs "Thomas Schendel" (voice-
+      // library id Fghah4fztZORbiKfIGAs), a deep, authoritative male — fitting
+      // the plain, evidence-flavored Scientist. Reads at the default 0.9 pace
+      // (no readingSpeed override). Talking-head intro shape (Jung/Freud).
+      voiceId: 'Fghah4fztZORbiKfIGAs',
+      kokoroVoiceId: 'am_onyx', // FALLBACK tier only (rare turbo outage)
+      introTalkingHeadUrl: 'assets/interpreters/intro/scientist-intro.mp4'
     },
     {
       key: 'talmudic',

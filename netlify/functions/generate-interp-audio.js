@@ -139,7 +139,7 @@ var FAL_MODEL_WHISPER = 'fal-ai/whisper'; // kokoro fallback tier's OWN caption 
 var SYNC_ELEVENLABS_BUDGET_MS = 5000; // PRIMARY tier — measured 1257/1350/1321ms wall-clock even under the load that broke kokoro (probe 2026-08-04), so ~4x that as a budget is generous headroom without risking this file's own execution ceiling if ElevenLabs has a genuinely bad day; a slow/hung ElevenLabs call should fail fast into the kokoro fallback tiers rather than eat most of the function's budget on a vendor that's supposed to be the fast one.
 var SYNC_TTS_BUDGET_MS = 18000;    // real readings are 500-900 chars -> sync TTS can take 10-15s (founder hit the 12s abort on his first real-length reading, 08-04). NOTE (review round 1 of tracker cbdj3d's remaining-polish item, 2026-08-04): the "26s Netlify ceiling" this value was originally sized against has no cited source, and this codebase's OWN transcribe-audio.js documents an empirically-tested (real production 504s hit) 10s function timeout on this plan -- an unresolved conflict. NOT reverting this value though: unlike that speculative polish attempt, THIS number has real production evidence behind it -- the founder has since walked a full-length reading live and confirmed it working (board notes 2026-08-04: "reading voice fixed at root -- 5.3s measured live for a full-length reading", "Sage founder-confirmed working"). If the true ceiling ever turns out to be materially under 18s, that would show up as raw 502/504s in the outcome= logging below rather than this function's own graceful fallback -- worth watching, not yet observed. UNCHANGED by the ElevenLabs switch, but now stacks BEHIND SYNC_ELEVENLABS_BUDGET_MS in the worst case (both vendors failing) — a real, larger worst-case total than before this change, flagged here rather than silently accepted; not yet observed in practice since kokoro alone rarely fails outright.
 var SYNC_WHISPER_BUDGET_MS = 3500; // kokoro fallback tier's OWN caption path only, unaffected by the ElevenLabs switch — captions only, a blown budget degrades to sentence-level, never delays the voice (was 8000; live check 08-04 showed whisper eating the whole budget while the founder waits — the voice's own start time outranks word-level captions)
-var READING_SPEED = 0.9; // BOTH TTS tiers now (founder-adjusted 08-04 "slightly too slow at 0.8", then 08-09: the ElevenLabs tier's earlier DEFAULT-1.0 pace read "too fast" once he heard Jung's real reading — so 0.9 is now sent to ElevenLabs too, not just kokoro). Both tiers read at the same 0.9 pace, matching the ~0.9 intro. Resolves the old "confirm/adjust the ElevenLabs pace against kokoro's 0.9 feel" flag with real founder listening.
+var READING_SPEED = 0.9; // DEFAULT reading pace for both TTS tiers (founder-adjusted 08-04 "slightly too slow at 0.8", then 08-09 sent to ElevenLabs too after Jung's real reading read "too fast" at the old default 1.0). A persona may OVERRIDE it with its own `readingSpeed` (js/interpreter-personas.js) so its reading matches its own intro pace — e.g. Gestalt/Opa Johann reads at 1.1 (0.9 was too slow for that already-slow voice), while Jung/Freud stay at this 0.9 default. Applied per-persona at both the ElevenLabs and kokoro request builders below.
 
 /** Fake but obviously-non-real operationName for GENERATION_MOCK_MODE — see doc block above and generate-video.js's own mockOperationName for the identical convention. */
 function mockOperationName() {
@@ -327,7 +327,7 @@ exports.handler = async function (event) {
     // reading ran "too fast"), so both TTS tiers read at the same 0.9 pace and
     // the reading matches the ~0.9 intro. turbo-v2.5 honors `speed` (0.7-1.2);
     // 0.9 verified slower without hurting the ~1.4s gen latency (probe 08-09).
-    var elBody = JSON.stringify({ text: text, voice: persona.voiceId, timestamps: true, speed: READING_SPEED });
+    var elBody = JSON.stringify({ text: text, voice: persona.voiceId, timestamps: true, speed: persona.readingSpeed || READING_SPEED });
     var elRes = await fetch(FAL_SYNC_BASE + '/' + FAL_MODEL_ELEVENLABS, { method: 'POST', headers: authHeaders, body: elBody, signal: elCtl.signal });
     var elData = await elRes.json();
     if (elRes.ok && elData && elData.audio && elData.audio.url) {
@@ -385,7 +385,7 @@ exports.handler = async function (event) {
   // degrade-to-sentence rule) — a blown whisper budget ships the audio
   // with captionsLevel:'sentence' immediately.
   var kokoroT0 = Date.now(); // own baseline, not handlerT0 — this tier's own budget/skip logic below reasons about ITS OWN elapsed time, not the time already spent on the ElevenLabs attempt above
-  var ttsBody = JSON.stringify({ prompt: text, voice: persona.kokoroVoiceId, speed: READING_SPEED });
+  var ttsBody = JSON.stringify({ prompt: text, voice: persona.kokoroVoiceId, speed: persona.readingSpeed || READING_SPEED });
 
   var syncAudioUrl = null;
   var ttsCtl = new AbortController();
