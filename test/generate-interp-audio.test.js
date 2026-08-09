@@ -176,9 +176,11 @@ test('ElevenLabs sync success with well-formed timestamps: returns done:true wor
       assert.equal(body.text, 'A hopeful reading of your dream, turning it toward the good.');
       assert.equal(body.voice, 'Brian');
       assert.equal(body.timestamps, true);
-      // No speed/stability override sent — founder's approved sample used
-      // ElevenLabs' own defaults (see generate-interp-audio.js header).
-      assert.equal('speed' in body, false);
+      // speed: 0.9 (READING_SPEED) IS sent now — founder 2026-08-09: the
+      // default-1.0 ElevenLabs reading read "too fast"; both tiers now read at
+      // the same tuned 0.9 pace (see generate-interp-audio.js). No stability
+      // override, still (default was fine).
+      assert.equal(body.speed, 0.9);
       assert.equal('stability' in body, false);
       return {
         ok: true, status: 200, json: async function () {
