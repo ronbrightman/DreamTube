@@ -2985,7 +2985,7 @@
   // block for the full model. There is no plan to choose here anymore (no
   // Yearly/Monthly cards, no MOTIVATION_PLAN recommendation, no
   // "Continue to payment") — every visitor gets the same free starting
-  // balance (220 tokens on signup, plus a further +20/day they can claim
+  // balance (a free starting grant, plus a further +20/day they can claim
   // once signed in — see getTokenStatus/claimDailyTokens), so this screen
   // is now a plain, honest acknowledgment/
   // continue step, not a paywall to get past. shop.html (linked from
@@ -3006,10 +3006,11 @@
   // matching the same "Free during beta" framing shop.html/style.html's
   // out-of-tokens messaging used to have — a real, live contradiction once
   // Dodo Payments checkout actually went live (founder launched the store
-  // 2026-07-27). Fixed to state the real signup grant instead (220 tokens,
-  // matching wizard.html's own renderSignup screen and
-  // lib/entitlements.js's real INITIAL_GRANT — see that screen's comment
-  // for why this can't be fetched live pre-signup and must be hand-kept in
+  // 2026-07-27). Now states the offer WITHOUT a specific token number
+  // (founder 2026-08-09: a hardcoded count kept going stale vs
+  // lib/entitlements.js's INITIAL_GRANT — was "220", the grant is now 150 —
+  // so drop the number entirely rather than hand-maintain it pre-signup;
+  // "no card needed" stays accurate). Kept in
   // sync). "No card needed" itself is still accurate and kept — signing up
   // genuinely doesn't require a card, unlike the dropped "beta" framing,
   // which implied a temporary state that would eventually start charging.
@@ -3069,7 +3070,7 @@
       '<div class="fn-proof-strip"><span class="avatars"><i></i><i></i><i></i></span><span>Hundreds of dreams brought to life.</span></div>' +
       '<div class="fn-token-free-card">' +
         '<div class="title">Free to start</div>' +
-        '<div class="body">220 tokens on signup, no card needed — enough for a couple of free videos.</div>' +
+        '<div class="body">Free tokens on signup, no card needed — enough for a couple of videos to try it.</div>' +
       '</div>' +
       '<div style="height:22px;"></div>' +
       '<div class="fn-check-badge">&#10003;</div>' +
