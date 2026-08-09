@@ -198,12 +198,12 @@ test('a request with no email at all -> E412 (balance resolves to 0)', async fun
   assert.match(JSON.parse(res.body).error, /^E412:/);
 });
 
-test('a brand-new email gets its 220-token signup grant materialized right here and proceeds', async function () {
+test('a brand-new email gets its 170-token signup grant materialized right here and proceeds', async function () {
   stubFetchOk();
   var res = await handler(genEvent({ body: { email: 'first-time-image@example.com' } }));
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'first-time-image@example.com');
-  assert.equal(record.tokens.balance, 210, '220 granted, 10 spent on this successful generation');
+  assert.equal(record.tokens.balance, 160, '170 granted, 10 spent on this successful generation');
 });
 
 // ----- spendTokens on success (10, not 100) -----

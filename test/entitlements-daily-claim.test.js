@@ -39,11 +39,11 @@ test.beforeEach(function () {
 
 test('claimDailyTokens on a brand-new email claims immediately: +20 balance, streak 1, nextClaimAt ~20h out', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.getTokenStatus(ev, 'brandnewclaim@example.com'); // materializes the 220-token record
+  await entitlements.getTokenStatus(ev, 'brandnewclaim@example.com'); // materializes the 170-token record
   var before = Date.now();
   var result = await entitlements.claimDailyTokens(ev, 'brandnewclaim@example.com');
   assert.equal(result.claimed, true);
-  assert.equal(result.balance, 240, '220 + 20 (2026-08-08 retune: the first-claim bonus was retired to equal the normal daily 20)');
+  assert.equal(result.balance, 190, '170 + 20 (2026-08-08 retune: the first-claim bonus was retired to equal the normal daily 20)');
   assert.equal(result.amountClaimed, 20, 'amountClaimed reflects the real amount actually credited');
   assert.equal(result.streak, 1, 'first-ever claim always starts the streak at 1');
   assert.ok(result.nextClaimAt >= before + entitlements.CLAIM_COOLDOWN_MS - 1000, 'nextClaimAt ~= now + the cooldown');
@@ -53,7 +53,7 @@ test('claimDailyTokens works even when getTokenStatus/syncTokens was never calle
   var ev = fakeEvent({ ip: nextIp() });
   var result = await entitlements.claimDailyTokens(ev, 'directclaim@example.com');
   assert.equal(result.claimed, true);
-  assert.equal(result.balance, 240, '220 signup grant (materialized lazily inside claimDailyTokens itself) + 20 first-ever-claim grant');
+  assert.equal(result.balance, 190, '170 signup grant (materialized lazily inside claimDailyTokens itself) + 20 first-ever-claim grant');
   assert.equal(result.amountClaimed, 20);
 });
 
@@ -79,7 +79,7 @@ test('claiming twice in a row -- the second claim is rejected as not-yet-claimab
   assert.equal(second.nextClaimAt, first.nextClaimAt, 'nextClaimAt does not move just from a rejected attempt');
 
   var record = await entitlements.getEntitlement(ev, 'twice@example.com');
-  assert.equal(record.tokens.balance, 240, 'balance must NOT have moved on the rejected second attempt (220 + 20 from the first, successful claim)');
+  assert.equal(record.tokens.balance, 190, 'balance must NOT have moved on the rejected second attempt (170 + 20 from the first, successful claim)');
 });
 
 // ----- First-claim amount (2026-08-08 retune, tracker item
@@ -94,13 +94,13 @@ test('claiming twice in a row -- the second claim is rejected as not-yet-claimab
 test('a brand-new account\'s very first claim grants exactly 20 and stamps a top-level firstClaimAt', async function () {
   var ev = fakeEvent({ ip: nextIp() });
   var email = 'firstclaimbonus@example.com';
-  await entitlements.getTokenStatus(ev, email); // -> 220, no lastClaimAt/firstClaimAt yet
+  await entitlements.getTokenStatus(ev, email); // -> 170, no lastClaimAt/firstClaimAt yet
 
   var before = Date.now();
   var result = await entitlements.claimDailyTokens(ev, email);
   assert.equal(result.claimed, true);
   assert.equal(result.amountClaimed, 20);
-  assert.equal(result.balance, 240);
+  assert.equal(result.balance, 190);
 
   var record = await entitlements.getEntitlement(ev, email);
   assert.ok(record.firstClaimAt, 'firstClaimAt must be stamped on the actual first successful claim');
@@ -110,7 +110,7 @@ test('a brand-new account\'s very first claim grants exactly 20 and stamps a top
 test('that same account\'s SECOND claim (after the cooldown) also grants 20, and firstClaimAt is never overwritten', async function () {
   var ev = fakeEvent({ ip: nextIp() });
   var email = 'secondclaimnormal@example.com';
-  await entitlements.getTokenStatus(ev, email); // -> 220
+  await entitlements.getTokenStatus(ev, email); // -> 170
 
   var first = await entitlements.claimDailyTokens(ev, email);
   assert.equal(first.amountClaimed, 20);
@@ -126,7 +126,7 @@ test('that same account\'s SECOND claim (after the cooldown) also grants 20, and
   var second = await entitlements.claimDailyTokens(ev, email);
   assert.equal(second.claimed, true);
   assert.equal(second.amountClaimed, 20, 'the second-ever claim grants the normal amount, same as the first now');
-  assert.equal(second.balance, 240 + 20);
+  assert.equal(second.balance, 190 + 20);
 
   var recordAfterSecond = await entitlements.getEntitlement(ev, email);
   assert.equal(recordAfterSecond.firstClaimAt, stampedFirstClaimAt, 'firstClaimAt must never be overwritten once stamped');
@@ -273,11 +273,11 @@ test('empty/missing email is a safe no-op, matching the documented { claimed:fal
 
 test('claiming daily just under 48h apart, three days running, keeps incrementing the streak', async function () {
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.getTokenStatus(ev, 'multiday@example.com'); // -> 220
+  await entitlements.getTokenStatus(ev, 'multiday@example.com'); // -> 170
 
   var day1 = await entitlements.claimDailyTokens(ev, 'multiday@example.com');
   assert.equal(day1.streak, 1);
-  assert.equal(day1.balance, 240, '220 + 20 first-ever-claim grant');
+  assert.equal(day1.balance, 190, '170 + 20 first-ever-claim grant');
 
   // Simulate "the next day" by rolling lastClaimAt back 21h (past the 20h
   // cooldown, well under the 48h streak window).
@@ -294,7 +294,7 @@ test('claiming daily just under 48h apart, three days running, keeps incrementin
   });
   var day3 = await entitlements.claimDailyTokens(ev, 'multiday@example.com');
   assert.equal(day3.streak, 3);
-  assert.equal(day3.balance, 220 + 20 * 3, 'each of day1/day2/day3 grants the normal 20 (first-claim bonus retired 2026-08-08)');
+  assert.equal(day3.balance, 170 + 20 * 3, 'each of day1/day2/day3 grants the normal 20 (first-claim bonus retired 2026-08-08)');
 });
 
 // ----- Round 1 review findings: record-shape safety + real concurrency -----
@@ -444,7 +444,7 @@ test("a claim whose OWN first CAS read does not yet see the real, already-seeded
   // Seed the record for REAL first (syncTokens' own init branch, run to
   // genuine completion) -- mirrors claimDailyTokens always awaiting its
   // own outer syncTokens() call before its casWrite loop ever starts, so
-  // by the time that loop runs the real 220-token grant already exists
+  // by the time that loop runs the real 170-token grant already exists
   // server-side.
   await entitlements.getTokenStatus(ev, email);
 
@@ -461,13 +461,13 @@ test("a claim whose OWN first CAS read does not yet see the real, already-seeded
     var result = await entitlements.claimDailyTokens(ev, email);
     assert.equal(result.claimed, true, 'the claim should still succeed once the retry catches up');
     assert.equal(result.amountClaimed, 20, 'first-ever claim amount');
-    assert.equal(result.balance, 240, '220 (real signup grant, already committed before this loop started) + 20 (first-ever-claim grant) -- must NOT silently drop the signup grant just because attempt 1\'s own read raced the real, already-committed state');
+    assert.equal(result.balance, 190, '170 (real signup grant, already committed before this loop started) + 20 (first-ever-claim grant) -- must NOT silently drop the signup grant just because attempt 1\'s own read raced the real, already-committed state');
   } finally {
     mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
   }
 
   var record = await entitlements.getEntitlement(ev, email);
-  assert.equal(record.tokens.balance, 240, 'the persisted record must reflect the real seeded balance too, not just this call\'s return value');
+  assert.equal(record.tokens.balance, 190, 'the persisted record must reflect the real seeded balance too, not just this call\'s return value');
 });
 
 test("a first CAS read that keeps returning the stale pre-claim snapshot for a real ~250ms propagation-lag window still lands the claim once the fix's inter-attempt delay gives it enough real time -- proving the delay does something a synchronous mock can't fake by attempt count alone", async function () {
@@ -520,7 +520,7 @@ test("a first CAS read that keeps returning the stale pre-claim snapshot for a r
 // still finished with a completely UNGUARDED plain `setEntitlement`
 // write — a full-object REPLACE of `tokens`, no fresh recheck at all.
 // Production probe: a claim seconds after signup reported E5, balance
-// stayed at the pre-claim 220 instead of 240, and only "healed" minutes
+// stayed at the pre-claim 170 instead of 190, and only "healed" minutes
 // later once propagation settled and the claim's own write finally won —
 // a straggling SECOND syncTokens init call (e.g. a concurrent get-token-
 // status.js read racing the claim, both reaching this exact branch before
@@ -534,7 +534,7 @@ test('a straggling duplicate signup-init write must not clobber a claim that alr
   // The claim lands first and genuinely succeeds, normally.
   var claimResult = await entitlements.claimDailyTokens(ev, email);
   assert.equal(claimResult.claimed, true);
-  assert.equal(claimResult.balance, 240);
+  assert.equal(claimResult.balance, 190);
 
   // Now simulate a SECOND, straggling caller's own syncTokens init call —
   // e.g. a concurrent get-token-status.js read fired alongside the claim
@@ -563,16 +563,16 @@ test('a straggling duplicate signup-init write must not clobber a claim that alr
     mockBlobs.clearReadOverride(entitlements.STORE_NAME);
     mockBlobs.clearReadOverride('dreamtube-rate-limits');
   }
-  assert.equal(status.balance, 240, 'must echo the REAL current balance, never fabricate/revert to a fresh 220');
+  assert.equal(status.balance, 190, 'must echo the REAL current balance, never fabricate/revert to a fresh 170');
 
   var record = await entitlements.getEntitlement(ev, email);
-  assert.equal(record.tokens.balance, 240, 'the persisted record must still reflect the claim');
+  assert.equal(record.tokens.balance, 190, 'the persisted record must still reflect the claim');
   assert.ok(record.tokens.lastClaimAt, 'the claim\'s lastClaimAt must survive -- not wiped by the straggling init write');
   assert.equal(record.tokens.streak, 1, 'the claim\'s streak must survive too');
 });
 // NEGATIVE-PROOFED (per this tracker item's own verification ask):
 // `git stash` the entitlements.js change and re-run this file -- the test
-// above fails with `220 !== 240` (the straggler's blind `tokens: fresh`
+// above fails with `170 !== 190` (the straggler's blind `tokens: fresh`
 // write reverts the balance and drops lastClaimAt/streak entirely),
 // reproducing the exact production incident this fix closes. Confirmed
 // manually before this fix was committed; not kept as a permanently
@@ -587,7 +587,7 @@ test('a straggling duplicate signup-init write must not clobber a claim that alr
 // signup seed's delayed write landing AFTER the claim's write." This is
 // the closest thing to a direct reproduction of the actual production
 // incident this whole CAS migration exists to close — two independent
-// entry points (a plain balance read that lazily seeds the 220-token
+// entry points (a plain balance read that lazily seeds the 170-token
 // signup grant, and a claim for the first-ever +20 grant) touching the
 // SAME never-before-seen email's entitlement record at genuinely the same
 // time, with no coordination between them beyond what entitlements.js
@@ -603,7 +603,7 @@ test('a genuinely concurrent signup-seed read (getTokenStatus) and first-ever cl
   // firing alongside its own token-status read moments after a fresh
   // signup (the real trigger for the production incident this closes).
   var results = await Promise.all([
-    entitlements.getTokenStatus(ev, email),   // lazily seeds the 220-token signup grant
+    entitlements.getTokenStatus(ev, email),   // lazily seeds the 170-token signup grant
     entitlements.claimDailyTokens(ev, email)  // the account's first-ever claim, +20
   ]);
 
@@ -611,12 +611,12 @@ test('a genuinely concurrent signup-seed read (getTokenStatus) and first-ever cl
   var claim = results[1];
 
   // Whichever ran through first, the FINAL persisted state must reflect
-  // BOTH the signup grant and the claim -- 240 total, never a lower number
+  // BOTH the signup grant and the claim -- 190 total, never a lower number
   // (which would mean one write silently erased the other's effect, the
   // exact "claim erasure" failure mode this migration closes) and never a
   // higher one (which would mean the claim somehow applied twice).
   var record = await entitlements.getEntitlement(ev, email);
-  assert.equal(record.tokens.balance, 240, '220 (signup grant) + 20 (first-ever-claim grant) must BOTH have landed -- neither write may silently erase the other');
+  assert.equal(record.tokens.balance, 190, '170 (signup grant) + 20 (first-ever-claim grant) must BOTH have landed -- neither write may silently erase the other');
   assert.ok(record.tokens.lastClaimAt, 'the claim must be durably recorded, not silently discarded by a later signup-seed write');
   assert.ok(record.firstClaimAt, 'firstClaimAt must be stamped -- the claim genuinely happened');
 
@@ -643,6 +643,6 @@ test('repeated trials of the signup-seed-vs-claim race stay consistent (rules ou
     ]);
 
     var record = await entitlements.getEntitlement(ev, email);
-    assert.equal(record.tokens.balance, 240, 'trial ' + i + ': both the signup grant and the claim must land');
+    assert.equal(record.tokens.balance, 190, 'trial ' + i + ': both the signup grant and the claim must land');
   }
 });

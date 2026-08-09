@@ -70,7 +70,7 @@ test('missing/empty email rejected E3', async function () {
 test('a brand-new email claims successfully -- 200, claimed:true, real balance/streak/nextClaimAt', async function () {
   var email = 'claimhandler@example.com';
   var ev = fakeEvent({ ip: nextIp() });
-  await entitlements.getTokenStatus(ev, email); // materializes the 220-token record so the claim has something to add to
+  await entitlements.getTokenStatus(ev, email); // materializes the 170-token record so the claim has something to add to
 
   var res = await claimHandler(fakeEvent({ method: 'POST', ip: nextIp(), body: { email: email } }));
   assert.equal(res.statusCode, 200);
@@ -78,7 +78,7 @@ test('a brand-new email claims successfully -- 200, claimed:true, real balance/s
   assert.equal(body.claimed, true);
   // 2026-08-08 retune: this account's very first-ever
   // claim grants 100, not the normal 20.
-  assert.equal(body.balance, 240, '220 + 20 first-ever-claim grant');
+  assert.equal(body.balance, 190, '170 + 20 first-ever-claim grant');
   assert.equal(body.amountClaimed, 20);
   assert.equal(body.streak, 1);
   assert.equal(typeof body.nextClaimAt, 'number');
