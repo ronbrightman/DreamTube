@@ -476,6 +476,22 @@ async function handleDreamerPassPayment(event, payment) {
   });
   if (!payEmail) return; // acknowledged, nothing credited — same "don't guess" posture as the pack path
 
+  // A $0 payment is the trial-START authorization, NOT a real charge. It must
+  // never grant the 3,000 monthly tokens, and must never flip the account to
+  // 'active' (which would end the 100/day trial boost the instant the trial
+  // begins). The trial state is owned entirely by subscription.active; the real
+  // 3,000 grant happens only on the first >$0 charge (trial-end conversion or a
+  // renewal). Founder repro 2026-08-09: starting the Pass sent a $0
+  // payment.succeeded alongside subscription.active — without this guard the
+  // free trial would have granted a full month and cancelled its own trial.
+  // Ambiguity (missing/NaN amount) fails toward NOT granting: a genuine paid
+  // charge is also covered by subscription.renewed's own grant (deduped by
+  // payment_id), so skipping here can never lose a real grant.
+  var chargedAmount = Number(payment.total_amount);
+  if (!(chargedAmount > 0)) {
+    return; // trial-start $0 — subscription.active owns the state, nothing to grant
+  }
+
   await grantDreamerPassCharge(event, payEmail, payment.payment_id, dodoCustomerId);
 
   // A real charge means paying, not trialing — status 'active' + trialEnd:null
