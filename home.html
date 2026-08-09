@@ -82,10 +82,13 @@
   real analytics) is new. Same "CSS-only art, no image/video/canvas
   payload for the sky" discipline as Wave 1 (FOUNDER_PRINCIPLES.md's
   "light media over heavy on mobile") — the one exception is the
-  Chamber hero's sage artwork (assets/chamber-sage.jpg, re-compressed to
-  ~52KB — see this item's own build notes — specifically because this is
-  the one page with a real image payload and Meta/Instagram's in-app
-  webview is a real, low-bandwidth audience for it).
+  Chamber hero's interpreter artwork (the five
+  assets/interpreters/*.webp portraits it now crossfades through —
+  founder 2026-08-09, superseding the earlier single assets/chamber-
+  sage.jpg), specifically because this is the one page with a real image
+  payload and Meta/Instagram's in-app webview is a real, low-bandwidth
+  audience for it — hence the deferred (data-bg) load of the four
+  non-first portraits so first paint stays light.
 
   "Home round 4" (tracker item for-product-build-ship-founder-approved--
   9ta1j0, founder-approved 2026-08-01) layers five new pieces onto this
@@ -456,18 +459,51 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   color:#6f6894;
 }
 
-/* --- 4 · CHAMBER hero (~330px) — the sage himself (assets/chamber-sage.jpg,
-   violet night palette) rising from the right, the card's own nebula
-   gradient blending into the art on the left; slow breathing aura behind
-   his shoulders. Premium content-card treatment, no eyebrow (founder
-   amendment: no analysis method has been chosen yet). --- */
+/* --- 4 · CHAMBER hero (~330px) — the five interpreters themselves, a slow
+   ambient crossfade through all five persona portraits
+   (assets/interpreters/{jung,freud,gestalt,scientist,talmudic}.webp — the
+   same faces the create.html persona picker shows), violet night palette,
+   slow breathing aura behind them. Premium content-card treatment, no
+   eyebrow (founder amendment: no analysis method has been chosen yet).
+   Founder 2026-08-09: swapped the old single static Sage portrait
+   (assets/chamber-sage.jpg) for this rotation, text overlay unchanged. The
+   rotation lives in a .chamber-rotator layer (below, first child of the
+   section) BEHIND .hero-stars/.chamber-breathe/.hero-scrim, so the scrim
+   still dims every portrait's lower half and the white title/sub/Enter
+   stay legible over all five. The section's own background is now just the
+   violet base gradient — a fallback ground behind the portraits (shows
+   only if the webp fails to load; the crossfade never exposes it). --- */
 .hero-chamber{
   margin-top:28px;
   min-height:330px;
-  background:
-    linear-gradient(97deg, rgba(38,20,76,.95) 0%, rgba(38,20,76,.6) 26%, transparent 56%),
-    url(assets/chamber-sage.jpg) 0% 14% / 140% auto no-repeat,
-    linear-gradient(163deg,#241348 0%,#341766 48%,#160c36 100%);
+  background:linear-gradient(163deg,#241348 0%,#341766 48%,#160c36 100%);
+}
+/* The rotating portrait layer. Absolute/inset:0, first child of the card so
+   it paints BEHIND the stars/breathe/scrim siblings that follow it in the
+   DOM (all stack-level 0, so DOM order decides) and well behind .hero-content
+   (z-index:1). z-index:0 here makes the rotator its own stacking context, so
+   the incoming-slide z-index bumps used for the crossfade (see the JS) stay
+   contained and can never rise above the scrim. */
+.chamber-rotator{ position:absolute; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
+.chamber-slide{
+  position:absolute; inset:0;
+  background-size:cover;
+  /* upper-center crop bias — these are 768x768 portrait crops with the face
+     in the top ~two-thirds; 50% 26% keeps the face framed above the bottom
+     scrim/text instead of cropping it off behind them. */
+  background-position:50% 26%;
+  background-repeat:no-repeat;
+  opacity:0;
+  transition:opacity 1s ease-in-out;
+  will-change:opacity;
+}
+.chamber-slide.is-active{ opacity:1; }
+/* Reduced motion: no crossfade at all — a single static portrait. The first
+   slide carries .is-active inline in the HTML, so it stays put and visible;
+   killing the transition keeps even the initial hydrate from animating. The
+   JS additionally never starts the interval when this preference is set. */
+@media (prefers-reduced-motion:reduce){
+  .chamber-slide{ transition:none !important; }
 }
 .hero-chamber .hero-stars{
   background-image:
@@ -1019,6 +1055,21 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
            he prefers a different candidate -- nothing else in the
            codebase keys off this heading's literal text. -->
       <section class="hero-card hero-chamber" id="hero-chamber" data-card="chamber">
+        <!-- Rotating interpreter portraits (founder 2026-08-09). First child
+             so it paints behind the stars/breathe/scrim/content that follow.
+             The FIRST slide carries .is-active inline so it shows immediately
+             on first paint AND is the static fallback when JS is off or
+             reduced-motion is set; the other four defer their image via
+             data-bg until the rotation JS hydrates them (keeps first paint
+             light). aria-hidden — purely decorative, the card's real label is
+             the "Dream Meaning" title/Enter link below. -->
+        <div class="chamber-rotator" id="chamber-rotator" aria-hidden="true">
+          <div class="chamber-slide is-active" style="background-image:url(assets/interpreters/jung.webp)"></div>
+          <div class="chamber-slide" data-bg="assets/interpreters/freud.webp"></div>
+          <div class="chamber-slide" data-bg="assets/interpreters/gestalt.webp"></div>
+          <div class="chamber-slide" data-bg="assets/interpreters/scientist.webp"></div>
+          <div class="chamber-slide" data-bg="assets/interpreters/talmudic.webp"></div>
+        </div>
         <div class="hero-stars"></div>
         <div class="chamber-breathe"></div>
         <div class="hero-scrim"></div>
@@ -1775,6 +1826,71 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     return completedDream ? 'completed_dream' : 'no_completed_dream';
   }
   renderChamberHero();
+
+  // ===== Chamber hero portrait rotation (founder 2026-08-09) — a slow,
+  // ambient crossfade through all five interpreter portraits behind the
+  // (unchanged) Dream Meaning / Your reading awaits / Enter overlay. Purely
+  // decorative: it touches only #chamber-rotator's own slides, never
+  // #chamber-pill / #chamber-sub / the click handler above. Honours
+  // prefers-reduced-motion (static first portrait, no rotation) and pauses
+  // while the tab is hidden. =====
+  (function(){
+    var rotator = document.getElementById('chamber-rotator');
+    if(!rotator) return;
+    var slides = Array.prototype.slice.call(rotator.querySelectorAll('.chamber-slide'));
+    if(slides.length < 2) return; // nothing to crossfade
+
+    // Defer the non-first backgrounds so they don't compete with first paint.
+    // (The first slide's image is set inline in the HTML and shows at once.)
+    function hydrate(){
+      slides.forEach(function(s){
+        var bg = s.getAttribute('data-bg');
+        if(bg){ s.style.backgroundImage = 'url(' + bg + ')'; s.removeAttribute('data-bg'); }
+      });
+    }
+    if('requestIdleCallback' in window){ requestIdleCallback(hydrate, { timeout: 2000 }); }
+    else { setTimeout(hydrate, 600); }
+
+    var reduceMq = (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)')) || null;
+
+    var idx = 0;      // index of the currently-active slide
+    var zTop = 1;     // ever-incrementing stack level for the incoming slide
+    var timer = null;
+    var HOLD_MS = 4500; // ~4.5s per portrait (crossfade itself is the CSS 1s)
+
+    function advance(){
+      var current = slides[idx];
+      idx = (idx + 1) % slides.length;
+      var incoming = slides[idx];
+      // Put the incoming slide on top so it fades IN over the visible one —
+      // a true crossfade with no dip to the base gradient beneath.
+      incoming.style.zIndex = String(++zTop);
+      incoming.classList.add('is-active');
+      current.classList.remove('is-active');
+    }
+    function start(){
+      if(timer) return;
+      if(reduceMq && reduceMq.matches) return; // reduced motion: stay static
+      if(document.hidden) return;              // don't run while tab hidden
+      timer = setInterval(advance, HOLD_MS);
+    }
+    function stop(){
+      if(timer){ clearInterval(timer); timer = null; }
+    }
+
+    // Pause when the tab/page is hidden, resume when it comes back.
+    document.addEventListener('visibilitychange', function(){
+      if(document.hidden) stop(); else start();
+    });
+    // Respect a live change to the reduced-motion preference.
+    if(reduceMq){
+      var onReduceChange = function(e){ if(e.matches){ stop(); } else { start(); } };
+      if(reduceMq.addEventListener){ reduceMq.addEventListener('change', onReduceChange); }
+      else if(reduceMq.addListener){ reduceMq.addListener(onReduceChange); } // older Safari
+    }
+
+    start();
+  })();
 
   document.getElementById('chamber-pill').addEventListener('click', function(e){
     var targetId = chamberTargetDreamId();
