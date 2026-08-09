@@ -14,6 +14,16 @@ test('categorizeEndpoint: every known app-video endpoint classifies as app-video
   assert.equal(categorizeEndpoint('fal-ai/veo3.1/fast/reference-to-video'), CATEGORIES.APP_VIDEO);
   assert.equal(categorizeEndpoint('fal-ai/veo3.1/fast/image-to-video'), CATEGORIES.APP_VIDEO);
   assert.equal(categorizeEndpoint('fal-ai/wan/v2.2-5b/text-to-video'), CATEGORIES.APP_VIDEO);
+  // The Me-photo path defaults to fal.ai Vidu Q1 as of founder decision
+  // 2026-08-09 — its spend must stay attributed to app-video, not fall
+  // through to the 'creative' elimination bucket. (The veo fallback it
+  // reverts/falls back to is already covered by the 'fal-ai/veo3.1' prefix.)
+  assert.equal(categorizeEndpoint('fal-ai/vidu/q1/reference-to-video'), CATEGORIES.APP_VIDEO);
+});
+
+test('categorizeEndpoint: an unrelated Vidu model (not the app\'s Me-photo one) is NOT claimed as app-video — the vidu prefix is deliberately specific', function () {
+  assert.equal(categorizeEndpoint('fal-ai/vidu/q1/text-to-video'), CATEGORIES.CREATIVE);
+  assert.equal(categorizeEndpoint('fal-ai/vidu/reference-to-video'), CATEGORIES.CREATIVE);
 });
 
 test('categorizeEndpoint: every known app-image endpoint classifies as app-image', function () {
