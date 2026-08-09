@@ -129,7 +129,14 @@
     if (autoSentThisLoad) return;
     autoSentThisLoad = true;
     if (!window.DreamStore || typeof DreamStore.resendVerificationCode !== 'function') return;
-    DreamStore.resendVerificationCode().then(function (result) {
+    // auto:true (fix, tracker item for-product-bug-founder-repro-08-09-
+    // veri-g71t7u, founder repro'd) -- this guard only prevented a repeat
+    // send WITHIN one page load, not across the signup -> this-sheet-
+    // auto-open sequence (a fresh page load), so a real second email used
+    // to go out seconds after signup's own. auto:true opts this call into
+    // the server-side send cooldown (see resend-verification-code.js's own
+    // header comment) -- the manual "Resend" link below never sets this.
+    DreamStore.resendVerificationCode({ auto: true }).then(function (result) {
       trackLocal('email_verify_auto_send', { ok: !!(result && result.ok) });
     }).catch(function () { /* the Resend link remains the manual fallback */ });
   }

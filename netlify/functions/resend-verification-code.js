@@ -1,11 +1,21 @@
 // netlify/functions/resend-verification-code.js
 //
-// POST { authToken } -> re-sends a fresh 6-digit code + implicit-
+// POST { authToken, auto? } -> re-sends a fresh 6-digit code + implicit-
 // verification link to the calling account's own email (tracker item
 // for-product-build-passwordless-signup-fo-at2fko). Used by
 // js/email-verify-sheet.js's "Resend code" affordance — the original code
 // sent at signup may be lost, expired (7-day TTL, see lib/email-
 // verification-store.js), or simply never arrived.
+//
+// `auto` (optional bool, fix for tracker item for-product-bug-founder-
+// repro-08-09-veri-g71t7u): set ONLY by js/email-verify-sheet.js's
+// autoSendOnOpen — an automatic, no-user-action call that fires whenever
+// the sheet opens, which used to genuinely double-mail a fresh code
+// seconds after signup's own send with no cooldown at all. Passed through
+// to verificationEmailSender.sendVerificationEmail's own `auto` opt-in
+// (see that file's own header comment for the full "why opt-in, not
+// unconditional" reasoning) — a manual "Resend" tap never sets this, so it
+// keeps sending a genuinely fresh code every time, unaffected.
 //
 // IDENTITY: resolved from `authToken`, same reasoning as verify-email-
 // code.js — never a bare client-claimed username, since this endpoint
@@ -76,6 +86,6 @@ exports.handler = async function (event) {
     return { statusCode: 200, body: JSON.stringify({ ok: true, skipped: 'already_verified' }) };
   }
 
-  await verificationEmailSender.sendVerificationEmail(event, { username: account.username, email: account.email });
+  await verificationEmailSender.sendVerificationEmail(event, { username: account.username, email: account.email, auto: !!payload.auto });
   return { statusCode: 200, body: JSON.stringify({ ok: true }) };
 };

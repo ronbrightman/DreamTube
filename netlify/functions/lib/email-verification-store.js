@@ -169,13 +169,28 @@ function activeCodeEntries(record, now) {
  * verification-email-sender.js) can put it in the outbound email; it is
  * never stored in plaintext anywhere.
  *
- * SEND COOLDOWN (see header comment): if the existing record was last sent
+ * SEND COOLDOWN (see header comment) — OPT IN via `opts.respectCooldown`,
+ * default false/omitted: every PRE-EXISTING caller of this function keeps
+ * its exact prior "always mint a genuinely fresh code" behavior unless it
+ * explicitly asks for the cooldown. This matters because createVerification
+ * is shared by call sites with genuinely different contracts that a
+ * blanket cooldown would silently break — confirmed by running the full
+ * test suite against an unconditional version of this cooldown, which
+ * broke register-account-passwordless.js's RESOLVE branch (a LOGIN
+ * mechanism for an account with no session — every submission must mail a
+ * working code, see that file's own header comment) and the pre-existing
+ * "rolling window" tests in test/passwordless-signup.test.js (repeated
+ * resend-verification-code.js calls asserting each mints a genuinely
+ * distinct code). Only js/email-verify-sheet.js's autoSendOnOpen — the
+ * exact automatic, no-user-action chain the tracker item is about — opts
+ * in, via resend-verification-code.js's `auto` request field. When
+ * `opts.respectCooldown` is true AND the existing record was last sent
  * within SEND_COOLDOWN_MS AND still carries at least one unexpired code,
  * nothing is minted and this returns { ok:true, reused:true } instead —
  * the caller must NOT send another email in that case, the user already
  * has a valid code in their inbox.
  */
-async function createVerification(event, username, email) {
+async function createVerification(event, username, email, opts) {
   var key = normalizeUsername(username);
   if (!key) return { ok: false, error: 'username_required' };
   connectLambda(event);
@@ -185,7 +200,8 @@ async function createVerification(event, username, email) {
   var existing = await s.get('u:' + key, { type: 'json' });
   var existingStillLive = existing && (typeof existing.expiresAt !== 'number' || existing.expiresAt > now);
 
-  if (existingStillLive && typeof existing.lastSentAt === 'number' &&
+  if (opts && opts.respectCooldown && existingStillLive &&
+      typeof existing.lastSentAt === 'number' &&
       (now - existing.lastSentAt) < SEND_COOLDOWN_MS &&
       activeCodeEntries(existing, now).length > 0) {
     return { ok: true, reused: true };

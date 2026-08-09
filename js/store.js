@@ -46,8 +46,9 @@
 //       in" half of deferred verification for an ALREADY-signed-in,
 //       unverified account (not to be confused with loginWithEmailCode
 //       above, which establishes a session in the first place).
-//   resendVerificationCode() -> Promise, POST /.netlify/functions/resend-
-//       verification-code {authToken}.
+//   resendVerificationCode(opts) -> Promise, POST /.netlify/functions/resend-
+//       verification-code {authToken, auto:!!opts.auto} -- see that
+//       endpoint's own header comment for what `auto` opts into.
 //   login(usernameOrEmail,password)  -> Promise, POST /.netlify/functions/account-login
 //       first (this is what makes login work from any device the account
 //       was ever registered from) — falls back to the pre-existing local-
@@ -3941,14 +3942,20 @@
      * session (not signed in / expired token) CAN be told apart from "sent,
      * who knows if it lands".
      */
-    resendVerificationCode: function () {
+    // opts.auto (optional bool, fix for tracker item for-product-bug-
+    // founder-repro-08-09-veri-g71t7u) -- set ONLY by js/email-verify-
+    // sheet.js's autoSendOnOpen (an automatic, no-user-action call), never
+    // by the manual "Resend" link -- see resend-verification-code.js's own
+    // header comment for the full "why" (an automatic call this close to
+    // signup's own send is a genuine duplicate; a manual tap never is).
+    resendVerificationCode: function (opts) {
       if (!state.user || !state.user.authToken) {
         return Promise.resolve({ ok: false, error: "You're not signed in." });
       }
       return fetch('/.netlify/functions/resend-verification-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ authToken: state.user.authToken })
+        body: JSON.stringify({ authToken: state.user.authToken, auto: !!(opts && opts.auto) })
       }).then(function (res) { return res.json(); }).then(function (data) {
         if (data && data.ok) return { ok: true };
         return { ok: false, error: "Couldn't send a new code — try again." };
