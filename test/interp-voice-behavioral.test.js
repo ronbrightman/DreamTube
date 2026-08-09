@@ -374,6 +374,46 @@ test('talking-head persona (jung): the intro is ONE unmuted self-contained clip 
   }
 });
 
+test('image-only dream renders the reading backdrop as an <img>, not a <video> (founder 2026-08-09: an image URL in a <video> showed black)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await forcePlayOutcome(page, true);
+    await blockThirdParty(page);
+    await mockInterpretDream(page, {});
+    await mockInterpAudio(page, {});
+    // image-only dream (no videoUrl) + intro already shown so we land straight on the reading
+    await seedResultPageWithPreviewParam(page, 'd-img-backdrop', { videoUrl: null, imageUrl: 'https://example.com/fake-image.png', introShownPersonas: { talmudic: Date.now() } });
+    await openAndPickSage(page);
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#itp-voice-dream-video').evaluate(function (el) { return el.tagName; }), 'IMG', 'an image-only dream must render an <img> backdrop, never a <video> (which renders black for an image src)');
+  } finally {
+    await context.close();
+  }
+});
+
+test('narration mute toggle: hidden until reading audio plays, then toggles + persists the choice (founder 2026-08-09)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await forcePlayOutcome(page, true);
+    await blockThirdParty(page);
+    await mockInterpretDream(page, {});
+    await mockInterpAudio(page, {});
+    await seedResultPageWithPreviewParam(page, 'd-mute', { introShownPersonas: { talmudic: Date.now() } });
+    await openAndPickSage(page);
+    await page.waitForSelector('#itp-voice-mute', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#itp-voice-mute').getAttribute('aria-label'), 'Mute narration', 'starts unmuted');
+    await page.click('#itp-voice-mute');
+    assert.equal(await page.locator('#itp-voice-mute').getAttribute('aria-label'), 'Unmute narration', 'a tap mutes it');
+    assert.equal(await page.evaluate(function () { return localStorage.getItem('itp_narration_muted'); }), '1', 'the choice is persisted');
+  } finally {
+    await context.close();
+  }
+});
+
 test('preview link persists to localStorage — a later navigation to the SAME page with no query param still has the gate on', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

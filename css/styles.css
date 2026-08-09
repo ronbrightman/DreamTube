@@ -1878,6 +1878,10 @@ textarea.field{ min-height:150px; resize:none; line-height:1.5; font-family:var(
 }
 .itp-voice-tap-label:empty{ display:none;}
 .itp-voice-skip{ position:absolute; z-index:5; right:10px; bottom:12px; color:#fff; text-shadow:0 1px 4px rgba(0,0,0,.7);}
+/* narration mute toggle — small round button, top-right of the reading stage */
+.itp-voice-mute{ position:absolute; z-index:6; top:10px; right:10px; width:36px; height:36px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.14); color:#fff;}
+.itp-voice-mute svg{ width:19px; height:19px;}
+.itp-voice-mute:active{ opacity:.7;}
 
 @media (prefers-reduced-motion:reduce){
   .itp-voice-intro, #itp-voice-dream-video, .itp-voice-tap-overlay{ transition:none;}

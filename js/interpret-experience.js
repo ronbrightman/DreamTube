@@ -431,7 +431,7 @@
   /** Manual currentTime-scrubbing bounce loop for the reading phase's dream-video backdrop (see nextBounceFrame's own doc comment for why this doesn't use native playback). No-op if the dream has no playable video (image-only dream, or the dream record is missing a videoUrl) — the stage still renders (captions over a plain dark backdrop) rather than blocking the whole voice feature on having a video specifically. */
   function startDreamVideoBounceLoop(vs) {
     var el = vs.dreamEl;
-    if (!el || !el.getAttribute('src')) return;
+    if (!el || el.tagName !== 'VIDEO' || !el.getAttribute('src')) return; // image-only dreams render a static <img> (no scrub loop)
     el.muted = true; // purely a visual loop — the actual reading audio is the separate <audio> element
     var lastTs = null;
     function step(ts) {
@@ -655,6 +655,8 @@
     }
     if (!audio) audio = new Audio(vs.audioUrl);
     vs.audioEl = audio;
+    audio.muted = isNarrationMuted(); // honor the persisted narration-mute choice
+    if (vs.muteBtn) vs.muteBtn.style.display = ''; // reveal the mute toggle now that there's reading audio to control
     // Every listener below is a NAMED reference, collected into
     // vs.playbackListeners so detachPlaybackListeners above can remove this
     // exact set if beginAudioPlayback runs again for this same `vs`.
@@ -864,6 +866,7 @@
       tapOverlay: document.getElementById('itp-voice-tap-overlay'),
       tapLabelEl: document.getElementById('itp-voice-tap-label'),
       skipEl: document.getElementById('itp-voice-skip'),
+      muteBtn: document.getElementById('itp-voice-mute'),
       phase: 'intro', bounceDirection: 1, rafId: null,
       audioEl: null,
       audioUrl: savedEntry ? savedEntry.audioUrl : null,
@@ -894,15 +897,35 @@
     // never sits as a black box while the video loads (founder 08-08).
     if (vs.loadingEl) {
       var hideLoading = function () { if (vs.loadingEl) { vs.loadingEl.style.display = 'none'; } };
-      if (vs.dreamEl && vs.dreamEl.tagName === 'VIDEO' && vs.dreamEl.getAttribute('src')) {
-        if (vs.dreamEl.readyState >= 2) hideLoading();
-        else {
-          vs.dreamEl.addEventListener('loadeddata', hideLoading, { once: true });
-          vs.dreamEl.addEventListener('error', hideLoading, { once: true });
+      if (vs.dreamEl && vs.dreamEl.getAttribute('src')) {
+        if (vs.dreamEl.tagName === 'VIDEO') {
+          if (vs.dreamEl.readyState >= 2) hideLoading();
+          else {
+            vs.dreamEl.addEventListener('loadeddata', hideLoading, { once: true });
+            vs.dreamEl.addEventListener('error', hideLoading, { once: true });
+          }
+        } else { // IMG (image-only dream) — hide once the picture paints (or fails)
+          if (vs.dreamEl.complete) hideLoading();
+          else {
+            vs.dreamEl.addEventListener('load', hideLoading, { once: true });
+            vs.dreamEl.addEventListener('error', hideLoading, { once: true });
+          }
         }
       } else {
         hideLoading();
       }
+    }
+
+    // Narration mute toggle — controls only this reading's audio (vs.audioEl),
+    // remembers the choice. Revealed by beginAudioPlayback once audio exists.
+    if (vs.muteBtn) {
+      vs.muteBtn.addEventListener('click', function () {
+        var m = !isNarrationMuted();
+        setNarrationMutedPref(m);
+        if (vs.audioEl) vs.audioEl.muted = m;
+        vs.muteBtn.innerHTML = m ? Icons.volumeMuted : Icons.volumeOn;
+        vs.muteBtn.setAttribute('aria-label', m ? 'Unmute narration' : 'Mute narration');
+      });
     }
 
     if (!savedEntry) requestVoiceAudio(vs, persona);
@@ -1405,10 +1428,26 @@
    * shown" decision setupVoiceStage's own runtime logic makes, not just
    * skip PLAYING it while still rendering it.
    */
-  function voiceStageHtml(persona, dreamMediaUrl, showIntro) {
+  // Narration-mute preference for the reading's TTS voice (founder 2026-08-09,
+  // "add a small mute button to the narration of the text"). Persisted so the
+  // choice sticks across readings; controls only the reading audio (vs.audioEl),
+  // never the feed's own sound pref.
+  var NARRATION_MUTE_KEY = 'itp_narration_muted';
+  function isNarrationMuted() { try { return localStorage.getItem(NARRATION_MUTE_KEY) === '1'; } catch (e) { return false; } }
+  function setNarrationMutedPref(m) { try { localStorage.setItem(NARRATION_MUTE_KEY, m ? '1' : '0'); } catch (e) { /* private mode / storage full — the in-memory audioEl.muted still applies for this session */ } }
+
+  function voiceStageHtml(persona, dreamMediaUrl, showIntro, isImage) {
     return '<div class="itp-voice-stage" id="itp-voice-stage">' +
-      '<video class="itp-voice-media' + (showIntro ? ' itp-voice-hidden' : '') + '" id="itp-voice-dream-video" playsinline preload="auto"' +
-      (dreamMediaUrl ? ' src="' + esc(dreamMediaUrl) + '"' : '') + '></video>' +
+      // The dream backdrop is a <video> for video dreams (bounce-scrub loop)
+      // but a static <img> for IMAGE dreams — an image URL in a <video> src
+      // just renders black (founder repro 2026-08-09, "image doesn't display").
+      // Same id/class either way so setupVoiceStage/crossfade find it; the
+      // bounce loop no-ops on the non-video element.
+      (isImage
+        ? '<img class="itp-voice-media' + (showIntro ? ' itp-voice-hidden' : '') + '" id="itp-voice-dream-video" alt="Your dream"' +
+          (dreamMediaUrl ? ' src="' + esc(dreamMediaUrl) + '"' : '') + '>'
+        : '<video class="itp-voice-media' + (showIntro ? ' itp-voice-hidden' : '') + '" id="itp-voice-dream-video" playsinline preload="auto"' +
+          (dreamMediaUrl ? ' src="' + esc(dreamMediaUrl) + '"' : '') + '></video>') +
       (showIntro
         ? (persona.introTalkingHeadUrl
           // Talking-head intro (Jung onward): ONE self-contained lip-synced
@@ -1438,6 +1477,10 @@
       '<div class="itp-voice-tap-label" id="itp-voice-tap-label"></div>' +
       '</div>' +
       '<div class="itp-voice-skip link-text" id="itp-voice-skip" style="display:none">Skip</div>' +
+      // Small mute toggle for the reading narration (founder 2026-08-09).
+      // Hidden until the reading's audio actually starts (beginAudioPlayback
+      // reveals it); controls vs.audioEl only, and remembers the choice.
+      '<button class="itp-voice-mute icon-btn" id="itp-voice-mute" type="button" style="display:none" aria-label="' + (isNarrationMuted() ? 'Unmute narration' : 'Mute narration') + '">' + (isNarrationMuted() ? Icons.volumeMuted : Icons.volumeOn) + '</button>' +
       '</div>';
   }
 
@@ -1447,10 +1490,11 @@
     var voiceEligible = !!persona.voiceId;
     var dream = voiceEligible ? window.DreamStore.getDream(session.dreamId) : null;
     var dreamMediaUrl = dream ? (dream.videoUrl || dream.imageUrl || null) : null;
+    var isImage = !!(dream && !dream.videoUrl && dream.imageUrl); // image-only dream -> render <img>, not <video> (which shows black)
     var showIntro = voiceEligible && shouldShowIntro(persona, window.DreamStore.hasIntroShown(session.dreamId, session.personaKey));
 
     body.innerHTML =
-      (voiceEligible ? voiceStageHtml(persona, dreamMediaUrl, showIntro) : '') +
+      (voiceEligible ? voiceStageHtml(persona, dreamMediaUrl, showIntro, isImage) : '') +
       '<div class="itp-reading-card" id="itp-reading-card" style="border-left-color:' + esc(persona.accent) + '">' +
       '<div class="itp-reading-persona-line">' + portraitHtml(persona) +
       '<div class="itp-reading-persona-name">' + esc(persona.name) + ' — ' + esc(persona.inspiredBy) + '</div></div>' +
