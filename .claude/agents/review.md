@@ -111,19 +111,26 @@ miss. Check new/changed code against these specifically:
   existing pattern — the existing pattern is a known limitation, not a
   license to extend it further without comment.
 - **Security-sensitive tokens must be bound at issuance, not just
-  checked for liveness at use.** This exact bug has shipped twice: (1)
-  video-status.js/image-status.js once trusted a client-supplied email
-  unbound to the actual job submitter (fixed via lib/job-owners.js
-  binding job id -> submitting email); (2) the owner-per-ip-generation-
-  bypass branch's lib/owner-bypass.js minted a bypass token that only
-  checked liveness/TTL, never binding it to OWNER_EMAIL, so a leaked
-  token could be replayed with any email. lib/dream-share-token.js
-  (bound to dreamId) and lib/session-transfer-token.js (bound to a
-  specific account at mint time) show the right pattern already exists
-  in this codebase. Any new token/credential must be checked against
-  what it's actually meant to authorize (whose action, which resource)
-  at the point it's minted, not just checked for "is this still valid"
-  at the point it's used.
+  checked for liveness at use.** This exact bug shape has shipped/been
+  caught three times: (1) video-status.js/image-status.js once trusted a
+  client-supplied email unbound to the actual job submitter (fixed via
+  lib/job-owners.js binding job id -> submitting email); (2) the
+  owner-per-ip-generation-bypass branch's lib/owner-bypass.js minted a
+  bypass token that only checked liveness/TTL, never binding it to
+  OWNER_EMAIL, so a leaked token could be replayed with any email; (3)
+  register-account-passwordless.js's resolve-existing-account branch
+  minted a real authToken for any EXISTING account the instant a client
+  POSTed that account's email, with zero verification -- caught before
+  merge (branch build-passwordless-signup-at2fko, feature-flagged off
+  throughout, fixed pre-merge as c6d8098), never shipped live. lib/dream-
+  share-token.js (bound to dreamId) and lib/session-transfer-token.js
+  (bound to a specific account at mint time) show the right pattern
+  already exists in this codebase. Any new token/credential/session must
+  be checked against WHO/WHAT it's actually meant to authorize at the
+  point it's minted, not just checked for "is this still valid" at the
+  point it's used -- worth treating as a standing build-time checklist
+  item for any new auth/identity-adjacent endpoint, not just a per-review
+  catch each time.
 - **A shared field/marker written by more than one code path can silently
   carry two different meanings.** `fix-funnel-firstvideo-email` round 1's
   fix gated a decision (skip an automatic retention email) on
