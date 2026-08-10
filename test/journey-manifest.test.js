@@ -78,15 +78,19 @@ test('JOURNEY_MANIFEST.md: start.html\'s actual SCREEN_RENDERERS sequence matche
 // per this test's own contract.
 // ===========================================================================
 
-// renderRecap (between FreeText and the wall) is founder round 8 on the
-// Layout-B redesign: the editable "Here's your dream — make it yours"
-// recap became its own screen again, per the approved mock ("it was
-// supposed to be editable in a previous page"). The entry chooser the
-// same round added is deliberately NOT in SCREEN_RENDERERS (a pre-step
-// shown to fresh entries only, firing wizard_entry_mode_chosen and no
-// wizard_step_viewed) — see wizard.html's own chooser section comment.
+// Question-first trim (mirrors the growth funnel): the standalone Setting
+// ("Where") and Mood ("How did it feel") steps were REMOVED as questions
+// — both are now inferred into the caption (per-action fallback place +
+// default dreamy mood/lighting), so the organic flow is now Who → What →
+// Style → free text → recap → wall. renderRecap (between FreeText and the
+// wall) is founder round 8's editable "Here's your dream — make it yours"
+// screen. The question-first screen 1 (six-tile "What was your dream
+// about?" grid that replaced the build/write/speak chooser) is deliberately
+// NOT in SCREEN_RENDERERS — a pre-step shown to fresh entries only, firing
+// wizard_entry_mode_chosen and no wizard_step_viewed — see wizard.html's
+// own question-first section comment.
 var EXPECTED_ORGANIC_SCREENS = [
-  'renderSubject', 'renderSetting', 'renderAction', 'renderMood',
+  'renderSubject', 'renderAction',
   'renderStyleStep', 'renderFreeText', 'renderRecap', 'renderSignupWall'
 ];
 
