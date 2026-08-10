@@ -111,6 +111,13 @@ async function safeGoto(page, url) {
   }
 }
 
+/** A FRESH organic wizard-wall signup now shows the post-signup monetization moment (wizard.html's showMonetizationMoment) before the home.html handoff. This test enters wizard.html organically (not a funnel ?resume arrival), so the moment shows; dismissing it ("Not now") reproduces the original home.html?generate=1 navigation the real chain then drives. */
+async function dismissMomentIfPresent(page) {
+  try { await page.waitForSelector('.mm-overlay', { timeout: 8000 }); }
+  catch (e) { return; }
+  await page.click('.mm-notnow');
+}
+
 /** Same Date.now monkeypatch as test/automatic-first-dream-email.test.js's own withPastClock -- shifts the embedded mock-operationName timestamp far enough into the past that video-status.js's mock-mode elapsed-time check reports done:true immediately, without this test waiting out the real 20s MOCK_DELAY_MS. */
 async function withPastClock(pastMs, fn) {
   var realNow = Date.now;
@@ -276,6 +283,7 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     // processing.html removed, wizard.html now lands directly on home.html)
     // -- this is the client code the founder's own failed QA run actually
     // exercised, now running for real against real handlers.
+    await dismissMomentIfPresent(page); // fresh organic wall signup -> dismiss the monetization moment to reach the home handoff
     await page.waitForURL(/home\.html/, { timeout: 20000 });
     await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 20000 });
 

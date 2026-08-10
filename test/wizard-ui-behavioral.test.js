@@ -78,6 +78,20 @@ async function safeGoto(page, url) {
   }
 }
 
+/**
+ * The post-signup monetization moment (wizard.html's showMonetizationMoment)
+ * now sits between a FRESH organic wall signup and the home.html handoff.
+ * These tests aren't about that moment — they dismiss it ("Not now"), which
+ * reproduces the exact original navigation (home.html?generate=1). A funnel
+ * ?resume arrival or a returning-user code-step LOGIN never shows the moment,
+ * so this is a harmless no-op there (the 8s wait just times out and returns).
+ */
+async function dismissMomentIfPresent(page) {
+  try { await page.waitForSelector('.mm-overlay', { timeout: 8000 }); }
+  catch (e) { return; }
+  await page.click('.mm-notnow');
+}
+
 /** Fresh wizard.html arrivals meet the round-8 entry chooser first (build/write/speak). This opens the wizard and commits Build — the path every pre-existing chip-flow test exercises. */
 async function gotoWizardBuild(page) {
   await safeGoto(page, baseUrl + '/wizard.html');
@@ -573,6 +587,7 @@ test('wizard.html signup wall: submitting an email starts the real pending gener
     // Now let signup resolve — the already-running generation gets
     // claimed by the new account and the visitor lands on home.html.
     slowSignup.open();
+    await dismissMomentIfPresent(page); // fresh signup -> the monetization moment shows here; dismiss reproduces the original home.html?generate=1 nav
     await page.waitForURL(/home\.html/, { timeout: 15000 });
     await settle(function () { return claimCalls.length >= 1; });
     assert.equal(claimCalls.length, 1, 'claim-pending-generation must fire exactly once, right after signup succeeds');
@@ -698,6 +713,7 @@ test('wizard.html signup wall: check-email.js failing outright (5xx/rate-limited
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'a legitimate new-email visitor must still get their real generation started even when check-email itself errors out');
     assert.equal(startPendingCalls[0].email, 'legit-new-user@example.com');
+    await dismissMomentIfPresent(page); // fresh signup -> dismiss the monetization moment to reach the home handoff
     await page.waitForURL(/home\.html/, { timeout: 15000 });
   } finally {
     await page.close();
@@ -909,6 +925,7 @@ test('wizard.html signup wall: the code step\'s "Use a different email" round tr
     await settle(function () { return startPendingCalls.length >= 2; });
     assert.equal(startPendingCalls.length, 2, 'a genuinely changed email must still be allowed to start a new pending generation');
     assert.equal(startPendingCalls[1].email, 'dup-changed@example.com');
+    await dismissMomentIfPresent(page); // the genuinely-changed email is a fresh signup -> dismiss the monetization moment
     await page.waitForURL(/home\.html/, { timeout: 15000 });
   } finally {
     await page.close();
@@ -1127,6 +1144,7 @@ test('wizard.html signup wall: if the pre-account generation call fails, signup 
     // despite the failed generation call. Wait for DreamStore to actually
     // be defined on the NEW document, not merely for the URL to change —
     // see this codebase's documented navigation-commit race.
+    await dismissMomentIfPresent(page); // fresh signup (pendingStartFailed path still creates the account) -> dismiss the moment; navUrl is home.html?generate=1, so the fresh fallback generation still runs
     await page.waitForFunction(function () {
       return window.location.pathname.indexOf('home.html') !== -1 && !!window.DreamStore;
     }, null, { timeout: 15000 });
@@ -1253,6 +1271,7 @@ test('wizard.html: the ?bt= Facebook return leg consumes the session transfer, r
     });
     await safeGoto(page, baseUrl + '/wizard.html?bt=fake-transfer-token&fb=signup');
 
+    await dismissMomentIfPresent(page); // fb=signup is a fresh signup -> the monetization moment shows after the generation fires; dismiss to reach home
     await page.waitForURL(/home\.html/, { timeout: 15000 });
     await settle(function () { return startPendingCalls.length >= 1; });
     assert.equal(startPendingCalls.length, 1, 'the generation must fire exactly once, on the return leg, for the confirmed account');
@@ -1704,6 +1723,7 @@ test('wizard.html round-8 Subject: tapping Me selects it immediately AND opens t
     // Post-signup: the detail must have been flushed onto the REAL Me
     // character (the 08-04 ruling's never-ask-twice half — profile/create
     // read this same record and must never need to ask again).
+    await dismissMomentIfPresent(page); // fresh signup -> dismiss the monetization moment before the home handoff
     await page.waitForFunction(function () {
       return window.location.pathname.indexOf('home.html') !== -1 && !!window.DreamStore;
     }, null, { timeout: 15000 });
@@ -1763,6 +1783,7 @@ test('wizard.html round-8 Subject: cancelling the Me sheet keeps Me SELECTED wit
     assert.match(startPendingCalls[0].caption, /of me,/, 'a detail-less Me must still put "me" into the assembled caption');
     assert.equal(startPendingCalls[0].characterIdsForGeneration.length, 0, 'a described-less, photo-less Me must never ride characterIdsForGeneration');
 
+    await dismissMomentIfPresent(page); // fresh signup -> dismiss the monetization moment before the home handoff
     await page.waitForFunction(function () {
       return window.location.pathname.indexOf('home.html') !== -1 && !!window.DreamStore;
     }, null, { timeout: 15000 });

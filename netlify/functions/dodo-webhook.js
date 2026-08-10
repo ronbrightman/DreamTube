@@ -725,7 +725,28 @@ async function handleDreamerPassPayment(event, payment) {
     return; // trial-start $0 (freetrial) — subscription.active owns the state, nothing to grant
   }
   if (passVariant === 'trial50') {
-    var existingRecord = await entitlements.getEntitlement(event, payEmail).catch(function () { return null; });
+    // LOW-2 HARDENING (money safety): this read MUST fail CLOSED, not open.
+    // The old `.catch(function(){return null;})` swallowed a Blobs read fault
+    // into `null`, which reads as "no trial in progress" and falls straight
+    // through to grantDreamerPassCharge below — so a transient read error mid-
+    // trial would let a 50c trial-start grant the full 3,000-token month (the
+    // exact over-grant the trial50 guard exists to prevent). We instead SKIP
+    // the grant on ANY read error: a mis-skipped charge is never lost, because
+    // subscription.renewed re-grants every real charge keyed by the same
+    // payment_id (grantDreamerPassCharge -> creditTokenPackOnce idempotency —
+    // see the "NO LOST GRANT" test), so failing closed can only ever delay a
+    // real grant to the renewal backstop, never lose it, while making a 50c
+    // over-grant impossible.
+    var existingRecord;
+    try {
+      existingRecord = await entitlements.getEntitlement(event, payEmail);
+    } catch (readErr) {
+      logSubEvent('payment.succeeded[dreamer_pass] trial50 entitlement read failed — failing CLOSED (skip grant; subscription.renewed backstops)', {
+        payment_id: payment.payment_id || null,
+        email: payEmail || null
+      });
+      return; // could not verify trial state -> never risk a 50c over-grant
+    }
     if (existingRecord && entitlements.isTrialActive(existingRecord.subscription, Date.now())) {
       return; // trial50's 50c trial-start — still trialing, not a purchase
     }

@@ -103,6 +103,13 @@ function mockTokenStatus(page) {
   });
 }
 
+/** A FRESH organic wizard-wall signup now shows the post-signup monetization moment (wizard.html's showMonetizationMoment) before the home.html handoff. Dismissing it ("Not now") reproduces the original home.html?generate=1 navigation. Logged-in create.html flows never show it, so those callers don't need this. */
+async function dismissMomentIfPresent(page) {
+  try { await page.waitForSelector('.mm-overlay', { timeout: 8000 }); }
+  catch (e) { return; }
+  await page.click('.mm-notnow');
+}
+
 async function seedLoggedInUserAt(page, username, path) {
   await safeGoto(page, baseUrl + '/login.html');
   await page.evaluate(function (u) {
@@ -667,6 +674,7 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
     assert.match(startPendingCalls[0].caption, /of a stranger,/, 'the wire caption sent to start-pending-generation must still be the engineered promptText');
     assert.equal(startPendingCalls[0].storyText, MOCK_LLM_STORY);
 
+    await dismissMomentIfPresent(page); // fresh wall signup -> dismiss the monetization moment to reach the home handoff
     await waitForHomeGenerationThenOpenResult(page);
     var dream = await page.evaluate(function () {
       var id = new URLSearchParams(location.search).get('id');

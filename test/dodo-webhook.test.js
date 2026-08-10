@@ -1347,6 +1347,51 @@ test('freetrial is UNCHANGED by the trial50 guard: a freetrial charge while the 
   assert.equal(record.subscription.status, 'active');
 });
 
+test('LOW-2 (fail-closed): a trial50 50c trial-start whose entitlement read THROWS (Blobs fault) grants NOTHING — the read must fail closed, not open', async function () {
+  // Before the LOW-2 fix, the guard read was `.catch(()=>null)`: a Blobs read
+  // fault became `null`, read as "no trial in progress", and fell straight
+  // through to grant the full 3,000 for a 50c trial-start. This test forces
+  // exactly that read fault and asserts NOTHING is granted (fail closed). The
+  // real charge is never lost — subscription.renewed backstops it (covered by
+  // the "NO LOST GRANT" test above); here we only prove the 50c can't over-grant.
+  var email = 'trial50readfault@example.com';
+  await seedZeroBalance(email);
+  // Trial begins normally (this subscription.active read/write happens BEFORE
+  // the override is installed, so it succeeds and writes trialing + trialEnd).
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing',
+    product_id: 'pdt_dreamer_pass_trial50_test',
+    trial_end_date: new Date(Date.now() + 3 * DAY_MS).toISOString(),
+    customer: { customer_id: 'cus_t50rf', email: email }
+  })));
+
+  // Now make EVERY entitlements-store read throw — simulating a transient Blobs
+  // read fault at exactly the moment the 50c trial-start payment.succeeded is
+  // processed. The guard's getEntitlement is the first such read in the payment
+  // path, so this is the read that must fail closed.
+  mockBlobs.setReadOverride('dreamtube-entitlements', function () {
+    throw new Error('simulated Blobs read fault');
+  });
+  var res;
+  try {
+    res = await handler(signedEvent(passPaymentPayload({
+      payment_id: 'pay_trial50_readfault',
+      product_cart: [{ product_id: 'pdt_dreamer_pass_trial50_test', quantity: 1 }],
+      total_amount: 50,
+      metadata: { dreamtube_pass_variant: 'trial50', dreamtube_event_id: 'evt-t50-readfault' },
+      customer: { customer_id: 'cus_t50rf', email: email }
+    })));
+  } finally {
+    mockBlobs.clearReadOverride('dreamtube-entitlements');
+  }
+  assert.equal(res.statusCode, 200, 'the webhook still acknowledges (never 5xx a Dodo redelivery)');
+
+  // The read fault is cleared now, so this verification read succeeds.
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 0, 'fail closed: a read fault during a 50c trial-start must grant NOTHING, never the 3,000');
+  assert.equal(record.subscription.status, 'trialing', 'and must not flip the account out of trialing');
+});
+
 test('notrial is UNCHANGED by the trial50 guard: a notrial first charge grants immediately (no trial window ever)', async function () {
   await seedZeroBalance('notrialunaffected@example.com');
   var res = await handler(signedEvent(passPaymentPayload({
