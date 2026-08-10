@@ -432,8 +432,16 @@ async function fireDreamerPassConversion(event, params) {
       subscription: true,
       renewal: renewal,
       plan: entitlements.DREAMER_PASS_PLAN,
+      // Which price/trial variant (freetrial|notrial|trial50) this charge is
+      // for — a cheap, additive analytics dimension resolved by the caller
+      // (from the payment/subscription product_id, or metadata.dreamtube_pass_
+      // variant). null when the caller couldn't resolve it (older records, or
+      // an env var rotated post-checkout) — omitted from the props in that
+      // case rather than sent as null, same "don't emit a placeholder" posture
+      // as the rest of this file.
       $insert_id: eventId // PostHog's own dedup key -- see lib/posthog-capture.js header comment
     };
+    if (params.variant) postHogProps.variant = params.variant;
 
     await Promise.all([
       posthogCapture.captureEvent({
@@ -468,13 +476,18 @@ async function fireDreamerPassConversion(event, params) {
 // below — see this file's LOGGING note):
 //
 //   1. RECOGNIZING a subscription charge. Primary signal: the payment's
-//      product_id matches DODO_PRODUCT_DREAMER_PASS. Fallbacks:
-//      metadata.dreamtube_plan === 'dreamer_pass' (set at checkout), and — as
-//      a last resort — a payment carrying a subscription_id that resolves to
-//      no known one-time pack (the ONLY subscription product in this system
-//      is the Pass, so a subscription-linked non-pack payment must be it).
-//      resolvePackTokens is always checked first, so a real one-time pack can
-//      never be mis-routed here.
+//      product_id matches ANY of the three Dreamer Pass variant env vars —
+//      DODO_PRODUCT_DREAMER_PASS (freetrial) / DODO_PRODUCT_DREAMER_PASS_NOTRIAL
+//      (notrial) / DODO_PRODUCT_DREAMER_PASS_TRIAL50 (trial50). All three are
+//      the SAME 3,000-token/month pass — only their price/trial differ (Dodo's
+//      product config), which is not the grant's concern, so all three grant
+//      the identical entitlement. Fallbacks: metadata.dreamtube_plan ===
+//      'dreamer_pass' (set at checkout), and — as a last resort — a payment
+//      carrying a subscription_id that resolves to no known one-time pack (the
+//      ONLY subscription product family in this system is the Pass, so a
+//      subscription-linked non-pack payment must be it). resolvePackTokens is
+//      always checked first, so a real one-time pack can never be mis-routed
+//      here.
 //
 //   2. GRANTING exactly once per charge. The 3000-token lump is granted via
 //      the SAME creditTokenPackOnce path a pack uses, keyed by the Dodo
@@ -509,8 +522,48 @@ var SUBSCRIPTION_EVENT_TYPES = {
   'subscription.expired': true
 };
 
+// The three Dreamer Pass variant env vars — the SAME 3,000-token/month pass,
+// differing only in price/trial (all decided by Dodo's product config). Must
+// mirror create-checkout-session-dodo.js's PASS_VARIANT_ENV exactly (kept as
+// a separate copy, same reasoning as PACK_TOKENS/PACK_PRODUCT_ENV above — no
+// compile-time dependency between the two functions). Recognizing a
+// subscription charge matches product_cart[0].product_id against ANY of
+// these; the grant is identical for all three, so no per-variant branching
+// is needed past recognition. freetrial's env var is DODO_PRODUCT_DREAMER_PASS
+// (the original, unchanged) so the default path is byte-for-byte as before.
+var PASS_VARIANT_ENV = {
+  freetrial: 'DODO_PRODUCT_DREAMER_PASS',
+  notrial: 'DODO_PRODUCT_DREAMER_PASS_NOTRIAL',
+  trial50: 'DODO_PRODUCT_DREAMER_PASS_TRIAL50'
+};
+
+// The default (freetrial) Dreamer Pass product id — used ONLY as the
+// productId fallback stamped onto the subscription record when a lifecycle
+// event's payload doesn't carry its own product_id (see handleDreamerPass-
+// Payment / handleSubscriptionEvent). Recognition uses dreamerPassProductIds()
+// (all three variants), not this single default.
 function dreamerPassProductId() {
   return process.env.DODO_PRODUCT_DREAMER_PASS;
+}
+
+/** Every configured Dreamer Pass product id across the three variants (unset variants are skipped). */
+function dreamerPassProductIds() {
+  var ids = [];
+  Object.keys(PASS_VARIANT_ENV).forEach(function (variant) {
+    var id = process.env[PASS_VARIANT_ENV[variant]];
+    if (id) ids.push(id);
+  });
+  return ids;
+}
+
+/** Resolves which Dreamer Pass variant (freetrial|notrial|trial50) a set of product ids belongs to, or null if none match a configured variant env var. */
+function resolvePassVariant(productIds) {
+  var variants = Object.keys(PASS_VARIANT_ENV);
+  for (var i = 0; i < variants.length; i++) {
+    var envId = process.env[PASS_VARIANT_ENV[variants[i]]];
+    if (envId && productIds.indexOf(envId) !== -1) return variants[i];
+  }
+  return null;
 }
 
 /** All product ids carried by a Payment payload (product_cart entries plus a top-level product_id, if any). */
@@ -521,10 +574,15 @@ function paymentProductIds(payment) {
   return ids;
 }
 
-/** See design point 1 above. */
+/** See design point 1 above. Matches against ALL THREE Dreamer Pass variant product ids (freetrial/notrial/trial50) — every one grants the identical pass. */
 function isDreamerPassPayment(payment) {
-  var passId = dreamerPassProductId();
-  if (passId && paymentProductIds(payment).indexOf(passId) !== -1) return true;
+  var passIds = dreamerPassProductIds();
+  if (passIds.length) {
+    var productIds = paymentProductIds(payment);
+    for (var i = 0; i < passIds.length; i++) {
+      if (productIds.indexOf(passIds[i]) !== -1) return true;
+    }
+  }
   var meta = payment.metadata || {};
   if (meta.dreamtube_plan === entitlements.DREAMER_PASS_PLAN) return true;
   // Last-resort: a subscription-linked payment that is not any known pack.
@@ -634,7 +692,11 @@ async function handleDreamerPassPayment(event, payment) {
       amountCents: chargedAmount,
       currency: payment.currency,
       metaEventName: 'Subscribe',
-      eventId: payment.metadata && payment.metadata.dreamtube_event_id
+      eventId: payment.metadata && payment.metadata.dreamtube_event_id,
+      // Which price/trial variant — resolved from the payment's product_id,
+      // falling back to the variant tag create-checkout-session-dodo.js
+      // stamped in metadata. Analytics-only; never affects the grant.
+      variant: resolvePassVariant(paymentProductIds(payment)) || (payment.metadata && payment.metadata.dreamtube_pass_variant)
     });
   }
 
@@ -721,7 +783,11 @@ async function handleSubscriptionEvent(event, type, sub) {
         payEmail: email,
         amountCents: sub.recurring_pre_tax_amount,
         currency: sub.currency,
-        metaEventName: 'Purchase'
+        metaEventName: 'Purchase',
+        // Resolved from the subscription's own product_id (its metadata is
+        // static across the whole lifetime, so the product_id is the reliable
+        // per-renewal signal); falls back to the variant tag if present.
+        variant: resolvePassVariant(sub.product_id ? [sub.product_id] : []) || (sub.metadata && sub.metadata.dreamtube_pass_variant)
       });
     }
   }

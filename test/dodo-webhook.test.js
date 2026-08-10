@@ -144,6 +144,8 @@ test.beforeEach(function () {
   process.env.DODO_PRODUCT_PACK_MEDIUM1500 = 'pdt_pack499_test';
   process.env.DODO_PRODUCT_PACK_LARGE4000 = 'pdt_pack999_test';
   process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_dreamer_pass_test';
+  process.env.DODO_PRODUCT_DREAMER_PASS_NOTRIAL = 'pdt_dreamer_pass_notrial_test';
+  process.env.DODO_PRODUCT_DREAMER_PASS_TRIAL50 = 'pdt_dreamer_pass_trial50_test';
   process.env.META_CAPI_ACCESS_TOKEN = REAL_META_TOKEN;
   // Default safe stub -- see the comment block above. Tests that care about
   // the actual analytics calls override this by calling
@@ -158,6 +160,8 @@ test.after(function () {
   delete process.env.DODO_PRODUCT_PACK_MEDIUM1500;
   delete process.env.DODO_PRODUCT_PACK_LARGE4000;
   delete process.env.DODO_PRODUCT_DREAMER_PASS;
+  delete process.env.DODO_PRODUCT_DREAMER_PASS_NOTRIAL;
+  delete process.env.DODO_PRODUCT_DREAMER_PASS_TRIAL50;
   delete process.env.META_CAPI_ACCESS_TOKEN;
   global.fetch = realFetch;
 });
@@ -1068,6 +1072,97 @@ test('a subscription-linked payment with no product match and no plan metadata i
   assert.equal(res.statusCode, 200);
   var record = await entitlements.getEntitlement({}, 'passfallback@example.com');
   assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'a subscription_id-bearing non-pack payment is the Pass');
+});
+
+// ----- all THREE Dreamer Pass variant product ids grant the identical pass -----
+//
+// The SAME 3,000-token/month pass is sold at three price/trial configs, each a
+// distinct Dodo product (DODO_PRODUCT_DREAMER_PASS[_NOTRIAL|_TRIAL50] — set in
+// beforeEach). A payment.succeeded carrying ANY of the three product ids must
+// be recognized as the Pass and grant the identical 3000-token lump — the
+// price/trial differences are Dodo's concern, never the grant's. See
+// dodo-webhook.js's isDreamerPassPayment / PASS_VARIANT_ENV.
+
+test('the freetrial variant product id (DODO_PRODUCT_DREAMER_PASS) grants exactly 3000', async function () {
+  await seedZeroBalance('ftgrant@example.com');
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_ft_grant',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_test', quantity: 1 }],
+    metadata: {}, // no plan-metadata fallback — force recognition purely by product_id
+    customer: { customer_id: 'cus_ft', email: 'ftgrant@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'ftgrant@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY);
+});
+
+test('the NOTRIAL variant product id (DODO_PRODUCT_DREAMER_PASS_NOTRIAL) is recognized as the Pass and grants exactly 3000', async function () {
+  await seedZeroBalance('ntgrant@example.com');
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_nt_grant',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_notrial_test', quantity: 1 }],
+    metadata: {}, // recognized purely by the notrial product_id, no plan metadata
+    customer: { customer_id: 'cus_nt', email: 'ntgrant@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'ntgrant@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'the notrial variant grants the identical 3000-token pass');
+});
+
+test('the TRIAL50 variant product id (DODO_PRODUCT_DREAMER_PASS_TRIAL50) is recognized as the Pass and grants exactly 3000', async function () {
+  await seedZeroBalance('t50grant@example.com');
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_t50_grant',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_trial50_test', quantity: 1 }],
+    metadata: {},
+    customer: { customer_id: 'cus_t50', email: 't50grant@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 't50grant@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'the trial50 variant grants the identical 3000-token pass');
+});
+
+test('a subscription.renewed for the NOTRIAL variant product grants that charge\'s 3000 (variant recognized on the lifecycle path too)', async function () {
+  await seedZeroBalance('ntrenew@example.com');
+  await handler(signedEvent(subEvent('subscription.renewed', {
+    payment_id: 'pay_nt_renew',
+    product_id: 'pdt_dreamer_pass_notrial_test',
+    customer: { customer_id: 'cus_ntr', email: 'ntrenew@example.com' }
+  })));
+  var record = await entitlements.getEntitlement({}, 'ntrenew@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY);
+});
+
+test('a pack purchase is NEVER mis-recognized as a variant pass even with all three pass env vars configured', async function () {
+  await seedZeroBalance('packnotpass@example.com');
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_pack_not_pass',
+    product_cart: [{ product_id: 'pdt_pack499_test', quantity: 1 }],
+    metadata: {},
+    customer: { customer_id: 'cus_pnp', email: 'packnotpass@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'packnotpass@example.com');
+  assert.equal(record.tokens.balance, 1000, 'pack499 still credits its own 1000, never the 3000 pass lump');
+  assert.equal(record.subscription, undefined);
+});
+
+test('the notrial first charge fires the Subscribe conversion tagged with variant=notrial', async function () {
+  await seedZeroBalance('ntconv@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_nt_conv',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_notrial_test', quantity: 1 }],
+    total_amount: 799, // $7.99, the notrial price
+    metadata: { dreamtube_pass_variant: 'notrial', dreamtube_event_id: 'evt-nt-conv' },
+    customer: { customer_id: 'cus_ntc', email: 'ntconv@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  assert.equal(spies.posthogCalls.length, 1);
+  var phBody = spies.posthogCalls[0].body;
+  assert.equal(phBody.properties.variant, 'notrial', 'the conversion event carries which variant was bought');
+  assert.equal(phBody.properties.value, 7.99, 'value is the REAL charged amount, not a hardcoded $9.99');
+  assert.equal(spies.metaCalls[0].body.data[0].event_name, 'Subscribe');
 });
 
 test('subscription.update_payment_method is acknowledged and does not change subscription state', async function () {

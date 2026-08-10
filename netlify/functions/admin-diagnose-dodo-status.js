@@ -86,12 +86,20 @@
 //   At least one of `email` / `subscriptionId` is required (E4 if
 //   neither). If BOTH are given, `subscriptionId` wins (a single exact
 //   retrieve is more precise than an email fan-out).
+// Every ok:true response ALSO carries `passProductsConfigured` — a
+// presence-only { [envVar]: boolean } map for the three Dreamer Pass product
+// env vars (DODO_PRODUCT_DREAMER_PASS / _NOTRIAL / _TRIAL50). It reports
+// ONLY whether each is set to a non-empty value in the live function
+// environment, NEVER the product-id value itself (same "secret never leaves
+// the server" posture as keyPresent / redactToken). This lets the founder
+// confirm, in one deployed call, that all three variant products resolved
+// after setting the new env vars in Netlify.
 // Response (single id):
-//   200 { ok:true, activeMode, keyPresent, subscription:{...} }
+//   200 { ok:true, activeMode, keyPresent, passProductsConfigured, subscription:{...} }
 // Response (email lookup):
-//   200 { ok:true, activeMode, keyPresent, subscriptions:[{...}, ...] }  (1-3 most recent)
+//   200 { ok:true, activeMode, keyPresent, passProductsConfigured, subscriptions:[{...}, ...] }  (1-3 most recent)
 // Mode-only degrade (key not configured — still 200, mode still reported):
-//   200 { ok:true, activeMode, keyPresent:false, subscriptions:[], warning:'E7: dodo_not_configured' }
+//   200 { ok:true, activeMode, keyPresent:false, passProductsConfigured, subscriptions:[], warning:'E7: dodo_not_configured' }
 // Errors: { ok:false, activeMode, keyPresent, error:'<code> <reason>' }
 //
 // Error codes (same small-number scheme as every sibling admin-*.js file):
@@ -132,6 +140,34 @@ function buildClient(activeMode) {
     bearerToken: process.env.DODO_API_KEY,
     environment: activeMode
   });
+}
+
+// The three Dreamer Pass product env vars (freetrial default + the two new
+// price/trial variants). See create-checkout-session-dodo.js's PASS_VARIANT_ENV
+// / dodo-webhook.js's PASS_VARIANT_ENV — this is presence-only reporting so the
+// founder can confirm, in one deployed call, that all three env vars actually
+// resolved in the live function environment after setting them in Netlify.
+var PASS_PRODUCT_ENV_VARS = [
+  'DODO_PRODUCT_DREAMER_PASS',
+  'DODO_PRODUCT_DREAMER_PASS_NOTRIAL',
+  'DODO_PRODUCT_DREAMER_PASS_TRIAL50'
+];
+
+/**
+ * Presence-only ({ [envVarName]: boolean }) report of whether each Dreamer
+ * Pass product env var is set to a non-empty value — NEVER the actual
+ * product-id value (same "the secret never leaves the server" discipline as
+ * redactToken / keyPresent above: a product id isn't a bearer token, but the
+ * founder only needs the boolean "did it resolve", and exposing the raw id
+ * buys nothing). A leading/trailing-whitespace-only value counts as unset.
+ */
+function passProductsConfigured() {
+  var out = {};
+  PASS_PRODUCT_ENV_VARS.forEach(function (name) {
+    var v = process.env[name];
+    out[name] = !!(typeof v === 'string' && v.trim());
+  });
+  return out;
 }
 
 /** Strips every occurrence of `secret` (raw and URI-encoded) out of `text` so an error message can never carry the bearer token back to a caller — mirrors lib/meta-capi.js's redactToken(). */
@@ -295,6 +331,7 @@ exports.handler = async function (event) {
         ok: true,
         activeMode: activeMode,
         keyPresent: false,
+        passProductsConfigured: passProductsConfigured(),
         subscriptions: [],
         warning: 'E7: dodo_not_configured: DODO_API_KEY is not set — mode reported, subscription lookup skipped'
       })
@@ -316,6 +353,7 @@ exports.handler = async function (event) {
           ok: true,
           activeMode: activeMode,
           keyPresent: true,
+          passProductsConfigured: passProductsConfigured(),
           subscription: mapSubscription(sub)
         })
       };
@@ -347,6 +385,7 @@ exports.handler = async function (event) {
         ok: true,
         activeMode: activeMode,
         keyPresent: true,
+        passProductsConfigured: passProductsConfigured(),
         subscriptions: mapped
       })
     };

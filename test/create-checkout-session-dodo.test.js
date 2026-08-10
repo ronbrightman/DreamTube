@@ -86,6 +86,9 @@ test.after(function () {
   delete process.env.DODO_PRODUCT_PACK_LARGE4000;
   delete process.env.MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IP_PER_DAY;
   delete process.env.MAX_CHECKOUT_PASSWORD_ATTEMPTS_PER_IDENTIFIER_PER_DAY;
+  delete process.env.DODO_PRODUCT_DREAMER_PASS;
+  delete process.env.DODO_PRODUCT_DREAMER_PASS_NOTRIAL;
+  delete process.env.DODO_PRODUCT_DREAMER_PASS_TRIAL50;
 });
 
 test('non-POST method -> 405 E1', async function () {
@@ -561,4 +564,125 @@ test('the subscription path does NOT apply the starter-pack E9 one-time guard, e
   assert.equal(res.statusCode, 200, 'the subscription checkout is never blocked by the starter E9 guard');
   assert.equal(captured.calls.length, 1);
   delete process.env.DODO_PRODUCT_DREAMER_PASS;
+});
+
+// ============================================================================
+// Dreamer Pass VARIANTS — the SAME 3,000-token/month pass at three
+// price/trial configurations, selected by an OPTIONAL `passVariant` in
+// {freetrial, notrial, trial50} on the subscription request. Each maps to its
+// own DODO_PRODUCT_DREAMER_PASS[_NOTRIAL|_TRIAL50] env var (product IDs are
+// never hardcoded, same pattern as the packs). Absent/empty/unknown ->
+// freetrial (byte-for-byte the existing default). INERT PLUMBING: no shipped
+// UI passes passVariant yet. See create-checkout-session-dodo.js's DREAMER
+// PASS VARIANTS header note.
+// ============================================================================
+
+test('passVariant "freetrial" selects DODO_PRODUCT_DREAMER_PASS (same as the default) and tags metadata', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'ft@example.com', plan: 'dreamer_pass', passVariant: 'freetrial' } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pass_freetrial');
+  assert.equal(sentBody.metadata.dreamtube_plan, 'dreamer_pass');
+  assert.equal(sentBody.metadata.dreamtube_pass_variant, 'freetrial');
+});
+
+test('passVariant "notrial" selects DODO_PRODUCT_DREAMER_PASS_NOTRIAL', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+  process.env.DODO_PRODUCT_DREAMER_PASS_NOTRIAL = 'pdt_pass_notrial';
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'nt@example.com', plan: 'dreamer_pass', passVariant: 'notrial' } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pass_notrial', 'notrial must select its OWN product, never the default');
+  assert.equal(sentBody.metadata.dreamtube_pass_variant, 'notrial');
+  // Same product_cart shape as every other path — Dodo derives the (absent)
+  // trial from the product config, no subscription_data param sent.
+  assert.equal(sentBody.subscription_data, undefined);
+  assert.equal(sentBody.feature_flags.allow_tax_id, false);
+});
+
+test('passVariant "trial50" selects DODO_PRODUCT_DREAMER_PASS_TRIAL50', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+  process.env.DODO_PRODUCT_DREAMER_PASS_TRIAL50 = 'pdt_pass_trial50';
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 't50@example.com', plan: 'dreamer_pass', passVariant: 'trial50' } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pass_trial50');
+  assert.equal(sentBody.metadata.dreamtube_pass_variant, 'trial50');
+});
+
+test('a subscription request with NO passVariant defaults to freetrial (DODO_PRODUCT_DREAMER_PASS), byte-for-byte the existing behavior', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+  // Both new variant env vars are also set, to prove the default never
+  // accidentally reaches for one of them.
+  process.env.DODO_PRODUCT_DREAMER_PASS_NOTRIAL = 'pdt_pass_notrial';
+  process.env.DODO_PRODUCT_DREAMER_PASS_TRIAL50 = 'pdt_pass_trial50';
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'default@example.com', plan: 'dreamer_pass' } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pass_freetrial', 'no passVariant -> the freetrial default product, never a new variant');
+  assert.equal(sentBody.metadata.dreamtube_pass_variant, 'freetrial', 'the resolved default is recorded as freetrial');
+});
+
+test('an unknown passVariant value falls back to freetrial (default), never an error', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'unknown@example.com', plan: 'dreamer_pass', passVariant: 'bogus_variant' } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pass_freetrial', 'an unknown variant must resolve to the safe default, not 4xx');
+  assert.equal(sentBody.metadata.dreamtube_pass_variant, 'freetrial');
+});
+
+test('an empty-string passVariant resolves to freetrial (default)', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'empty@example.com', plan: 'dreamer_pass', passVariant: '' } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pass_freetrial');
+});
+
+test('passVariant is case/whitespace-insensitive ("  NoTrial  " -> notrial)', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+  process.env.DODO_PRODUCT_DREAMER_PASS_NOTRIAL = 'pdt_pass_notrial';
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'ws@example.com', plan: 'dreamer_pass', passVariant: '  NoTrial  ' } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pass_notrial');
+  assert.equal(sentBody.metadata.dreamtube_pass_variant, 'notrial');
+});
+
+test('a requested variant whose env var is unset -> 500 E6 naming THAT variant\'s env var, Dodo never called', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+  delete process.env.DODO_PRODUCT_DREAMER_PASS_NOTRIAL; // notrial requested but unconfigured
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'missing@example.com', plan: 'dreamer_pass', passVariant: 'notrial' } }));
+  assert.equal(res.statusCode, 500);
+  assert.match(JSON.parse(res.body).error, /^E6: missing_product_id: DODO_PRODUCT_DREAMER_PASS_NOTRIAL/);
+  assert.equal(captured.calls.length, 0, 'must not create a Dodo checkout when the requested variant is unconfigured');
+});
+
+test('trial50 unset -> 500 E6 names DODO_PRODUCT_DREAMER_PASS_TRIAL50 specifically', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+  delete process.env.DODO_PRODUCT_DREAMER_PASS_TRIAL50;
+  var res = await handler(reqEvent({ body: { email: 'missing50@example.com', plan: 'dreamer_pass', passVariant: 'trial50' } }));
+  assert.equal(res.statusCode, 500);
+  assert.match(JSON.parse(res.body).error, /^E6: missing_product_id: DODO_PRODUCT_DREAMER_PASS_TRIAL50/);
+});
+
+test('requesting a NEW variant does not fall back to the default product even when the default IS configured', async function () {
+  // Regression guard: an unconfigured notrial must E6, NOT silently sell the
+  // freetrial product — the price/trial the buyer selected would be wrong.
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+  delete process.env.DODO_PRODUCT_DREAMER_PASS_NOTRIAL;
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'nofallback@example.com', plan: 'dreamer_pass', passVariant: 'notrial' } }));
+  assert.equal(res.statusCode, 500, 'an unconfigured variant must fail, never quietly substitute the default product');
+  assert.equal(captured.calls.length, 0);
 });

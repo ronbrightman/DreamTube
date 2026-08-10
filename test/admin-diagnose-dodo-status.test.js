@@ -467,3 +467,104 @@ test('exceeding MAX_ADMIN_DIAGNOSE_DODO_STATUS_PER_IDENTIFIER_PER_DAY is rejecte
     assert.match(JSON.parse(second.body).error, /^E6: rate_limited/);
   });
 });
+
+// ===== Dreamer Pass product env-var presence reporting (passProductsConfigured) =====
+//
+// A presence-only { [envVar]: boolean } map for the three Dreamer Pass product
+// env vars, on EVERY ok:true response — so the founder can confirm in one
+// deployed call that all three variant products resolved after setting them in
+// Netlify. NEVER exposes the raw product-id value (same "secret never leaves
+// the server" posture as keyPresent / redactToken).
+
+test('passProductsConfigured reports true/false per env var and NEVER leaks the product-id value (retrieve path)', function () {
+  return withEnv({
+    OWNER_EMAIL: OWNER_EMAIL, DODO_ENVIRONMENT: 'test_mode', DODO_API_KEY: FAKE_KEY,
+    DODO_PRODUCT_DREAMER_PASS: 'pdt_freetrial_SECRETID',
+    DODO_PRODUCT_DREAMER_PASS_NOTRIAL: 'pdt_notrial_SECRETID',
+    DODO_PRODUCT_DREAMER_PASS_TRIAL50: undefined // this one intentionally unset
+  }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    var h = loadHandlerWith({ retrieve: function () { return Promise.resolve(trialSubscriptionFixture()); } });
+    var res = await h.handler(fakeEvent({
+      method: 'POST', ip: nextIp(),
+      body: { usernameOrEmail: OWNER_EMAIL, password: 'realfounderpw1', subscriptionId: 'sub_TRIAL123' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.deepEqual(body.passProductsConfigured, {
+      DODO_PRODUCT_DREAMER_PASS: true,
+      DODO_PRODUCT_DREAMER_PASS_NOTRIAL: true,
+      DODO_PRODUCT_DREAMER_PASS_TRIAL50: false
+    });
+    // Presence-only: the actual product-id values must NEVER appear anywhere
+    // in the response.
+    assert.equal(res.body.indexOf('pdt_freetrial_SECRETID'), -1, 'the freetrial product id value must never be exposed');
+    assert.equal(res.body.indexOf('pdt_notrial_SECRETID'), -1, 'the notrial product id value must never be exposed');
+  });
+});
+
+test('passProductsConfigured is present on the mode-only degrade (no API key) response too — one call confirms env vars regardless of Dodo reachability', function () {
+  return withEnv({
+    OWNER_EMAIL: OWNER_EMAIL, DODO_ENVIRONMENT: 'live_mode', DODO_API_KEY: undefined,
+    DODO_PRODUCT_DREAMER_PASS: 'pdt_a', DODO_PRODUCT_DREAMER_PASS_NOTRIAL: 'pdt_b', DODO_PRODUCT_DREAMER_PASS_TRIAL50: 'pdt_c'
+  }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    var h = loadHandlerWith({});
+    var res = await h.handler(fakeEvent({
+      method: 'POST', ip: nextIp(),
+      body: { usernameOrEmail: OWNER_EMAIL, password: 'realfounderpw1', subscriptionId: 'sub_x' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.equal(body.keyPresent, false);
+    assert.deepEqual(body.passProductsConfigured, {
+      DODO_PRODUCT_DREAMER_PASS: true,
+      DODO_PRODUCT_DREAMER_PASS_NOTRIAL: true,
+      DODO_PRODUCT_DREAMER_PASS_TRIAL50: true
+    }, 'all three set -> all true, even without a Dodo API key');
+  });
+});
+
+test('passProductsConfigured treats a whitespace-only env var as unset (false)', function () {
+  return withEnv({
+    OWNER_EMAIL: OWNER_EMAIL, DODO_ENVIRONMENT: 'test_mode', DODO_API_KEY: FAKE_KEY,
+    DODO_PRODUCT_DREAMER_PASS: '   ', DODO_PRODUCT_DREAMER_PASS_NOTRIAL: undefined, DODO_PRODUCT_DREAMER_PASS_TRIAL50: undefined
+  }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    var h = loadHandlerWith({ retrieve: function () { return Promise.resolve(trialSubscriptionFixture()); } });
+    var res = await h.handler(fakeEvent({
+      method: 'POST', ip: nextIp(),
+      body: { usernameOrEmail: OWNER_EMAIL, password: 'realfounderpw1', subscriptionId: 'sub_TRIAL123' }
+    }));
+    var body = JSON.parse(res.body);
+    assert.equal(body.passProductsConfigured.DODO_PRODUCT_DREAMER_PASS, false, 'a whitespace-only value counts as unset');
+  });
+});
+
+test('passProductsConfigured appears on the email-lookup response as well', function () {
+  return withEnv({
+    OWNER_EMAIL: OWNER_EMAIL, DODO_ENVIRONMENT: 'live_mode', DODO_API_KEY: FAKE_KEY,
+    DODO_PRODUCT_DREAMER_PASS: 'pdt_a', DODO_PRODUCT_DREAMER_PASS_NOTRIAL: undefined, DODO_PRODUCT_DREAMER_PASS_TRIAL50: 'pdt_c'
+  }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    var h = loadHandlerWith({
+      customersList: function () { return Promise.resolve({ data: [{ customer_id: 'cus_1' }] }); },
+      list: function () { return Promise.resolve({ data: [trialSubscriptionFixture()] }); }
+    });
+    var res = await h.handler(fakeEvent({
+      method: 'POST', ip: nextIp(),
+      body: { usernameOrEmail: OWNER_EMAIL, password: 'realfounderpw1', email: 'buyer@example.com' }
+    }));
+    assert.equal(res.statusCode, 200);
+    var body = JSON.parse(res.body);
+    assert.deepEqual(body.passProductsConfigured, {
+      DODO_PRODUCT_DREAMER_PASS: true,
+      DODO_PRODUCT_DREAMER_PASS_NOTRIAL: false,
+      DODO_PRODUCT_DREAMER_PASS_TRIAL50: true
+    });
+  });
+});
