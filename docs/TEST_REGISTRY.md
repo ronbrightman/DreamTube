@@ -43,7 +43,7 @@ A row with only `test/*.test.js` coverage and no prod-smoke row is
 | Login (`account-login.js`) | `test/account-store.test.js`, `test/rename-migration-login-behavioral.test.js`, `test/facebook-login-signup-behavioral.test.js`, `test/password-reset-account.test.js` | — |
 | Facebook Login / OAuth (`facebook-oauth-callback.js`, `facebook-complete-signup.js`) | `test/facebook-oauth-callback.test.js`, `test/facebook-login-signup-behavioral.test.js`, `test/account-store-facebook.test.js` | — |
 | Password reset (`request-password-reset.js`, `verify-password-reset.js`) | `test/password-reset-account.test.js` | — |
-| Account deletion (`delete-account.js`) | `test/delete-account.test.js`, `test/delete-account-behavioral.test.js` | `test/prod-smoke/session.test.js` (real delete, used for its own probe-account cleanup — proves the endpoint works against real prod, not a dedicated feature test) |
+| Account deletion (`delete-account.js`) | `test/delete-account.test.js`, `test/delete-account-behavioral.test.js` (now covers step 7's `block-store.js` cleanup — a freed username re-registered by a new account does not inherit the old holder's block list) | `test/prod-smoke/session.test.js` (real delete, used for its own probe-account cleanup — proves the endpoint works against real prod, not a dedicated feature test) |
 | Auth tokens (`lib/account-auth-token.js`) | `test/account-auth-token.test.js` | — |
 | Cross-device session transfer (`create-session-transfer.js`, `verify-session-transfer.js`) | `test/session-transfer.test.js`, `test/session-transfer-behavioral.test.js` | — |
 | Account rename/consolidation (one-off admin tools) | `test/admin-diagnose-rename-conflict.test.js`, `test/consolidate-accounts-client-migration-behavioral.test.js`, `test/admin-restore-founder-email.test.js` | These are one-off hardcoded tools per `AGENT_POLICY.md`'s "remove one-off admin panels after use" policy — coverage is expected to be retired alongside the tool itself, not maintained indefinitely. |
@@ -602,3 +602,18 @@ found relative to the already-fixed reference pattern in `shop.html`'s own
    a true no-baseline-ever (marker-less + persistently failing balance
    read) case resolving into the honest card rather than a hang or a
    fabricated confirmation.
+
+2026-08-10, alongside tracker item `delete-account-js-never-cleans-up-
+block--luhb4f` (found auditing a different, already-closed item): a
+deleted account's `block-store.js` record (who it had blocked) was never
+cleaned up by `delete-account.js` at all — not a sub-marker gap like the
+achievement-marker bug this was found alongside, a whole per-account
+record simply never wired into the deletion flow. Fixed with a new
+`block-store.js#deleteBlocksForUsername` export (mirrors
+`dreamStore.deleteAllPrivateDreams`'s own never-throws, safe-to-run-last
+shape) called as delete-account.js's new step 7. `test/delete-account.
+test.js` gained a real regression test proving the actual hazard this
+closes: a brand-new account re-registering a FREED username (this
+codebase has no username-reuse cooldown) no longer inherits the deleted
+former holder's block list — stashed the fix and confirmed the new test
+fails without it before restoring.

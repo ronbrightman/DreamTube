@@ -98,6 +98,23 @@
 //      "a later step's failure could skip this" risk to guard against by
 //      moving it earlier.
 //
+//   7. This account's block-list record (lib/block-store.js's
+//      blockedHandles array — a signed-in account's own "who have I
+//      blocked" list). Found missing during an unrelated audit (tracker
+//      item entitlements-js-achievement-grant-marker-ncjae0) — every
+//      other per-account store this endpoint touches was already
+//      reasoned through above; this one simply wasn't wired in. Without
+//      it, the record survives its own account's deletion, and since
+//      account-store.js has no cooldown on reusing a freed username (see
+//      step 5's own doc comment for that same fact in a different
+//      context), a brand-new, unrelated future account claiming the
+//      same freed username would silently inherit the OLD account's
+//      block list on its very first getBlockedHandles read — not just a
+//      retention gap, a real (if minor) correctness bug for that reuse
+//      case. blockStore.deleteBlocksForUsername never throws (same
+//      plain-delete shape as step 6), so it's placed last for the same
+//      reason step 6 is.
+//
 //   NOT touched, and why (see this repo's own tracker/AGENT_POLICY.md
 //   escalation policy for the reasoning behind leaving these as a
 //   judgment call rather than guessing):
@@ -177,6 +194,7 @@ var entitlements = require('./lib/entitlements');
 var rateLimit = require('./lib/rate-limit');
 var accountAuthToken = require('./lib/account-auth-token');
 var dreamStore = require('./lib/dream-store');
+var blockStore = require('./lib/block-store');
 var { connectLambda, getStore } = require('@netlify/blobs');
 
 exports.handler = async function (event) {
@@ -264,6 +282,11 @@ exports.handler = async function (event) {
     // 6. This account's server-side private-dream record — see header
     // comment above.
     await dreamStore.deleteAllPrivateDreams(event, account.username);
+
+    // 7. This account's block-list record (lib/block-store.js) — see
+    // header comment above. Same never-throws, safe-to-run-last shape as
+    // step 6.
+    await blockStore.deleteBlocksForUsername(event, account.username);
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (e) {

@@ -126,10 +126,38 @@ async function removeBlockedHandle(event, username, handle) {
   }
 }
 
+/**
+ * Deletes `username`'s entire block-list record outright (not a
+ * clear-to-empty-array write) — the account-deletion cleanup path
+ * (delete-account.js), same "one record per account, one delete() call"
+ * shape as dreamStore.deleteAllPrivateDreams/accountAuthToken.
+ * invalidateTokensForUsername already use there. Without this, the record
+ * survives its own account's deletion and — since usernames can be
+ * re-registered once freed (account-store.js has no reuse cooldown) — a
+ * brand-new, unrelated future account claiming the same freed username
+ * would silently inherit the OLD account's block list on its very first
+ * getBlockedHandles read. Never throws; a failed delete here must not
+ * block the rest of account deletion (same posture as every other step
+ * in that flow).
+ */
+async function deleteBlocksForUsername(event, username) {
+  var key = normalizeUsername(username);
+  if (!key) return { ok: false };
+  try {
+    connectLambda(event);
+    await store().delete(key);
+    return { ok: true };
+  } catch (e) {
+    console.error('block-store: deleteBlocksForUsername failed for ' + key, e);
+    return { ok: false };
+  }
+}
+
 module.exports = {
   STORE_NAME,
   normalizeUsername,
   getBlockedHandles,
   addBlockedHandle,
-  removeBlockedHandle
+  removeBlockedHandle,
+  deleteBlocksForUsername
 };
