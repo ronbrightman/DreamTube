@@ -366,6 +366,15 @@
             PurchaseSheet.renderBalanceChip(topbarChip, fresh);
           }).catch(function(){});
         },
+        // Proceed callback (tracker item for-product-low-out-of-tokens-
+        // sheet-inli-uqt6or): fires when balance now covers cost, whether
+        // that's the show()-time guard above (a server-vs-client balance
+        // race) or an in-sheet inline claim that itself bridges the gap
+        // -- see js/purchase-sheet.js's claimInline() doc comment.
+        // proceedToGenerate() already does its own full persistDraft +
+        // navigate, same as the unblocked click path just below, so this
+        // is safe to call regardless of which of those two triggers it.
+        onAfford: proceedToGenerate,
         // "Make it as an image instead" fallback (tracker item
         // for-product-out-of-tokens-sheet-founder--dg5q1y) -- only offered
         // when the blocked action is itself a video (this is a general
