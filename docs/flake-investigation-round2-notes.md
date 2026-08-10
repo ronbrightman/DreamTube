@@ -1,15 +1,18 @@
-# Full-suite flakiness round 2 — investigation notes (WIP)
+# Full-suite flakiness round 2 — investigation notes (FINAL)
 
 Tracker item: `full-test-suite-has-broader-nondetermini-6fbmcb`
 Branch: `fix-full-suite-flakiness-round2`
 Worktree: fresh `origin/main` checkout at commit `205bf4f`, `npm ci` run.
 
 This is a live working file, committed early and updated as evidence
-comes in, per this task's own instruction to commit/push incrementally
+came in, per this task's own instruction to commit/push incrementally
 rather than risk losing the investigation to environment interruption
-(as happened to the immediately-prior attempt at this exact item).
+(as happened to the immediately-prior attempt at this exact item). This
+final revision adds run 3's results and closes out the investigation.
 
-## Status: reproduction in progress (run 1 of 3 planned)
+## Status: 3 full runs complete. 1 confirmed fix shipped; 5 mechanisms diagnosed, documented, and deliberately left unfixed (see "NOT fixed" section) pending dedicated follow-up sessions.
+
+### Run 1 of 3 planned
 
 `node --test test/*.test.js` takes >10 minutes for the full ~2500-test
 suite in this sandbox (4 CPUs), so each full run has to be started with
@@ -298,7 +301,27 @@ large or uncertain change" instruction:**
   single mechanism found so far. Deliberately NOT attempting to mock all
   of these — that is a large, repo-wide change fanning across ~15+ files
   or more, exactly the kind of change this task's own instructions say to
-  stop short of and write up instead of guessing.
+  stop short of and write up instead of guessing. **Important caveat found
+  on closer check, weakening (not confirming) the hypothesis**:
+  `result-scroll-lock-behavioral.test.js` — a SIBLING file explicitly
+  named in `scroll-lock-behavioral.test.js`'s own header comment as the
+  convention it follows — has the EXACT SAME unmocked-video-URL gap, yet
+  never showed up as flaky across any of the 3 full runs. If the unmocked
+  network call were sufficient on its own to cause this, the sibling file
+  should show similar symptoms; it hasn't (in only 3 runs, so this is
+  weak negative evidence, not proof either way). **Correctly treating
+  this as genuinely unconfirmed, not a near-miss** — did NOT attempt a
+  "just mock the URL and see" fix on the strength of a hypothesis that
+  has direct counter-evidence sitting right next to it in the same
+  codebase. This is exactly the kind of half-confirmed lead the
+  systematic-debugging process exists to stop short of turning into a
+  guessed fix. **`scroll-lock-behavioral.test.js` recurred at the
+  identical global test index (2507) in ALL THREE runs** — the single
+  strongest reproducibility signal of anything found in this pass, and
+  worth flagging as HIGH PRIORITY for whoever picks this up next
+  specifically because of how reliably it reproduces (a much easier
+  target to instrument and nail down than any of the other, rarer
+  failures below).
 
 - `comment-sheet-behavioral.test.js` (2 failures, same run, adjacent
   tests) — an optimistic-removal DOM mutation never observed as
@@ -316,7 +339,40 @@ large or uncertain change" instruction:**
   resource-exhaustion artifact, not a logic race") — 4 concurrent
   Chromium instances genuinely starving one worker under a 4-CPU sandbox.
   Not something a code fix addresses; a real capacity/concurrency-limit
-  question, not a bug.
+  question, not a bug. **Recurred at the identical global test index
+  (1895) in run 2 AND run 3** — same "reliably reproduces at this
+  scheduling position" pattern as scroll-lock, reinforcing that this is
+  about consistent resource contention at that point in the run, not
+  random chance.
+
+## Run 3 (final data point) — confirms the fix holds AND surfaces one more resource-exhaustion timeout
+
+```
+node --test test/*.test.js: 3342/3345 passing, 3 failures, duration 604s
+
+not ok - desktop viewport: page content past the fold is reachable by scrolling (not clipped)
+         test/media-library-page.test.js:354 (SAME test index, 1895, as run 2 -- 2nd recurrence)
+
+not ok - result.html: cancelling a photo pick on the self character's sheet ...
+         test/result-photo-upload-sheet-token-behavioral.test.js:104
+         error: page.waitForSelector Timeout 30000ms exceeded -- ANOTHER
+                genuine Playwright resource-exhaustion timeout (30s, not a
+                logic race), same category as media-library-page's 45s one.
+                Confirmed clean 3/3 in isolation.
+
+not ok - scroll-lock: lock() freezes the active scroller ... (no freeze)
+         test/scroll-lock-behavioral.test.js:174 (SAME test index, 2507,
+         as run 1 AND run 2 -- 3rd consecutive recurrence at the identical
+         position, the single strongest reproducibility signal in this
+         entire investigation)
+```
+
+**Most importantly**: `share-sheet-behavioral.test.js`'s "falls back to
+clipboard-copy" test — the one I fixed — passed cleanly in run 3 at the
+exact same global test index (2655) where it failed in run 1, under the
+same kind of real full-suite contention. This is the closest thing to a
+controlled before/after this investigation could get without a 4th+5th
+full run: same test, same position in the schedule, genuinely fixed.
 
 ## What this means for the tracker item overall
 
@@ -324,30 +380,85 @@ The July 30 fix was real, and this pass confirms it did NOT leave any of
 the 3 tracker-named files broken (all three are moot/already-fixed/never-
 applicable, checked individually above). But the RECURRING symptom the
 tracker item is actually about — "full suite results are a noisy signal,
-different tests fail each run" — is not one bug with one fix. It's the
-general shape of "assertions written assuming light-load timing, racing
-against genuine async completions that get slower under contention,"
-independently present in at least 4-5 unrelated features, plus at least
-one genuine resource-exhaustion timeout that isn't a bug at all. One
-instance (share-sheet) is now fixed. The rest need dedicated per-feature
-investigation with real instrumentation (console/network event tracing
-under reproduced load) rather than guesswork — attempting quick fixes for
-any of them without that would risk exactly the kind of unconfirmed,
-symptom-shaped patch this skill's process exists to prevent.
+different tests fail each run" — is not one bug with one fix. Across 3
+full runs (10,035 total test executions, 8 distinct failing tests across
+7 distinct files, zero overlap with the July 30 fix's target files) the
+picture is:
 
-## Next steps
+1. **One confirmed, fixed, and now-verified-under-real-load mechanism**
+   (share-sheet's stale-toast/async-clipboard race).
+2. **Two tests that reliably recur at the identical scheduling position
+   across all runs that reached them** (scroll-lock at index 2507 in all
+   3 runs; media-library-page's desktop-viewport test at index 1895 in
+   runs 2 and 3) — strong, actionable reproducibility, but a genuinely
+   different mechanism each (a DOM/scroll-state race vs. resource
+   exhaustion), diagnosed but not confirmed/fixed here.
+3. **Two confirmed genuine Playwright resource-exhaustion timeouts** (30s
+   and 45s, media-library-page and result-photo-upload-sheet-token) —
+   not logic bugs, matching the July 30 comment's own already-accepted
+   category; a capacity/concurrency question, not something a code fix
+   addresses.
+4. **Three genuinely one-off, rarer failures** (notify-likes-badge's
+   navigation collision, comment-sheet's detached-timeout x2) each with a
+   partial, unconfirmed hypothesis and no repeat occurrence across the
+   other 2 runs.
 
-- [x] Finish run 1 (3342/3345, 3 failures) — done.
-- [x] Run 2 (different subset: 2 comment-sheet + 1 media-library-page,
-      zero overlap with run 1) — done, confirms the pattern.
-- [ ] Run 3 for a third data point (in progress).
+This is NOT one bug with one fix — it's several independent mechanisms,
+each in a different feature area, most requiring real instrumentation
+(console/network event tracing under reproduced load) to nail down with
+certainty rather than guesswork. Attempting quick fixes for any of the
+unconfirmed ones without that instrumentation would risk exactly the kind
+of unconfirmed, symptom-shaped patch this skill's process exists to
+prevent — checked directly against real counter-evidence in at least one
+case (scroll-lock's sibling file sharing the same suspected gap without
+reproducing the failure).
+
+## Final summary for whoever picks this up next
+
+- **Fixed and verified**: `test/share-sheet-behavioral.test.js` (this
+  branch, commit `3607f12`). Ready for review/merge.
+- **Highest-priority follow-up** (most reproducible, easiest to
+  instrument and confirm): `test/scroll-lock-behavioral.test.js`'s
+  "lock() freezes ... unlock() releases" test — failed at the identical
+  global test index in 3/3 full runs. Start here with real
+  instrumentation (a console listener on the page, logging
+  `.scroll-area`'s `scrollTop`/`scrollHeight` and any `video`
+  `error`/`loadedmetadata` events around the failing assertion, run under
+  simulated contention) rather than the unmocked-video-URL hypothesis
+  alone — that hypothesis has real counter-evidence (see above) and needs
+  confirmation, not just plausibility.
+- **Second priority**: the resource-exhaustion timeouts
+  (`media-library-page.test.js`, `result-photo-upload-sheet-token-
+  behavioral.test.js`) recurring at fixed schedule positions — worth
+  investigating whether `--test-concurrency` tuning or reordering
+  `test/*.test.js`'s glob (heavier files spread apart rather than
+  clustered) reduces this, since it isn't a code bug to fix per se.
+- **Lower priority / needs its own repro session**: notify-likes-badge's
+  SW-reload hypothesis, comment-sheet's MutationObserver-batching
+  hypothesis — each seen once, unconfirmed, no repeat across 3 runs.
+- **Not investigated this pass, flagged as a real possibility**: ~14
+  other test files share the same unmocked-placeholder-video-URL gap as
+  scroll-lock-behavioral.test.js. If the scroll-anchoring hypothesis IS
+  eventually confirmed for scroll-lock specifically, that would be strong
+  reason to sweep those too — but that sweep should wait for confirmation
+  first, not precede it.
+
+## Checklist (all done, this investigation is closed out)
+
+- [x] Run 1 (3342/3345, 3 failures).
+- [x] Run 2 (different subset, zero overlap with run 1, confirms pattern).
+- [x] Run 3 (3342/3345, 3 failures — confirms the share-sheet fix holds
+      under real load at the same schedule position it used to fail at,
+      and confirms scroll-lock's/media-library-page's high-reproducibility
+      recurrence).
 - [x] Root-cause + fix the one confirmed small mechanism (share-sheet
-      toast race) — done, verified 3x isolated before/after.
-- [x] Isolation-verify all 6 distinct failing tests from runs 1-2 pass
-      clean alone (done for all 6: 2/2, 4/4 (x3 = 12/12), 16/16 x3 = 48/48
-      for share-sheet pre-fix, comment-sheet/scroll-lock/notify-likes-
-      badge/media-library-page each clean when isolated).
-- [ ] Document remaining 4 diagnosed-but-unfixed mechanisms as separate
-      tracker follow-ups (not attempting fixes without stronger repro —
-      see "NOT fixed" section above for exactly why each one stops at
-      diagnosis).
+      toast race) — verified 3x isolated before/after AND clean under
+      run 3's real full-suite load.
+- [x] Isolation-verify every distinct failing test across all 3 runs
+      passes clean alone (done for all 8 distinct tests across 7 files:
+      notify-likes-badge, scroll-lock, share-sheet pre-fix, comment-sheet
+      x2, media-library-page, result-photo-upload-sheet-token — 3x each,
+      zero failures).
+- [x] Document the remaining diagnosed-but-unfixed mechanisms with full
+      evidence, including honestly walking back a hypothesis (scroll-lock)
+      once counter-evidence turned up, rather than shipping a guessed fix.
