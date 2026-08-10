@@ -84,10 +84,13 @@
   periwinkle/gold pack-border A/B test (docs/SHOP_PALETTE_REDESIGN_SPEC.md)
   stays RETIRED.
 
-  The daily free-claim mechanism (balance, countdown, claim button —
-  #shop-balance/#shop-countdown/#shop-claim-btn/#shop-claim-label) is
-  UNCHANGED — same ids, same DreamStore calls, same server-side
-  entitlements — only re-skinned to this page's new visual language.
+  The inline free-claim card (balance/countdown/claim button) was
+  REMOVED in the 2026-08-10 copy trim — it was redundant with the daily
+  claim SHEET this page auto-opens (PurchaseSheet.maybeAutoOpenClaimSheet,
+  fired from loadBalance below) when tokens are claimable, which remains
+  the live claim path. The claim mechanism itself (DreamStore calls,
+  server-side entitlements) is UNCHANGED; only the duplicate inline UI +
+  its own wiring went.
 -->
 <style>
 :root{
@@ -219,30 +222,20 @@ body{ background:#000; color:var(--shop-ink); }
 }
 .pack-badge.popular{ color:var(--purple); }
 .pack-badge.best{ color:var(--gold-ink); }
+/* Quiet neutral label on the base (5-dream) pack — deliberately less
+   prominent than the purple "popular"/gold "best" badges, but the same
+   .pack-badge size/position so all three cards' inner rows line up. */
+.pack-badge.base{ color:var(--shop-muted); }
 .pack-dreams{ font-weight:800; font-size:16px; color:#fff; }
 .pack-tokens{ margin-top:4px; font-size:11.5px; font-weight:500; color:var(--shop-muted); line-height:1.4; }
 .pack-value{ margin-top:6px; font-size:13px; font-weight:700; color:#cfc8ff; }
 .pack-card.best .pack-value{ color:var(--gold-ink); }
 .pack-card .pill{ min-height:46px; margin-top:12px; border-radius:13px; font-size:14px; }
 
-/* ===== free daily claim card — trust signal, UNCHANGED behavior ===== */
-.freecard{
-  margin-top:22px; background:var(--surface); border:1px solid var(--shop-line);
-  border-radius:16px; padding:20px 18px; text-align:center;
-}
-.freecard h2{ font-size:17px; font-weight:800; letter-spacing:-.01em; color:#fff; }
-.freecard p{ margin-top:7px; font-size:13px; font-weight:500; line-height:1.5; color:var(--shop-muted); }
-.freecard-balance{ font-size:34px; font-weight:800; line-height:1.1; color:var(--shop-ink); margin-top:14px; }
-.freecard-balance-sub{ font-size:12px; color:var(--shop-muted); margin-top:2px; }
-.freecard .claim-inline-btn{ margin-top:14px; }
-.freecard-countdown{ font-size:12px; color:var(--shop-muted); margin-top:8px; }
-
 /* ===== trust row ===== */
 .trustrow{ margin-top:16px; display:flex; flex-direction:column; gap:7px; }
 .trustline{ display:flex; align-items:flex-start; gap:9px; font-size:13px; font-weight:600; line-height:1.4; color:var(--shop-muted); }
 .trustline .tick{ color:#4bd39b; flex:0 0 auto; font-weight:800; }
-
-.footnote{ margin-top:16px; text-align:center; font-size:11.5px; font-weight:500; line-height:1.5; color:#8f88b3; }
 
 /* ===== post-checkout confirmation banner =====
    The persistent, state-carrying confirmation a returning Dodo buyer reads.
@@ -322,13 +315,6 @@ body{ background:#000; color:var(--shop-ink); }
       <!-- hero header — minimal, imagery-forward per the approved mock -->
       <div class="shop-head">
         <h1 class="shop-title">A new dream, every night.</h1>
-        <!-- Cost/daily-claim summary. Numbers here (100/10 per generation)
-             must match lib/entitlements.js's real VIDEO_TOKEN_COST/
-             IMAGE_TOKEN_COST (mirrored below). The claim amount varies per
-             account (100 on the first-ever claim, 20 after — see
-             lib/entitlements.js's FIRST_CLAIM_BONUS_AMOUNT), so
-             #shop-cost-banner-claim-amount is rendered live in renderBalance(). -->
-        <p class="shop-sub" id="shop-cost-banner"><b>Videos cost 100 tokens, images 10.</b> Claim <span id="shop-cost-banner-claim-amount">20</span> free tokens once a day, and top up any time.</p>
         <div class="shop-stars" aria-hidden="true">★★★★★</div>
         <div class="shop-proof">Loved by dreamers worldwide</div>
       </div>
@@ -396,6 +382,7 @@ body{ background:#000; color:var(--shop-ink); }
            (renderPackCards() below), not hardcoded. -->
       <section class="packs">
         <div class="pack-card" data-pack-card="pack199">
+          <div class="pack-badge base">Base package</div>
           <div class="pack-dreams" id="pack199-dreams"></div>
           <div class="pack-tokens" id="pack199-tokens"></div>
           <div class="pack-value" id="pack199-value"></div>
@@ -419,30 +406,12 @@ body{ background:#000; color:var(--shop-ink); }
         </div>
       </section>
 
-      <div class="footnote">1 dream video = 100 tokens. Packs are one-time — no subscription; the Pass refills every month.</div>
-
       <!-- trust row, at the decision point -->
       <div class="trustrow">
-        <div class="trustline"><span class="tick">✓</span> One-time purchase — no subscription</div>
         <div class="trustline"><span class="tick">✓</span> Secure checkout · receipt to your email</div>
         <div class="trustline"><span class="tick">✓</span> Didn't work? We refund.</div>
+        <div class="trustline"><span class="tick">✓</span> Tokens never expire</div>
       </div>
-
-      <!-- free daily claim card — kept exactly as before this redesign,
-           same ids/DreamStore calls/entitlements.js mechanism, re-skinned
-           to the new palette. NOT part of the paid-pack scope. -->
-      <section class="freecard">
-        <h2>Free tokens, every night</h2>
-        <p>Claim free tokens once a day — no card, no catch. Buying is only for when you want more dreams sooner.</p>
-        <div class="freecard-balance" id="shop-balance">–</div>
-        <div class="freecard-balance-sub">tokens available</div>
-        <button type="button" class="claim-inline-btn" id="shop-claim-btn" style="display:none;"><span id="shop-claim-label"></span></button>
-        <div class="freecard-countdown" id="shop-countdown"></div>
-      </section>
-
-      <div class="footnote" id="shop-trust-line">Secure checkout via Dodo Payments — one-time purchase, no subscription — receipt to your email.</div>
-      <div class="footnote" id="shop-cap-note">Free tokens: 20 claimable once a day. Buy a pack any time for more, right when you need it.</div>
-      <div class="footnote">Tokens are yours to spend on any dream — videos or images. Tokens never expire.</div>
 
     </div>
   </div>
@@ -757,50 +726,11 @@ body{ background:#000; color:var(--shop-ink); }
   var passStatusEl = document.getElementById('shop-pass-status');
   var passStatusBadgeEl = document.getElementById('shop-pass-status-badge');
   var passStatusTextEl = document.getElementById('shop-pass-status-text');
-  var balanceEl = document.getElementById('shop-balance');
-  var countdownEl = document.getElementById('shop-countdown');
-  var capNoteEl = document.getElementById('shop-cap-note');
-  var costBannerClaimAmountEl = document.getElementById('shop-cost-banner-claim-amount');
-  var claimBtn = document.getElementById('shop-claim-btn');
-  var claimLabel = document.getElementById('shop-claim-label');
   var tokenStatus = null;
-
-  /** "3h 12m" / "42m" / "now" from an epoch-ms nextClaimAt — same shape as profile.html/style.html/result.html's own copy of this (no shared JS module in this codebase, see js/store.js's header comment). */
-  function formatTokenCountdown(nextClaimAt){
-    if(nextClaimAt == null) return '';
-    var ms = nextClaimAt - Date.now();
-    if(ms <= 0) return 'now';
-    var totalMin = Math.ceil(ms / 60000);
-    var h = Math.floor(totalMin / 60);
-    var m = totalMin % 60;
-    return h > 0 ? (h + 'h ' + m + 'm') : (m + 'm');
-  }
 
   function renderBalance(){
     if(!tokenStatus) return;
-    balanceEl.textContent = tokenStatus.balance;
     topbarBalanceEl.textContent = tokenStatus.balance;
-    var amount = tokenStatus.dailyClaimAmount != null ? tokenStatus.dailyClaimAmount : 20;
-    // The daily +20 is an ACTIVE claim, never automatic (the amount is read
-    // live from tokenStatus.dailyClaimAmount, so any future first-claim
-    // bonus reinstatement flows through automatically) — this countdown
-    // just tells a non-claimable
-    // visitor when they'll next be ABLE to claim (see
-    // lib/entitlements.js's own doc block).
-    countdownEl.textContent = tokenStatus.claimable ? '' : (tokenStatus.nextClaimAt ? ('Next ' + amount + ' free tokens claimable in ' + formatTokenCountdown(tokenStatus.nextClaimAt)) : '');
-    if(tokenStatus.claimable){
-      claimLabel.textContent = 'Claim ' + amount + ' free tokens';
-      claimBtn.style.display = '';
-      claimBtn.disabled = false;
-    } else {
-      claimBtn.style.display = 'none';
-    }
-    // Reads the daily-claim amount live off tokenStatus (see
-    // lib/entitlements.js's DAILY_CLAIM_AMOUNT) rather than a hardcoded
-    // number — a recurring bug class this codebase has hit before
-    // (tracker item recurring-bug-class-hardcoded-daily-gran-h6swgy).
-    capNoteEl.textContent = 'Free tokens: ' + amount + ' claimable once a day. Buy a pack any time for more, right when you need it.';
-    costBannerClaimAmountEl.textContent = amount;
 
     // Welcome-offer hero (pack099) — shown ONLY when the server explicitly
     // confirms this account has never completed a pack purchase before
@@ -859,58 +789,18 @@ body{ background:#000; color:var(--shop-ink); }
     DreamStore.getTokenStatus().then(function(status){
       tokenStatus = status;
       renderBalance();
-      // Auto-open ONCE per day when claimable — the inline claim button
-      // above stays the fallback if dismissed.
+      // Auto-open the daily-claim SHEET once per day when claimable. This
+      // is now the sole in-shop claim path (the inline free-claim card was
+      // removed 2026-08-10) — the sheet itself is unchanged.
       if(autoOpen){
         PurchaseSheet.maybeAutoOpenClaimSheet(status, {
           source: 'shop_auto_open',
           onClaimed: function(){ loadBalance(false); }
         });
       }
-    }).catch(function(){ balanceEl.textContent = '–'; topbarBalanceEl.textContent = '–'; countdownEl.textContent = ''; });
+    }).catch(function(){ topbarBalanceEl.textContent = '–'; });
   }
   loadBalance(!isCheckoutSuccessReturn);
-
-  /**
-   * The free-claim card's own inline "Claim N free tokens" button —
-   * DreamStore.claimDailyTokens() is the exact same server call as the
-   * dedicated claim sheet/chip, just rendered inline here since this card
-   * already IS this page's own token status surface (no need to pop a
-   * second sheet on top of the page whose entire purpose is showing token
-   * status). daily_claim_completed fires ONLY on the real server-confirmed
-   * response, never optimistically. UNCHANGED behavior from before this
-   * redesign — this task is scoped to the paid packs, not the daily-claim UI.
-   */
-  claimBtn.addEventListener('click', function(){
-    claimBtn.disabled = true;
-    claimLabel.textContent = 'Claiming…';
-    DreamStore.claimDailyTokens().then(function(data){
-      if(!data || !data.claimed){
-        loadBalance(false); // lost a race / not actually claimable — re-sync from the server
-        return;
-      }
-      track('daily_claim_completed', { source: 'shop', streak: data.streak, balance: data.balance, surface: 'shop_balance_card' });
-      tokenStatus = Object.assign({}, tokenStatus, { balance: data.balance, claimable: false, streak: data.streak });
-      renderBalance();
-      showToast('+' + (data.amountClaimed != null ? data.amountClaimed : 20) + ' tokens claimed!');
-    }).catch(function(){
-      claimBtn.disabled = false;
-      claimLabel.textContent = 'Claim ' + ((tokenStatus && tokenStatus.dailyClaimAmount) || 20) + ' free tokens';
-      showToast('Couldn’t claim right now — try again in a moment');
-    });
-  });
-
-  // Once the countdown reaches "now" (nextClaimAt has passed), the account
-  // has genuinely become claimable server-side — re-rendering from the
-  // same cached tokenStatus forever would leave the countdown stuck
-  // showing "now" without ever revealing the claim button, since nothing
-  // else refreshes tokenStatus. Re-fetch in that case. Once already
-  // claimable, no need to keep re-fetching every tick — that state is
-  // genuinely stable until the user claims.
-  setInterval(function(){
-    if(tokenStatus && !tokenStatus.claimable && tokenStatus.nextClaimAt && tokenStatus.nextClaimAt <= Date.now()) loadBalance(true);
-    else renderBalance();
-  }, 60000);
 
   // ============================================================================
   // Returning from a Dodo Checkout redirect (?checkout=success|cancelled)

@@ -2179,7 +2179,14 @@ test('login.html signup mode shows the same email reassurance microcopy, hidden 
   }
 });
 
-test('shop.html leads with the real per-generation cost line, not stale "beta"/"nothing to buy" framing', async function (t) {
+test('shop.html shows live pack prices and the trimmed trust row, not stale "beta"/"nothing to buy" framing', async function (t) {
+  // The top-of-page cost banner (#shop-cost-banner) and the trailing
+  // #shop-trust-line footnote were both removed in the 2026-08-10 founder
+  // copy trim. The surviving decision-point copy this test now pins is the
+  // live pack-price buttons plus the three-line trust row. Pack pricing
+  // itself has full coverage in test/shop-behavioral.test.js; this keeps
+  // the store's own page-level guard against any stale beta/"nothing to
+  // buy" framing creeping back in.
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -2187,23 +2194,16 @@ test('shop.html leads with the real per-generation cost line, not stale "beta"/"
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 150, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0, hasMadeFirstPurchase: true });
     await seedLoggedInUserAt(page, baseUrl, 'shopbetatester', '/shop.html');
-    await page.waitForSelector('#shop-cost-banner', { timeout: 5000 });
+    // Buy-button labels are computed from PACK_INFO at load — wait for one
+    // to be populated before reading page copy.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('shop-buy-pack199');
+      return el && el.textContent.trim().length > 0;
+    }, null, { timeout: 5000 });
 
-    var bannerText = await page.textContent('#shop-cost-banner');
-    // Store-launch copy sweep (tracker item
-    // for-product-store-launch-copy-sweep-purc-m6xhkx): "Free during
-    // beta -- no card needed" / "nothing to buy right now" directly
-    // contradicted the live Buy buttons right below it once Dodo
-    // Payments checkout actually went live -- replaced with the real
-    // cost facts (must match lib/entitlements.js's real
-    // VIDEO_TOKEN_COST/IMAGE_TOKEN_COST/DAILY_CLAIM_AMOUNT, not
-    // stale/guessed numbers). Still true after "The Vault" redesign
-    // (tracker item for-product-build-ship-today-founder-app-zn9zyy).
-    assert.doesNotMatch(bannerText, /free during beta/i, 'the beta framing must be gone now that the store is live');
-    assert.doesNotMatch(bannerText, /nothing to buy right now/i, 'must not claim there is nothing to buy -- live packs are right below it');
-    assert.match(bannerText, /100 tokens/i, 'should state the real video cost');
-    assert.match(bannerText, /10\b/, 'should state the real image cost');
-    assert.match(bannerText, /free/i, 'should still mention the free daily grant exists');
+    var bodyText = await page.textContent('body');
+    assert.doesNotMatch(bodyText, /free during beta/i, 'the beta framing must be gone now that the store is live');
+    assert.doesNotMatch(bodyText, /nothing to buy right now/i, 'must not claim there is nothing to buy -- live packs are right on the page');
 
     // Token packs are real, live purchases (Dodo Payments), each button
     // stating its own exact price ("Pay $X.XX") -- see
@@ -2211,11 +2211,12 @@ test('shop.html leads with the real per-generation cost line, not stale "beta"/"
     var buttonText = (await page.textContent('#shop-buy-pack199')).trim();
     assert.match(buttonText, /^Pay \$2\.99$/, 'buy buttons must state the exact price, not a generic "Buy"');
 
-    var trustLine = await page.textContent('#shop-trust-line');
-    assert.match(trustLine, /Dodo Payments/i);
-    assert.match(trustLine, /one-time purchase/i);
-    assert.match(trustLine, /no subscription/i);
-    assert.match(trustLine, /receipt/i);
+    // The trimmed trust row is the store's decision-point reassurance now.
+    var trustText = await page.textContent('.trustrow');
+    assert.match(trustText, /Secure checkout/i);
+    assert.match(trustText, /receipt/i);
+    assert.match(trustText, /refund/i);
+    assert.match(trustText, /Tokens never expire/i);
   } finally {
     await context.close();
   }
@@ -2295,141 +2296,20 @@ test("result.html's out-of-tokens purchase sheet (reached from Generate Again) r
   }
 });
 
-/**
- * Bug report (profile-improvements-kwivqb): "+100 in now" (the token
- * countdown) never resets once it reaches "now" -- because the page's 60s
- * setInterval only re-rendered the SAME cached tokenStatus object, it never
- * re-fetched get-token-status.js, so once nextClaimAt passed, the displayed
- * countdown froze there forever even though the account had already become
- * claimable server-side. Fix: once nextClaimAt has passed, the interval
- * callback re-fetches instead of just re-formatting. Uses page.clock to
- * fast-forward past both the claim-eligible time and the 60s interval
- * without a real wait, and a second get-token-status.js route response (a
- * distinctly different claimable state) to prove a genuine second fetch
- * happened, not just a re-render of the first response.
- *
- * This property was originally asserted on profile.html AND shop.html,
- * since both carried a countdown. profile.html no longer has one at all:
- * the founder-approved Profile night restyle (tracker item
- * for-product-build-founder-approved-2026--to6ew2) replaced its chip with
- * js/purchase-sheet.js's plain, claim-free variant and deleted the polling
- * interval outright -- home.html is the sole claim/ritual surface now. The
- * profile.html copies of this test and of the two claimable-state tests
- * that followed it were removed alongside that behavior rather than left
- * asserting something deleted on purpose; shop.html keeps every one of
- * those properties, and test/profile-night-restyle-behavioral.test.js
- * asserts the claim UI is genuinely gone from Profile.
- */
-test('shop.html: the token countdown re-fetches (not just re-renders stale data) once it reaches "now", revealing the claim button', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.clock.install({ time: Date.now() });
-
-    var callCount = 0;
-    await page.route('**/.netlify/functions/get-token-status*', function (route) {
-      callCount++;
-      var body = callCount === 1
-        ? { balance: 90, claimable: false, nextClaimAt: Date.now() + 30000, dailyClaimAmount: 10, streak: 0 }
-        : { balance: 90, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 10, streak: 0 };
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-    });
-
-    await seedLoggedInUserAt(page, baseUrl, 'shopcountdownstuck', '/shop.html');
-    await page.waitForFunction(function () {
-      var el = document.getElementById('shop-balance');
-      return el && el.textContent.indexOf('90') !== -1;
-    }, null, { timeout: 5000 });
-    await settle(function () { return callCount >= 1; });
-    assert.equal(callCount, 1);
-
-    await page.clock.fastForward(65000);
-    await page.waitForSelector('#shop-claim-btn:visible', { timeout: 5000 });
-
-    await settle(function () { return callCount >= 2; });
-    assert.equal(callCount, 2, 'expected exactly one re-fetch once the countdown reached "now"');
-    var countdownText = await page.textContent('#shop-countdown');
-    assert.doesNotMatch(countdownText, /in now/i, 'must not still read "in now" after the re-fetch');
-  } finally {
-    await context.close();
-  }
-});
-
-/**
- * 2026-07-28 daily-claim switch (tracker item
- * for-product-build-the-daily-token-claim--fngrwd): the old ≥200
- * GRANT_CEILING this section used to test (tracker item
- * for-product-bug-founder-high-token-chip--kn1v8t -- a permanent "+20 in
- * now" for any at-ceiling account) is RETIRED ENTIRELY, not just fixed
- * again -- see lib/entitlements.js's own doc block for why no ceiling is
- * needed anymore (nothing accrues without an active claim tap, so there's
- * nothing left for a ceiling to guard against). The equivalent honesty
- * property this section now tests: a CLAIMABLE account (any balance, no
- * ceiling-adjacent special-casing) shows the live "Claim +N free" copy,
- * never a stale "+N in now" countdown, and does NOT re-fetch on every 60s
- * tick just because it's sitting in the (now perfectly stable, not
- * permanently-past) claimable state.
- */
-test('shop.html: a claimable balance shows the "Claim N free tokens" button, never "in now"', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 1500, claimable: true, nextClaimAt: Date.now() - 3600000, dailyClaimAmount: 20, streak: 4 });
-    await seedLoggedInUserAt(page, baseUrl, 'foundermaxedshop', '/shop.html');
-    await page.waitForSelector('#shop-claim-btn:visible', { timeout: 5000 });
-
-    var balance = await page.textContent('#shop-balance');
-    assert.match(balance, /1500/);
-
-    var countdown = await page.textContent('#shop-countdown');
-    assert.doesNotMatch(countdown, /in now/i, 'must never render "in now" for a claimable account');
-    var claimLabel = await page.textContent('#shop-claim-label');
-    assert.match(claimLabel, /Claim 20 free tokens/i);
-  } finally {
-    await context.close();
-  }
-});
-
-test('shop.html: a claimable account never re-fetches on the 60s countdown tick', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.clock.install({ time: Date.now() });
-
-    var callCount = 0;
-    await page.route('**/.netlify/functions/get-token-status*', function (route) {
-      callCount++;
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-        balance: 1500, claimable: true, nextClaimAt: Date.now() - 3600000, dailyClaimAmount: 20, streak: 4
-      }) });
-    });
-
-    await seedLoggedInUserAt(page, baseUrl, 'ceilingnopollshop', '/shop.html');
-    await page.waitForFunction(function () {
-      var el = document.getElementById('shop-balance');
-      return el && el.textContent.indexOf('1500') !== -1;
-    }, null, { timeout: 5000 });
-    await settle(function () { return callCount >= 1; });
-    assert.equal(callCount, 1, 'sanity: exactly one fetch on initial load');
-
-    await page.clock.fastForward(65000);
-    await page.clock.fastForward(65000);
-
-    await settle(function () { return callCount >= 1; });
-    assert.equal(callCount, 1, 'must not re-fetch on any tick while already claimable');
-    var claimBtnVisible = await page.isVisible('#shop-claim-btn');
-    assert.equal(claimBtnVisible, true, 'should still show the claim button after ticks with no re-fetch');
-  } finally {
-    await context.close();
-  }
-});
-
+// ===========================================================================
+// REMOVED (2026-08-10, founder store copy trim): three shop.html tests lived
+// here -- "the token countdown re-fetches once it reaches now, revealing the
+// claim button", "a claimable balance shows the 'Claim N free tokens'
+// button, never 'in now'", and "a claimable account never re-fetches on the
+// 60s countdown tick". All three asserted the inline free-claim card
+// (#shop-balance/#shop-countdown/#shop-claim-btn) and the 60s re-fetch
+// interval that drove it -- both deleted in the copy trim, since that inline
+// card duplicated the daily claim SHEET shop.html already auto-opens
+// (PurchaseSheet.maybeAutoOpenClaimSheet) when tokens are claimable. The
+// surviving claim path (the auto-opened claim sheet reading the live
+// dailyClaimAmount) is covered in test/token-daily-grant-copy-behavioral.test.js,
+// and the claim mechanism itself (live amount on open, claim call, streak,
+// daily_claim_completed) in test/daily-claim-behavioral.test.js.
 // ===========================================================================
 // REMOVED (2026-07-30, tracker item
 // for-product-build-founder-approved-2026--to6ew2): three further
