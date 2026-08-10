@@ -33,6 +33,8 @@ summary .tag{font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:99px
 .do-action{font-size:16px;font-weight:800;line-height:1.5;color:#ffd98a;background:rgba(217,166,83,.12);border:1px solid rgba(217,166,83,.55);border-radius:12px;padding:11px 13px;margin:8px 0}
 .do-action a{color:#9ab0ff;word-break:break-all}
 .mini{color:#8f88b3;font-size:12px;margin:8px 0 2px}
+summary.rsum{flex-direction:column;align-items:stretch;gap:4px}
+.lead{font-size:12.5px;color:#a49ec9;font-weight:500;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .note{color:#8f88b3;font-size:12px;margin-top:20px;line-height:1.55}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
@@ -107,14 +109,18 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
     if(!ronNow.length){ rbox.innerHTML='<div class="donebox">✅ Nothing needs you right now — everything live is with the workers.</div>'; }
     else { rbox.innerHTML=ronNow.map(function(i){
       var title=esc(stripFounder(i.title));
-      var detail=i.detail||''; var br=detail.indexOf('\n');
-      var action=(br>-1?detail.slice(0,br):detail).trim();
-      var rest=(br>-1?detail.slice(br):'').trim();
-      var isDo=/^DO THIS:/i.test(action);
-      var head=isDo?'<div class="do-action">👉 '+linkify(esc(action.replace(/^DO THIS:\s*/i,'')))+'</div>':'';
-      var bodyText=isDo?rest:detail;
-      var body=bodyText?'<div class="mini">'+linkify(esc(bodyText))+'</div>':'';
-      return '<details class="ron" open><summary><span class="t">'+title+'</span></summary><div class="body">'+head+body+'</div></details>';
+      var detail=(i.detail||'').trim();
+      // Founder Board is scan-first (founder 2026-08-10: cards opened by
+      // default and dumped the whole agent-written detail — a wall of text
+      // he couldn't read). Now: COLLAPSED, showing only the title + ONE
+      // short lead line. Full detail is one tap away, never dumped open.
+      // The 150-char cap keeps the lead short no matter how long an item is
+      // written, so this can't regress from the writing side again.
+      var firstLine=detail.split('\n')[0].replace(/^DO THIS:\s*/i,'').trim();
+      var lead=firstLine.length>150?firstLine.slice(0,150).replace(/\s+\S*$/,'').trim()+'…':firstLine;
+      var leadHtml=lead?'<span class="lead">'+linkify(esc(lead))+'</span>':'';
+      var full=detail?'<div class="body">'+linkify(esc(detail))+'</div>':'';
+      return '<details class="ron"><summary class="rsum"><span class="t">'+title+'</span>'+leadHtml+'</summary>'+full+'</details>';
     }).join(''); }
 
     // Parked — on your radar, nothing blocking. Collapsed, titles only.
