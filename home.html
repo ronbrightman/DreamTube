@@ -98,6 +98,14 @@
   the old "✦" glyph everywhere tokens render — the topbar chip also
   returns, balance-only). Visual spec = home-mock5-x7q4.html; see each new
   section's own comment below for the exact tracker/mock references.
+
+  A small ambient "Dream recall" tip line (`#recall-tip`, tracker item
+  auto-retention-sprint-addendum-founder-0-r3i0y9) rides directly under
+  the ritual module — plain text, not tappable, date-keyed daily rotation
+  through a recall-only tip list, deliberately smaller/quieter than the
+  "Tip of the day" section immediately below it. See that element's own
+  comment for how the two are meant to coexist without reading as a
+  duplicate.
 -->
 <style>
 :root{
@@ -702,6 +710,19 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 .tip-text{ margin-top:9px; font-size:var(--t-body); font-weight:500; line-height:1.5; color:#dcd7f2; }
 .tip-more{ margin-top:14px; font-size:15px; font-weight:600; color:var(--home-soft); text-align:right; }
 
+/* --- Daily dream-recall tip — genuinely ambient/glance-class: a plain
+   <p>, no background/border/button/link chrome and nothing tappable,
+   unlike .tipcard above. Small top margin (not the standard 32px .sect/
+   .ritual gap) so it reads as a caption riding directly under the ritual
+   module rather than a competing section. --- */
+.recall-tip{ margin:12px 2px 0; }
+.recall-tip-label{
+  font-size:var(--t-eyebrow); letter-spacing:.12em; text-transform:uppercase;
+  color:var(--home-soft); font-weight:800;
+}
+.recall-tip-text{ font-size:13px; font-weight:500; line-height:1.5; color:var(--home-soft); }
+.recall-tip-label::after{ content:" · "; }
+
 /* --- ② GET INSPIRED / ③ CONSIDER PUBLISHING tiles (js/dream-cards.js's
    feedTileHTML/unpublishedTileHTML) — same 150×100 snap-row DNA as
    .dream-row-tile above, plus a caption snippet overlaid on the art and a
@@ -1124,6 +1145,31 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         <div class="ritual-countdown" id="ritual-countdown" hidden></div>
         <a class="ritual-balance" id="ritual-balance" href="shop.html?source=home_ritual_balance"><span class="tok-ico gold" id="ritual-balance-icon" aria-hidden="true"></span> – · Vault →</a>
       </section>
+
+      <!-- Daily dream-recall tip (tracker item auto-retention-sprint-
+           addendum-founder-0-r3i0y9, "daily TIP area" half — the WhatsApp-
+           channel half of that same item is separately tracked/blocked on
+           Meta infra, not part of this build). Deliberately distinct from
+           the "Tip of the day" SECTION just below (tracker for-product-
+           build-ship-founder-approved--9ta1j0, "Home round 4"): that one is
+           a tappable `.tipcard` button, 10 tips across 4 mixed categories,
+           per-account unseen-first rotation that only advances on tap. This
+           one is genuinely ambient — plain text, no button/card/link
+           chrome, nothing to tap — one line seeded from a ~14-tip
+           dream-RECALL-only list, same tip for every viewer on a given
+           local calendar day (dailyRecallTipIndex() below), changing at
+           local midnight rather than on interaction. Sits directly under
+           the ritual module per the founder's own "position near the
+           ritual module" spec, with a smaller top margin than the standard
+           32px `.sect`/`.ritual` gap so it visually reads as a caption
+           attached to the ritual module, not a new full section competing
+           with it or with Tip of the day right after. No medical/
+           therapeutic claims — behavior-only tips, Meta health-classifier-
+           safe neutral wording (see RECALL_TIPS below). -->
+      <p class="recall-tip" id="recall-tip">
+        <span class="recall-tip-label">Dream recall</span>
+        <span class="recall-tip-text" id="recall-tip-text"></span>
+      </p>
 
       <!-- NEW ① · TIP OF THE DAY (tracker item for-product-build-ship-
            founder-approved--9ta1j0, "Home round 4") — supersedes the old
@@ -2604,6 +2650,50 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     return true;
   }
   var inWebview = refreshWebviewCard();
+
+  // ===== Daily dream-recall tip (tracker item auto-retention-sprint-
+  // addendum-founder-0-r3i0y9, "daily TIP area" half) — a ~14-tip,
+  // recall-only seed list, real commonly-cited dream-recall techniques,
+  // deliberately no medical/therapeutic claims (Meta health-classifier-
+  // safe neutral wording, per the tracker item's own explicit
+  // constraint). Distinct from the TIPS array just below: this list is
+  // recall content only (no meaning/why-it-matters/DreamTube-promo
+  // tips), and the rotation is DATE-keyed, not tap-advanced or
+  // account-scoped — every visitor sees the same tip on the same local
+  // calendar day, matching this codebase's established local-day
+  // convention (js/store.js/home.html's own `new Date().toDateString()`
+  // pattern for "today" elsewhere on this page), so it changes at local
+  // midnight with zero interaction required. =====
+  var RECALL_TIPS = [
+    'Stay in the position you woke in for a few seconds — moving too fast is often what erases a dream.',
+    'Replay the dream once in your mind before you open your eyes.',
+    'Keep a notepad or voice memo ready by the bed — capture fragments the moment you wake.',
+    'Skip the phone for the first minute after waking. Checking notifications pushes the dream out fast.',
+    'Note the feeling first, then the images. Emotions often outlast the details.',
+    'A consistent wake-up time trains your mind to hold onto dreams instead of just falling back asleep.',
+    'Even a single image or word is worth writing down — full stories can come back later from a fragment.',
+    "Tell yourself before sleep: “I will remember my dream.” A simple intention helps.",
+    'Waking naturally, without an alarm, tends to leave dreams more intact.',
+    'If you wake mid-dream, don’t reach for your phone — reach for a pen.',
+    'Notice recurring people, places, or symbols across nights — patterns are easier to spot once written down.',
+    'Describe the dream out loud, even quietly to yourself — saying it helps lock it in before it fades.',
+    'Work backward: start from how you feel right now and follow the thread back into the dream.',
+    'A dark, quiet room in the last minutes of sleep tends to make dreams easier to recall.'
+  ];
+  /** Day-of-year in the browser's LOCAL calendar (not UTC), so the tip
+   * changes at local midnight — same locality convention as this page's
+   * other toDateString()-based "today" checks (see e.g. renderRitualModule
+   * above and todaysDreamCount below). Exported on window for the
+   * behavioral test to call directly rather than duplicate the formula. */
+  function dailyRecallTipIndex(len, now){
+    var d = now || new Date();
+    var startOfYear = new Date(d.getFullYear(), 0, 1);
+    var startOfToday = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var dayOfYear = Math.floor((startOfToday - startOfYear) / 86400000);
+    return dayOfYear % len;
+  }
+  window.dailyRecallTipIndex = dailyRecallTipIndex;
+  document.getElementById('recall-tip-text').textContent = RECALL_TIPS[dailyRecallTipIndex(RECALL_TIPS.length)];
 
   // ===== NEW ① · TIP OF THE DAY (tracker item for-product-build-ship-
   // founder-approved--9ta1j0) — 10 approved tips verbatim from
