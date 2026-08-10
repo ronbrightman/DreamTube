@@ -183,6 +183,26 @@ of its own for zero behavioral benefit.
 - [Full-suite verification: see below, added after this section during
   the same investigation pass.]
 
+**Independent re-verification (separate session, same day)**: confirmed
+the mechanism and the fix, but with a different measured base rate and a
+different specific assertion observed failing. Pre-fix: 1 failure in 23
+isolated runs (~4%, not the ~65-80% measured above) — plausibly a
+machine/Chromium-version timing sensitivity, since this is a real
+millisecond-scale race, not a difference in the underlying mechanism.
+The one failure caught was NOT the "`setScroll(20)` unreachable"
+assertion described above, but the earlier "doc scroll position is
+restored to where the user was" assertion (`3 !== 4`) — fully consistent
+with the same root cause (docDiff hadn't reached 0 yet when `openPos`
+was captured before `lock()`, but had shifted by the time position was
+checked after `unlock()`), just a different point in the same file where
+a stale mid-decay `document` scroll measurement can surface as a
+mismatch. Post-fix: 0 failures in 30 isolated runs. Confirms the fix
+(waiting for `#app`'s animation before any measurement, applied at the
+earliest point in `seedResultPage()`) is correctly positioned to prevent
+every assertion in this file that depends on settled document scroll
+geometry, not just the one specific assertion this round happened to
+observe failing most often.
+
 ## Priority 2: media-library-page.test.js resource exhaustion
 
 [To be completed — see below for status.]
