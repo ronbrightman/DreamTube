@@ -161,6 +161,39 @@ miss. Check new/changed code against these specifically:
   also used `>=1` call-count assertions where an exact count was the
   actual bar — `>=1` doesn't catch a duplicate listener; `=== 1` does.
   Flag loose count assertions on anything listener/dedup-related.
+- **A shared low-level primitive can have callers with genuinely
+  incompatible timing contracts.** `email-verification-store.js`'s
+  `createVerification` is called by both a login mechanism
+  (`register-account-passwordless.js`'s RESOLVE branch, which must
+  always mail a fresh code since it's the account's only access path)
+  and a resend flow with its own rolling-window distinct-code guarantee
+  (`resend-verification-code.js`, `test/passwordless-signup.test.js`).
+  A first version of `fix-verification-double-send-cooldown` applied a
+  send-cooldown unconditionally and passed its own new tests, but broke
+  6 pre-existing tests once the FULL suite ran — a targeted run of just
+  the new feature did not catch it. Fixed by threading the cooldown
+  in as opt-in (an `auto` flag from `js/email-verify-sheet.js`'s
+  `autoSendOnOpen` only) rather than changing the shared primitive's
+  default behavior. Any change to a shared primitive like this one
+  needs its callers enumerated and checked, not just its own new tests
+  run — and the full suite is the only thing that actually catches a
+  regression in a caller the change wasn't targeting.
+- **A UI-copy/behavior fix applied to one page's markup can miss an
+  independent hand-copied instance of the same fragment elsewhere.**
+  This static multi-page site has no shared-component system, so the
+  same UI fragment (a modal, a character-sheet block, a hardcoded token
+  count) often exists as separate copies across pages — seen at least 3
+  times: a photo-upload cancel/reopen race fixed in
+  `profile.html`/`create.html` but missed in `result.html`/`start.html`'s
+  separate copies; an out-of-tokens modal reword applied to `style.html`
+  first, then needing an identical follow-up on `result.html`'s own
+  `#modal-quota` copy; and a stale token-count number fixed in
+  `shop.html`/`profile.html` but missed in `start.html`/`wizard.html`'s
+  own hardcoded copies of the same number. Before passing any UI-copy or
+  UI-behavior fix, check whether the builder grepped the whole repo for
+  other occurrences of the same distinctive id/string/markup pattern —
+  if they only fixed the one page they started from, that's a real
+  finding, not a nitpick.
 - **Fresh git worktrees need `node_modules` symlinked.** `node_modules`
   isn't checked in and isn't per-worktree — every existing worktree
   symlinks it to the main checkout's (`ln -s
