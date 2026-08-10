@@ -660,20 +660,75 @@ async function handleDreamerPassPayment(event, payment) {
   });
   if (!payEmail) return; // acknowledged, nothing credited — same "don't guess" posture as the pack path
 
-  // A $0 payment is the trial-START authorization, NOT a real charge. It must
-  // never grant the 3,000 monthly tokens, and must never flip the account to
-  // 'active' (which would end the 100/day trial boost the instant the trial
-  // begins). The trial state is owned entirely by subscription.active; the real
-  // 3,000 grant happens only on the first >$0 charge (trial-end conversion or a
-  // renewal). Founder repro 2026-08-09: starting the Pass sent a $0
-  // payment.succeeded alongside subscription.active — without this guard the
-  // free trial would have granted a full month and cancelled its own trial.
-  // Ambiguity (missing/NaN amount) fails toward NOT granting: a genuine paid
-  // charge is also covered by subscription.renewed's own grant (deduped by
-  // payment_id), so skipping here can never lose a real grant.
+  // Which price/trial variant (freetrial|notrial|trial50) this charge is for —
+  // resolved from the payment's product_id, falling back to the variant tag
+  // create-checkout-session-dodo.js stamped in metadata. Hoisted here because
+  // BOTH the trial-start guard just below AND the conversion fire further down
+  // need it. Analytics-only for the fire; load-bearing for the guard.
+  var passVariant = resolvePassVariant(paymentProductIds(payment)) || (payment.metadata && payment.metadata.dreamtube_pass_variant);
+
+  // TRIAL-START vs. REAL-BILLING. A trial-start authorization must never grant
+  // the 3,000 monthly tokens and must never flip the account to 'active' (which
+  // would end the 100/day trial boost the instant the trial begins). The trial
+  // state is owned entirely by subscription.active; the real 3,000 grant
+  // happens only on the first POST-trial charge (trial-end conversion or a
+  // later renewal). A subscription has TWO ways of arriving here as a
+  // trial-start, and BOTH must be recognized:
+  //
+  //   (a) $0 amount — the free-trial (freetrial) trial-start authorization.
+  //       Founder repro 2026-08-09: starting the Pass sent a $0
+  //       payment.succeeded alongside subscription.active — without this guard
+  //       the free trial would have granted a full month and cancelled its own
+  //       trial. This guard is UNCHANGED; freetrial (whose only trial-start is
+  //       $0) and notrial (no trial at all) never reach the trial50 guard below.
+  //
+  //   (b) A >$0 amount charged WHILE A trial50 SUBSCRIPTION IS STILL IN ITS
+  //       TRIAL WINDOW — the PAID-trial trial-start: a 50c charge that is a
+  //       trial fee, NOT a purchase. The discriminator here is DELIBERATELY NOT
+  //       the charged amount (50c > 0 looks exactly like a real charge — that
+  //       IS the abuse hole this closes: pay 50c, get the full 3,000-token
+  //       month, cancel), because Dodo's Payment webhook payload carries no
+  //       trial/billing_reason/trialing field at all (verified against Dodo's
+  //       Node SDK Payment type — it exposes only subscription_id, total_amount,
+  //       retry_attempt and the payment-intent status, nothing that marks a
+  //       charge as a trial fee). The reliable signal is instead the
+  //       subscription's own trial STATE — the 'trialing' status + in-future
+  //       trialEnd that subscription.active writes onto this record. Dodo
+  //       delivers subscription.active BEFORE the trial-start payment.succeeded
+  //       (its documented ordering for every subscription flow — immediate
+  //       billing and trials alike: subscription.active first, then
+  //       payment.succeeded), so by the time this 50c charge is processed the
+  //       record already reads trialing, and isTrialActive is true. Scoped to
+  //       the trial50 variant (the ONLY variant with a paid trial) so the
+  //       freetrial/notrial paths stay byte-for-byte as before.
+  //
+  // Resulting outcomes:
+  //   - freetrial $0 trial-start        -> (a) skip (unchanged).
+  //   - freetrial $9.99 / notrial $7.99 first REAL charge -> not trial50 ->
+  //     grants, byte-identical to today.
+  //   - trial50 50c trial-start         -> (b) skip.
+  //   - trial50 $9.99 conversion / any renewal -> trial has ended (trialEnd
+  //     passed) -> not isTrialActive -> grants, exactly like the freetrial
+  //     conversion path (fires the 'Subscribe' conversion, below).
+  // Ambiguity (missing/NaN amount) still fails toward NOT granting. Being
+  // conservative here can never LOSE a real grant: subscription.renewed grants
+  // every real charge too, keyed by the same payment_id (see
+  // grantDreamerPassCharge), so a mis-skipped real charge is re-granted exactly
+  // once. Residual (same accepted narrow class as this file's other documented
+  // races): if Dodo ever delivered a trial50 50c payment.succeeded BEFORE its
+  // subscription.active — contrary to its own documented ordering, and not
+  // something a user can force — the record would not yet read trialing and the
+  // 50c could grant. Dodo's ordering makes this a rare, non-attacker-
+  // controllable reordering, not the open hole the amount-only guard was.
   var chargedAmount = Number(payment.total_amount);
   if (!(chargedAmount > 0)) {
-    return; // trial-start $0 — subscription.active owns the state, nothing to grant
+    return; // trial-start $0 (freetrial) — subscription.active owns the state, nothing to grant
+  }
+  if (passVariant === 'trial50') {
+    var existingRecord = await entitlements.getEntitlement(event, payEmail).catch(function () { return null; });
+    if (existingRecord && entitlements.isTrialActive(existingRecord.subscription, Date.now())) {
+      return; // trial50's 50c trial-start — still trialing, not a purchase
+    }
   }
 
   var creditResult = await grantDreamerPassCharge(event, payEmail, payment.payment_id, dodoCustomerId);
@@ -693,10 +748,10 @@ async function handleDreamerPassPayment(event, payment) {
       currency: payment.currency,
       metaEventName: 'Subscribe',
       eventId: payment.metadata && payment.metadata.dreamtube_event_id,
-      // Which price/trial variant — resolved from the payment's product_id,
-      // falling back to the variant tag create-checkout-session-dodo.js
-      // stamped in metadata. Analytics-only; never affects the grant.
-      variant: resolvePassVariant(paymentProductIds(payment)) || (payment.metadata && payment.metadata.dreamtube_pass_variant)
+      // Which price/trial variant — resolved once above (from the payment's
+      // product_id, falling back to the metadata variant tag). Analytics-only
+      // here; never affects the grant.
+      variant: passVariant
     });
   }
 
