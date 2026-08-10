@@ -2206,10 +2206,10 @@ test('shop.html shows live pack prices and the trimmed trust row, not stale "bet
     assert.doesNotMatch(bodyText, /nothing to buy right now/i, 'must not claim there is nothing to buy -- live packs are right on the page');
 
     // Token packs are real, live purchases (Dodo Payments), each button
-    // stating its own exact price ("Pay $X.XX") -- see
+    // stating its own exact price ("Get · $X.XX") -- see
     // test/shop-behavioral.test.js for full pack-button coverage.
     var buttonText = (await page.textContent('#shop-buy-pack199')).trim();
-    assert.match(buttonText, /^Pay \$2\.99$/, 'buy buttons must state the exact price, not a generic "Buy"');
+    assert.match(buttonText, /^Get · \$2\.99$/, 'buy buttons must state the exact price, not a generic "Buy"');
 
     // The trimmed trust row is the store's decision-point reassurance now.
     var trustText = await page.textContent('.trustrow');
