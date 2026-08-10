@@ -105,6 +105,23 @@
 // verification gate; see that file's header comment for why a bare stored
 // customer id is never enough on its own to unlock that.
 // ---------------------------------------------------------------------
+//
+// Dreamer Pass server-side conversion (tracker item
+// for-product-build-conversion-tracking-fo-k5ow3q): the pack-purchase
+// Purchase conversion above has always fired for every credited token pack;
+// this SAME release adds the equivalent for the Dreamer Pass SUBSCRIPTION,
+// so no revenue goes untracked from the day the Pass itself goes live to
+// real customers — the Pass is still owner-gated/diagnostic as of this
+// change, this is purely getting the tracking ready ahead of that. See
+// fireDreamerPassConversion (a sibling of firePurchaseConversion, not a
+// generalization of it — see that function's own doc comment for why) and
+// its two call sites: handleDreamerPassPayment (the first real charge —
+// fires Meta's 'Subscribe') and handleSubscriptionEvent's
+// subscription.renewed branch (every later charge — fires Meta's
+// 'Purchase', standard Meta convention for a subscription's later charges).
+// Both gate on the SAME `credited: true` dedup contract the pack path uses.
+// See docs/EVENT_TAXONOMY.md's Subscribe/Purchase (Dreamer Pass) entry.
+// ---------------------------------------------------------------------
 
 var crypto = require('crypto');
 var DodoPayments = require('dodopayments').default;
@@ -330,6 +347,106 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
   }
 }
 
+/**
+ * Fires the server-side Dreamer Pass subscription conversion (PostHog + Meta
+ * CAPI) for a newly-credited subscription charge — a SIBLING to
+ * firePurchaseConversion above, not a generalization of it, because the two
+ * charge shapes genuinely differ enough that sharing one function would mean
+ * threading pack-only concepts (resolvePackPrice's product_id lookup table,
+ * the `starter`/`pack` fields) through a subscription call site that has
+ * none of them. A token pack's `value` comes from a fixed lookup table
+ * because the price is known before checkout; a Dreamer Pass charge's
+ * `value` is read directly off the REAL amount already sitting on whichever
+ * Dodo object the caller is holding (`amountCents`/`currency` below) — see
+ * this function's callers for exactly which field on which object (Payment
+ * vs. Subscription).
+ *
+ * `metaEventName`: 'Subscribe' for the FIRST real charge (trial-end
+ * conversion or a non-trial first payment) and 'Purchase' for every
+ * subsequent renewal — standard Meta convention (Subscribe = subscription
+ * start, Purchase = each later charge), letting Meta's own subscription
+ * value-reporting work correctly. PostHog gets one consistent event name
+ * (`purchase_completed`, matching the pack path) with `subscription: true`/
+ * `renewal: true/false` properties instead, since PostHog has no equivalent
+ * Subscribe/Purchase distinction — growth filters on the property instead.
+ *
+ * `eventId` — deliberately NOT resolved the same way as the pack path's
+ * `payment.metadata.dreamtube_event_id`. That field DOES exist on a
+ * subscription checkout (create-checkout-session-dodo.js mints it once at
+ * checkout-session creation and threads it through as
+ * `metadata.dreamtube_event_id`, same as the pack path) — but a
+ * subscription's metadata lives on the SUBSCRIPTION object and is echoed
+ * back verbatim on EVERY event for that subscription's whole lifetime,
+ * unlike a pack's metadata, which is fresh per checkout/payment. Reusing
+ * that one static id across multiple distinct renewal charges would make
+ * Meta's own event_id dedup collapse every renewal after the first into
+ * "already seen", silently dropping real conversions from Meta's reporting
+ * — the opposite of what dedup is for. So: the FIRST charge (a genuine 1:1
+ * match between the checkout session that minted the id and this one first
+ * charge) is the one case where the caller passes that metadata id through;
+ * every renewal call passes no eventId at all, so a fresh one is minted
+ * per-call here. There is no live subscription checkout flow shipped yet
+ * (the Pass itself is still owner-gated), so neither case has a client-side
+ * fire to dedupe against today either way — see
+ * docs/EVENT_TAXONOMY.md's Subscribe/Purchase (Dreamer Pass) entry.
+ *
+ * Never throws — identical contract to firePurchaseConversion: analytics
+ * failure must never turn a successful token credit into a failed webhook
+ * response.
+ */
+async function fireDreamerPassConversion(event, params) {
+  try {
+    var payEmail = params.payEmail;
+    var currency = params.currency || 'USD';
+
+    // Server-derived only, same "don't trust the client, and don't guess"
+    // posture as resolvePackPrice's own undefined-return contract — a
+    // charge this handler can't resolve a real amount for skips the fire
+    // entirely rather than reporting a fabricated/placeholder value.
+    var amountCents = params.amountCents;
+    if (!(typeof amountCents === 'number' && amountCents > 0)) return;
+    var price = Math.round(amountCents) / 100;
+
+    var eventId = params.eventId || crypto.randomBytes(16).toString('hex');
+    var eventTimeMs = Date.now();
+    var renewal = params.metaEventName === 'Purchase';
+
+    // Same account-store resolution + normalized-email fallback as
+    // firePurchaseConversion above — see its own comment for the full why.
+    var account = await accountStore.getByEmail(event, payEmail).catch(function () { return null; });
+    var distinctId = (account && account.username) || entitlements.normalizeEmail(payEmail);
+
+    var postHogProps = {
+      value: price,
+      currency: currency,
+      timestamp: new Date(eventTimeMs).toISOString(),
+      subscription: true,
+      renewal: renewal,
+      plan: entitlements.DREAMER_PASS_PLAN,
+      $insert_id: eventId // PostHog's own dedup key -- see lib/posthog-capture.js header comment
+    };
+
+    await Promise.all([
+      posthogCapture.captureEvent({
+        event: 'purchase_completed',
+        distinct_id: distinctId,
+        properties: postHogProps,
+        timestamp: eventTimeMs
+      }),
+      metaCapi.sendCapiEvent({
+        event_name: params.metaEventName, // 'Subscribe' (first charge) or 'Purchase' (renewal) -- see doc comment above
+        event_id: eventId,
+        event_time: Math.floor(eventTimeMs / 1000),
+        email: payEmail,
+        custom_data: { value: price, currency: currency }
+      })
+    ]);
+  } catch (e) {
+    // analytics must never break the app -- the token credit above has
+    // already happened and must not be undone or fail because of this.
+  }
+}
+
 // ============================================================================
 // Dreamer Pass subscription handling ($9.99/month, 3-day free trial —
 // founder-approved). See lib/entitlements.js's DREAMER PASS doc block for the
@@ -492,7 +609,25 @@ async function handleDreamerPassPayment(event, payment) {
     return; // trial-start $0 — subscription.active owns the state, nothing to grant
   }
 
-  await grantDreamerPassCharge(event, payEmail, payment.payment_id, dodoCustomerId);
+  var creditResult = await grantDreamerPassCharge(event, payEmail, payment.payment_id, dodoCustomerId);
+  // Fire the FIRST-charge conversion (trial-end conversion, or a non-trial
+  // first payment) ONLY when this call actually just credited the 3000 --
+  // `credited: false` means this paymentId was already processed (a Dodo
+  // redelivery), a safe no-op that must NOT re-fire a conversion (would
+  // double-count revenue) -- exact same gate firePurchaseConversion's own
+  // caller uses for the pack path. Meta event name is 'Subscribe' (see
+  // fireDreamerPassConversion's own doc comment for why, vs. 'Purchase' on
+  // a renewal). payment.total_amount is the REAL charged amount in cents
+  // (chargedAmount, already resolved above) -- never a hardcoded price.
+  if (creditResult && creditResult.credited) {
+    await fireDreamerPassConversion(event, {
+      payEmail: payEmail,
+      amountCents: chargedAmount,
+      currency: payment.currency,
+      metaEventName: 'Subscribe',
+      eventId: payment.metadata && payment.metadata.dreamtube_event_id
+    });
+  }
 
   // A real charge means paying, not trialing — status 'active' + trialEnd:null
   // ends the 100/day boost even if no subscription.active/renewed state event
@@ -558,7 +693,28 @@ async function handleSubscriptionEvent(event, type, sub) {
   // No-ops if this payload carries no payment_id (then payment.succeeded is
   // the grant path).
   if (type === 'subscription.renewed') {
-    await grantDreamerPassCharge(event, email, subscriptionEventPaymentId(sub), dodoCustomerId);
+    var creditResult = await grantDreamerPassCharge(event, email, subscriptionEventPaymentId(sub), dodoCustomerId);
+    // A renewal IS a new charge -- growth wants total ad-attributed revenue
+    // tracked, not just the first conversion -- so this mirrors
+    // firePurchaseConversion's own "fire per confirmed newly-credited
+    // payment" behavior, not a "once ever" gate. `credited: true` gate is
+    // the same redelivery-safe dedup contract as the first-charge fire
+    // above. Meta event name is 'Purchase' (a renewal, not a subscription
+    // start -- see fireDreamerPassConversion's own doc comment). Value
+    // comes from the Subscription object's own recurring_pre_tax_amount --
+    // this event carries no nested Payment object with its own total_amount,
+    // so this is the best real, server-derived source available for a
+    // renewal. eventId is deliberately omitted (always minted fresh here)
+    // -- see fireDreamerPassConversion's doc comment for why reusing
+    // sub.metadata.dreamtube_event_id across renewals would be wrong.
+    if (creditResult && creditResult.credited) {
+      await fireDreamerPassConversion(event, {
+        payEmail: email,
+        amountCents: sub.recurring_pre_tax_amount,
+        currency: sub.currency,
+        metaEventName: 'Purchase'
+      });
+    }
   }
 }
 

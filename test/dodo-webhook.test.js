@@ -1085,3 +1085,206 @@ test('subscription.update_payment_method is acknowledged and does not change sub
   assert.equal(after.subscription.status, before.subscription.status, 'update_payment_method must not flip a trialing account to active');
   assert.equal(after.subscription.status, 'trialing');
 });
+
+// ============================================================================
+// Dreamer Pass server-side conversion tracking (tracker item
+// for-product-build-conversion-tracking-fo-k5ow3q) — mirrors the pack path's
+// Purchase-conversion coverage above (see "Server-side Purchase conversion"
+// tests up top), for the subscription's two distinct charge shapes: the
+// FIRST real charge (fires Meta 'Subscribe') and every later renewal (fires
+// Meta 'Purchase'). See dodo-webhook.js's fireDreamerPassConversion doc
+// comment for the full mechanics this proves.
+// ============================================================================
+
+test('a Dreamer Pass first real charge (payment.succeeded) fires Meta Subscribe + PostHog purchase_completed, value from the REAL total_amount, sharing eventId from metadata.dreamtube_event_id', async function () {
+  await seedZeroBalance('passsubscribe@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_subscribe',
+    customer: { customer_id: 'cus_ps', email: 'passsubscribe@example.com' },
+    total_amount: 999,
+    currency: 'USD',
+    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-pass-subscribe' }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var record = await entitlements.getEntitlement({}, 'passsubscribe@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'the credit itself must still land');
+
+  assert.equal(spies.posthogCalls.length, 1, 'expected exactly one PostHog capture call');
+  var phBody = spies.posthogCalls[0].body;
+  assert.equal(phBody.event, 'purchase_completed');
+  assert.equal(phBody.properties.value, 9.99, 'value must be the REAL charged amount (999 cents / 100), not a hardcoded constant');
+  assert.equal(phBody.properties.currency, 'USD');
+  assert.equal(phBody.properties.subscription, true);
+  assert.equal(phBody.properties.renewal, false, 'the FIRST charge is not a renewal');
+  assert.equal(phBody.properties.plan, entitlements.DREAMER_PASS_PLAN);
+  assert.equal(phBody.properties.$insert_id, 'evt-pass-subscribe', 'shares the eventId minted at subscription checkout creation');
+
+  assert.equal(spies.metaCalls.length, 1, 'expected exactly one Meta CAPI call');
+  var metaEvent = spies.metaCalls[0].body.data[0];
+  assert.equal(metaEvent.event_name, 'Subscribe', 'the FIRST Dreamer Pass charge must fire Meta Subscribe, not Purchase');
+  assert.equal(metaEvent.event_id, 'evt-pass-subscribe');
+  assert.equal(metaEvent.custom_data.value, 9.99);
+  assert.equal(metaEvent.custom_data.currency, 'USD');
+});
+
+test('a Dreamer Pass charge value scales with the REAL total_amount -- proving it is server-derived, not a hardcoded $9.99 constant', async function () {
+  await seedZeroBalance('passvaluederiv@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_value_deriv',
+    customer: { customer_id: 'cus_pvd', email: 'passvaluederiv@example.com' },
+    total_amount: 499, // a hypothetical different real charged amount -- never trust a fixed constant
+    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-pass-value-deriv' }
+  })));
+  assert.equal(spies.posthogCalls[0].body.properties.value, 4.99, 'value must reflect whatever total_amount the Payment object actually carries, not a fixed $9.99 constant');
+  assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 4.99);
+});
+
+test('a $0 trial-start Dreamer Pass payment.succeeded fires NO conversion on either vendor (not a real charge)', async function () {
+  await seedZeroBalance('passtrialconv@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_trial_conv', total_amount: 0,
+    customer: { customer_id: 'cus_ptc', email: 'passtrialconv@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  assert.equal(spies.posthogCalls.length, 0, 'a $0 trial-start authorization must never fire a conversion');
+  assert.equal(spies.metaCalls.length, 0);
+});
+
+test('a redelivered Dreamer Pass first-charge event (same payment_id) does NOT re-fire the Subscribe conversion', async function () {
+  await seedZeroBalance('passredeliverconv@example.com');
+  var payload = passPaymentPayload({
+    payment_id: 'pay_pass_redeliver_conv',
+    customer: { customer_id: 'cus_prc', email: 'passredeliverconv@example.com' },
+    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-pass-redeliver' }
+  });
+
+  var spies1 = installAnalyticsFetchSpy();
+  await handler(signedEvent(payload, { id: 'msg_pass_conv_first' }));
+  assert.equal(spies1.posthogCalls.length, 1, 'the first, genuine delivery must fire Subscribe once');
+  assert.equal(spies1.metaCalls.length, 1);
+
+  var spies2 = installAnalyticsFetchSpy();
+  await handler(signedEvent(payload, { id: 'msg_pass_conv_second' }));
+  assert.equal(spies2.posthogCalls.length, 0, 'a redelivered, already-processed Dreamer Pass charge must NOT re-fire Subscribe');
+  assert.equal(spies2.metaCalls.length, 0, 'a redelivered, already-processed Dreamer Pass charge must NOT re-fire the Meta CAPI event');
+});
+
+test('a Dreamer Pass RENEWAL (subscription.renewed) fires Meta Purchase + PostHog purchase_completed with renewal:true, value from the subscription\'s recurring_pre_tax_amount, and a FRESH eventId each time (never reused across renewals)', async function () {
+  await seedZeroBalance('passrenewconv@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var res = await handler(signedEvent(subEvent('subscription.renewed', {
+    payment_id: 'pay_renew_conv_1',
+    customer: { customer_id: 'cus_prn2', email: 'passrenewconv@example.com' },
+    recurring_pre_tax_amount: 999,
+    currency: 'USD',
+    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-static-sub-level' }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  assert.equal(spies.posthogCalls.length, 1);
+  var phBody = spies.posthogCalls[0].body;
+  assert.equal(phBody.properties.value, 9.99, 'value from recurring_pre_tax_amount (999 cents / 100)');
+  assert.equal(phBody.properties.subscription, true);
+  assert.equal(phBody.properties.renewal, true, 'a renewal charge must be tagged renewal:true');
+  assert.notEqual(phBody.properties.$insert_id, 'evt-static-sub-level', 'must NOT reuse the static subscription-level metadata eventId -- would collapse every renewal into one Meta-deduped event');
+
+  assert.equal(spies.metaCalls.length, 1);
+  var metaEvent = spies.metaCalls[0].body.data[0];
+  assert.equal(metaEvent.event_name, 'Purchase', 'a RENEWAL charge must fire Meta Purchase, not Subscribe');
+  assert.equal(metaEvent.custom_data.value, 9.99);
+
+  // Fire a SECOND renewal (a new payment_id, same subscription/metadata) and
+  // prove its eventId differs from the first renewal's -- each is a distinct
+  // conversion and must not collide via a reused static id.
+  var spies2 = installAnalyticsFetchSpy();
+  await handler(signedEvent(subEvent('subscription.renewed', {
+    payment_id: 'pay_renew_conv_2',
+    customer: { customer_id: 'cus_prn2', email: 'passrenewconv@example.com' },
+    recurring_pre_tax_amount: 999,
+    currency: 'USD',
+    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-static-sub-level' }
+  })));
+  assert.equal(spies2.posthogCalls.length, 1, 'a second, genuinely new renewal charge must fire its own conversion');
+  assert.notEqual(spies2.posthogCalls[0].body.properties.$insert_id, phBody.properties.$insert_id, 'each renewal must get its own distinct eventId, never the shared subscription-level metadata one');
+});
+
+test('a redelivered Dreamer Pass renewal (subscription.renewed then payment.succeeded sharing the SAME payment_id) fires the conversion only ONCE', async function () {
+  await seedZeroBalance('passrenewdedup@example.com');
+  var sharedPaymentId = 'pay_renew_dedup_shared';
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(subEvent('subscription.renewed', {
+    payment_id: sharedPaymentId,
+    customer: { customer_id: 'cus_prd', email: 'passrenewdedup@example.com' },
+    recurring_pre_tax_amount: 999,
+    currency: 'USD'
+  })));
+  assert.equal(spies.posthogCalls.length, 1, 'the genuine renewal fires once');
+  assert.equal(spies.metaCalls.length, 1);
+
+  var spies2 = installAnalyticsFetchSpy();
+  await handler(signedEvent(passPaymentPayload({
+    payment_id: sharedPaymentId,
+    customer: { customer_id: 'cus_prd', email: 'passrenewdedup@example.com' }
+  })));
+  assert.equal(spies2.posthogCalls.length, 0, 'a payment.succeeded sharing the SAME payment_id as an already-credited renewal must not double-fire the conversion');
+  assert.equal(spies2.metaCalls.length, 0);
+});
+
+test('subscription.renewed with NO payment_id (no credit -> credited:false path) fires NO conversion', async function () {
+  await seedZeroBalance('passrenewnoidconv@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(subEvent('subscription.renewed', {
+    customer: { customer_id: 'cus_prni', email: 'passrenewnoidconv@example.com' },
+    recurring_pre_tax_amount: 999,
+    currency: 'USD'
+    // no payment_id
+  })));
+  assert.equal(spies.posthogCalls.length, 0, 'no payment_id means no credit, which means no conversion to report');
+  assert.equal(spies.metaCalls.length, 0);
+});
+
+test('a Dreamer Pass renewal with no resolvable recurring_pre_tax_amount skips the conversion fire entirely -- never guesses a value', async function () {
+  await seedZeroBalance('passrenewnoamount@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var res = await handler(signedEvent(subEvent('subscription.renewed', {
+    payment_id: 'pay_renew_no_amount',
+    customer: { customer_id: 'cus_prna', email: 'passrenewnoamount@example.com' }
+    // no recurring_pre_tax_amount at all
+  })));
+  assert.equal(res.statusCode, 200);
+  // The credit itself still lands (grantDreamerPassCharge doesn't need a price)...
+  var record = await entitlements.getEntitlement({}, 'passrenewnoamount@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'the token credit must still land even though the price is unresolvable');
+  // ...but no conversion is reported, since there's no real amount to guess.
+  assert.equal(spies.posthogCalls.length, 0, 'must not guess a value -- no conversion fire at all');
+  assert.equal(spies.metaCalls.length, 0);
+});
+
+test('a Meta CAPI / PostHog failure on the Dreamer Pass conversion never blocks the token credit or the webhook\'s 200 response', async function () {
+  await seedZeroBalance('passconvdown@example.com');
+  var spies = installAnalyticsFetchSpy({ posthogFails: true, metaFails: true });
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_conv_down',
+    customer: { customer_id: 'cus_pcd', email: 'passconvdown@example.com' },
+    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-pass-down' }
+  })));
+  assert.equal(res.statusCode, 200, 'an analytics failure must never surface as a webhook failure');
+  var record = await entitlements.getEntitlement({}, 'passconvdown@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'the token credit must still have landed');
+});
+
+test('the Dreamer Pass conversion\'s distinct_id resolves the same way as the pack path -- account username, falling back to normalized email', async function () {
+  await seedZeroBalance('passdistinctid@example.com');
+  await accountStore.createAccount({}, { username: 'passdistinctiduser', password: 'testpass1', email: 'passdistinctid@example.com' });
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_distinct',
+    customer: { customer_id: 'cus_pdi', email: 'passdistinctid@example.com' },
+    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-pass-distinct' }
+  })));
+  assert.equal(spies.posthogCalls[0].body.distinct_id, 'passdistinctiduser');
+});
