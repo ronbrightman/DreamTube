@@ -943,8 +943,14 @@ async function handleSubscriptionEvent(event, type, sub) {
   // Scoped tightly so notrial and non-trial-start events are byte-for-byte
   // unchanged:
   //   - Only on subscription.active (the trial-start event). A renewal /
-  //     plan_changed is past the trial and must not be re-synthesized as
-  //     trialing.
+  //     plan_changed is past the trial and must not be RE-SYNTHESIZED as
+  //     trialing from Dodo's payload (plan_changed carries no reliable trial
+  //     info of its own). It CAN, however, still be a genuinely-mid-trial
+  //     event — see the plan_changed PRESERVATION carve-out just below,
+  //     which is a distinct, narrower mechanism from synthesis: it never
+  //     invents a NEW trialing state from this payload, it only protects an
+  //     ALREADY-synthesized one (written by an earlier subscription.active)
+  //     from being wiped by this event.
   //   - Only when Dodo isn't ALREADY telling us it's trialing (explicitTrialing
   //     short-circuits — preserves the existing explicit-'trialing'-payload
   //     path and its tests exactly).
@@ -959,7 +965,43 @@ async function handleSubscriptionEvent(event, type, sub) {
   if (!explicitTrialing && type === 'subscription.active' && firstPeriodIsTrial(sub, variant) === true) {
     synthesizedTrialEnd = resolveSynthesizedTrialEnd(sub, Date.now());
   }
-  var trialing = explicitTrialing || !!synthesizedTrialEnd;
+
+  // ── plan_changed PRESERVATION (money-path fix, 2026-08-10; tracker item
+  //    for-product-low-subscription-plan-change-clww6d) ──
+  // Dodo can fire subscription.plan_changed WHILE the subscriber is still
+  // genuinely inside their synthesized trial window (e.g. the user changes
+  // something about their plan mid-trial). Before this fix, `trialing` above
+  // came out false for ANY non-subscription.active type — including this one
+  // — because plan_changed's payload carries no reliable trial info to
+  // RE-synthesize from (see the "Scoped tightly" doc above). That wrote
+  // status:'active', trialEnd:null, wiping the 100/day boost early for a
+  // user who is still legitimately mid-trial (a boost loss only — see the
+  // grant-path doc block further down; never a wrong charge or a withheld
+  // real grant, since those are gated by separate payment_id-keyed logic).
+  //
+  // The fix: for plan_changed only, read the account's CURRENTLY STORED
+  // subscription state (written by an earlier subscription.active, possibly
+  // itself synthesized) and PRESERVE it — never re-derive it from THIS
+  // payload — if it is still genuinely trialing right now. Uses
+  // entitlements.isTrialActive, the exact same "status==='trialing' AND
+  // trialEnd is still in the future" gate the daily-claim boost itself reads
+  // live, so this can never indefinitely re-preserve a stale trialing state
+  // past its real end (mirrors resolveSynthesizedTrialEnd's own "must be in
+  // the future" discipline against a stale replay) — a genuinely-expired
+  // trial's plan_changed still falls through to the normal 'active'/null
+  // write below, same as before this fix. A notrial subscription is never
+  // stored as trialing in the first place (see firstPeriodIsTrial), so
+  // isTrialActive is always false for it here — completely unaffected.
+  var preservedTrialEnd = null;
+  if (!explicitTrialing && !synthesizedTrialEnd && type === 'subscription.plan_changed') {
+    var currentRecord = await entitlements.getEntitlement(event, email);
+    var currentSub = currentRecord && currentRecord.subscription;
+    if (entitlements.isTrialActive(currentSub, Date.now())) {
+      preservedTrialEnd = currentSub.trialEnd;
+    }
+  }
+
+  var trialing = explicitTrialing || !!synthesizedTrialEnd || !!preservedTrialEnd;
 
   await entitlements.updateSubscription(event, email, {
     status: trialing ? 'trialing' : 'active',
@@ -968,10 +1010,12 @@ async function handleSubscriptionEvent(event, type, sub) {
     nextBillingAt: resolveNextBilling(sub),
     currentPeriodEnd: resolveNextBilling(sub),
     // trialing WITH a resolvable end (a real payload trial_end, else the
-    // synthesized first-period end) -> set it; trialing WITHOUT any resolvable
-    // end -> undefined (updateSubscription keeps a prior trialEnd, or caps a
-    // first sighting to now + 3 days); not trialing -> null (clear).
-    trialEnd: trialing ? (resolveTrialEnd(sub) || synthesizedTrialEnd || undefined) : null
+    // synthesized first-period end, else a preserved prior trialEnd from the
+    // plan_changed carve-out above) -> set it; trialing WITHOUT any
+    // resolvable end -> undefined (updateSubscription keeps a prior
+    // trialEnd, or caps a first sighting to now + 3 days); not trialing ->
+    // null (clear).
+    trialEnd: trialing ? (resolveTrialEnd(sub) || synthesizedTrialEnd || preservedTrialEnd || undefined) : null
   });
 
   // A renewal is also a charge — grant that charge's 3000, keyed by its own

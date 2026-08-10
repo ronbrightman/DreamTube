@@ -1863,3 +1863,161 @@ test('a redelivered subscription.active (replaying the ORIGINAL, now-elapsed fir
   var status = await entitlements.getTokenStatus({}, email);
   assert.equal(status.dailyClaimAmount, 20, 'no boost re-opened by a stale redelivery');
 });
+
+// ============================================================================
+// plan_changed PRESERVATION (money-path fix, 2026-08-10; tracker item
+// for-product-low-subscription-plan-change-clww6d). subscription.plan_changed
+// carries no reliable trial info of its own, so before this fix it ALWAYS
+// wrote status:'active', trialEnd:null — even when the account was still
+// genuinely inside its synthesized trial window — silently ending the 100/day
+// boost early. The fix: a plan_changed event now reads the account's
+// CURRENTLY STORED subscription state and preserves it if still genuinely
+// trialing (trialEnd in the future); a genuinely-elapsed trial still
+// correctly transitions to 'active'; notrial (never trialing) is unaffected.
+// ============================================================================
+
+test('subscription.plan_changed during a still-future synthesized trial PRESERVES the trialing state and 100/day boost (does not wipe it to active)', async function () {
+  var email = 'planchangemidtrial@example.com';
+  await seedZeroBalance(email);
+  var trialEnd = Date.now() + 3 * DAY_MS;
+  // Trial starts via the real Dodo shape (status:'active', no trial_end field
+  // of its own) — same as the trial-synthesis tests above.
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    trial_period_days: 3, created_at: new Date().toISOString(),
+    next_billing_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_pcmt', email: email }
+  })));
+  var beforeChange = await entitlements.getEntitlement({}, email);
+  assert.equal(beforeChange.subscription.status, 'trialing', 'sanity: trial synthesized');
+
+  // Mid-trial, Dodo fires plan_changed -- its payload carries no trial info
+  // (status:'active', no trial_end/trial_period_days), same shape a real
+  // plan_changed carries.
+  var res = await handler(signedEvent(subEvent('subscription.plan_changed', {
+    status: 'active', trialing: false,
+    next_billing_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_pcmt', email: email }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var afterChange = await entitlements.getEntitlement({}, email);
+  assert.equal(afterChange.subscription.status, 'trialing', 'THE FIX: plan_changed must not wipe an in-progress trial to active');
+  assert.equal(afterChange.subscription.trialEnd, trialEnd, 'the prior synthesized trialEnd is preserved, not cleared');
+
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 100, 'the 100/day boost survives the mid-trial plan_changed');
+});
+
+test('subscription.plan_changed AFTER a trial has genuinely ended correctly transitions to active (does not indefinitely re-preserve a stale trialing state)', async function () {
+  var email = 'planchangepostrial@example.com';
+  await seedZeroBalance(email);
+  // Trial starts with an end date already in the past by the time
+  // plan_changed arrives (simulating time passing between the two events).
+  var trialEnd = Date.now() - 1000;
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    trial_period_days: 3, created_at: new Date(Date.now() - 5 * DAY_MS).toISOString(),
+    next_billing_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_pcpt', email: email }
+  })));
+  var beforeChange = await entitlements.getEntitlement({}, email);
+  assert.notEqual(beforeChange.subscription.status, 'trialing', 'sanity: a past first-period end never synthesizes a live trial in the first place');
+
+  var res = await handler(signedEvent(subEvent('subscription.plan_changed', {
+    status: 'active', trialing: false,
+    next_billing_date: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_pcpt', email: email }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var afterChange = await entitlements.getEntitlement({}, email);
+  assert.equal(afterChange.subscription.status, 'active', 'a genuinely-elapsed trial correctly transitions to active on plan_changed');
+  assert.equal(afterChange.subscription.trialEnd, null, 'trialEnd is cleared, not stuck on the stale value');
+
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 20, 'no lingering 100/day boost after a genuinely-ended trial\'s plan_changed');
+});
+
+test('subscription.plan_changed for a STILL-TRIALING record whose stored trialEnd has since elapsed (never got a follow-up event) also transitions to active, not stuck preserving a stale trial', async function () {
+  var email = 'planchangestaletrialing@example.com';
+  await seedZeroBalance(email);
+  // Trial synthesized with a short, now-elapsed window: status stays
+  // 'trialing' on the stored record (no later event ever flipped it), but
+  // trialEnd itself has passed by the time plan_changed arrives.
+  var trialEnd = Date.now() + 150; // effectively already elapsed by the time we check below
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    trial_period_days: 3, created_at: new Date().toISOString(),
+    next_billing_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_pcst', email: email }
+  })));
+  var beforeChange = await entitlements.getEntitlement({}, email);
+  assert.equal(beforeChange.subscription.status, 'trialing', 'sanity: trial synthesized and still stored as trialing');
+
+  // Let the trialEnd actually elapse before plan_changed arrives.
+  await new Promise(function (resolve) { setTimeout(resolve, 300); });
+
+  var res = await handler(signedEvent(subEvent('subscription.plan_changed', {
+    status: 'active', trialing: false,
+    next_billing_date: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_pcst', email: email }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var afterChange = await entitlements.getEntitlement({}, email);
+  assert.equal(afterChange.subscription.status, 'active', 'the stored trialing status alone is not enough -- trialEnd must still be in the future to preserve it');
+  assert.equal(afterChange.subscription.trialEnd, null);
+});
+
+test('subscription.plan_changed for a notrial subscription is completely unaffected (never reads trialing, regression coverage for the preservation carve-out)', async function () {
+  var email = 'planchangenotrial@example.com';
+  await seedZeroBalance(email);
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    trial_period_days: 0,
+    created_at: new Date().toISOString(),
+    next_billing_date: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+    product_id: 'pdt_dreamer_pass_notrial_test',
+    customer: { customer_id: 'cus_pcnt', email: email }
+  })));
+  var beforeChange = await entitlements.getEntitlement({}, email);
+  assert.equal(beforeChange.subscription.status, 'active', 'sanity: notrial never synthesized as trialing');
+
+  var res = await handler(signedEvent(subEvent('subscription.plan_changed', {
+    status: 'active', trialing: false,
+    next_billing_date: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+    product_id: 'pdt_dreamer_pass_notrial_test',
+    customer: { customer_id: 'cus_pcnt', email: email }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var afterChange = await entitlements.getEntitlement({}, email);
+  assert.equal(afterChange.subscription.status, 'active', 'notrial plan_changed must never read trialing');
+  assert.equal(afterChange.subscription.trialEnd, null);
+
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 20, 'notrial is never boosted to 100, plan_changed included');
+});
+
+test('subscription.plan_changed when Dodo\'s payload itself explicitly claims trialing:true is unaffected by the preservation carve-out (the explicit-payload path already handles it)', async function () {
+  var email = 'planchangeexplicit@example.com';
+  await seedZeroBalance(email);
+  var trialEnd = Date.now() + 3 * DAY_MS;
+  var res = await handler(signedEvent(subEvent('subscription.plan_changed', {
+    status: 'trialing',
+    trial_end_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_pce', email: email }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.subscription.status, 'trialing', 'an explicit trialing payload on plan_changed is honored via the pre-existing explicitTrialing path');
+  assert.equal(record.subscription.trialEnd, trialEnd);
+});
