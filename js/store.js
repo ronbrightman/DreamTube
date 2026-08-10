@@ -1634,7 +1634,18 @@
           reason: 'E304: dream_sync_unconfirmed',
           mediaType: dream.mediaType || 'video',
           elapsed_ms: dream.createdAt ? (Date.now() - dream.createdAt) : null,
-          model: dream.modelUsed || null
+          model: dream.modelUsed || null,
+          // dreamId (review finding, tracker for-product-track-avg-video-
+          // generation-t-2ci8ue): this event deliberately re-fires every
+          // time this function's retry budget exhausts again for the SAME
+          // still-unconfirmed dream (see the doc comment above) -- without
+          // a stable per-dream key, raw PostHog event volume can't tell
+          // "1 dream vanished, observed 10 times" from "10 dreams each
+          // vanished once", which corrupts the exact "true vanish rate"
+          // this instrumentation exists to produce. dream.id is already
+          // sent to the server elsewhere (see e.g. sendFirstDreamEmail's
+          // own dreamId field above), so this adds no new exposure.
+          dreamId: dream.id || null
         });
       }
     }

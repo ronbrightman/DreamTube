@@ -491,6 +491,7 @@ test('generation_failed: fires reason:\'E304: dream_sync_unconfirmed\' once a co
     assert.equal(failedCalls[0].props.mediaType, 'video');
     assert.equal(typeof failedCalls[0].props.elapsed_ms, 'number');
     assert.ok(failedCalls[0].props.elapsed_ms >= 0);
+    assert.equal(failedCalls[0].props.dreamId, localDream.id, 'the E304 fire must carry the specific dream\'s id, so repeated fires against the same still-unconfirmed dream can be deduped downstream to a true distinct-dream count');
   } finally {
     await context.close();
   }
