@@ -1165,6 +1165,203 @@ test('the notrial first charge fires the Subscribe conversion tagged with varian
   assert.equal(spies.metaCalls[0].body.data[0].event_name, 'Subscribe');
 });
 
+// ============================================================================
+// trial50 PAID-TRIAL abuse hole (money-critical fix). The trial50 variant is a
+// $9.99/mo pass with a 50c PAID trial. Before the fix, dodo-webhook.js gated
+// the Dreamer Pass 3,000-token grant on `chargedAmount > 0`, so the 50c
+// trial-START charge (50 > 0) granted the FULL 3,000-token month AND flipped
+// the account to 'active' immediately — a user could pay 50c, burn ~30 videos
+// of fal.ai cost, and cancel, then get ANOTHER 3,000 at the $9.99 conversion.
+// The fix: a trial50 charge that lands while the subscription is still trialing
+// (isTrialActive, owned by subscription.active) is a trial-START and grants
+// TRIAL-level access only — the 3,000 lump lands only at the first POST-trial
+// (real) billing, exactly like the freetrial $0 path. The discriminator is the
+// subscription's trial STATE, NOT the charged amount (Dodo's Payment payload
+// carries no trial/billing_reason field). See dodo-webhook.js's
+// handleDreamerPassPayment trial-start guard.
+// ============================================================================
+
+test('SECURITY (abuse hole): a trial50 50c TRIAL-START grants NOTHING, stays trialing, and does NOT flip to active — the 50c is a trial fee, not a purchase', async function () {
+  var email = 'trial50start@example.com';
+  await seedZeroBalance(email);
+  var spies = installAnalyticsFetchSpy();
+  // Trial begins: subscription.active(trialing) for the trial50 product sets
+  // the 100/day boost + trialEnd (Dodo delivers this BEFORE the trial-start
+  // payment.succeeded).
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing',
+    product_id: 'pdt_dreamer_pass_trial50_test',
+    trial_end_date: new Date(Date.now() + 3 * DAY_MS).toISOString(),
+    customer: { customer_id: 'cus_t50s', email: email }
+  })));
+
+  // Dodo charges the 50c trial fee -> payment.succeeded with total_amount 50
+  // (> 0, which the OLD guard mistook for a real charge).
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_trial50_start',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_trial50_test', quantity: 1 }],
+    total_amount: 50,
+    metadata: { dreamtube_pass_variant: 'trial50', dreamtube_event_id: 'evt-t50-start' },
+    customer: { customer_id: 'cus_t50s', email: email }
+  })));
+  assert.equal(res.statusCode, 200, 'the 50c trial-start is still acknowledged');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 0, 'a 50c trial-start must NOT grant the 3,000 monthly lump');
+  assert.equal(record.subscription.status, 'trialing', 'the 50c trial-start must NOT flip the account out of trialing');
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 100, 'still trialing -> the 100/day boost stays intact, granting only trial-level access');
+  assert.equal(spies.posthogCalls.length, 0, 'a trial-start authorization must fire NO conversion');
+  assert.equal(spies.metaCalls.length, 0);
+});
+
+test('a trial50 FIRST REAL billing ($9.99, trial ended) grants the 3,000 and flips to active, firing the Subscribe conversion tagged variant=trial50', async function () {
+  var email = 'trial50convert@example.com';
+  await seedZeroBalance(email);
+  // Trial has ELAPSED: status still 'trialing' from checkout, but trialEnd is
+  // now in the past (the entitlements-documented "trial elapsed before a
+  // webhook flipped it" state) -> isTrialActive is false -> the $9.99 charge is
+  // a real billing, not a trial fee.
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing',
+    product_id: 'pdt_dreamer_pass_trial50_test',
+    trial_end_date: new Date(Date.now() - 1000).toISOString(),
+    customer: { customer_id: 'cus_t50c', email: email }
+  })));
+  var spies = installAnalyticsFetchSpy();
+
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_trial50_convert',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_trial50_test', quantity: 1 }],
+    total_amount: 999,
+    metadata: { dreamtube_pass_variant: 'trial50', dreamtube_event_id: 'evt-t50-convert' },
+    customer: { customer_id: 'cus_t50c', email: email }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'the real $9.99 first billing grants the full 3,000-token month');
+  assert.equal(record.subscription.status, 'active', 'the real charge flips the account to active');
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 20, 'a paid subscriber is no longer trialing -> normal 20 claim');
+
+  assert.equal(spies.posthogCalls.length, 1, 'the first REAL charge fires the conversion');
+  assert.equal(spies.posthogCalls[0].body.properties.variant, 'trial50');
+  assert.equal(spies.posthogCalls[0].body.properties.value, 9.99);
+  assert.equal(spies.metaCalls[0].body.data[0].event_name, 'Subscribe', 'the first real trial50 charge fires Meta Subscribe (a subscription start), exactly like the freetrial conversion');
+});
+
+test('a trial50 $9.99 grant to a fresh account with NO live trial still grants 3,000 (a real charge, no trial window to suppress it)', async function () {
+  // Guards the realistic post-conversion / renewal case: once trialEnd is not
+  // in the future, a trial50 charge is an ordinary real billing.
+  await seedZeroBalance('t50notrial@example.com');
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_t50_no_trial',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_trial50_test', quantity: 1 }],
+    total_amount: 999,
+    metadata: {},
+    customer: { customer_id: 'cus_t50n', email: 't50notrial@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 't50notrial@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY);
+});
+
+test('IDEMPOTENCY: a redelivered trial50 50c trial-start (same payment_id) still grants NOTHING and never flips to active', async function () {
+  var email = 'trial50redeliver@example.com';
+  await seedZeroBalance(email);
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing',
+    product_id: 'pdt_dreamer_pass_trial50_test',
+    trial_end_date: new Date(Date.now() + 3 * DAY_MS).toISOString(),
+    customer: { customer_id: 'cus_t50r', email: email }
+  })));
+  var payload = passPaymentPayload({
+    payment_id: 'pay_trial50_redeliver',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_trial50_test', quantity: 1 }],
+    total_amount: 50,
+    metadata: { dreamtube_pass_variant: 'trial50' },
+    customer: { customer_id: 'cus_t50r', email: email }
+  });
+  await handler(signedEvent(payload, { id: 'msg_t50_1' }));
+  await handler(signedEvent(payload, { id: 'msg_t50_2' }));
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 0, 'a redelivered trial-start must still grant nothing');
+  assert.equal(record.subscription.status, 'trialing', 'and must keep the account trialing');
+});
+
+test('NO LOST GRANT: even if a trial50 conversion payment.succeeded arrives while the record still reads trialing (boundary), subscription.renewed still grants the 3,000 exactly once', async function () {
+  var email = 'trial50backstop@example.com';
+  await seedZeroBalance(email);
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing',
+    product_id: 'pdt_dreamer_pass_trial50_test',
+    trial_end_date: new Date(Date.now() + 3 * DAY_MS).toISOString(),
+    customer: { customer_id: 'cus_t50b', email: email }
+  })));
+  var sharedPaymentId = 'pay_trial50_backstop';
+  // The conversion payment.succeeded arrives while the record still reads
+  // trialing (in-future trialEnd) -> the payment path conservatively SKIPS it.
+  await handler(signedEvent(passPaymentPayload({
+    payment_id: sharedPaymentId,
+    product_cart: [{ product_id: 'pdt_dreamer_pass_trial50_test', quantity: 1 }],
+    total_amount: 999,
+    metadata: { dreamtube_pass_variant: 'trial50' },
+    customer: { customer_id: 'cus_t50b', email: email }
+  })));
+  var afterPayment = await entitlements.getEntitlement({}, email);
+  assert.equal(afterPayment.tokens.balance, 0, 'the payment path skips while trialing — no grant yet');
+
+  // subscription.renewed for the SAME charge grants the 3,000 (the backstop),
+  // deduped by payment_id so the earlier skip + this grant total exactly one.
+  await handler(signedEvent(subEvent('subscription.renewed', {
+    payment_id: sharedPaymentId,
+    product_id: 'pdt_dreamer_pass_trial50_test',
+    customer: { customer_id: 'cus_t50b', email: email }
+  })));
+  var afterRenewed = await entitlements.getEntitlement({}, email);
+  assert.equal(afterRenewed.tokens.balance, DREAMER_PASS_MONTHLY, 'subscription.renewed backstops the real conversion grant — exactly one 3,000, never lost');
+});
+
+test('freetrial is UNCHANGED by the trial50 guard: a freetrial charge while the account is trialing still grants (the guard is scoped to trial50 only)', async function () {
+  var email = 'freetrialunaffected@example.com';
+  await seedZeroBalance(email);
+  // freetrial trial in progress (trialEnd in the future) — the trial50 guard
+  // must NOT apply here.
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'trialing',
+    product_id: 'pdt_dreamer_pass_test', // freetrial product
+    trial_end_date: new Date(Date.now() + 3 * DAY_MS).toISOString(),
+    customer: { customer_id: 'cus_ftu', email: email }
+  })));
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_ft_unaffected',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_test', quantity: 1 }],
+    total_amount: 999,
+    metadata: {},
+    customer: { customer_id: 'cus_ftu', email: email }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'a freetrial real charge grants 3,000 regardless of trialing state — byte-for-byte the pre-fix behavior');
+  assert.equal(record.subscription.status, 'active');
+});
+
+test('notrial is UNCHANGED by the trial50 guard: a notrial first charge grants immediately (no trial window ever)', async function () {
+  await seedZeroBalance('notrialunaffected@example.com');
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_nt_unaffected',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_notrial_test', quantity: 1 }],
+    total_amount: 799,
+    metadata: {},
+    customer: { customer_id: 'cus_ntu', email: 'notrialunaffected@example.com' }
+  })));
+  assert.equal(res.statusCode, 200);
+  var record = await entitlements.getEntitlement({}, 'notrialunaffected@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'notrial has no trial -> its first charge grants immediately, unchanged');
+  assert.equal(record.subscription.status, 'active');
+});
+
 test('subscription.update_payment_method is acknowledged and does not change subscription state', async function () {
   var email = 'updpay@example.com';
   await handler(signedEvent(subEvent('subscription.active', {

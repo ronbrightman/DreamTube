@@ -334,7 +334,16 @@ exports.handler = async function (event) {
     // unknown -> freetrial, so every existing caller (none send this field
     // today) resolves to DODO_PRODUCT_DREAMER_PASS exactly as before.
     passVariant = (payload.passVariant || '').trim().toLowerCase();
-    if (!PASS_VARIANT_ENV[passVariant]) passVariant = DEFAULT_PASS_VARIANT;
+    // hasOwnProperty (not a bare `!PASS_VARIANT_ENV[passVariant]`) so inherited
+    // Object.prototype members can't masquerade as real variants: a crafted
+    // passVariant of "__proto__" / "constructor" / "hasOwnProperty" resolves
+    // through the prototype chain to a truthy value, which a bare membership
+    // check would treat as a KNOWN variant and skip the freetrial fallback,
+    // then feed a non-string (Object.prototype / the Object constructor) into
+    // process.env[...]. Own-property-only lookup forces every unknown value —
+    // those two included — down to the default freetrial variant, exactly like
+    // any other unrecognized string.
+    if (!Object.prototype.hasOwnProperty.call(PASS_VARIANT_ENV, passVariant)) passVariant = DEFAULT_PASS_VARIANT;
     var passEnvVar = PASS_VARIANT_ENV[passVariant];
     productId = process.env[passEnvVar];
     if (!productId) {

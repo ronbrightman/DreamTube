@@ -686,3 +686,31 @@ test('requesting a NEW variant does not fall back to the default product even wh
   assert.equal(res.statusCode, 500, 'an unconfigured variant must fail, never quietly substitute the default product');
   assert.equal(captured.calls.length, 0);
 });
+
+// ----- LOW-1 hardening: prototype-chain-safe variant lookup -----
+//
+// The variant membership check uses Object.prototype.hasOwnProperty.call, NOT
+// a bare `!PASS_VARIANT_ENV[passVariant]`. A bare check reads through the
+// prototype chain, so a crafted passVariant of "__proto__" / "constructor" /
+// "hasOwnProperty" would resolve to an inherited (truthy) Object.prototype
+// member, be mistaken for a KNOWN variant, skip the freetrial fallback, and
+// then feed a non-string (Object.prototype, or the Object constructor) into
+// process.env[...]. These prove every such crafted value falls back to the
+// safe freetrial default and sells the correct product — never errors, never
+// leaks a bogus product id.
+
+['__proto__', 'constructor', 'hasOwnProperty', 'toString', 'valueOf'].forEach(function (crafted) {
+  test('SECURITY: a prototype-chain passVariant ("' + crafted + '") falls back to freetrial, selling the default product — never treated as a known variant', async function () {
+    process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
+    // Both new variant env vars set too, to prove the crafted value never
+    // reaches for one of them either.
+    process.env.DODO_PRODUCT_DREAMER_PASS_NOTRIAL = 'pdt_pass_notrial';
+    process.env.DODO_PRODUCT_DREAMER_PASS_TRIAL50 = 'pdt_pass_trial50';
+    var captured = stubFetchCapture();
+    var res = await handler(reqEvent({ body: { email: 'proto@example.com', plan: 'dreamer_pass', passVariant: crafted } }));
+    assert.equal(res.statusCode, 200, 'a crafted prototype-member variant must resolve to the safe default, not 4xx/5xx');
+    var sentBody = JSON.parse(captured.calls[0].init.body);
+    assert.equal(sentBody.product_cart[0].product_id, 'pdt_pass_freetrial', 'must sell the freetrial default product, never a value pulled off the prototype chain');
+    assert.equal(sentBody.metadata.dreamtube_pass_variant, 'freetrial', 'the resolved variant must be the safe freetrial default');
+  });
+});
