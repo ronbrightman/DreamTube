@@ -177,6 +177,34 @@
      the sheet's own dark surface already resolves from css/styles.css. */
   #app.build-active #build-char-mode-row .char-mode-btn{ background:rgba(255,255,255,.05); border-color:var(--lb-line); color:var(--lb-ink-soft);}
   #app.build-active #build-char-mode-row .char-mode-btn.active{ background:var(--lb-grad); color:#fff; border-color:transparent;}
+
+  /* ── Question-first screen 1 ("What was your dream about?") ──────────────
+     Tracker item for-product-unify-create-html-to-questio-lif350: ports
+     wizard.html's question-first screen 1 (triptych hero + six tiles, no
+     surprise-me/beta) into this logged-in builder's entry chooser, so the
+     two builders finally match. UNLIKE wizard.html's shell (its own
+     single, permanently-hardcoded dark theme, no phase machinery — see
+     that file's own header comment), this chooser lives OUTSIDE
+     #app.build-active — it's shown before Build/Write/Record is chosen,
+     same as the three .choice-pill cards it replaces — so it deliberately
+     uses this app's ordinary --surface/--text-* tokens for its shell
+     rather than wizard.html's --fn-* ones (which don't exist on this
+     page), keeping only the shared #FF8BB3/#B783FF pink-purple accent
+     pair .choice-pill already established here. Geometry/copy/behavior
+     otherwise match wizard.html's .fn-q-* rules exactly. */
+  .q-collage{ position:relative; display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:2px 0 16px; border-radius:16px; overflow:hidden; background:var(--surface-alt); box-shadow:0 16px 40px -18px rgba(0,0,0,.6);}
+  .q-cell{ position:relative; aspect-ratio:400/711; overflow:hidden; background:var(--surface-alt);}
+  .q-cell img{ width:100%; height:100%; object-fit:cover; display:block;}
+  .q-collage::after{ content:''; position:absolute; left:0; right:0; bottom:0; height:42%; background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.72)); pointer-events:none;}
+  .q-collage .q-cap{ position:absolute; left:14px; bottom:11px; z-index:1; font-size:12.5px; font-weight:700; color:#fff; letter-spacing:.01em; text-shadow:0 1px 6px rgba(0,0,0,.55);}
+  .q-promise{ font-size:15px; font-weight:800; color:var(--text-primary); text-align:center; line-height:1.35; text-wrap:balance; margin:0 0 4px;}
+  .q-promise .u{ background:linear-gradient(90deg,#FF8BB3,#B783FF); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
+  .q-label{ font-size:13.5px; font-weight:700; color:var(--text-muted); text-align:center; margin:0 0 14px;}
+  .q-grid{ display:grid; grid-template-columns:1fr 1fr; gap:11px; margin-bottom:14px;}
+  .q-tile{ display:flex; align-items:center; gap:11px; width:100%; box-sizing:border-box; padding:14px 13px; border-radius:16px; background:var(--surface); border:1.5px solid var(--border); font-size:14.5px; font-weight:700; color:var(--text-primary); cursor:pointer; text-align:left; font-family:inherit; transition:all .12s; -webkit-tap-highlight-color:transparent;}
+  .q-tile:active, .q-tile.sel{ border-color:#FF8BB3; background:rgba(255,139,179,0.16);}
+  .q-tile .q-emoji{ width:34px; height:34px; border-radius:99px; background:rgba(255,139,179,0.16); display:flex; align-items:center; justify-content:center; font-size:18px; flex:none;}
+  .q-speak-link{ background:none; border:none; color:var(--text-muted); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:9px 0 2px; cursor:pointer; display:block;}
 </style>
 </head>
 <body>
@@ -185,38 +213,39 @@
   <div class="topbar"><div class="icon-btn" id="create-back"></div><div style="font-weight:700; font-size:14px;" id="create-heading">New Dream</div><div id="topbar-token-chip-slot"></div></div>
 
   <div class="px" id="create-select" style="flex:1; padding-top:6px; overflow-y:auto; min-height:0;">
-    <div class="section-label" style="margin-top:10px;">Describe a dream</div>
-    <!-- "Build it" — the chip-first dream-builder wizard (see
-         dreamtube-growth/WIZARD_SPEC.md), retrofitted here for
-         already-signed-in users creating a 2nd/Nth dream. Reuses
-         js/wizard-chips.js's exact chip taxonomy/prompt-assembly logic as
-         wizard.html (the new pre-signup flow this same feature adds) —
-         see #create-build below. Placed first/flagship per the spec
-         ("replaces the intimidating free-text box"); "Write it" and
-         "Record it" are deliberately left untouched alongside it rather
-         than removed, so this is purely additive — a new, lower-risk
-         option next to two already-shipped, already-tested ones.
+    <!-- Question-first screen 1 (tracker item
+         for-product-unify-create-html-to-questio-lif350): ports
+         wizard.html's question-first redesign (triptych hero + six tiles,
+         no surprise-me/beta) here so the logged-in "New Dream" builder
+         finally matches the pre-signup one — see wizard.html's own
+         showQuestionFirst for the reference implementation this mirrors.
+         Populated/wired by renderQuestionFirst() below. -->
+    <div id="q-first"></div>
 
-         Layout-B restyle (tracker item for-product-founder-picked-
-         layout-b-flo--lks7mj, 2026-08-07): these three cards wear the
-         same founder-approved pill-row grammar as wizard.html's redesign
-         — .choice-pill + a leading emoji chip (the mock's own 🪄/✍️/🎙️),
-         chevrons dropped per the mock. Ids, routing, and every handler
-         are unchanged; see the click handlers below for the one
-         interaction addition (a ~260ms selected-state beat on real
-         Build/Write taps). css/styles.css's base .choice-card serves
-         every OTHER page's cards untouched. -->
-    <div class="choice-card choice-pill" id="choice-build">
-      <span class="choice-pill-chip">🪄</span>
-      <div class="choice-text"><div class="choice-title">Build it</div><div class="choice-sub">Tap a few chips — no typing needed</div></div>
-    </div>
-    <div class="choice-card choice-pill" id="choice-write">
-      <span class="choice-pill-chip">✍️</span>
-      <div class="choice-text"><div class="choice-title">Write it</div><div class="choice-sub">Type out your dream</div></div>
-    </div>
-    <div class="choice-card choice-pill" id="choice-record">
-      <span class="choice-pill-chip">🎙️</span>
-      <div class="choice-text"><div class="choice-title">Record it</div><div class="choice-sub">Speak your dream out loud</div></div>
+    <!-- The three ORIGINAL Build/Write/Record cards — kept in the DOM,
+         permanently hidden (never shown to a visitor), rather than
+         deleted: every existing entry point into this page (the ?build=1/
+         ?write=1/?record=1 deep links, the failed-generation restore
+         flow) already targets these exact ids via .click()/
+         startRecordingUI(), and #choice-build/#choice-write's own click
+         handlers below still own ALL of Build/Write's real routing logic
+         (rendering the panels, setting heading text, etc.) — the six new
+         tiles above dispatch into these same handlers rather than
+         duplicating what they do. Not dead code: still the single real
+         entry point every path (tile taps included) funnels through. -->
+    <div style="display:none;">
+      <div class="choice-card choice-pill" id="choice-build">
+        <span class="choice-pill-chip">🪄</span>
+        <div class="choice-text"><div class="choice-title">Build it</div><div class="choice-sub">Tap a few chips — no typing needed</div></div>
+      </div>
+      <div class="choice-card choice-pill" id="choice-write">
+        <span class="choice-pill-chip">✍️</span>
+        <div class="choice-text"><div class="choice-title">Write it</div><div class="choice-sub">Type out your dream</div></div>
+      </div>
+      <div class="choice-card choice-pill" id="choice-record">
+        <span class="choice-pill-chip">🎙️</span>
+        <div class="choice-text"><div class="choice-title">Record it</div><div class="choice-sub">Speak your dream out loud</div></div>
+      </div>
     </div>
     <div class="rec-error" id="select-error" style="display:none;"></div>
   </div>
@@ -497,19 +526,23 @@
 
   // Founder decision 2026-07-27 (tracker for-product-founder-solution-for-record--111tp1),
   // superseding the blocked-panel-first approach shipped a few hours earlier (00a4718):
-  // when a detected FB/IG in-app webview can't support getUserMedia, don't show the
-  // Record it choice card at all and make the user tap it just to hit a dead end —
-  // Build it and Write it are two real, working alternatives sitting right there, so
-  // hiding the impossible option beats explaining why it's impossible. Per the founder's
-  // own framing: "capability-detect and HIDE, don't handhold." detectInAppHost() is
-  // declared further down this same top-level script (function declarations hoist, so
-  // it's already callable here). The #create-record-blocked panel below is kept — it's
-  // only reachable via startRecordingUI()'s own guard, which still exists unchanged for
-  // the one case hiding this card can't cover: a direct ?record=1 deep-link landing
-  // straight in a webview, where this choice screen is never shown at all.
-  if(detectInAppHost()){
-    document.getElementById('choice-record').style.display = 'none';
-  }
+  // when a detected FB/IG in-app webview can't support getUserMedia, don't offer a way
+  // into Record it at all and make the user tap it just to hit a dead end — Build it and
+  // Write it are two real, working alternatives sitting right there, so hiding the
+  // impossible option beats explaining why it's impossible. Per the founder's own
+  // framing: "capability-detect and HIDE, don't handhold." detectInAppHost() is declared
+  // further down this same top-level script (function declarations hoist, so it's
+  // already callable here).
+  //
+  // Since the question-first redesign (tracker item
+  // for-product-unify-create-html-to-questio-lif350) this same guard now lives on
+  // renderQuestionFirst()'s own "Speak it instead" link (the #choice-record card itself
+  // is permanently hidden — see its own doc comment above #create-select) — mirrors
+  // wizard.html's showQuestionFirst, which gates its equivalent speak-it link the exact
+  // same way. The #create-record-blocked panel below is kept regardless — it's still
+  // reachable via startRecordingUI()'s own guard for the one case hiding the link can't
+  // cover: a direct ?record=1 deep-link landing straight in a webview, where this choice
+  // screen is never shown at all.
 
   // ===== Advanced: characters =====
   document.getElementById('adv-toggle').addEventListener('click', function(){
@@ -1135,6 +1168,107 @@
     }
   }
 
+  // ===================================================================
+  // Question-first screen 1 (tracker item
+  // for-product-unify-create-html-to-questio-lif350) — logged-in port of
+  // wizard.html's showQuestionFirst: a promise line, a static portrait-
+  // triptych hero (three local store stills, no video — same webview-safe
+  // asset choice as wizard.html), and a six-tile grid whose tap seeds
+  // Build it and jumps straight in. Tile set/order/labels/seeded action
+  // keys mirror wizard.html's QUESTION_TILES exactly, so the two funnels
+  // read as one design. Renders into the static #q-first container (see
+  // #create-select's own markup comment) and DISPATCHES into the existing
+  // #choice-build/#choice-write click handlers via a synthetic .click()
+  // (same established convention as the ?build=1/?write=1/?record=1
+  // deep-links further down this file) rather than duplicating their
+  // routing — those handlers' own track() calls fire exactly as they
+  // always did (surface:'create'), so this deliberately does NOT fire a
+  // second, competing wizard_entry_mode_chosen here (only #choice-record
+  // has no equivalent tile — Record stays a secondary "Speak it" link
+  // below the grid, exactly like wizard.html demotes it).
+  // ===================================================================
+  var QUESTION_TILES = [
+    { emoji:'🕊️', label:'Flying',           seed:function(){ buildActionKey = 'flying';    buildActionSeededByTile = true; } },
+    { emoji:'🏃', label:'Being chased',      seed:function(){ buildActionKey = 'running';   buildActionSeededByTile = true; } },
+    { emoji:'👤', label:'Someone specific',  someone:true, seed:function(){} },
+    { emoji:'🏞️', label:'A place',           seed:function(){ buildActionKey = 'exploring'; buildActionSeededByTile = true; } },
+    { emoji:'🌀', label:'Something surreal',  seed:function(){ buildActionKey = 'magical';   buildActionSeededByTile = true; } },
+    { emoji:'✍️', label:"I'll describe it",  write:true,   seed:function(){} }
+  ];
+
+  /** Returning to the chooser must not show a stale pink tile from the tap that left it — same reasoning as clearChoicePillSelection above. */
+  function clearQTileSelection(){
+    Array.prototype.forEach.call(document.querySelectorAll('#q-grid .q-tile.sel'), function(el){ el.classList.remove('sel'); });
+  }
+
+  function renderQuestionFirst(){
+    var tilesHtml = QUESTION_TILES.map(function(t, i){
+      return '<button class="q-tile" type="button" data-tile="' + i + '">' +
+        '<span class="q-emoji" aria-hidden="true">' + t.emoji + '</span>' +
+        '<span>' + esc(t.label) + '</span>' +
+      '</button>';
+    }).join('');
+    // Static portrait triptych — same three local store-image stills as
+    // wizard.html's showQuestionFirst (see that function's own doc
+    // comment for the full why: webview-safe, zero video, real 400x711
+    // intrinsic dimensions so a webview lays the cells out portrait
+    // before its own CSS aspect-ratio applies).
+    var collage =
+      '<div class="q-collage" aria-hidden="true">' +
+        '<div class="q-cell"><img src="/assets/store/dream-desert.webp" width="400" height="711" alt=""></div>' +
+        '<div class="q-cell"><img src="/assets/store/dream-ocean.webp" width="400" height="711" alt=""></div>' +
+        '<div class="q-cell"><img src="/assets/store/dream-forest.webp" width="400" height="711" alt=""></div>' +
+        '<span class="q-cap">Real dreams, brought to life</span>' +
+      '</div>';
+    // Speak-it secondary link — preserved from the old Record it card
+    // (permanently hidden now — see its own doc comment above
+    // #create-select), hidden in media-constrained webviews via the exact
+    // same detectInAppHost() guard the old card used.
+    var speakLink = detectInAppHost()
+      ? ''
+      : '<span class="q-speak-link" id="q-speak" style="cursor:pointer;">🎙️ Prefer to talk it through? Speak it instead</span>';
+    document.getElementById('q-first').innerHTML =
+      collage +
+      '<div class="q-promise">Turn your dream into a <span class="u">video</span> in about a minute</div>' +
+      '<div class="q-label">What was your dream about?</div>' +
+      '<div class="q-grid" id="q-grid">' + tilesHtml + '</div>' +
+      speakLink;
+
+    var commitTimer = null; // single-flight, re-armed per tap — a quick second tap means the LAST pick wins, exactly once
+    document.getElementById('q-grid').addEventListener('click', function(e){
+      var btn = e.target.closest('[data-tile]');
+      if(!btn) return;
+      var tile = QUESTION_TILES[+btn.dataset.tile];
+      if(!tile) return;
+      clearQTileSelection();
+      btn.classList.add('sel');
+      // A fresh tile pick always starts clean — see buildActionSeededByTile's own declaration comment.
+      buildActionSeededByTile = false;
+      if(tile.seed) tile.seed();
+      if(commitTimer) clearTimeout(commitTimer);
+      commitTimer = setTimeout(function(){
+        commitTimer = null;
+        if(tile.write){ document.getElementById('choice-write').click(); return; }
+        // Build tiles land on the Subject (Who) step — #choice-build's own
+        // handler always resets buildCur to 0. "Someone specific"
+        // additionally opens the character sheet there, routing straight
+        // into the who-detail path (mirrors wizard.html's openWho call).
+        document.getElementById('choice-build').click();
+        if(tile.someone) openBuildCharSheet('other', null);
+      }, 260);
+    });
+
+    var speakEl = document.getElementById('q-speak');
+    if(speakEl) speakEl.addEventListener('click', function(){
+      // Dispatched SYNCHRONOUSLY (no setTimeout, unlike the build/write
+      // tiles above) — #choice-record's own handler calls
+      // startRecordingUI(), whose getUserMedia must stay inside this real
+      // click's user-gesture window (see choicePillFlashThen's own doc
+      // comment on why Record never uses the flash-then-advance pattern).
+      document.getElementById('choice-record').click();
+    });
+  }
+
   document.getElementById('choice-write').addEventListener('click', function(e){
     track('wizard_entry_mode_chosen', { mode: 'write', surface: 'create' });
     choicePillFlashThen(e, function(){
@@ -1331,9 +1465,11 @@
     startRecordingUI();
   });
 
-  /** Returning to the chooser must not show a stale pink pill from the tap that left it — see choicePillFlashThen. */
+  /** Returning to the chooser must not show a stale pink pill/tile from the tap that left it — see choicePillFlashThen/clearQTileSelection. Also resets the tile-seeded Action skip (buildActionSeededByTile) — mirrors wizard.html's own Back handler, which clears its equivalent actionSeededByTile the same way on the way back to its tiles: a scenario tile's seed must not silently survive into an unrelated later visit to Build (e.g. via #choice-build's own ?build=1 deep-link) that never went through a tile at all. */
   function clearChoicePillSelection(){
     Array.prototype.forEach.call(document.querySelectorAll('#create-select .choice-pill.sel'), function(el){ el.classList.remove('sel'); });
+    clearQTileSelection();
+    buildActionSeededByTile = false;
   }
 
   document.getElementById('create-back').addEventListener('click', function(){
@@ -1391,49 +1527,46 @@
   // wizard.html so this logged-in Build copy renders the same emoji-chip
   // pill rows (tracker item for-product-founder-picked-layout-b-flo--
   // lks7mj). LB_EMOJI keys mirror js/wizard-chips.js's own chip keys — an
-  // unknown key falls back to sparkles rather than an empty circle.
+  // unknown key falls back to sparkles rather than an empty circle. Only
+  // `subject` and `action` remain (tracker item
+  // for-product-unify-create-html-to-questio-lif350 removed the `place`/
+  // `mood`/`time` groups along with renderBuildSetting/renderBuildMood —
+  // unlike wizard.html, which still carries its own equivalent unused
+  // entries as pre-existing residue from its own trim, not copied here).
   var LB_EMOJI = {
     subject: { me: '🙋', someone: '👥', stranger: '🕶️', animal: '🐺', none: '🏞️', other: '✨' },
-    place: { urban: '🏙️', nature: '🌲', house: '🏠', water: '🌊', sky: '🌌', unreal: '🌀', other: '✨' },
     action: { flying: '🕊️', running: '🏃', magical: '🪄', meeting: '🫂', exploring: '🗺️', calm: '🧘', other: '✨',
-      falling: '🪂', exam: '📝', late: '⏰', trying: '🔁', newroom: '🚪', child: '🧸' },
-    mood: { peaceful: '🕊️', joyful: '😊', dreamy: '🌫️', mysterious: '🔮', tense: '😨', epic: '🏔️', other: '✨' },
-    time: { Day: '☀️', Night: '🌙' }
+      falling: '🪂', exam: '📝', late: '⏰', trying: '🔁', newroom: '🚪', child: '🧸' }
   };
   function lbChip(group, key){
     return '<span class="lb-chip">' + ((LB_EMOJI[group] && LB_EMOJI[group][key]) || '✨') + '</span>';
   }
 
-  // Auto-advance (Layout-B, founder mock round 4): on a single-select step
-  // whose answer carries NO secondary field — Mood only, here — tapping a
-  // chip advances ~260ms later, long enough for the pink selected state to
-  // register. Deliberately NOT wired to Setting (place tap must NOT skip
-  // past the Day/Night pick) or Action (must NOT skip past the POV toggle)
-  // — the founder ruled both of those carry a secondary choice, so they
-  // require a Continue tap (Style, the other no-secondary single-select,
-  // lives on style.html and is out of this page's scope). Single-flight and
-  // step-scoped: a second tap re-arms it (still exactly one advance), and
-  // both manual nav paths (buildNext, the Back handler) cancel it first, so
-  // a Continue/Back inside the window can't double-advance or fire into the
-  // wrong screen. Analytics-neutral: it calls the SAME buildNext a Continue
-  // tap does. The ~260ms beat matches wizard.html and choicePillFlashThen.
-  var buildAutoAdvanceTimer = null;
-  function cancelBuildAutoAdvance(){
-    if(buildAutoAdvanceTimer !== null){ clearTimeout(buildAutoAdvanceTimer); buildAutoAdvanceTimer = null; }
-  }
-  function scheduleBuildAutoAdvance(){
-    cancelBuildAutoAdvance();
-    var stepAtArm = buildCur;
-    buildAutoAdvanceTimer = setTimeout(function(){
-      buildAutoAdvanceTimer = null;
-      if(buildCur !== stepAtArm) return; // navigated away meanwhile
-      buildNext();
-    }, 260);
-  }
-  // Progress DOTS across the five in-page Build steps (Subject/Setting/
-  // Action/Mood/Free text). Pure presentation — SCREEN order and every
-  // analytics call are unchanged. Style (step 5 proper) happens on
-  // style.html afterward and carries its own chrome, so it's not dotted here.
+  // Question-first trim (tracker item
+  // for-product-unify-create-html-to-questio-lif350, mirrors wizard.html's
+  // own trim exactly — see that file's SCREEN_RENDERERS comment): the
+  // standalone Setting ("Where") and Mood ("How did it feel?") steps were
+  // REMOVED as questions — both are now inferred into the caption (a
+  // per-action fallback place via WizardChips.inferFallbackPlaceKey, plus
+  // the default dreamy mood/hazy-ethereal lighting assembleCaption already
+  // infers) — see finishBuildWizard below. Build is now Who → What →
+  // (Style, on style.html) → (free text), and a scenario tile that
+  // pre-seeded the Action (see renderQuestionFirst) skips the What step
+  // too (see buildNext/buildPrev's buildStepShouldSkip handling).
+  //
+  // The old Setting/Mood auto-advance mechanism (buildAutoAdvanceTimer/
+  // scheduleBuildAutoAdvance/cancelBuildAutoAdvance — Mood was the one
+  // single-select Build step with no secondary field, so it used to
+  // auto-advance ~260ms after a tap, mirroring wizard.html's Style step)
+  // was removed along with renderBuildMood: with Setting/Action/Style all
+  // carrying either a secondary field or living outside this page, no
+  // remaining Build step auto-advances, so keeping that machinery around
+  // unused would be dead code.
+  //
+  // Progress DOTS across the three in-page Build steps (Subject/Action/
+  // Free text). Pure presentation — SCREEN order and every analytics call
+  // are unchanged. Style (step 5 proper) happens on style.html afterward
+  // and carries its own chrome, so it's not dotted here.
   function renderBuildDots(){
     if(!buildDotsEl) return;
     var n = BUILD_RENDERERS.length, out = '';
@@ -1445,8 +1578,6 @@
   var buildSubjectCharacterId = null;
   var buildSubjectOtherKind = null;
   var buildSubjectOtherText = '';
-  var buildSettingPlaceKey = null;
-  var buildSettingOtherText = '';
   var buildActionKey = WizardChips.DEFAULT_ACTION;
   var buildActionOtherText = '';
   var buildPovOn = false;
@@ -1455,22 +1586,30 @@
   // matching renderAction for the full rationale (shared curation list
   // lives in js/wizard-chips.js's ACTION_DEFAULT_VISIBLE_KEYS).
   var buildActionExpanded = false;
+  // Did a question-first scenario tile (renderQuestionFirst) already
+  // answer the Action step for this session? Mirrors wizard.html's
+  // actionSeededByTile exactly -- see buildNext/buildPrev's
+  // buildStepShouldSkip for the skip-over logic this drives.
+  var buildActionSeededByTile = false;
+  // buildMoodKey still feeds WizardChips.assembleCaption/
+  // buildDeterministicStory's default mood language (Mood is inferred, not
+  // asked -- see the question-first trim comment above renderBuildDots) --
+  // it just never changes from DEFAULT_MOOD anymore since renderBuildMood
+  // no longer exists to set it. Kept as a real var (not inlined) so
+  // finishBuildWizard's WizardChips calls stay byte-identical in shape to
+  // wizard.html's own currentChipFields/assembleFromState.
   var buildMoodKey = WizardChips.DEFAULT_MOOD;
   var buildMoodOtherText = '';
-  // Did the user SKIP the Mood step rather than answer it? (tracker item
-  // for-product-founder-08-04-evening-music--jfjco0.) buildMoodKey alone
-  // can't answer that: it's pre-seeded to DEFAULT_MOOD ('dreamy') so a chip
-  // is always visibly pre-highlighted, which makes "tapped Skip" and
-  // "accepted the highlighted default via Continue" produce an identical
-  // buildMoodKey. They are NOT the same thing for music-bed purposes —
-  // Continue is an accepted answer, Skip is a declined one, and the tracker
-  // item's FINAL-FINAL scope calls for a skipped mood to fall back to the
-  // visual-style bed. This flag is the ONLY thing that distinguishes them;
-  // it deliberately does NOT affect prompt/story assembly, which keeps
-  // using buildMoodKey exactly as before (a skip has always contributed
-  // 'dreamy' to the generated prompt, and changing that would be a real,
-  // unrequested regression in what actually gets generated).
-  var buildMoodSkipped = false;
+  // ALWAYS true now (tracker item for-product-unify-create-html-to-questio-
+  // lif350, mirrors wizard.html's own moodSkipped -- see that file's
+  // declaration comment): with renderBuildMood removed there is no UI path
+  // left that could ever set this false, so a Build dream's persisted mood
+  // is always null (WizardChips.persistedMood('dreamy', true) === null) --
+  // the documented "fall back to the visual-style bed" state, same as
+  // Write it/Record it always were. See WizardChips.persistedMood's own
+  // doc comment for the full for-product-founder-08-04-evening-music--
+  // jfjco0 history this flag originally existed for.
+  var buildMoodSkipped = true;
   var buildFreeText = '';
   var buildCharEditingId = null;
   var buildCharSubMode = 'describe';
@@ -1672,70 +1811,6 @@
     document.getElementById('build-subject-skip').addEventListener('click', buildNext);
   }
 
-  function renderBuildSetting(el){
-    var chips = WizardChips.SETTING_PLACE_CHIPS.map(function(c){
-      return '<div class="fn-chip'+(c.key === 'other' ? ' lb-ghost' : '')+'" data-build-place="'+c.key+'">'+lbChip('place', c.key)+esc(c.label)+'</div>';
-    }).join('');
-    el.innerHTML =
-      // Sub-copy deliberately omitted on THIS step only: it's the tallest
-      // (Day/Night + seven place pills + two mini-labels), and the founder's
-      // one-viewport rule leaves no room for it here — the headline alone
-      // reads fine. Every other step keeps its sub.
-      '<div class="fn-headline" style="margin-bottom:8px;">Where did it happen?</div>' +
-      '<div class="fn-mini-label">Time of day</div>' +
-      '<div class="fn-chip-row lb-half-row" id="build-time-row">' +
-        '<div class="fn-chip" data-build-time="Day">'+lbChip('time','Day')+'Day</div>' +
-        '<div class="fn-chip" data-build-time="Night">'+lbChip('time','Night')+'Night</div>' +
-      '</div>' +
-      '<div class="fn-mini-label">Place</div>' +
-      '<div class="fn-chip-row" id="build-place-row">' + chips + '</div>' +
-      '<div class="fn-other-reveal" id="build-place-other-reveal" style="display:none;">' +
-        '<input class="fn-field" id="build-place-other-input" placeholder="Describe the place" dir="auto">' +
-      '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary lb-cta" id="build-setting-continue" type="button">Continue</button>' +
-      '<span class="fn-small-link" id="build-setting-skip" style="cursor:pointer;">Skip</span>';
-
-    function renderTime(){
-      var draft = DreamStore.getDraft();
-      Array.prototype.forEach.call(document.querySelectorAll('#build-time-row .fn-chip'), function(el2){
-        el2.classList.toggle('sel', el2.dataset.buildTime === draft.sceneryTime);
-      });
-    }
-    function renderPlace(){
-      Array.prototype.forEach.call(document.querySelectorAll('#build-place-row .fn-chip'), function(el2){
-        el2.classList.toggle('sel', el2.dataset.buildPlace === buildSettingPlaceKey);
-      });
-      document.getElementById('build-place-other-reveal').style.display = buildSettingPlaceKey === 'other' ? 'block' : 'none';
-    }
-    document.getElementById('build-time-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.fn-chip');
-      if(!chip) return;
-      var val = chip.dataset.buildTime;
-      var current = DreamStore.getDraft().sceneryTime;
-      DreamStore.setDraft({ sceneryTime: current === val ? null : val });
-      renderTime();
-    });
-    document.getElementById('build-place-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.fn-chip');
-      if(!chip) return;
-      // Founder ruling: the place tap must NOT auto-advance — this step
-      // carries the Day/Night secondary pick, so a tap that jumped to the
-      // next screen would skip it. Continue (or Skip) advances. Tap-again
-      // still deselects, exactly as before the restyle.
-      buildSettingPlaceKey = buildSettingPlaceKey === chip.dataset.buildPlace ? null : chip.dataset.buildPlace;
-      renderPlace();
-      if(buildSettingPlaceKey === 'other') document.getElementById('build-place-other-input').focus();
-    });
-    document.getElementById('build-place-other-input').addEventListener('input', function(e){ buildSettingOtherText = e.target.value; });
-    if(buildSettingOtherText) document.getElementById('build-place-other-input').value = buildSettingOtherText;
-
-    renderTime();
-    renderPlace();
-    document.getElementById('build-setting-continue').addEventListener('click', buildNext);
-    document.getElementById('build-setting-skip').addEventListener('click', buildNext);
-  }
-
   function renderBuildAction(el){
     var defaultKeys = WizardChips.ACTION_DEFAULT_VISIBLE_KEYS;
     var defaultChips = WizardChips.ACTION_CHIPS.filter(function(c){ return defaultKeys.indexOf(c.key) !== -1; });
@@ -1807,57 +1882,6 @@
     document.getElementById('build-action-continue').addEventListener('click', buildNext);
   }
 
-  function renderBuildMood(el){
-    var chips = WizardChips.MOOD_CHIPS.map(function(c){
-      return '<div class="fn-chip'+(c.key === 'other' ? ' lb-ghost' : '')+'" data-build-mood="'+c.key+'">'+lbChip('mood', c.key)+esc(c.label)+'</div>';
-    }).join('');
-    el.innerHTML =
-      '<div class="fn-headline">How did the dream feel?</div>' +
-      '<div class="fn-body-copy">This shapes your video’s music and light.</div>' +
-      '<div class="fn-chip-row" id="build-mood-row">' + chips + '</div>' +
-      '<div class="fn-other-reveal" id="build-mood-other-reveal" style="display:none;">' +
-        '<input class="fn-field" id="build-mood-other-input" placeholder="Describe the mood" dir="auto">' +
-      '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary lb-cta" id="build-mood-continue" type="button">Continue</button>' +
-      '<span class="fn-small-link" id="build-mood-skip" style="cursor:pointer;">Skip</span>';
-
-    function renderChips(){
-      Array.prototype.forEach.call(document.querySelectorAll('#build-mood-row .fn-chip'), function(el2){
-        el2.classList.toggle('sel', el2.dataset.buildMood === buildMoodKey);
-      });
-      document.getElementById('build-mood-other-reveal').style.display = buildMoodKey === 'other' ? 'block' : 'none';
-    }
-    document.getElementById('build-mood-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.fn-chip');
-      if(!chip) return;
-      buildMoodKey = chip.dataset.buildMood;
-      // Tapping any chip is a real answer — clears a Skip recorded on an
-      // earlier pass through this step (the user can come Back to it).
-      buildMoodSkipped = false;
-      renderChips();
-      if(buildMoodKey === 'other'){
-        // Write-in — no auto-advance while typing (mock round 2).
-        cancelBuildAutoAdvance();
-        document.getElementById('build-mood-other-input').focus();
-        return;
-      }
-      // Layout-B: Mood is the one single-select Build step with no secondary
-      // field, so it auto-advances ~260ms after a tap (founder mock round 4).
-      scheduleBuildAutoAdvance();
-    });
-    document.getElementById('build-mood-other-input').addEventListener('input', function(e){ buildMoodOtherText = e.target.value; });
-    if(buildMoodOtherText) document.getElementById('build-mood-other-input').value = buildMoodOtherText;
-
-    renderChips();
-    // Continue = the highlighted chip IS the answer (whether the user tapped
-    // it or accepted the pre-highlighted default). Skip = declined; see
-    // buildMoodSkipped's own comment. Both still call buildNext identically,
-    // so the step's flow/prompt behavior is completely unchanged.
-    document.getElementById('build-mood-continue').addEventListener('click', function(){ buildMoodSkipped = false; buildNext(); });
-    document.getElementById('build-mood-skip').addEventListener('click', function(){ buildMoodSkipped = true; buildNext(); });
-  }
-
   function renderBuildFreeText(el){
     el.innerHTML =
       '<div class="fn-headline">Anything to add?</div>' +
@@ -1919,9 +1943,17 @@
     } else if(buildSubjectOtherKind){
       subjectKey = buildSubjectOtherKind;
     }
+    // Setting was removed as a question (see the question-first trim
+    // comment above renderBuildDots) — the place is inferred per action
+    // (WizardChips.inferFallbackPlaceKey), so the caption still reads with
+    // a scene (e.g. flying -> "an open sky") exactly like wizard.html's own
+    // currentChipFields does it. sceneryTime (Day/Night) is gone the same
+    // way — nothing sets DreamStore.getDraft().sceneryTime for a Build
+    // dream anymore, so it's simply omitted here (undefined reads as "no
+    // preference" everywhere downstream, same as Write it/Record it today).
     var chipFields = {
       subjectKey: subjectKey, character: character, subjectOtherText: buildSubjectOtherText,
-      placeKey: buildSettingPlaceKey, placeOtherText: buildSettingOtherText, sceneryTime: DreamStore.getDraft().sceneryTime,
+      placeKey: WizardChips.inferFallbackPlaceKey(buildActionKey), placeOtherText: '', sceneryTime: null,
       actionKey: buildActionKey, actionOtherText: buildActionOtherText, pov: buildPovOn,
       moodKey: buildMoodKey, moodOtherText: buildMoodOtherText
     };
@@ -1941,7 +1973,7 @@
       storyText: storyText,
       needsStoryRewrite: true,
       characterIds: assembled.characterIdsForGeneration,
-      sceneryPlace: buildSettingPlaceKey,
+      sceneryPlace: chipFields.placeKey,
       // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
       // — this line is the actual FIX for the bug that item's scope names:
       // the Mood step's answer used to reach assembleCaption/
@@ -1951,25 +1983,41 @@
       // rides the draft -> home.html's startFreshGenerationFromDraft ->
       // DreamStore.generateVideo -> startGeneration -> finalizeDream route
       // all the way to `dream.mood`. See WizardChips.persistedMood for what
-      // null means here (skipped / free-text / unknown).
+      // null means here (skipped / free-text / unknown) — always null now
+      // that buildMoodSkipped is permanently true (see its own comment).
       mood: WizardChips.persistedMood(buildMoodKey, buildMoodSkipped)
     });
     location.href = 'style.html';
   }
 
-  var BUILD_RENDERERS = [renderBuildSubject, renderBuildSetting, renderBuildAction, renderBuildMood, renderBuildFreeText];
+  var BUILD_RENDERERS = [renderBuildSubject, renderBuildAction, renderBuildFreeText];
+  // A step the sequential buildNext()/buildPrev() walk should step OVER
+  // (never a directly-targeted render). The Action ("What") step is
+  // skipped when a question-first scenario tile already answered it
+  // (buildActionSeededByTile) — mirrors wizard.html's stepShouldSkip
+  // exactly. Nothing else is ever skipped.
+  var BUILD_ACTION_STEP = BUILD_RENDERERS.indexOf(renderBuildAction);
+  function buildStepShouldSkip(i){
+    return i === BUILD_ACTION_STEP && buildActionSeededByTile;
+  }
   function renderBuild(){
     renderBuildDots();
     BUILD_RENDERERS[buildCur](buildStepBody);
   }
   function buildNext(){
-    cancelBuildAutoAdvance(); // a Continue tap inside the auto-advance window must advance exactly once
-    if(buildCur < BUILD_RENDERERS.length - 1){ buildCur++; renderBuild(); }
+    var n = buildCur + 1;
+    while(n < BUILD_RENDERERS.length && buildStepShouldSkip(n)) n++; // step over a tile-seeded Action
+    if(n < BUILD_RENDERERS.length){ buildCur = n; renderBuild(); }
     else finishBuildWizard();
   }
   function buildPrev(){
-    cancelBuildAutoAdvance(); // an advance armed on the step being left must never fire into the wrong screen
-    if(buildCur > 0){ buildCur--; renderBuild(); return true; }
+    if(buildCur > 0){
+      var p = buildCur - 1;
+      while(p > 0 && buildStepShouldSkip(p)) p--; // step back over a tile-seeded Action
+      buildCur = p;
+      renderBuild();
+      return true;
+    }
     return false;
   }
 
@@ -2206,6 +2254,20 @@
   renderCameraChips();
   renderSceneryChips();
 
+  // Question-first chooser (tracker item
+  // for-product-unify-create-html-to-questio-lif350) — rendered
+  // UNCONDITIONALLY, before the deep-link branches below decide which
+  // panel is actually VISIBLE on load. A ?build=1/?write=1/?record=1 deep
+  // link or the restore flow all skip past the chooser initially (exactly
+  // as before this redesign), but the topbar Back control can always
+  // return to it (see #create-back's own handler) — #q-first must already
+  // be populated for that to work, not populated lazily only on the
+  // "ordinary landing" branch that used to be the sole call site here
+  // (real bug caught in this branch's own review: Back from a ?record=1
+  // guard panel landed on a genuinely EMPTY #create-select, #q-grid never
+  // having rendered at all).
+  renderQuestionFirst();
+
   // If arriving with a restore flag (from a failed generation), pre-fill Write mode.
   if(draft && draft.restore && draft.caption){
     document.getElementById('choice-write').click();
@@ -2256,6 +2318,10 @@
     // same function the #choice-record card's own click handler calls.
     startRecordingUI();
   }
+  // No further "else" branch needed for the ordinary, unparameterized
+  // landing — renderQuestionFirst() above already populated the chooser
+  // unconditionally, and #create-select carries no display:none of its
+  // own, so it's already the visible panel by default.
 </script>
 </body>
 </html>

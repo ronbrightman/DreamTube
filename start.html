@@ -717,7 +717,62 @@
   // the marketing funnel, unchanged) but BEFORE any of this screen's own
   // state (draft, staged characters, quiz vars) is touched, so a logged-in
   // visitor never even pays for a wasted render.
+  //
+  // BUGFIX (tracker item for-product-unify-create-html-to-questio-lif350,
+  // founder repro 2026-08-10, HIGH): this guard used to redirect
+  // unconditionally, straight to a bare `home.html`, BEFORE captionText/
+  // chosenStyle/isRecordMode below were ever read — so an already-logged-in
+  // visitor who'd just built a real dream in the funnel
+  // (?resume=1&caption=...&style=...) got bounced to a completely EMPTY
+  // home.html: the built dream silently dropped on the floor, landing them
+  // back in a fresh, empty state instead of seeing it generate. The
+  // signed-OUT path never had this bug — screen 13's own signup submission
+  // (DreamStore.setDraft({ caption: captionText, style: chosenStyle, ... })
+  // further down, then start-pending-generation.js) is exactly what reads
+  // these same two params. Fix: read them here too (this visitor doesn't
+  // need signup, but still needs the dream that already exists) and route
+  // through the SAME "hand off a built dream and generate" seam every other
+  // in-app creation path in this codebase already uses — style.html's own
+  // Generate button sets the draft and redirects to `home.html?generate=1`,
+  // which home.html's handleFreshInAppGeneration (see that file) picks up
+  // and submits, with ZERO changes needed there. A record-mode arrival (no
+  // caption yet — nothing was recorded funnel-side) instead lands on
+  // create.html's own record UI, mirroring exactly what completeFunnel
+  // already does for a BRAND-NEW signup in record mode a few hundred lines
+  // down (`location.href = 'create.html?record=1'`) — same destination,
+  // just reached without a signup step this visitor doesn't need. A bare
+  // ?resume=1 with neither (a stale/odd link) still falls through to the
+  // original plain `home.html`, unchanged.
   if(!resumedFromFacebook && DreamStore.getCurrentUser()){
+    if(getParam('mode') === 'record'){
+      location.href = 'create.html?record=1';
+      return;
+    }
+    var earlyCaption = getParam('caption') || '';
+    if(earlyCaption){
+      // Adopt any funnel-stashed characters (see FunnelCharacterStash's own
+      // doc comment, and adoptFunnelCharacterStash below for the signed-out
+      // twin of this) straight into REAL DreamStore characters — this
+      // visitor is already logged in, so unlike flushStagedCharactersToStore
+      // below there's no pre-signup staging step to route through first.
+      var earlyCharacterIds = [];
+      if(window.FunnelCharacterStash){
+        try{
+          FunnelCharacterStash.consume().forEach(function(c){
+            var result = DreamStore.saveCharacter({ isSelf: c.isSelf, name: c.name, description: c.description, photoDataUrl: c.photoDataUrl || null });
+            if(result.ok) earlyCharacterIds.push(result.character.id);
+          });
+        }catch(e){ /* character adoption must never block generating the dream itself */ }
+      }
+      // Clear first — same "no stale draft from a previous/abandoned
+      // session leaks in" reasoning as the identical clearDraft() call
+      // further down this file, just needed here too now that this branch
+      // also writes a draft.
+      DreamStore.clearDraft();
+      DreamStore.setDraft({ caption: earlyCaption, style: getParam('style') || null, characterIds: earlyCharacterIds, sourceDreamId: null });
+      location.href = 'home.html?generate=1';
+      return;
+    }
     location.href = 'home.html';
     return;
   }

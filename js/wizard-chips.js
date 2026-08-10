@@ -251,9 +251,11 @@
   // late/trying/newroom/child) return null — assembleCaption then simply omits
   // the place clause, exactly as it does for a skipped Setting step today.
   //
-  // Used ONLY by wizard.html (whose Setting step is gone); create.html's
-  // "Build it" keeps its real Setting step and passes the user's chosen
-  // placeKey, so it never calls this and its captions are unchanged.
+  // Used by wizard.html AND (since tracker item
+  // for-product-unify-create-html-to-questio-lif350) create.html's own
+  // "Build it" — both dropped their standalone Setting step the same way,
+  // so both call this from their respective finishBuildWizard/
+  // currentChipFields instead of ever reading a user-chosen placeKey.
   var FALLBACK_PLACE_BY_ACTION = {
     flying: 'sky',
     falling: 'sky',

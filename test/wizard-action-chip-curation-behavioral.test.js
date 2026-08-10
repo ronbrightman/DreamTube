@@ -86,19 +86,17 @@ async function reachActionStep(page) {
   await page.waitForSelector('#action-row');
 }
 
-/** Advances create.html's logged-in "Build it" retrofit through to its own Action step. */
+/** Advances create.html's logged-in "Build it" retrofit through to its own Action step. Setting is gone (tracker item for-product-unify-create-html-to-questio-lif350's question-first trim, mirroring wizard.html's own reachActionStep above), so Subject leads straight to Action. */
 async function reachBuildActionStep(page) {
   await page.evaluate(function () {
     var state = { user: { handle: '@chiptester', username: 'chiptester' }, accounts: { chiptester: { password: 'testpass1', email: 'chiptester@example.com' } }, dreams: [], draft: { caption: '', style: null, characterIds: [], sceneryTime: null, sceneryPlace: null, restore: false }, charactersByUser: {}, likedIds: {} };
     localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
   });
   await safeGoto(page, baseUrl + '/create.html');
-  await page.click('#choice-build');
+  await page.dispatchEvent('#choice-build', 'click');
   await page.waitForSelector('#build-subject-chip-row');
   await page.click('[data-build-subj-other="none"]');
   await page.click('#build-subject-continue');
-  await page.waitForSelector('#build-place-row');
-  await page.click('#build-setting-skip');
   await page.waitForSelector('#build-action-row');
 }
 
@@ -350,8 +348,7 @@ test('create.html "Build it": Action step shows the same curated default view + 
     await page.click('[data-build-action="calm"]'); // a hidden chip
     await page.click('#build-action-continue');
 
-    await page.waitForSelector('#build-mood-row');
-    await page.click('#build-mood-skip');
+    // Action advances straight to Free text -- Mood is gone (question-first trim).
     await page.waitForSelector('#build-freetext-input');
     await page.click('#build-freetext-skip');
 

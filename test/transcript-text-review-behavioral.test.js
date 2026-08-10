@@ -154,10 +154,10 @@ function mockFailedTranscription(page) {
   });
 }
 
-/** Drives create.html from the choice screen through record -> stop -> review-continue, leaving the caller at whatever screen that produces. */
+/** Drives create.html from the choice screen through record -> stop -> review-continue, leaving the caller at whatever screen that produces. Taps the question-first chooser's "Speak it instead" link (tracker item for-product-unify-create-html-to-questio-lif350) -- #choice-record itself is a permanently-hidden legacy element that link dispatches into (see create.html's own #create-select markup comment). */
 async function recordAndSubmitForTranscription(page) {
-  await page.waitForSelector('#choice-record', { timeout: 5000 });
-  await page.click('#choice-record');
+  await page.waitForSelector('#q-speak', { timeout: 5000 });
+  await page.click('#q-speak');
   await page.waitForSelector('#create-record[style*="display: flex"]', { timeout: 5000 });
   await page.click('#stop-record');
   await page.waitForSelector('#create-review[style*="display: flex"]', { timeout: 5000 });
@@ -334,7 +334,7 @@ test('create.html: tapping topbar Back while a transcription is in flight abando
 
     await page.click('#create-back');
     await page.waitForSelector('#create-select[style*="display: block"]', { timeout: 5000 });
-    await page.click('#choice-write');
+    await page.dispatchEvent('#choice-write', 'click');
     await page.waitForSelector('#create-write[style*="display: flex"]', { timeout: 5000 });
 
     // Give the delayed transcription's response time to actually resolve.

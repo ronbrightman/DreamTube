@@ -93,7 +93,7 @@ async function gotoWizardBuild(page) {
   await page.waitForSelector('#subject-chip-row');
 }
 
-/** Seeds a logged-in account and opens create.html's "Build it" flow at the Subject step — the logged-in Layout-B retrofit (no signup wall; straight to generation). */
+/** Seeds a logged-in account and opens create.html's "Build it" flow at the Subject step — the logged-in Layout-B retrofit (no signup wall; straight to generation). Dispatches the #choice-build click rather than a real Playwright page.click() -- since the question-first redesign (tracker item for-product-unify-create-html-to-questio-lif350) #choice-build is a permanently-hidden legacy element the six visible tiles dispatch into programmatically (see create.html's own #create-select markup comment); Playwright's real click() requires visibility, dispatchEvent does not. */
 async function gotoCreateBuild(page) {
   await safeGoto(page, baseUrl + '/login.html');
   await page.evaluate(function () {
@@ -101,7 +101,7 @@ async function gotoCreateBuild(page) {
     localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
   });
   await safeGoto(page, baseUrl + '/create.html');
-  await page.click('#choice-build');
+  await page.dispatchEvent('#choice-build', 'click');
   await page.waitForSelector('#build-subject-chip-row');
 }
 
@@ -1368,7 +1368,7 @@ test('claim-dream.html: an invalid/expired token shows a clear error, not a brok
   }
 });
 
-test('create.html "Build it": logged-in retrofit reaches style.html with a chip-assembled caption, no free-text style clause baked in', async function (t) {
+test('create.html "Build it": logged-in retrofit reaches style.html with a chip-assembled caption, no free-text style clause baked in, and the removed Setting/Mood steps never render (question-first trim, tracker item for-product-unify-create-html-to-questio-lif350)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -1380,17 +1380,17 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
     });
 
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#choice-build');
+    await page.dispatchEvent('#choice-build', 'click');
 
     await page.waitForSelector('#build-subject-chip-row');
     await page.click('[data-build-subj-other="none"]');
     await page.click('#build-subject-continue');
 
-    await page.waitForSelector('#build-place-row');
-    await page.click('[data-build-place="urban"]');
-    await page.click('#build-setting-continue');
-
+    // Subject advances straight to Action -- the removed Setting step must
+    // never render (place is now inferred from the action, see
+    // WizardChips.inferFallbackPlaceKey).
     await page.waitForSelector('#build-action-row');
+    assert.equal(await page.locator('#build-place-row').count(), 0, 'the Setting step must never render (place is inferred)');
     assert.equal(await page.locator('#build-action-continue').count(), 1);
     // "exploring" is curated behind the "+N more" expander by default now
     // (tracker item for-product-wizard-step-3-has-too-many-c-lrg1ct) --
@@ -1399,10 +1399,10 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
     await page.click('[data-build-action="exploring"]');
     await page.click('#build-action-continue');
 
-    await page.waitForSelector('#build-mood-row');
-    await page.click('#build-mood-skip');
-
+    // Action advances straight to Free text -- the removed Mood step must
+    // never render (mood/lighting is now inferred, always the default).
     await page.waitForSelector('#build-freetext-input');
+    assert.equal(await page.locator('#build-mood-row').count(), 0, 'the Mood step must never render (mood/lighting is inferred)');
     await page.click('#build-freetext-skip');
 
     await page.waitForURL(/style\.html/, { timeout: 5000 });
@@ -1414,7 +1414,10 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
     var draft = await page.evaluate(function () { return window.DreamStore.getDraft(); });
     assert.ok(draft.caption.length > 0);
     assert.doesNotMatch(draft.caption, /Cinematic style/, 'the real style choice belongs to style.html, not baked in early');
-    assert.match(draft.caption, /dreamlike\.$/);
+    // 'exploring' infers a 'nature' place (WizardChips.inferFallbackPlaceKey)
+    // now that Setting is gone -- sceneryPlace on the draft reflects it.
+    assert.equal(draft.sceneryPlace, 'nature', 'the inferred place for "exploring" must ride the draft as sceneryPlace, same as a real Setting pick used to');
+    assert.equal(draft.mood, null, 'mood is always null now that Mood is inferred, not asked -- falls back to the visual-style music bed');
   } finally {
     await page.close();
   }
@@ -1423,20 +1426,23 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
 // ===========================================================================
 // create.html Layout-B parity (tracker item
 // for-product-founder-picked-layout-b-flo--lks7mj): the logged-in "Build it"
-// flow now wears the same Flo pill-row skin as wizard.html + the funnel, with
-// two founder-ruled interaction specifics that DIFFER from a naive port:
-//   - Mood (the one single-select Build step with no secondary field)
-//     AUTO-advances ~260ms after a tap, no Continue needed.
-//   - Setting (place + Day/Night) and Action (chip + POV) must NOT
-//     auto-advance on the primary tap — they carry a secondary choice, so
-//     they require Continue. (Founder: place tap was skipping Day/Night;
-//     action tap was skipping POV.)
-// The pre-existing test above already pins the caption/draft contract; these
-// pin exactly the restyle's behavior deltas. Skin is byte-stable logic — no
-// analytics/payload assertions change.
+// flow wears the same Flo pill-row skin as wizard.html + the funnel.
+//
+// QUESTION-FIRST TRIM (tracker item
+// for-product-unify-create-html-to-questio-lif350, mirrors wizard.html's own
+// trim — see that file's "wizard.html (question-first trim)" test above for
+// the reference pattern this mirrors): the Setting and Mood steps, and their
+// Mood-only auto-advance mechanic, were REMOVED from create.html's Build
+// panel entirely, along with #choice-build/#choice-write/#choice-record's
+// visible cards (replaced by the six-tile question-first chooser — see
+// test/create-html-question-first-behavioral.test.js for that screen's own
+// dedicated coverage). Action (chip + POV) still must NOT auto-advance on
+// the primary tap — it carries a secondary choice, so it requires Continue.
+// The pre-existing test above already pins the caption/draft contract; this
+// pins the remaining behavior delta.
 // ===========================================================================
 
-test('create.html Layout-B: Mood auto-advances on a chip tap (no Continue), while Setting and Action do NOT auto-advance — their Day/Night and POV secondary choices stay reachable after the primary tap', async function (t) {
+test('create.html Layout-B: the removed Setting and Mood steps never render — Subject advances straight to Action and Action straight to Free text — and Action does NOT auto-advance on a chip tap (POV stays reachable)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -1446,60 +1452,23 @@ test('create.html Layout-B: Mood auto-advances on a chip tap (no Continue), whil
     // Subject: skip straight past.
     await page.click('#build-subject-skip');
 
-    // Setting: tap a place, then confirm we're STILL on Setting (no
-    // auto-advance) and Day/Night is still pickable afterwards.
-    await page.waitForSelector('#build-place-row [data-build-place="urban"]');
-    await page.click('#build-place-row [data-build-place="urban"]');
-    await page.waitForTimeout(400); // longer than the 260ms auto-advance window
-    assert.equal(await page.locator('#build-place-row').count(), 1, 'Setting must NOT auto-advance on a place tap — it carries the Day/Night pick');
-    await page.click('#build-time-row [data-build-time="Night"]');
-    assert.equal(await page.locator('#build-time-row .fn-chip.sel').count(), 1, 'Day/Night is still reachable after the place tap');
-    await page.click('#build-setting-continue');
+    // Subject -> Action directly (no Setting step in between).
+    await page.waitForSelector('#build-action-row [data-build-action="flying"]', { timeout: 3000 });
+    assert.equal(await page.locator('#build-place-row').count(), 0, 'the Setting step must never render (place is inferred)');
 
     // Action: tap a chip, then confirm we're STILL on Action and POV is
-    // still toggleable afterwards.
-    await page.waitForSelector('#build-action-row [data-build-action="flying"]');
+    // still toggleable afterwards (a chip tap must NOT auto-advance here —
+    // it carries the POV secondary toggle).
     await page.click('#build-action-row [data-build-action="flying"]');
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(400); // well past the old 260ms auto-advance window
     assert.equal(await page.locator('#build-action-row').count(), 1, 'Action must NOT auto-advance on a chip tap — it carries the POV toggle');
     await page.click('.fn-toggle-row .fn-switch-track'); // the POV switch (the hidden checkbox is toggled via its label)
     assert.equal(await page.isChecked('#build-pov-toggle'), true, 'POV toggle is still reachable after the action tap');
     await page.click('#build-action-continue');
 
-    // Mood: a chip tap AUTO-advances to Free text with no Continue tap.
-    await page.waitForSelector('#build-mood-row [data-build-mood="joyful"]');
-    await page.click('#build-mood-row [data-build-mood="joyful"]');
+    // Action -> Free text directly (no Mood step in between).
     await page.waitForSelector('#build-freetext-input', { timeout: 3000 });
-    assert.equal(await page.locator('#build-freetext-input').count(), 1, 'Mood must auto-advance on a chip tap (no secondary field)');
-  } finally {
-    await page.close();
-  }
-});
-
-test('create.html Layout-B: a Continue tap inside Mood\'s auto-advance window advances exactly once (never double-hops past Free text)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    await gotoCreateBuild(page);
-    await page.click('#build-subject-skip');
-    await page.click('#build-place-row [data-build-place="urban"]');
-    await page.click('#build-setting-continue');
-    await page.click('#build-action-row [data-build-action="flying"]');
-    await page.click('#build-action-continue');
-    await page.waitForSelector('#build-mood-row [data-build-mood="joyful"]');
-
-    // Chip-tap + Continue-tap in the SAME tick (guaranteed inside the 260ms
-    // window): buildNext cancels the armed auto-advance, so this lands on
-    // Free text exactly once — it must not double-hop straight to style.html.
-    await page.evaluate(function () {
-      document.querySelector('#build-mood-row [data-build-mood="joyful"]').click();
-      document.getElementById('build-mood-continue').click();
-    });
-    await page.waitForSelector('#build-freetext-input', { timeout: 3000 });
-    await page.waitForTimeout(500); // let the cancelled 260ms timer's window elapse
-    assert.equal(await page.locator('#build-freetext-input').count(), 1, 'must be sitting on Free text — a Continue tap inside the auto-advance window advances exactly once');
-    assert.equal(new URL(page.url()).pathname, '/create.html', 'must NOT have double-advanced through Free text to style.html');
+    assert.equal(await page.locator('#build-mood-row').count(), 0, 'the Mood step must never render (mood/lighting is inferred)');
   } finally {
     await page.close();
   }
@@ -1529,15 +1498,13 @@ test('create.html Layout-B: tapping Me opens the character sheet, and an uploade
     assert.equal(meHasPhoto, true, 'the uploaded photo is persisted on the real Me character');
     await page.click('#build-subject-continue');
 
-    // Setting -> Action with POV ON.
-    await page.click('#build-place-row [data-build-place="urban"]');
-    await page.click('#build-setting-continue');
+    // Subject -> Action directly (Setting is gone) -- with POV ON.
+    await page.waitForSelector('#build-action-row [data-build-action="flying"]');
     await page.click('#build-action-row [data-build-action="flying"]');
     await page.click('.fn-toggle-row .fn-switch-track');
     await page.click('#build-action-continue');
 
-    // Mood auto-advances, then finish through Free text.
-    await page.click('#build-mood-row [data-build-mood="dreamy"]');
+    // Action -> Free text directly (Mood is gone).
     await page.waitForSelector('#build-freetext-input');
     await page.click('#build-freetext-continue');
 
@@ -1877,17 +1844,23 @@ test('create.html entry chooser: each pill tap fires wizard_entry_mode_chosen ex
       localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
     });
 
-    // Build — a real tap; the event must fire once, immediately (before
-    // the Layout-B flash delay resolves, since the tap IS the choice).
+    // Build — #choice-build is a permanently-hidden legacy element the six
+    // question-first tiles dispatch into programmatically now (tracker item
+    // for-product-unify-create-html-to-questio-lif350 — see create.html's
+    // own #create-select markup comment); dispatchEvent (not Playwright's
+    // page.click(), which requires visibility) exercises the exact same
+    // untrusted-click path the real tiles use. track() fires synchronously
+    // inside the handler regardless of trusted/untrusted, before the
+    // Layout-B flash/advance logic even runs, since the tap IS the choice.
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#choice-build');
+    await page.dispatchEvent('#choice-build', 'click');
     var buildEvents = await readEntryModeEvents(page);
     assert.equal(buildEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per Build tap');
     assert.deepEqual(buildEvents[0], { mode: 'build', surface: 'create' });
 
     // Write — fresh page load (fresh stub queue), same shape.
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#choice-write');
+    await page.dispatchEvent('#choice-write', 'click');
     var writeEvents = await readEntryModeEvents(page);
     assert.equal(writeEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per Write tap');
     assert.deepEqual(writeEvents[0], { mode: 'write', surface: 'create' });
@@ -1896,7 +1869,7 @@ test('create.html entry chooser: each pill tap fires wizard_entry_mode_chosen ex
     // startRecordingUI's getUserMedia (which may fail in headless — the
     // choice was still made and must still count).
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#choice-record');
+    await page.dispatchEvent('#choice-record', 'click');
     var recordEvents = await readEntryModeEvents(page);
     assert.equal(recordEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per Record tap');
     assert.deepEqual(recordEvents[0], { mode: 'record', surface: 'create' });

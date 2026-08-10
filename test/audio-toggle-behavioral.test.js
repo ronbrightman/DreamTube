@@ -108,7 +108,7 @@ async function seedLoggedInUserAt(page, username, path) {
 
 /** Drives create.html's "Write it" path to a real draft, landing on style.html exactly like a real user would. */
 async function reachStyleScreen(page, caption) {
-  await page.click('#choice-write');
+  await page.dispatchEvent('#choice-write', 'click');
   await page.fill('#dream-text', caption);
   await page.click('#write-continue');
   await page.waitForSelector('.style-card[data-style="Cartoon"]', { timeout: 5000 });

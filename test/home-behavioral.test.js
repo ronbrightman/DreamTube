@@ -927,37 +927,40 @@ test('home.html: the bare Tonight CTA button has the founder\'s exact "What did 
     await page.click('#tonight-cta');
     await page.waitForURL(function (url) { return /\/create\.html$/.test(url.pathname) && url.search === ''; }, { timeout: 5000, waitUntil: 'domcontentloaded' });
 
-    // Confirm the actual Build/Write/Record choice screen is what's
-    // showing -- not the wizard, not any other create.html state. All
-    // three real choice cards must be visible and correctly routed.
+    // Confirm the actual entry chooser is what's showing -- not the build
+    // wizard, not any other create.html state. Since the question-first
+    // redesign (tracker item for-product-unify-create-html-to-questio-
+    // lif350) this is the six-tile chooser, not the old three Build/Write/
+    // Record cards (permanently hidden now -- see create.html's own
+    // #create-select markup comment) -- see
+    // test/create-html-question-first-behavioral.test.js for that screen's
+    // own dedicated coverage; this test's job is only confirming home.html
+    // routes here correctly.
     await page.waitForSelector('#create-select', { state: 'visible', timeout: 5000 });
     assert.equal(await page.locator('#create-build').isVisible(), false, 'the chip wizard must NOT be shown yet -- the choice screen comes first');
-    assert.equal(await page.locator('#choice-build').isVisible(), true, '"Build it" choice card must be offered');
-    assert.equal(await page.locator('#choice-write').isVisible(), true, '"Write it" choice card must be offered');
-    assert.equal(await page.locator('#choice-record').isVisible(), true, '"Record it" choice card must be offered');
+    await page.waitForSelector('#q-grid .q-tile', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#q-grid .q-tile').count(), 6, 'the six-tile question-first chooser must be offered');
 
-    // Build it -> the chip-first wizard, same rigor as the old test: the
-    // Subject step (step 1) must actually render, not just an empty/
-    // generic build screen. The Layout-B redesign replaced the old "step 1
-    // of 5" text progress indicator with #build-dots (pill/dot styling,
-    // same as wizard.html) -- no text equivalent exists to pin anymore, so
-    // this now checks the real, still-meaningful properties: landing on
-    // the actual Subject step content, and dot 1 (of 5) marked current.
-    await page.click('#choice-build');
+    // Tapping a scenario tile ("Flying") -> the chip-first wizard, same
+    // rigor as the old test: the Subject step must actually render, not
+    // just an empty/generic build screen. The question-first trim reduced
+    // the Build panel to 3 steps (Subject/Action/Free text -- Setting/Mood
+    // are gone, now inferred), so #build-dots now shows 3 dots, not 5.
+    await page.click('#q-grid [data-tile="0"]');
     await page.waitForSelector('#create-build', { state: 'visible', timeout: 5000 });
     assert.equal(await page.locator('#create-select').isVisible(), false);
     assert.equal(await page.locator('#build-subject-chip-row').isVisible(), true, 'the Subject step\'s chip row must be visible -- not just an empty/generic build screen');
     var dots = await page.locator('#build-dots i').evaluateAll(function (els) {
       return els.map(function (el) { return el.className; });
     });
-    assert.equal(dots.length, 5, 'the Build-it wizard should show 5 progress dots');
+    assert.equal(dots.length, 3, 'the trimmed Build-it wizard should show 3 progress dots (Subject/Action/Free text)');
     assert.match(dots[0], /\bon\b/, 'dot 1 (Subject) should be marked current on first landing');
   } finally {
     await context.close();
   }
 });
 
-test('home.html: the Tonight CTA button\'s choice screen, from Write it / Record it, still leads to their correct existing destinations (create.html\'s own #choice-write/#choice-record handlers, unchanged)', async function (t) {
+test('home.html: the Tonight CTA button\'s choice screen, from Write it / Record it, still leads to their correct existing destinations (the question-first chooser\'s "I\'ll describe it" tile / "Speak it instead" link, dispatching into create.html\'s own #choice-write/#choice-record handlers, unchanged) -- tracker item for-product-unify-create-html-to-questio-lif350', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -968,8 +971,10 @@ test('home.html: the Tonight CTA button\'s choice screen, from Write it / Record
 
     await page.waitForSelector('#tonight-cta', { timeout: 5000 });
     await page.click('#tonight-cta');
-    await page.waitForSelector('#choice-write', { state: 'visible', timeout: 5000 });
-    await page.click('#choice-write');
+    await page.waitForSelector('#q-grid', { state: 'visible', timeout: 5000 });
+    // "I'll describe it" is tile index 5 (see create.html's own
+    // QUESTION_TILES) -- dispatches into #choice-write.
+    await page.click('#q-grid [data-tile="5"]');
     await page.waitForSelector('#create-write', { state: 'visible', timeout: 5000 });
     assert.equal(await page.locator('#create-select').isVisible(), false);
   } finally {
@@ -1011,8 +1016,8 @@ test('home.html: the Tonight CTA button\'s choice screen, from Write it / Record
 
     await page2.waitForSelector('#tonight-cta', { timeout: 5000 });
     await page2.click('#tonight-cta');
-    await page2.waitForSelector('#choice-record', { state: 'visible', timeout: 5000 });
-    await page2.click('#choice-record');
+    await page2.waitForSelector('#q-speak', { state: 'visible', timeout: 5000 });
+    await page2.click('#q-speak');
     // #choice-record's own handler (startRecordingUI) opens the record
     // panel -- same existing, already-tested destination as the ?record=1
     // deep-link.

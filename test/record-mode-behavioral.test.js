@@ -263,7 +263,12 @@ test('create.html: without ?record=1, a normal visit still shows the Build/Write
 
     await seedLoggedInUserAt(page, 'norecordparamtester', '/create.html');
 
-    await page.waitForSelector('#choice-record', { timeout: 5000 });
+    // The question-first chooser (tracker item
+    // for-product-unify-create-html-to-questio-lif350) is what actually
+    // shows now -- #choice-record itself is a permanently-hidden legacy
+    // element the "Speak it instead" link dispatches into (see
+    // create.html's own #create-select markup comment).
+    await page.waitForSelector('#q-grid', { timeout: 5000 });
     var selectDisplay = await page.locator('#create-select').evaluate(function (el) { return getComputedStyle(el).display; });
     assert.notEqual(selectDisplay, 'none', 'without ?record=1 the choice screen must still show, unchanged');
 

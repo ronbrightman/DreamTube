@@ -251,9 +251,14 @@ test('assembleCaption produces a sane, non-empty prompt caption for each of the 
 
 // ── Review finding: dangling ", in," / ", through," when the Setting/
 // place step is skipped ──
-// The Setting/place step is skippable in both wizard.html (fn-setting-skip)
-// and create.html's "Build it" retrofit (build-setting-skip), leaving
-// placeKey unset and placePhrase === ''. Every ACTION_CHIPS entry whose
+// The Setting/place step was, at the time of this fix, skippable in both
+// wizard.html (fn-setting-skip) and create.html's "Build it" retrofit
+// (build-setting-skip) -- both have since REMOVED the step outright
+// (tracker item for-product-unify-create-html-to-questio-lif350's
+// question-first trim), so placeKey is now always either a real inferred
+// key (WizardChips.inferFallbackPlaceKey) or unset, never a user-skipped
+// one -- but the underlying placePhrase === '' case this fix guards
+// against is unchanged and still exercised below. Every ACTION_CHIPS entry whose
 // phrase relied on a trailing preposition to connect to a place that might
 // never come produced a broken caption fragment in that case (e.g.
 // "...taking an exam back in school, in, dreamy..."). Fixed by splitting
