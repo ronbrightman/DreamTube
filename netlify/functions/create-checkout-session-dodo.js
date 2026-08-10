@@ -15,6 +15,18 @@
 // 3000-token monthly grant and the trial's 100/day claim boost are applied
 // entirely server-side (dodo-webhook.js + lib/entitlements.js), never here.
 // See lib/entitlements.js's DREAMER PASS doc block.
+//
+// DREAMER PASS VARIANTS (OPTIONAL `passVariant`): the SAME 3,000-token/month
+// pass can be checked out at three different price/trial configurations,
+// selected by an OPTIONAL `passVariant` field on the subscription request —
+// one of "freetrial" (default), "notrial", "trial50". Each maps to its own
+// Dodo product via its own env var (see PASS_VARIANT_ENV below); the
+// price/trial differences live ENTIRELY on the Dodo product config (same
+// model as the single-product path above — no subscription_data/trial param
+// is ever sent for any variant). An absent/empty/unknown passVariant resolves
+// to "freetrial", so every existing caller behaves byte-for-byte as before.
+// The 3,000-token monthly grant is identical across all three variants (a
+// fixed server constant, never derived from the variant).
 // 500 tokens / $1.99, 1500 tokens / $4.99 "Most popular", 4000 tokens /
 // $9.99 "Best value" — see PACK_TOKENS below — see shop.html, "The
 // Vault"). This is the SKU ladder built for tracker item
@@ -101,7 +113,7 @@
 //   E3 invalid_json
 //   E4 email_and_pack_required (email_required on the subscription path — no pack there)
 //   E5 invalid_pack           — pack wasn't "pack099", "pack199", "pack499", or "pack999" (pack path only)
-//   E6 missing_product_id     — DODO_PRODUCT_PACK_STARTER300/_SMALL500/_MEDIUM1500/_LARGE4000 (pack path), or DODO_PRODUCT_DREAMER_PASS (subscription path), not configured
+//   E6 missing_product_id     — DODO_PRODUCT_PACK_STARTER300/_SMALL500/_MEDIUM1500/_LARGE4000 (pack path), or the resolved Dreamer Pass variant's env var — DODO_PRODUCT_DREAMER_PASS (freetrial, default) / DODO_PRODUCT_DREAMER_PASS_NOTRIAL (notrial) / DODO_PRODUCT_DREAMER_PASS_TRIAL50 (trial50) (subscription path) — not configured
 //   E7 dodo_request_failed    — Dodo rejected the request or it otherwise failed
 //   E8 invalid_redirect_url   — successUrl/cancelUrl was supplied but isn't a safe relative path (see isSafeRedirectPath below)
 //   E9 starter_already_used   — pack099 requested, but this account has already completed a pack purchase before (hasMadeFirstPurchase) — the one-time starter offer is no longer available to it
@@ -246,6 +258,34 @@ var PACK_PRODUCT_ENV = {
   pack999: 'DODO_PRODUCT_PACK_LARGE4000'
 };
 
+// ── Dreamer Pass variants (INERT PLUMBING as of this change — no shipped UI
+//    passes `passVariant` yet, so every real caller today still hits the
+//    default `freetrial` and behaves byte-for-byte as before) ──
+// The SAME 3,000-token/month Dreamer Pass, offered at three different
+// price/trial configurations that differ ONLY in how the referenced Dodo
+// product is configured (recurring price + whether/what kind of trial it
+// carries) — exactly the "Dodo decides sub-vs-one-time AND the trial purely
+// from the product config" model this file's header comment describes, just
+// extended to three product ids instead of one. Same env-var-mapping pattern
+// as PACK_PRODUCT_ENV above: the product IDs are NEVER hardcoded, only the
+// env var NAMES are, and each variant degrades independently to E6 if its own
+// env var is unset (the founder sets each in Netlify).
+//   - freetrial (EXISTING default): DODO_PRODUCT_DREAMER_PASS   — $9.99/mo, 3-day free trial
+//   - notrial   (NEW):              DODO_PRODUCT_DREAMER_PASS_NOTRIAL  — $7.99/mo, no trial
+//   - trial50   (NEW):              DODO_PRODUCT_DREAMER_PASS_TRIAL50  — $9.99/mo, 50c paid trial
+// An absent/empty/unknown `passVariant` resolves to `freetrial`, so every
+// existing caller (which sends no passVariant at all) keeps the exact same
+// DODO_PRODUCT_DREAMER_PASS product and behavior it has today. The 3,000-token
+// monthly grant + trial handling are entirely Dodo's/dodo-webhook.js's
+// concern — the price/trial differences never reach the grant, which is a
+// fixed server-side constant (entitlements.DREAMER_PASS_MONTHLY_TOKENS).
+var PASS_VARIANT_ENV = {
+  freetrial: 'DODO_PRODUCT_DREAMER_PASS',
+  notrial: 'DODO_PRODUCT_DREAMER_PASS_NOTRIAL',
+  trial50: 'DODO_PRODUCT_DREAMER_PASS_TRIAL50'
+};
+var DEFAULT_PASS_VARIANT = 'freetrial';
+
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'E1: method_not_allowed' }) };
@@ -280,17 +320,27 @@ exports.handler = async function (event) {
   var isSubscription = (payload.plan || '').trim().toLowerCase() === entitlements.DREAMER_PASS_PLAN;
 
   var productId;
+  var passVariant;
   if (isSubscription) {
     // Subscription path: email is the only required field (there is no
-    // `pack`), the product id comes from DODO_PRODUCT_DREAMER_PASS, and the
-    // one-time-starter E9 guard deliberately does NOT apply (the Pass is a
-    // recurring product, not the one-time welcome pack).
+    // `pack`), the product id comes from the resolved Dreamer Pass variant's
+    // env var (default DODO_PRODUCT_DREAMER_PASS — see PASS_VARIANT_ENV
+    // above), and the one-time-starter E9 guard deliberately does NOT apply
+    // (the Pass is a recurring product, not the one-time welcome pack).
     if (!email) {
       return { statusCode: 400, body: JSON.stringify({ error: 'E4: email_required' }) };
     }
-    productId = process.env.DODO_PRODUCT_DREAMER_PASS;
+    // OPTIONAL passVariant in {freetrial, notrial, trial50}; absent/empty/
+    // unknown -> freetrial, so every existing caller (none send this field
+    // today) resolves to DODO_PRODUCT_DREAMER_PASS exactly as before.
+    passVariant = (payload.passVariant || '').trim().toLowerCase();
+    if (!PASS_VARIANT_ENV[passVariant]) passVariant = DEFAULT_PASS_VARIANT;
+    var passEnvVar = PASS_VARIANT_ENV[passVariant];
+    productId = process.env[passEnvVar];
     if (!productId) {
-      return { statusCode: 500, body: JSON.stringify({ error: 'E6: missing_product_id: DODO_PRODUCT_DREAMER_PASS not configured' }) };
+      // Same E6 missing_product_id error the code already returns for a
+      // missing pass product — each variant degrades independently to it.
+      return { statusCode: 500, body: JSON.stringify({ error: 'E6: missing_product_id: ' + passEnvVar + ' not configured' }) };
     }
   } else {
     if (!email || !pack) {
@@ -491,16 +541,27 @@ exports.handler = async function (event) {
       // Subscription vs. pack metadata. For the Dreamer Pass, dreamtube_plan
       // is the tag dodo-webhook.js reads to recognize the charge as a
       // subscription payment (its primary signal is the product_id matching
-      // DODO_PRODUCT_DREAMER_PASS; this metadata is the belt-and-suspenders
-      // fallback, mirroring dreamtube_pack's role on the pack path). No
+      // ANY of the three Dreamer Pass variant env vars — DODO_PRODUCT_DREAMER_
+      // PASS[_NOTRIAL|_TRIAL50]; this metadata is the belt-and-suspenders
+      // fallback, mirroring dreamtube_pack's role on the pack path).
+      // dreamtube_pass_variant additionally records WHICH variant was bought,
+      // for the webhook's conversion tagging (never the grant). No
       // dreamtube_tokens/price/starter here — those are pack-specific; the
       // 3000-token monthly grant is a fixed server-side constant
       // (DREAMER_PASS_MONTHLY_TOKENS), never derived from client-influenced
-      // metadata.
+      // metadata, and identical across all three variants.
       metadata: isSubscription
         ? {
             dreamtube_email: email,
             dreamtube_plan: entitlements.DREAMER_PASS_PLAN,
+            // The resolved Dreamer Pass variant (freetrial|notrial|trial50) —
+            // echoed back verbatim by Dodo on the subscription's events, so
+            // dodo-webhook.js can tag its conversion event with which
+            // price/trial variant was bought without re-deriving it. Cheap,
+            // additive; the grant itself never reads this (it's a fixed
+            // server constant). Always present now that the subscription path
+            // resolves a variant; the default path carries 'freetrial'.
+            dreamtube_pass_variant: passVariant,
             dreamtube_event_id: eventId
           }
         : {
