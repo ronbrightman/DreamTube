@@ -124,6 +124,20 @@ miss. Check new/changed code against these specifically:
   what it's actually meant to authorize (whose action, which resource)
   at the point it's minted, not just checked for "is this still valid"
   at the point it's used.
+- **A shared field/marker written by more than one code path can silently
+  carry two different meanings.** `fix-funnel-firstvideo-email` round 1's
+  fix gated a decision (skip an automatic retention email) on
+  `pending-dreams.js`'s `readyAt` field, assuming it meant only "the
+  abandonment-email path already sent" — but `dream-webhook.js` also sets
+  `readyAt` in a separate, no-email bookkeeping branch, so the same field
+  meant two different things depending on which code path wrote it, and
+  the reader couldn't tell them apart, silently regressing the very fix
+  it was meant to close. When a change gates a send/no-send or
+  once-ever decision on an existing field, check every place that field
+  gets WRITTEN (not just the one write site the change touches) — if two
+  different writers can set the same field for two different reasons, a
+  reader that assumes only one of those reasons is a real bug waiting to
+  happen, not a hypothetical.
 - **Safety-sensitive content boundaries.** This app has an explicit,
   deliberate boundary around not helping route around fal.ai/Veo's
   content-policy rejections (e.g. real photos of minors). Flag anything
