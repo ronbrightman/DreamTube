@@ -205,6 +205,52 @@ test('style.html: blocked generate opens the purchase sheet with correct shortfa
   }
 });
 
+test('PurchaseSheet.show affordability guard (founder bug 2026-08-10, "needs 0 more"): when balance already covers cost the sheet does NOT open, and any onAfford proceed-callback fires instead -- but a genuine shortfall still opens it', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 500, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+    await seedAccount(page, { username: 'guardtester' });
+    // Any page that loads js/purchase-sheet.js will do -- style.html mounts it.
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(function () { return window.PurchaseSheet && typeof window.PurchaseSheet.show === 'function'; }, null, { timeout: 5000 });
+
+    // balance > cost -> suppressed, onAfford invoked.
+    var over = await page.evaluate(function () {
+      window.__afforded = false;
+      window.PurchaseSheet.show({ mediaType: 'video', cost: 100, balance: 150, source: 'test', onAfford: function () { window.__afforded = true; } });
+      var el = document.getElementById('purchase-sheet-overlay');
+      return { open: !!(el && el.classList.contains('open')), afforded: window.__afforded };
+    });
+    assert.equal(over.open, false, 'the sheet must NOT open when balance already exceeds cost');
+    assert.equal(over.afforded, true, 'onAfford must be invoked as the proceed path when the action is already affordable');
+
+    // balance === cost -> still "can afford", still suppressed (boundary).
+    var equal = await page.evaluate(function () {
+      window.__afforded = false;
+      window.PurchaseSheet.show({ mediaType: 'video', cost: 100, balance: 100, source: 'test', onAfford: function () { window.__afforded = true; } });
+      var el = document.getElementById('purchase-sheet-overlay');
+      return { open: !!(el && el.classList.contains('open')), afforded: window.__afforded };
+    });
+    assert.equal(equal.open, false, 'balance === cost means the user can afford it -- still no sheet');
+    assert.equal(equal.afforded, true, 'onAfford fires at the exact-cover boundary too');
+
+    // A genuine shortfall must STILL open the sheet (the guard must not
+    // over-suppress -- the founder directive that the store come up whenever
+    // a user genuinely lacks tokens is preserved).
+    var short = await page.evaluate(function () {
+      window.PurchaseSheet.show({ mediaType: 'video', cost: 100, balance: 40, source: 'test' });
+      var el = document.getElementById('purchase-sheet-overlay');
+      return !!(el && el.classList.contains('open'));
+    });
+    assert.equal(short, true, 'a real shortfall (balance < cost) must still open the out-of-tokens sheet');
+  } finally {
+    await context.close();
+  }
+});
+
 test('style.html: tapping the buy button POSTs the contextual pack (starter, since hasMadeFirstPurchase is unset) with a relative-path-only successUrl/cancelUrl', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();

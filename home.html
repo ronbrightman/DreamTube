@@ -1772,20 +1772,44 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // Same &play=1 intent as the card tap above.
     location.href = 'result.html?id=' + encodeURIComponent(d0DreamId) + '&play=1';
   });
-  // The quiet row's four actions (Publish/Make another/Edit/Delete) all
-  // already have full, tested implementations on result.html itself
-  // (modals, the edit sheet, etc.) -- rather than duplicating that
-  // machinery here, each one opens the same dream's full room once it's
-  // enabled, landing the user exactly where that real action lives. This
-  // is what "the quiet row's buttons enable (become real, clickable)"
-  // means in practice for this embedded copy: real navigation, not a
-  // second, parallel set of action handlers.
-  ['d0-publish', 'd0-make-another', 'd0-edit', 'd0-delete'].forEach(function(id){
+  // The quiet row's four actions each now perform (or route straight into)
+  // their OWN action, rather than all four dumping the user on the dream's
+  // room with nothing done (founder bug 2026-08-10: "each button just opens
+  // result.html instead of doing its action"). The real implementations
+  // (the post modal, the edit-delta sheet, the delete-confirm modal) all
+  // live on result.html itself, so rather than duplicate that machinery
+  // here, each button routes there with an explicit intent query param that
+  // opens the corresponding modal/sheet on load (result.html's own
+  // deep-link-intent handler, mirroring its existing &play=1 param) --
+  // EXCEPT "Make another", which starts a brand-new dream and so goes to
+  // create.html, touching this dream not at all. Tracking (action) is
+  // preserved for all four.
+  function wireQuietAction(id, run){
     document.getElementById(id).addEventListener('click', function(){
-      if(!d0DreamId) return;
       track('home_day0_card_quiet_action_tapped', { action: id.replace('d0-', '') });
-      location.href = 'result.html?id=' + encodeURIComponent(d0DreamId);
+      run();
     });
+  }
+  // Post / Edit / Delete all act on THIS dream and need d0DreamId; "Make
+  // another" doesn't, so it stays actionable regardless.
+  wireQuietAction('d0-make-another', function(){
+    // Start a genuinely fresh dream -- clear any leftover draft first, same
+    // as result.html's own "Make another" (#make-another-btn) does, so
+    // create.html opens blank rather than pre-populated from a prior edit.
+    DreamStore.clearDraft();
+    location.href = 'create.html';
+  });
+  wireQuietAction('d0-publish', function(){
+    if(!d0DreamId) return;
+    location.href = 'result.html?id=' + encodeURIComponent(d0DreamId) + '&publish=1';
+  });
+  wireQuietAction('d0-edit', function(){
+    if(!d0DreamId) return;
+    location.href = 'result.html?id=' + encodeURIComponent(d0DreamId) + '&edit=1';
+  });
+  wireQuietAction('d0-delete', function(){
+    if(!d0DreamId) return;
+    location.href = 'result.html?id=' + encodeURIComponent(d0DreamId) + '&delete=1';
   });
 
   // The dream id the forming card's own interpretation offer (#d0-sage)
@@ -2366,6 +2390,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         DreamStore.getTokenStatus().then(function(status){
           PurchaseSheet.show({
             mediaType: mediaType, cost: cost, balance: status.balance, tokenStatus: status, source: 'blocked_action',
+            // Affordability guard escape (founder bug 2026-08-10, see
+            // PurchaseSheet.show's own guard): the server rejected this
+            // submission with E112/E412, but this fresh getTokenStatus()
+            // re-read can legitimately come back already-sufficient (a
+            // daily claim, a purchase, or a refund landing in the gap
+            // between the server's rejection and this client re-read). In
+            // that race the out-of-tokens sheet would be nonsense, so the
+            // guard suppresses it and calls this instead — a plain honest
+            // nudge to retry, deliberately NOT an auto-resubmit (the client
+            // and server balances disagreed once already; auto-retrying on
+            // the client's rosier number could loop).
+            onAfford: function(){
+              showToast('Looks like you have enough tokens now — tap Create to try again.');
+            },
             onImageFallback: (mediaType === 'video' && !isImageToVideoUpsell) ? function(){
               DreamStore.setDraft({ mediaType: 'image', audioOn: false, musicStyle: null });
               // Already on home.html — no navigation needed, retry the

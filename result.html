@@ -2905,6 +2905,41 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     location.href = 'profile.html';
   });
 
+  // ===== Deep-link action intents (?publish=1 / ?edit=1 / ?delete=1) =====
+  // home.html's Day-0 card quiet row (Post / Edit / Delete) routes here
+  // with one of these params so each button lands on its OWN real action,
+  // not just this page (founder bug 2026-08-10). Rather than duplicate the
+  // post/edit/delete UI, this simply drives the SAME on-page controls those
+  // actions already live behind — a synthetic click on #publish-btn /
+  // #open-edit-sheet / #delete-btn — so there is exactly one implementation
+  // of each (including their published-state branches, the delete warning
+  // copy, and the regenerating-disabled guard) and no second copy to drift.
+  // Owner-only (isMyDream), same gate those controls' own visibility uses —
+  // Publish/Edit/Delete only ever act on your own dream. The param is
+  // stripped immediately (history.replaceState) so a refresh/back never
+  // re-fires the action, exactly like the &play=1 handler above. Runs after
+  // those three handlers are wired (above) so the clicks have somewhere to
+  // land.
+  (function(){
+    if(!dream || !isMyDream) return;
+    var params = new URLSearchParams(location.search);
+    var intent = params.get('publish') === '1' ? 'publish'
+               : params.get('edit') === '1' ? 'edit'
+               : params.get('delete') === '1' ? 'delete'
+               : null;
+    if(!intent) return;
+    if(history.replaceState){
+      var cleaned = new URL(location.href);
+      cleaned.searchParams.delete(intent);
+      history.replaceState(null, '', cleaned.pathname + cleaned.search + cleaned.hash);
+    }
+    var btnId = intent === 'publish' ? 'publish-btn'
+              : intent === 'edit' ? 'open-edit-sheet'
+              : 'delete-btn';
+    var btn = document.getElementById(btnId);
+    if(btn) btn.click();
+  })();
+
   // No longer inside #dreamvideo-frame (relocated into the hero's tag
   // row, see the markup comment above that frame) -- e.stopPropagation()
   // dropped since there's no longer a parent open-fullscreen handler to

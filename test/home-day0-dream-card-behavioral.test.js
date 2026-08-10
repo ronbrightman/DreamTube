@@ -340,10 +340,18 @@ test('home.html day-0 card: the ready watch pill opens the full room too', async
   }
 });
 
-test('home.html day-0 card: each quiet-row action (Publish / Make another / Edit / Delete) opens the dream\'s full room once enabled -- "become real, clickable" means real navigation to where that action actually lives, not a duplicate set of handlers', async function (t) {
+test('home.html day-0 card: each quiet-row action performs its OWN action (founder bug 2026-08-10: they all just opened result.html) -- Post/Edit/Delete route to result.html with an intent param that opens the matching modal/sheet on load; Make another starts a fresh dream on create.html', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
-  var ids = ['d0-publish', 'd0-make-another', 'd0-edit', 'd0-delete'];
-  for (var i = 0; i < ids.length; i++) {
+  // Each case: which quiet button, where it should land, and (for the three
+  // that route to result.html) the on-page UI its intent param must open.
+  var cases = [
+    { id: 'd0-publish', urlRe: /result\.html\?id=d0-dream-1&publish=1/, openSel: '#modal-publish' },
+    { id: 'd0-edit', urlRe: /result\.html\?id=d0-dream-1&edit=1/, openSel: '#sheet-edit-delta-overlay' },
+    { id: 'd0-delete', urlRe: /result\.html\?id=d0-dream-1&delete=1/, openSel: '#modal-delete' },
+    { id: 'd0-make-another', urlRe: /create\.html/, openSel: null }
+  ];
+  for (var i = 0; i < cases.length; i++) {
+    var c = cases[i];
     var context = await newMobileContext();
     try {
       var page = await context.newPage();
@@ -352,9 +360,19 @@ test('home.html day-0 card: each quiet-row action (Publish / Make another / Edit
       await seedDay0Completed(page, { username: 'quietactiontester' + i });
       await page.waitForSelector('#d0-video.ready', { timeout: 5000 });
       await Promise.all([
-        page.waitForURL(/result\.html\?id=d0-dream-1/, { timeout: 5000, waitUntil: 'domcontentloaded' }),
-        page.click('#' + ids[i])
+        page.waitForURL(c.urlRe, { timeout: 5000, waitUntil: 'domcontentloaded' }),
+        page.click('#' + c.id)
       ]);
+      if (c.openSel) {
+        // The intent param must actually open the corresponding real
+        // control on result.html (not leave a dead param) -- and it must be
+        // stripped from the URL so a refresh/back never re-fires it.
+        await page.waitForFunction(function (sel) {
+          var el = document.querySelector(sel);
+          return el && el.classList.contains('open');
+        }, c.openSel, { timeout: 5000 });
+        assert.doesNotMatch(page.url(), /[?&](publish|edit|delete)=1/, 'the intent param must be stripped after it opens the action, so refresh/back does not re-fire it');
+      }
     } finally {
       await context.close();
     }

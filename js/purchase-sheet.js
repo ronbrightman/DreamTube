@@ -672,9 +672,51 @@
    *                     either navigating to home.html?generate=1 or, if
    *                     already there (home.html's own E112/E412 catch),
    *                     retrying generation in place.
+   *   onAfford        — optional zero-arg function (founder bug 2026-08-10,
+   *                     "the sheet said 'needs 0 more'"). The affordability
+   *                     guard at the top of show() below suppresses the
+   *                     whole sheet when balance already covers cost — there
+   *                     is genuinely nothing to buy in that case. If a call
+   *                     site can meaningfully proceed with the action when
+   *                     it turns out to be affordable after all (e.g. a
+   *                     server-vs-client balance race), it passes this and
+   *                     the guard invokes it INSTEAD of opening the sheet.
+   *                     Omit it for a call site that has nothing sensible to
+   *                     do in that case (the guard then just no-ops the
+   *                     nonsensical sheet, which is still the correct fix).
    */
   function show(opts) {
     opts = opts || {};
+
+    // ---- Affordability guard (founder bug 2026-08-10: the out-of-tokens
+    // sheet appeared saying "needs 0 more" for a user who already had
+    // enough tokens). This whole file exists for the founder directive
+    // "the store must come up whenever a user tries any action without
+    // enough tokens" (header comment) — the operative words being WITHOUT
+    // ENOUGH. When balance already covers cost there is nothing to buy, so
+    // opening the sheet renders a nonsensical "you need 0 more" prompt.
+    // Suppress the sheet entirely in that case. This is the single choke
+    // point every blocked-action call site routes through (style.html,
+    // result.html x3, home.html's E112/E412 catch), so one guard here
+    // covers them all — no matter which one ever passes an
+    // already-affordable balance (e.g. a claim/purchase/refund landing
+    // between a server E112 rejection and home.html's own fresh
+    // getTokenStatus re-read). It deliberately runs BEFORE persistDraft and
+    // any DOM/mount work: there is no sheet to persist a resumable draft
+    // for when no sheet opens. The legitimate server-insufficiency path is
+    // unaffected — there balance really is < cost, so this never fires for
+    // it. Uses the SAME balance/cost defaulting the render below uses
+    // (missing/NaN balance -> 0, missing/NaN cost -> 100) so an unknown
+    // balance fails toward SHOWING the sheet, never toward wrongly
+    // suppressing it.
+    var guardBalance = typeof opts.balance === 'number' && !isNaN(opts.balance) ? opts.balance : 0;
+    var guardCost = typeof opts.cost === 'number' && !isNaN(opts.cost) ? opts.cost : 100;
+    if (guardBalance >= guardCost) {
+      trackLocal('out_of_tokens_suppressed_can_afford', { source: opts.source || null, balance: guardBalance, cost: guardCost });
+      if (typeof opts.onAfford === 'function') opts.onAfford();
+      return;
+    }
+
     if (typeof opts.persistDraft === 'function') opts.persistDraft();
 
     ensureMounted();
