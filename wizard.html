@@ -432,13 +432,21 @@
 
   /* ── Question-first screen 1 ("What was your dream about?") ──────────────
      The wizard's new first screen (replacing the round-8 build/write/speak
-     mode chooser): a promise line, a STATIC 2x2 store-image collage hero
-     (webview-safe, zero video), and a six-tile grid whose tap SEEDS the
-     wizard (see QUESTION_TILES). Uses the same Layout-B palette/type as
-     every other step; only the collage + tile-grid geometry is new here. */
-  .fn-q-collage{ position:relative; width:100%; aspect-ratio:16/10; border-radius:20px; overflow:hidden; border:1px solid var(--fn-line); display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; background:var(--fn-card); margin:2px 0 16px; box-shadow:0 16px 40px -18px rgba(20,10,40,.7);}
-  .fn-q-collage img{ width:100%; height:100%; object-fit:cover; display:block;}
-  .fn-q-collage::after{ content:''; position:absolute; inset:0; background:linear-gradient(180deg,rgba(20,12,40,0) 45%,rgba(20,12,40,.55)); pointer-events:none;}
+     mode chooser): a promise line, a STATIC portrait-triptych store-image
+     hero (webview-safe, zero video), and a six-tile grid whose tap SEEDS
+     the wizard (see QUESTION_TILES). Matches the growth funnel's finalized
+     screen-1 hero EXACTLY so the two funnels look identical: three full
+     portrait stills (desert / ocean / forest), each in a ~400/711 cell so
+     the composition reads FULL and uncropped (the store assets are 400x711,
+     so object-fit:cover shows each whole, no cropped slivers). Every cell
+     and the hero itself carry a dark-gradient first-paint fallback that
+     shows before/if an image fails to load. Uses the same Layout-B palette/
+     type as every other step; only the triptych + tile-grid geometry is
+     new here. */
+  .fn-q-collage{ position:relative; display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:2px 0 16px; border-radius:16px; background:linear-gradient(180deg,#241a44,#130d28); box-shadow:0 16px 40px -18px rgba(20,10,40,.7);}
+  .fn-q-cell{ position:relative; aspect-ratio:400/711; border-radius:12px; overflow:hidden; border:1px solid var(--fn-line); background:linear-gradient(180deg,#241a44,#130d28);}
+  .fn-q-cell img{ width:100%; height:100%; object-fit:cover; display:block;}
+  .fn-q-collage::after{ content:''; position:absolute; left:0; right:0; bottom:0; height:42%; border-radius:0 0 16px 16px; background:linear-gradient(180deg,rgba(19,13,40,0),rgba(19,13,40,.72)); pointer-events:none;}
   .fn-q-collage .fn-q-cap{ position:absolute; left:14px; bottom:11px; z-index:1; font-size:12.5px; font-weight:700; color:#fff; letter-spacing:.01em; text-shadow:0 1px 6px rgba(0,0,0,.55);}
   .fn-q-promise{ font-size:15px; font-weight:800; color:#fff; text-align:center; line-height:1.35; text-wrap:balance; margin:0 0 4px;}
   .fn-q-promise .u{ background:linear-gradient(90deg,var(--lb-pink),var(--lb-purple)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
@@ -2693,13 +2701,15 @@
         '<span>' + esc(t.label) + '</span>' +
       '</button>';
     }).join('');
-    // Static 2x2 store-image collage — local same-origin assets, no video.
+    // Static portrait triptych — three full store-image stills (local,
+    // same-origin), no video. Intrinsic width/height are the real 400x711
+    // asset dimensions: a webview that hasn't applied the CSS aspect-ratio
+    // yet still lays the cells out portrait, not as a flash of squares.
     var collage =
       '<div class="fn-q-collage" aria-hidden="true">' +
-        '<img src="assets/store/dream-desert.webp" alt="">' +
-        '<img src="assets/store/dream-neon.webp" alt="">' +
-        '<img src="assets/store/dream-ocean.webp" alt="">' +
-        '<img src="assets/store/dream-forest.webp" alt="">' +
+        '<div class="fn-q-cell"><img src="/assets/store/dream-desert.webp" width="400" height="711" alt=""></div>' +
+        '<div class="fn-q-cell"><img src="/assets/store/dream-ocean.webp" width="400" height="711" alt=""></div>' +
+        '<div class="fn-q-cell"><img src="/assets/store/dream-forest.webp" width="400" height="711" alt=""></div>' +
         '<span class="fn-q-cap">Real dreams, brought to life</span>' +
       '</div>';
     // Speak-it secondary link — preserved from the old chooser's record

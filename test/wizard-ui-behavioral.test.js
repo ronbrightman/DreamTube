@@ -1923,9 +1923,14 @@ test('wizard.html question-first screen 1: a fresh arrival sees the six-tile "Wh
     await page.waitForSelector('#fn-q-grid');
     assert.equal(await page.locator('#fn-q-grid .fn-q-tile').count(), 6, 'exactly six question tiles');
     assert.match(await page.locator('.fn-q-label').first().textContent(), /What was your dream about\?/);
-    // Static 2x2 store-image collage hero — four <img>, never a <video>.
-    assert.equal(await page.locator('.fn-q-collage img').count(), 4, 'the hero is a static 2x2 store-image collage (four images)');
+    // Static portrait-triptych hero — three full store-image stills
+    // (desert/ocean/forest), never a <video>, and the dropped neon image
+    // must be gone entirely (matches the growth funnel's finalized hero).
+    assert.equal(await page.locator('.fn-q-collage img').count(), 3, 'the hero is a static portrait triptych (three stills)');
     assert.equal(await page.locator('.fn-q-collage video').count(), 0, 'the hero must be static — no video element');
+    var heroSrcs = await page.locator('.fn-q-collage img').evaluateAll(function (imgs) { return imgs.map(function (i) { return i.getAttribute('src'); }); });
+    assert.deepEqual(heroSrcs, ['/assets/store/dream-desert.webp', '/assets/store/dream-ocean.webp', '/assets/store/dream-forest.webp'], 'the triptych is desert → ocean → forest, in that order');
+    assert.equal(await page.locator('.fn-q-collage img[src*="neon"]').count(), 0, 'the dream-neon.webp image must be dropped entirely');
     // The finalized shape drops the "surprise me" escape hatch and the beta footnote.
     assert.equal(await page.locator('#fn-q-surprise').count(), 0, 'no "surprise me" option in the finalized shape');
     assert.equal(await page.getByText('Free while', { exact: false }).count(), 0, 'no beta footnote in the finalized shape');
