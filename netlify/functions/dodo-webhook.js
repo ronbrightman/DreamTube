@@ -590,6 +590,8 @@ function isDreamerPassPayment(payment) {
   return false;
 }
 
+var DAY_MS = 24 * 60 * 60 * 1000;
+
 /** Coerces a Dodo timestamp (ISO string, epoch-seconds, or epoch-ms) to epoch-ms, or null. */
 function resolveEpochMs(v) {
   if (v == null) return null;
@@ -605,13 +607,98 @@ function firstResolvable(obj, keys) {
 }
 
 // Field names are guesses across Dodo's documented + plausible shapes — the
-// test purchase's logSubEvent() output confirms which one is real.
+// test purchase's logSubEvent() output confirms which one is real. NOTE
+// (verified 2026-08-10 against the SDK's real Subscription type — see
+// admin-diagnose-dodo-status.js's header): Dodo's Subscription object exposes
+// NONE of these `trial_end*` fields at all (there is no native trial-end
+// field, and no 'trialing' status either — the status enum is
+// pending/active/on_hold/cancelled/failed/expired). So on a real Dreamer Pass
+// trial this always returns null; the trial-end is instead SYNTHESIZED from
+// the subscription's own first-period end (next_billing_date) — see
+// resolveSynthesizedTrialEnd / firstPeriodIsTrial below. These keys are kept
+// only as a belt-and-suspenders in case a future Dodo API version adds one.
 function resolveTrialEnd(sub) {
   return firstResolvable(sub, ['trial_end_date', 'trial_ends_at', 'trialEndsAt', 'trial_end', 'trialEnd']);
 }
 function resolveNextBilling(sub) {
   return firstResolvable(sub, ['next_billing_date', 'next_billing_at', 'nextBillingDate', 'current_period_end', 'currentPeriodEnd']);
 }
+/** Subscription start (created_at) as epoch-ms, or null. Used with trial_period_days to synthesize a trial-end when next_billing is absent. */
+function resolveSubscriptionStart(sub) {
+  return firstResolvable(sub, ['created_at', 'createdAt', 'created', 'start_date', 'startedAt']);
+}
+/**
+ * Dodo's own trial length in days for this subscription (0 = no trial), or
+ * null when the field isn't present. This is Dodo's AUTHORITATIVE trial-vs-no-
+ * trial signal (SubscriptionStatus has no 'trialing' state, but every
+ * Subscription carries trial_period_days — see admin-diagnose-dodo-status.js's
+ * header), and it does NOT depend on our product-id -> env-var mapping being
+ * current, so it's preferred over resolvePassVariant for classification below.
+ */
+function resolveTrialPeriodDays(sub) {
+  var v = sub.trial_period_days;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v);
+  return null;
+}
+
+// A trial first-period is a known 3 days; a paid (notrial) first period is a
+// full month. This bound (a trial's first period must be <= ~4 days) is only
+// the LAST-RESORT discriminator, used when neither trial_period_days nor the
+// resolved variant is available — see firstPeriodIsTrial below.
+var TRIAL_FIRST_PERIOD_MAX_MS = 4 * DAY_MS;
+
+/**
+ * Whether this subscription's FIRST period is a trial (true), a paid period
+ * (false), or can't be told (null) — the sole discriminator behind the
+ * trial-state synthesis in handleSubscriptionEvent (see its doc there for the
+ * full "why Dodo forces us to synthesize this" context).
+ *
+ * Layered, most-authoritative-first, so a mislabel is structurally hard:
+ *   1. trial_period_days (Dodo-native, on the payload): > 0 => trial, 0 =>
+ *      notrial. Independent of our env mapping — the strongest signal.
+ *   2. resolved variant (from product_id / metadata.dreamtube_pass_variant):
+ *      freetrial|trial50 have a trial, notrial does not.
+ *   3. first-period length (created_at -> next_billing_date): a trial's first
+ *      period is ~3 days, a paid one ~1 month; <= TRIAL_FIRST_PERIOD_MAX_MS
+ *      => trial.
+ * Returns null only when ALL THREE are unavailable — the caller then does NOT
+ * synthesize a trial (writes 'active'), the safe direction: worst case a real
+ * trial user gets 20/day instead of 100/day (a boost loss, never a money
+ * leak), and a notrial sub is NEVER mislabeled trialing (which WOULD withhold
+ * its 3,000 lump).
+ */
+function firstPeriodIsTrial(sub, variant) {
+  var trialDays = resolveTrialPeriodDays(sub);
+  if (trialDays !== null) return trialDays > 0;
+  if (variant === 'notrial') return false;
+  if (variant === 'freetrial' || variant === 'trial50') return true;
+  var start = resolveSubscriptionStart(sub);
+  var firstEnd = resolveNextBilling(sub);
+  if (start && firstEnd && firstEnd > start) return (firstEnd - start) <= TRIAL_FIRST_PERIOD_MAX_MS;
+  return null;
+}
+
+/**
+ * The synthesized trial-end (epoch-ms) for a trial-start subscription.active,
+ * or null if none can be resolved. Prefers Dodo's own first-period end
+ * (next_billing_date / current_period_end — during a trial this IS the
+ * trial-end date, per admin-diagnose-dodo-status.js), falling back to
+ * created_at + trial_period_days. Deliberately requires the result to be in
+ * the FUTURE: a redelivered subscription.active replays the ORIGINAL payload,
+ * whose first-period end is by then in the past after the trial converted —
+ * returning null there keeps a redelivery from re-opening the 100/day boost.
+ */
+function resolveSynthesizedTrialEnd(sub, now) {
+  var end = resolveNextBilling(sub);
+  if (!end) {
+    var start = resolveSubscriptionStart(sub);
+    var days = resolveTrialPeriodDays(sub);
+    if (start && days && days > 0) end = start + days * DAY_MS;
+  }
+  return (end && now < end) ? end : null;
+}
+
 function subStatusIsTrialing(sub) {
   var status = (sub.status || '').toLowerCase();
   if (status === 'trialing' || status === 'trial' || status === 'on_trial') return true;
@@ -822,17 +909,69 @@ async function handleSubscriptionEvent(event, type, sub) {
   }
 
   // active / renewed / plan_changed: live subscription state.
-  var trialing = subStatusIsTrialing(sub);
+  //
+  // Which Dreamer Pass variant this subscription is (freetrial|notrial|
+  // trial50) — resolved once here from the payload's product_id (its metadata
+  // is static across the whole lifetime, so product_id is the reliable
+  // per-event signal), falling back to the variant tag. Used BOTH by the
+  // trial synthesis just below AND by the renewal conversion fire further
+  // down.
+  var variant = resolvePassVariant(sub.product_id ? [sub.product_id] : []) || (sub.metadata && sub.metadata.dreamtube_pass_variant);
+
+  // ── TRIAL-STATE SYNTHESIS (money-path fix, 2026-08-10; founder repro on two
+  //    real Dodo subscriptions) ──
+  // Dodo reports EVERY Dreamer Pass trial — the $0 freetrial AND the paid
+  // trial50 — with status:'active', trialing:false, trial_end:null. It has NO
+  // 'trialing' status at all (SubscriptionStatus is pending/active/on_hold/
+  // cancelled/failed/expired — see admin-diagnose-dodo-status.js's header).
+  // So subStatusIsTrialing() below is ALWAYS false during a real trial, and
+  // without this synthesis the 100/day trial boost (entitlements.isTrialActive,
+  // which requires status==='trialing') would NEVER fire — users would get the
+  // normal 20/day for their whole trial (the confirmed live bug). What Dodo
+  // DOES give us is the trial's end date, sitting in the subscription's own
+  // first-period end (next_billing_date / current_period_end) plus its
+  // trial_period_days — so for a TRIAL-start subscription.active we synthesize
+  // the 'trialing' state ourselves, writing trialEnd = that first-period end,
+  // regardless of Dodo's 'active' label. This makes isTrialActive true (100/day
+  // fires) while the existing trial-start payment-skip (the $0 guard + the
+  // trial50 isTrialActive guard in handleDreamerPassPayment) correctly withholds
+  // the 3,000-token lump until the trial ends. The 3,000 lands at the REAL first
+  // billing (subscription.renewed / the first full-price payment.succeeded,
+  // once this trialEnd has passed -> isTrialActive false -> normal grant),
+  // payment_id-idempotent so it can never double-grant.
+  //
+  // Scoped tightly so notrial and non-trial-start events are byte-for-byte
+  // unchanged:
+  //   - Only on subscription.active (the trial-start event). A renewal /
+  //     plan_changed is past the trial and must not be re-synthesized as
+  //     trialing.
+  //   - Only when Dodo isn't ALREADY telling us it's trialing (explicitTrialing
+  //     short-circuits — preserves the existing explicit-'trialing'-payload
+  //     path and its tests exactly).
+  //   - Only when firstPeriodIsTrial() is TRUE. For the notrial product
+  //     (trial_period_days === 0, first period is a full paid month) it returns
+  //     false, so notrial stays 'active' and its 3,000 grants immediately via
+  //     its own real payment.succeeded — NEVER synthesized as trialing. An
+  //     unresolvable case returns null -> also not synthesized (the safe
+  //     direction; see firstPeriodIsTrial's own doc).
+  var explicitTrialing = subStatusIsTrialing(sub);
+  var synthesizedTrialEnd = null;
+  if (!explicitTrialing && type === 'subscription.active' && firstPeriodIsTrial(sub, variant) === true) {
+    synthesizedTrialEnd = resolveSynthesizedTrialEnd(sub, Date.now());
+  }
+  var trialing = explicitTrialing || !!synthesizedTrialEnd;
+
   await entitlements.updateSubscription(event, email, {
     status: trialing ? 'trialing' : 'active',
     subscriptionId: sub.subscription_id,
     productId: sub.product_id || dreamerPassProductId(),
     nextBillingAt: resolveNextBilling(sub),
     currentPeriodEnd: resolveNextBilling(sub),
-    // trialing WITH a resolvable end -> set it; trialing WITHOUT -> undefined
-    // (updateSubscription keeps a prior trialEnd, or caps a first sighting to
-    // now + 3 days); not trialing -> null (clear).
-    trialEnd: trialing ? (resolveTrialEnd(sub) || undefined) : null
+    // trialing WITH a resolvable end (a real payload trial_end, else the
+    // synthesized first-period end) -> set it; trialing WITHOUT any resolvable
+    // end -> undefined (updateSubscription keeps a prior trialEnd, or caps a
+    // first sighting to now + 3 days); not trialing -> null (clear).
+    trialEnd: trialing ? (resolveTrialEnd(sub) || synthesizedTrialEnd || undefined) : null
   });
 
   // A renewal is also a charge — grant that charge's 3000, keyed by its own
@@ -860,10 +999,10 @@ async function handleSubscriptionEvent(event, type, sub) {
         amountCents: sub.recurring_pre_tax_amount,
         currency: sub.currency,
         metaEventName: 'Purchase',
-        // Resolved from the subscription's own product_id (its metadata is
-        // static across the whole lifetime, so the product_id is the reliable
-        // per-renewal signal); falls back to the variant tag if present.
-        variant: resolvePassVariant(sub.product_id ? [sub.product_id] : []) || (sub.metadata && sub.metadata.dreamtube_pass_variant)
+        // Resolved once above (from the subscription's own product_id — its
+        // metadata is static across the whole lifetime, so product_id is the
+        // reliable per-renewal signal — falling back to the variant tag).
+        variant: variant
       });
     }
   }
