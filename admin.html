@@ -137,7 +137,7 @@
       <div class="choice-card" style="cursor:default; margin-top:10px; flex-direction:column; align-items:stretch; gap:0;">
         <div class="choice-text" style="margin-bottom:12px;">
           <div class="choice-title">Fresh-start a test email</div>
-          <div class="admin-row-sub">Owner-only. Clears the token-init-grant marker, the install/verify-email achievement markers, and today's per-email claim/bonus buckets for the target email, and deletes its token record — so a re-signup re-grants 220 + re-earns the bonuses. Normal deletion still leaves these (real users can't farm this).</div>
+          <div class="admin-row-sub">Owner-only. Clears the token-init-grant marker, the install/verify-email achievement markers, and today's per-email claim/bonus buckets for the target email, and deletes its token record — so a re-signup re-grants 150 + re-earns the bonuses. Normal deletion still leaves these (real users can't farm this).</div>
         </div>
         <input class="field" id="admin-reset-source" type="text" placeholder="Your owner username or email (for password check)" autocomplete="off" dir="auto">
         <input class="field" id="admin-reset-password" type="password" placeholder="Your owner account's real password" autocomplete="current-password">
@@ -502,7 +502,7 @@
           return;
         }
         resetResultEl.style.display = 'block';
-        resetResultEl.textContent = 'Reset ' + data.targetEmail + ' — cleared: ' + (data.cleared || []).join(', ') + '.\nRe-signup with this email now gets a genuine fresh start (220 grant + re-earnable bonuses).';
+        resetResultEl.textContent = 'Reset ' + data.targetEmail + ' — cleared: ' + (data.cleared || []).join(', ') + '.\nRe-signup with this email now gets a genuine fresh start (150 grant + re-earnable bonuses).';
         resetPasswordEl.value = '';
       })
       .catch(function () {

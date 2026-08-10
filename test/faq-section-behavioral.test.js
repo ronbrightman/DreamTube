@@ -169,7 +169,13 @@ test('profile.html Settings: clicking a FAQ question reveals its own answer with
     // Opening the second item leaves the first one open too (independent, not single-select).
     await secondItem.locator('.faq-question').click();
     await page.waitForSelector('#faq-list .faq-item[data-faq-index="1"] .faq-answer', { state: 'visible' });
-    assert.match(await secondItem.locator('.faq-answer').textContent(), /220 free/);
+    // 150 is profile.html's static copy of entitlements.js's live
+    // INITIAL_GRANT (corrected from a stale "220" alongside
+    // test/daily-grant-copy-static-sweep.test.js, which now sweeps this
+    // exact drift class repo-wide) — this assertion exists to confirm
+    // the SECOND faq-item's own answer opened (not the first item's, or
+    // neither), not to re-pin the grant amount itself.
+    assert.match(await secondItem.locator('.faq-answer').textContent(), /150 free/);
     assert.equal(await firstItem.locator('.faq-answer').isVisible(), true, 'opening a second item must not close the first');
 
     // Tapping the first question again collapses just that one.
