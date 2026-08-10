@@ -21,6 +21,7 @@
 var test = require('node:test');
 var assert = require('node:assert/strict');
 var staticServer = require('./helpers/static-server');
+var gate = require('./helpers/settle').gate;
 
 var CHROMIUM_PATH = '/opt/pw-browsers/chromium';
 var MOBILE_VIEWPORT = { width: 390, height: 844 };
@@ -490,7 +491,13 @@ test('deleting a comment rolls back on a failed delete-comment response, reinser
       { id: 'newer', handle: '@someone', text: 'newer comment', createdAt: new Date().toISOString() },
       { id: 'mine', handle: '@viewer', text: 'delete me but it fails', createdAt: new Date().toISOString() }
     ]);
-    await page.route('**/.netlify/functions/delete-comment', function (route) {
+    // The failing response is held behind a gate (test/helpers/settle.js)
+    // rather than fulfilled immediately -- see the comment above the
+    // detached-wait below for why an ungated version of this test is
+    // unsound under full-suite load, not just slow.
+    var deleteGate = gate();
+    await page.route('**/.netlify/functions/delete-comment', async function (route) {
+      await deleteGate.wait();
       route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'delete_comment_failed: boom' }) });
     });
 
@@ -504,12 +511,47 @@ test('deleting a comment rolls back on a failed delete-comment response, reinser
     await page.waitForSelector('#cs-overflow-mine.open', { timeout: 2000 });
     await page.click('#cs-overflow-mine [data-action="delete"]');
 
-    // Optimistic removal happens immediately...
+    // Optimistic removal happens immediately, synchronously, on click --
+    // BEFORE the network response is even dispatched (js/comment-sheet.js's
+    // deleteCommentAction mutates loadedComments + calls renderList()
+    // *before* calling fetch()). The failing response is deliberately held
+    // behind deleteGate (not released until after this assertion) so this
+    // observation can never race the rollback that would otherwise follow
+    // it moments later.
+    //
+    // ROOT CAUSE this fixes (order-dependent full-suite flake,
+    // for-product-low-behavioral-test-suite-se-4on41a): an earlier,
+    // ungated version of this wait passed 16/16 in isolation but failed
+    // under full-suite load with "10 x locator resolved to visible,
+    // never detached" -- NOT a shared-state leak (node:test runs every
+    // FILE in its own process; test/helpers/settle.js's own header
+    // comment already rules that out) and not the file's own unmocked
+    // https://example.com video URL (a real, separate network-stall
+    // hazard, but not this failure's cause). Root-caused via
+    // systematic-debugging with direct Node-side timestamp
+    // instrumentation reproduced under real concurrent Chromium load:
+    // the mocked 500 (route.fulfill(), zero artificial delay) can be
+    // dispatched and fully processed by the page -- fetch rejects,
+    // .catch() reinserts the row -- BEFORE Node even resolves the
+    // `await page.click(...)` a few lines up, when Node's own CDP
+    // message-processing loop is itself delayed by CPU/scheduling
+    // contention (confirmed: instrumented logs showed the mocked
+    // response already landed in-page a full 27ms before page.click()
+    // resolved in Node, under real concurrent load). By the time this
+    // waitForSelector starts polling, the transient detached state has
+    // already come and gone -- no timeout budget can catch a state
+    // transition that's already over, which is exactly why raising 3000ms
+    // wouldn't have helped. Gating the response removes the race by
+    // construction (same technique test/helpers/settle.js's own header
+    // comment documents for the "abandoned attempt" tests) instead of
+    // widening a window that can't be widened into existing.
     await page.waitForSelector('.cs-comment[data-comment-id="mine"]', { state: 'detached', timeout: 3000 });
 
-    // ...then the failed response reinserts it at its ORIGINAL position
-    // (second row, not re-appended at the top) -- js/comment-sheet.js's
-    // own deleteCommentAction splices back in at removedIndex.
+    // ...NOW let the failed response through -- it reinserts the comment
+    // at its ORIGINAL position (second row, not re-appended at the top)
+    // -- js/comment-sheet.js's own deleteCommentAction splices back in at
+    // removedIndex.
+    deleteGate.open();
     await page.waitForSelector('.cs-comment[data-comment-id="mine"]', { timeout: 3000 });
     var idsInOrder = await page.locator('.cs-comment').evaluateAll(function (els) {
       return els.map(function (el) { return el.dataset.commentId; });
