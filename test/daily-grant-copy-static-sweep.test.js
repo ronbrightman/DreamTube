@@ -36,9 +36,9 @@
 //      exact class of drift this test exists to prevent.
 //   2. Walk every .html file in the repo root and, for each one, strip
 //      HTML comments (<!-- ... -->, which legitimately reference old/
-//      historical numbers as documentation — e.g. shop.html's own
-//      "#shop-cost-banner-claim-amount is rendered live" comment right
-//      next to it) before scanning the remaining raw text — this is
+//      historical numbers as documentation — e.g. shop.html's SKU-ladder
+//      header comment listing each pack's token count) before scanning the
+//      remaining raw text — this is
 //      the STATIC, pre-JS source, not a rendered DOM: a live element
 //      whose textContent gets overwritten by JS at render time still
 //      has to start from *some* string baked into the HTML, and that
@@ -332,8 +332,9 @@ TEETH_CASES.forEach(function (testCase) {
 test('sweep does not false-positive on genuinely unrelated numbers next to grant vocabulary', function () {
   // These three should produce NO match at all — no grant-vocabulary
   // pattern should even fire, proving the cost/price/date numbers are
-  // never extracted as grant-amount candidates in the first place (real
-  // shop.html copy in the first two cases).
+  // never extracted as grant-amount candidates in the first place. (The
+  // first case was shop.html's cost banner until the 2026-08-10 copy trim
+  // removed it; it stays here as a synthetic false-positive guard.)
   assert.deepEqual(scanText('Videos cost 100 tokens, images 10.'), [], 'a token COST must not be treated as a grant amount');
   assert.deepEqual(scanText('$9.99 for 4000 tokens.'), [], 'a pack price/size must not be treated as a grant amount');
   assert.deepEqual(scanText('Offer ends August 20.'), [], 'a date must not be treated as a grant amount');

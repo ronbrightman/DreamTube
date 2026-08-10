@@ -658,7 +658,13 @@ test('copy sweep: shop.html no longer promises tokens "refill" automatically or 
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 100, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, streak: 0 });
     await seedLoggedInUserAt(page, 'shopcopysweep', '/shop.html');
-    await page.waitForSelector('#shop-cap-note:not(:empty)', { timeout: 5000 });
+    // The inline #shop-cap-note was removed in the 2026-08-10 copy trim;
+    // wait for the topbar balance to render instead, which proves
+    // renderBalance() ran and the page copy is fully in place for the sweep.
+    await page.waitForFunction(function () {
+      var el = document.getElementById('shop-topbar-balance');
+      return el && el.textContent === '100';
+    }, null, { timeout: 5000 });
 
     var bodyText = await page.textContent('body');
     assert.doesNotMatch(bodyText, /refill(s|ed|ing)? daily/i, 'the old "refill daily" automatic-grant framing must be gone');

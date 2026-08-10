@@ -93,12 +93,6 @@ function mockTokenStatus(page, status) {
   });
 }
 
-function mockClaim(page, response) {
-  return page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
-  });
-}
-
 async function seedLoggedInUserAt(page, username, path) {
   await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
   await page.evaluate(function (u) {
@@ -206,112 +200,37 @@ test('result.html: the purchase sheet\'s wait line reads the live dailyClaimAmou
   }
 });
 
-test('shop.html: the countdown reads the live dailyClaimAmount, not a hardcoded "Next 100 free tokens"', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 50, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: DISTINCTIVE_CLAIM_AMOUNT, streak: 0 });
-    await seedLoggedInUserAt(page, 'dailygrantshop', '/shop.html');
-    await page.waitForSelector('#shop-countdown:not(:empty)', { timeout: 5000 });
-
-    var countdown = await page.textContent('#shop-countdown');
-    assert.match(countdown, new RegExp('Next ' + DISTINCTIVE_CLAIM_AMOUNT + ' free tokens claimable in'));
-    assert.doesNotMatch(countdown, /Next 100 free tokens/);
-    // The claim button must stay hidden while not yet claimable.
-    var claimBtnVisible = await page.isVisible('#shop-claim-btn');
-    assert.equal(claimBtnVisible, false);
-  } finally {
-    await context.close();
-  }
-});
-
-test('shop.html: claimable state shows a live-amount "Claim N free tokens" button, and the copy sweep removed the old grant-ceiling literal entirely', async function (t) {
-  // 2026-07-28 daily-claim switch: shop.html's #shop-cap-note used to read
-  // "Free tokens are capped — N every 24 hours, up to M banked" (M being
-  // entitlements.js's GRANT_CEILING) -- that whole ceiling concept is
-  // retired now (see lib/entitlements.js's own doc block: no ceiling is
-  // needed once nothing accrues without an active claim). This test
-  // proves BOTH halves of the fix: the claim button reads the live amount
-  // (not a hardcoded 100/20), and the cap note contains no lingering
-  // "banked"/ceiling-number literal from the old mechanism.
+// 2026-08-10 founder store copy trim: shop.html's inline free-claim card
+// (#shop-balance/#shop-countdown/#shop-cap-note + inline #shop-claim-btn)
+// AND the top-of-page #shop-cost-banner were all removed as redundant --
+// the claim SHEET shop.html already auto-opens
+// (PurchaseSheet.maybeAutoOpenClaimSheet) when tokens are claimable is the
+// live claim surface now. The three shop.html tests that used to sit here
+// ("the countdown reads the live dailyClaimAmount", "claimable state shows
+// a live-amount claim button + cap-note/cost-banner read live", and "a
+// successful inline claim's toast shows the real amountClaimed") were all
+// tied to that deleted inline UI. The one property still worth pinning on
+// shop.html -- that its surviving claim surface reads the LIVE
+// dailyClaimAmount, never a hardcoded literal -- is re-asserted below on
+// the auto-opened claim sheet. The claim mechanism itself (live amount on
+// open, real claim call, streak, amountClaimed toast) has full coverage in
+// test/daily-claim-behavioral.test.js.
+test('shop.html: the auto-opened claim sheet reads the live dailyClaimAmount, not a hardcoded literal', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 50, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: DISTINCTIVE_CLAIM_AMOUNT, streak: 0 });
-    await seedLoggedInUserAt(page, 'dailygrantshopcap', '/shop.html');
-    await page.waitForSelector('#shop-claim-btn:visible', { timeout: 5000 });
+    await seedLoggedInUserAt(page, 'dailygrantshopclaim', '/shop.html');
+    // A fresh claimable load (no once-per-day shown marker) auto-opens the
+    // shared claim sheet -- shop.html's sole in-page claim surface now.
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 5000 });
 
-    var claimLabel = await page.textContent('#shop-claim-label');
-    assert.match(claimLabel, new RegExp('Claim ' + DISTINCTIVE_CLAIM_AMOUNT + ' free tokens'));
-    assert.doesNotMatch(claimLabel, /Claim 100 free tokens/);
-
-    var capNote = await page.textContent('#shop-cap-note');
-    assert.match(capNote, new RegExp(DISTINCTIVE_CLAIM_AMOUNT + ' claimable once a day'));
-    assert.doesNotMatch(capNote, /banked/, 'the retired grant-ceiling concept ("up to N banked") must not appear anywhere in this copy');
-    assert.doesNotMatch(capNote, /capped/, 'the retired "tokens are capped" framing must not appear anywhere in this copy');
-
-    // daily-claim-first-claim-bonus review round 2: the top-of-page
-    // #shop-cost-banner had its own separate, hardcoded "Claim 20 free
-    // tokens once a day" text node that never varied with tokenStatus,
-    // even though the nearly-identical #shop-cap-note a few lines below
-    // was already live -- the two contradicted each other the moment the
-    // amount became genuinely variable (100 first-ever, 20 thereafter).
-    var bannerAmount = await page.textContent('#shop-cost-banner-claim-amount');
-    assert.equal(bannerAmount, String(DISTINCTIVE_CLAIM_AMOUNT), 'the cost banner\'s claim number must also read live off tokenStatus, not a hardcoded literal');
-  } finally {
-    await context.close();
-  }
-});
-
-test('shop.html: a successful claim\'s toast shows the response\'s real amountClaimed, not a stale cached dailyClaimAmount', async function (t) {
-  // daily-claim-first-claim-bonus review round 1: shop.html's own inline
-  // balance-card claim button is a SEPARATE code path from the shared
-  // claim sheet (js/purchase-sheet.js, covered by
-  // test/daily-claim-behavioral.test.js's first-claim-bonus tests) --
-  // its success toast used to read the pre-claim cached
-  // tokenStatus.dailyClaimAmount instead of the claim response's own
-  // authoritative amountClaimed. Harmless while the amount was always a
-  // flat 20; genuinely wrong now that first-ever claims are 100. This
-  // mocks a cached projection of 20 but a real credited amount of 100 to
-  // prove the toast reads the live response, not the stale cache.
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await mockTokenStatus(page, { balance: 220, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 0 });
-    await mockClaim(page, { claimed: true, balance: 320, streak: 1, nextClaimAt: Date.now() + 72000000, amountClaimed: 100 });
-
-    // shop.html also auto-opens the shared claim sheet on top of its own
-    // inline button (PurchaseSheet.maybeAutoOpenClaimSheet), gated on a
-    // once-per-day localStorage marker -- pre-set it so the inline button
-    // this test targets is actually clickable, matching a real returning
-    // user's second visit that day rather than their very first.
-    await page.goto(baseUrl + '/login.html', { waitUntil: 'domcontentloaded' });
-    await page.evaluate(function (u) {
-      var raw = localStorage.getItem('dreamtube_state_v1');
-      var state = raw ? JSON.parse(raw) : {};
-      state.user = { handle: '@' + u, username: u };
-      if (!state.accounts) state.accounts = {};
-      state.accounts[u] = { password: 'testpass1', email: u + '@example.com' };
-      localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
-      localStorage.setItem('dreamtube_claim_sheet_shown_date', new Date().toDateString());
-    }, 'shopclaimtoastamount');
-    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#shop-claim-btn:visible', { timeout: 5000 });
-
-    await page.click('#shop-claim-btn');
-    await page.waitForFunction(function () {
-      var el = document.getElementById('toast');
-      return el && el.classList.contains('show') && el.textContent.length > 0;
-    }, { timeout: 3000 });
-
-    var toastText = await page.textContent('#toast');
-    assert.match(toastText, /\+100 tokens claimed!/, 'must show the response\'s real amountClaimed (100), not the stale cached dailyClaimAmount (20)');
+    var amountOnOpen = await page.textContent('#claim-sheet-amount-num');
+    assert.equal(amountOnOpen, String(DISTINCTIVE_CLAIM_AMOUNT), 'the auto-opened claim sheet must show the live dailyClaimAmount, not a hardcoded literal');
+    var btnLabel = await page.textContent('#claim-sheet-btn-label');
+    assert.doesNotMatch(btnLabel, /100/, 'must not render a hardcoded 100');
   } finally {
     await context.close();
   }
@@ -327,8 +246,13 @@ test('shop.html: a successful claim\'s toast shows the response\'s real amountCl
 // js/purchase-sheet.js's PLAIN variant (balance + Shop link only), making
 // home.html the sole claim surface. There is no hardcoded daily amount left
 // on that page for this file's whole premise to catch -- there is no daily
-// amount rendered there at all. The four remaining copy sites this file
-// covers (style.html, result.html, shop.html's #shop-countdown and
-// #shop-cap-note) are unaffected and still tested above/below;
+// amount rendered there at all.
+//
+// UPDATE (2026-08-10 founder store copy trim): shop.html's own inline
+// free-claim sites (#shop-countdown, #shop-cap-note, the inline
+// #shop-claim-btn, and the #shop-cost-banner claim number) were removed as
+// redundant with the claim SHEET shop.html auto-opens -- so the live-amount
+// sites this file now covers are style.html, result.html, and shop.html's
+// auto-opened claim sheet (all tested above);
 // test/profile-night-restyle-behavioral.test.js asserts the absence on
 // Profile directly.

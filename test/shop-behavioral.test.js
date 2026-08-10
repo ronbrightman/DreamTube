@@ -129,7 +129,7 @@ test('the welcome-offer hero (pack099) is hidden once hasMadeFirstPurchase is tr
     await seedShopPage(page);
 
     await page.waitForFunction(function () {
-      var el = document.getElementById('shop-balance');
+      var el = document.getElementById('shop-topbar-balance');
       return el && el.textContent === '50';
     }, null, { timeout: 5000 });
 

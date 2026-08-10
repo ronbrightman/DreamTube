@@ -221,10 +221,11 @@ test('the webhook landing AFTER the redirect resolves into a genuine "500 tokens
     assert.match(confirmed.title, /500 tokens added/, 'the confirmation must name the actual credited amount, not a vague "all set"');
     assert.match(confirmed.sub, /balance is now 550/, 'the confirmation must show the real resulting balance');
 
-    // ...and the page's own balance surfaces must agree with it — the
+    // ...and the page's own balance surface must agree with it — the
     // founder's complaint was that his balance updated "silently", with
-    // the UI never reconciling to it.
-    assert.equal(await page.textContent('#shop-balance'), '550');
+    // the UI never reconciling to it. (The inline #shop-balance card was
+    // removed in the 2026-08-10 copy trim; the topbar chip is now the
+    // page's balance surface.)
     assert.equal(await page.textContent('#shop-topbar-balance'), '550');
   } finally {
     await context.close();
@@ -408,7 +409,7 @@ test('a genuinely elapsed poll window resolves into a visible, retryable "still 
     await page.click('#shop-checkout-banner-action');
     await page.waitForSelector('#shop-checkout-banner.is-confirmed', { state: 'visible', timeout: 10000 });
     assert.match((await bannerState(page)).title, /500 tokens added/);
-    assert.equal(await page.textContent('#shop-balance'), '550');
+    assert.equal(await page.textContent('#shop-topbar-balance'), '550');
   } finally {
     await context.close();
   }
