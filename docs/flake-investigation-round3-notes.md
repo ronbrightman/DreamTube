@@ -203,6 +203,181 @@ every assertion in this file that depends on settled document scroll
 geometry, not just the one specific assertion this round happened to
 observe failing most often.
 
-## Priority 2: media-library-page.test.js resource exhaustion
+## Priority 2: media-library-page.test.js resource exhaustion — mechanism confirmed, tuning has a real cost, not shipped
 
-[To be completed — see below for status.]
+This test's own header comment (added in an earlier session, commit
+`7fc7f7a`) already correctly diagnosed this as genuine Playwright
+resource exhaustion, not a logic bug — confirmed independently here, not
+re-litigated. What round 2 left open was whether `--test-concurrency`
+tuning or file-glob reordering could reduce it (a scheduling/config
+question, not a code fix).
+
+### A faster reproduction proxy
+
+A full `node --test test/*.test.js` run takes ~10 minutes, too slow to
+iterate on a scheduling experiment. Round 2's failures always landed at
+a global test index around 1895/~3345 (~57% through), which — since
+`node --test`'s default file concurrency spreads work roughly evenly
+across the whole run — lines up almost exactly with running only the
+first 155 of 264 alphabetically-sorted test files (`ls test/*.test.js |
+sort | head -155`, which includes `media-library-page.test.js` and
+comfortably more). This subset reproduces the same real contention
+profile in ~5 minutes instead of ~10, confirmed by reproducing the exact
+same failure at test index 1896 in the truncated run:
+
+```
+not ok 1896 - desktop viewport: page content past the fold is reachable by scrolling (not clipped)
+  duration_ms: 46299.360758
+  error: 'page.waitForFunction: Timeout 45000ms exceeded.'
+```
+
+(46299ms against a 45000ms budget — a hair over, exactly the kind of
+narrow, load-dependent overrun the existing test comment already
+describes, not a hang.)
+
+### The experiment
+
+Node's test runner defaults to file-level concurrency of
+`os.availableParallelism() - 1` (confirmed empirically: 3 concurrent
+`chromium` processes observed live via `ps aux` during a run on this
+4-CPU sandbox). Ran the same 155-file subset three more times, comparing
+default concurrency against `--test-concurrency=2`:
+
+| Run | Concurrency | Pass | Fail | media-library-page timeout? | Wall clock |
+|---|---|---|---|---|---|
+| A | default (3) | 2089/2092 | 3 | **YES** (46299ms, over the 45000ms budget) | 328.5s |
+| B | 2 | 2090/2092 | 2 (unrelated: comment-sheet, ritual-constel — see below) | no | 288.4s |
+| C | 2 | 2092/2092 | 0 | no | 272.3s |
+
+Zero media-library-page timeouts in 2/2 runs at `--test-concurrency=2`,
+against a reliable reproduction at default concurrency — and critically,
+when it DID pass at concurrency=2, it did so with real margin, not a
+lucky near-miss: actual duration was 683ms and 747ms across the two
+clean runs, ~60x under the 45000ms budget, vs. the 46299ms that blew the
+budget at default concurrency. That gap is the direct, measurable
+signature of removing CPU contention, not scheduling coincidence.
+
+**On the 155-file subset, wall-clock time was also faster at
+`--test-concurrency=2`** (288s, 272s) than at default concurrency (328s).
+I initially wrote this up as a "strict win" (fewer flakes AND faster) —
+**that claim does not survive the full 264-file run below and I'm
+correcting it here rather than leaving it stand.**
+
+### Full-suite confirmation (all 264 files) — corrects the "faster" claim above
+
+| Run | Concurrency | Pass | Fail | media-library-page timeout? | Wall clock |
+|---|---|---|---|---|---|
+| D (this round, unmodified branch, run independently and reviewed by the coordinator) | default (3) | 3341/3341 | 0 | no (didn't reproduce this time — consistent with round 2's own ~66%, not 100%, base rate) | 592.3s |
+| E | 2 | 3334/3336 | 2 (unrelated: `comment-sheet-behavioral.test.js`, `result.html "Start over instead"` — neither is media-library-page, not investigated further) | no | 915.8s |
+
+At full scale, `--test-concurrency=2` is **~55% SLOWER** (915.8s vs
+592.3s), the opposite of what the 155-file subset suggested. The subset
+result wasn't wrong, it was unrepresentative: the first 155
+alphabetically-sorted files are not a random sample of the suite's true
+weight, and extrapolating a small subset's timing ratio to the full
+264-file run was a mistake — flagging this explicitly rather than
+quietly fixing the number, since getting caught by an unrepresentative
+sample is itself worth remembering for next time. Also notable: even
+run D's clean 3341/3341 pass is a reminder that media-library-page's
+timeout is genuinely probabilistic at default concurrency (round 2 saw
+it in 2/3 runs; this round's one default-concurrency full run happened
+to be the lucky 1/3) — a single clean run doesn't disprove the
+mechanism, and a single reduced-concurrency win doesn't prove the tuning
+is free of cost either.
+
+**Combined picture across all 5 runs this round (2 subset + 1 full at
+default; 2 subset + 1 full at concurrency=2): media-library-page's
+timeout appeared in 1/2 default-concurrency runs and 0/3
+concurrency=2 runs.** That's consistent with `--test-concurrency=2`
+meaningfully reducing (not necessarily fully eliminating — n is small)
+this specific test's resource-exhaustion failure, genuinely rooted in
+less CPU contention per browser (confirmed via the 683-747ms vs
+46299ms margin above) — but it comes with a real, non-trivial cost: a
+~55% longer full-suite run, and it does not make the suite flake-free
+in general (2 other, unrelated tests failed in the concurrency=2 full
+run that don't fail at default).
+
+**Decision: not shipping a `package.json` concurrency change.** This
+is a genuine tradeoff (a well-documented, already-accepted occasional
+flake in ONE test vs. a permanently ~50% slower full suite for every
+future build/review agent run) rather than a free, no-downside fix —
+the kind of call this file's own escalation policy and this task's
+"only ship what you can prove, and be honest when a finding doesn't
+hold" standard both point toward leaving to a human/coordinator
+decision rather than an autonomous package.json edit. Documenting the
+full evidence here so that decision can be made with real numbers
+instead of a guess.
+
+**Two other, unrelated failures surfaced during this experiment** (not
+part of this round's scope, noted for whoever picks them up next):
+- `test/comment-sheet-behavioral.test.js`'s "deleting a comment rolls
+  back..." test (index 479 in both run A and run B) — this is round 2's
+  own previously-diagnosed, still-unconfirmed MutationObserver-batching
+  lead. Consistent with round 2's notes; not re-investigated here.
+- `home.html`'s ritual-constellation 0x0-render regression test (index
+  1542, run B only, absent from run C) — a NEW one-off flake not seen in
+  any prior round's notes. Only observed once; not enough signal to
+  investigate further this round. Flagging for whoever picks up the
+  next round.
+
+### Recommendation (not applied)
+
+An earlier draft of this section recommended setting
+`--test-concurrency=2` in `package.json`'s `test`/`test:full` scripts.
+**That recommendation is superseded by the full 264-file confirmation
+run above**, which found a real ~55% wall-clock cost that the smaller
+155-file subset didn't surface. See "Full-suite confirmation" above for
+the corrected picture and the decision not to ship it autonomously —
+this is a real tradeoff (occasional single-test flake vs. permanently
+slower full-suite runs for every future build/review agent) for a
+human/coordinator to decide with the numbers above, not something to
+bake into the repo's default test invocation unilaterally.
+
+If the tradeoff IS accepted later: the mechanically simplest way to
+apply it without touching the shared `test`/`test:full` scripts (so
+default behavior for anyone who wants the faster/noisier suite is
+unchanged) would be a separate script, e.g. `"test:full:stable":
+"node --test --test-concurrency=2 test/*.test.js"`, left for whoever
+makes that call.
+
+## Summary for whoever picks this up next
+
+- **Fixed and verified**: `test/scroll-lock-behavioral.test.js` (branch
+  `fix-full-suite-flakiness-round3`, merged to `main` as `589d581`). 20
+  clean isolated runs post-fix (up from ~30-35% before), plus confirmed
+  clean under a real, independently-reviewed full-suite run (3341/3341,
+  0 failures).
+- **Investigated, mechanism confirmed, not shipped**:
+  `test/media-library-page.test.js`'s desktop-viewport timeout.
+  `--test-concurrency=2` measurably reduces it (0/3 vs 1/2 at default
+  concurrency across this round's runs, with a decisive ~60x timing
+  margin when clean) but costs ~55% more full-suite wall-clock time at
+  full scale — a real tradeoff, documented above with full numbers, left
+  for a human decision rather than an autonomous `package.json` change.
+- **New, unconfirmed leads surfaced this round, not investigated**
+  (flagging only, zero repro attempts spent on these — out of this
+  round's assigned scope):
+  - `profile.html`: "cancelling a pending regeneration when editing an
+    existing self character..." — failed once (155-file subset, default
+    concurrency run A, index 318). Not seen in round 2's notes. Single
+    occurrence only.
+  - `home.html`'s ritual-constellation 0x0-render test — failed once
+    (155-file subset, concurrency=2 run B, index 1542). Not seen in
+    round 2's notes. Single occurrence only, notable because its own
+    title says it's a regression test for exactly this rendering
+    failure mode, so a timing-driven false positive here is worth a
+    closer look by whoever has bandwidth — but not chased down this
+    round.
+- **Still open from round 2, not touched this round** (per this round's
+  explicit two assigned priorities — not re-investigated, still valid
+  leads for a future round): `notify-likes-badge-behavioral.test.js`'s
+  SW-controllerchange-reload hypothesis;
+  `comment-sheet-behavioral.test.js`'s MutationObserver-batching
+  hypothesis (recurred again this round, still unconfirmed);
+  `result-photo-upload-sheet-token-behavioral.test.js`'s 30s timeout
+  (same resource-exhaustion category as media-library-page, not
+  separately re-verified this round).
+- `docs/TEST_REGISTRY.md` not touched — matching round 2's own precedent
+  for its analogous share-sheet fix, this is a test-infrastructure fix
+  (a condition-based wait, replacing a race-prone measurement), not a
+  behavior/coverage change.
