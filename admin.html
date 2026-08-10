@@ -197,6 +197,39 @@
         <div id="admin-dodo-result" style="display:none; margin-top:8px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
       </div>
 
+      <!-- Resend send-log diagnostic (READ-ONLY, admin-diagnose-resend-sends.js) —
+           tracker item for-product-add-a-one-tap-admin-html-run-s58738, built
+           to settle for-product-urgent-email-dedup-integrity-iys5fb: three
+           accounts (moreecemiller, dtsexton18, demiaharchie49) each logged
+           3-4 first_dream_email_sent PostHog events around 2026-08-01/08-02.
+           Our own PostHog events prove nothing about which of the two
+           explanations is true (event-taxonomy over-count vs. a real
+           CAS-dedup bug) — they're exactly the metric under suspicion — so
+           this queries Resend's own send log directly, the only source that
+           can actually answer it. General-purpose rather than hardcoded to
+           the 3 accounts: this page has no way to resolve a username to its
+           real email address (that would mean touching production account
+           data from here), and a general recipient-email runner is more
+           useful going forward than a one-shot button anyway. sinceISO
+           defaults to 2026-08-01 (when the suspicious events started);
+           untilISO defaults to right now — the founder can widen/narrow
+           either before running. -->
+      <div class="section-label" style="padding:0; margin-top:26px;">Resend send-log diagnostic — email dedup check</div>
+      <div class="choice-card" style="cursor:default; margin-top:10px; flex-direction:column; align-items:stretch; gap:0;">
+        <div class="choice-text" style="margin-bottom:12px;">
+          <div class="choice-title">Check real sends via Resend (read-only)</div>
+          <div class="admin-row-sub">Counts how many emails Resend's own send log actually shows going to each address below, in the given window, plus each match's timestamp and subject — settles whether a PostHog <code>first_dream_email_sent</code> over-count is a real duplicate-send bug or just a metrics artifact. Makes no changes and sends nothing. Paste 1–20 recipient emails, one per line or comma-separated.</div>
+        </div>
+        <input class="field" id="admin-resend-source" type="text" placeholder="Your owner username or email (for password check)" autocomplete="off" dir="auto">
+        <input class="field" id="admin-resend-password" type="password" placeholder="Your owner account's real password" autocomplete="current-password">
+        <textarea class="field" id="admin-resend-recipients" style="min-height:80px;" placeholder="Recipient emails, one per line or comma-separated" autocomplete="off" dir="auto"></textarea>
+        <input class="field" id="admin-resend-since" type="text" placeholder="Since (ISO date/time)" autocomplete="off" dir="auto">
+        <input class="field" id="admin-resend-until" type="text" placeholder="Until (ISO date/time)" autocomplete="off" dir="auto">
+        <button type="button" class="btn btn-primary btn-block" id="admin-resend-submit">Check sends</button>
+        <div class="err-text" id="admin-resend-error" style="margin-top:4px;"></div>
+        <div id="admin-resend-result" style="display:none; margin-top:8px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
+      </div>
+
       <div style="margin-top:22px; text-align:center;">
         <a class="link-text" href="tracker.html">Open the tracker (open tasks &amp; ideas) →</a>
       </div>
@@ -655,6 +688,93 @@
           resEl.textContent = subs.map(fmtSub).join('\n\n———\n\n');
         })
         .catch(function () { btn.disabled = false; btn.textContent = 'Check status'; errEl.textContent = "Couldn't reach the server — try again."; });
+    });
+  })();
+
+  // ===== Resend send-log diagnostic (READ-ONLY, server gate in
+  //       admin-diagnose-resend-sends.js) — see the HTML comment above the
+  //       card markup for why this is general-purpose rather than
+  //       hardcoded to the 3 accounts from iys5fb. =====
+  (function () {
+    var btn = document.getElementById('admin-resend-submit');
+    if (!btn) return;
+    var errEl = document.getElementById('admin-resend-error');
+    var resEl = document.getElementById('admin-resend-result');
+    var sinceEl = document.getElementById('admin-resend-since');
+    var untilEl = document.getElementById('admin-resend-until');
+    var ERRS = {
+      'E2: missing_owner_email': "Server isn't configured with an owner email yet.",
+      'E4: missing_fields': 'Enter your owner username/email and password.',
+      'E5: forbidden': "Couldn't verify — that must be the owner account's real username/email + password.",
+      'E7: invalid_recipient_emails': 'Enter 1–20 valid recipient email addresses.',
+      'E8: invalid_date_range': 'Enter a valid since/until date range (since must be before until).',
+      'E9: missing_resend_api_key': "Server isn't configured with a Resend API key yet (RESEND_API_KEY)."
+    };
+
+    // Pre-fill a sensible default window: since = when the suspicious
+    // events started (2026-08-01), until = right now. Only fills in blanks
+    // — never clobbers a value the founder already typed (e.g. after a
+    // failed attempt, or a page that got its fields restored some other way).
+    if (sinceEl && !sinceEl.value) sinceEl.value = '2026-08-01T00:00:00Z';
+    if (untilEl && !untilEl.value) untilEl.value = new Date().toISOString();
+
+    /** Maps a raw error code (possibly carrying dynamic detail after the colon, e.g. E10/E11/E12) to plain-English copy. */
+    function friendlyError(errCode) {
+      if (!errCode) return 'Something went wrong — try again.';
+      if (ERRS[errCode]) return ERRS[errCode];
+      var dynamic = errCode.match(/^E(6|10|11|12):\s*(.*)$/);
+      if (dynamic) return dynamic[2] || errCode;
+      return errCode;
+    }
+
+    function parseRecipients(raw) {
+      return raw.split(/[,\n]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+
+    /** Renders exactly what the API returns: per-recipient count + each send's timestamp/subject, plus the scan-coverage footer. */
+    function renderResendResult(data) {
+      var lines = [];
+      var emails = Object.keys(data.results || {});
+      emails.forEach(function (email) {
+        var r = data.results[email] || { count: 0, sends: [] };
+        lines.push(email + ' — ' + r.count + ' send(s)');
+        (r.sends || []).forEach(function (s) {
+          lines.push('  ' + s.createdAt + ' — "' + (s.subject || '(no subject)') + '"');
+        });
+      });
+      lines.push('');
+      lines.push('Scanned ' + data.totalEmailsScanned + ' email(s) across ' + data.pagesFetched + ' page(s)' +
+        (data.truncated ? ' — TRUNCATED at the safety page cap, results may be incomplete' : '') + '.');
+      resEl.textContent = lines.join('\n').trim();
+      resEl.style.display = 'block';
+    }
+
+    btn.addEventListener('click', function () {
+      errEl.textContent = ''; resEl.style.display = 'none'; resEl.textContent = '';
+      var usernameOrEmail = document.getElementById('admin-resend-source').value.trim();
+      var password = document.getElementById('admin-resend-password').value;
+      var recipients = parseRecipients(document.getElementById('admin-resend-recipients').value);
+      var sinceISO = sinceEl.value.trim();
+      var untilISO = untilEl.value.trim();
+
+      if (!usernameOrEmail || !password) { errEl.textContent = 'Enter your owner username/email and password.'; return; }
+      if (!recipients.length) { errEl.textContent = 'Enter at least one recipient email.'; return; }
+      if (recipients.length > 20) { errEl.textContent = 'Enter no more than 20 recipient emails.'; return; }
+      if (!sinceISO || !untilISO) { errEl.textContent = 'Enter both a since and an until date/time.'; return; }
+
+      btn.disabled = true; btn.textContent = 'Checking…';
+      fetch('/.netlify/functions/admin-diagnose-resend-sends', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernameOrEmail: usernameOrEmail, password: password, recipientEmails: recipients, sinceISO: sinceISO, untilISO: untilISO })
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) {
+          btn.disabled = false; btn.textContent = 'Check sends';
+          var data = x.j || {};
+          if (!data.ok) { errEl.textContent = friendlyError(data.error); return; }
+          renderResendResult(data);
+        })
+        .catch(function () { btn.disabled = false; btn.textContent = 'Check sends'; errEl.textContent = "Couldn't reach the server — try again."; });
     });
   })();
 
