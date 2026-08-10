@@ -169,6 +169,34 @@
         <div id="admin-trial-result" style="display:none; margin-top:4px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
       </div>
 
+      <!-- Dodo — live/test mode + subscription status (READ-ONLY diagnostic,
+           admin-diagnose-dodo-status.js). Answers two founder questions in
+           one call: (1) which Dodo mode is active RIGHT NOW — resolved the
+           exact same way create-checkout-session-dodo.js resolves it for
+           real checkouts (DODO_ENVIRONMENT || 'live_mode'), rendered as a
+           big LIVE/TEST label — and (2) a subscription's true status straight
+           from Dodo's API (trialing vs active, trial end / next billing,
+           amount). Owner-gated + rate-limited server-side; makes no writes
+           and never calls any mutating Dodo method. The API key never leaves
+           the server — this panel only ever learns keyPresent (a boolean).
+           Paste a subscription id for an exact lookup, or an email to find
+           that customer's most-recent subscription(s). -->
+      <div class="section-label" style="padding:0; margin-top:26px;">Dodo — live/test mode + subscription status</div>
+      <div class="choice-card" style="cursor:default; margin-top:10px; flex-direction:column; align-items:stretch; gap:0;">
+        <div class="choice-text" style="margin-bottom:12px;">
+          <div class="choice-title">Check Dodo mode &amp; a subscription (read-only)</div>
+          <div class="admin-row-sub">Reports whether Dodo is in <b>live</b> or <b>test</b> mode right now (the same value real checkouts use), plus a subscription's true status from Dodo's API. Makes no changes. Paste a <b>subscription id</b> (sub_…) for an exact lookup, or an <b>email</b> to find that customer's most recent subscription(s). At least one is required.</div>
+        </div>
+        <input class="field" id="admin-dodo-source" type="text" placeholder="Your owner username or email (for password check)" autocomplete="off" dir="auto">
+        <input class="field" id="admin-dodo-password" type="password" placeholder="Your owner account's real password" autocomplete="current-password">
+        <input class="field" id="admin-dodo-email" type="email" placeholder="Customer email (optional)" autocomplete="off" dir="auto">
+        <input class="field" id="admin-dodo-sub" type="text" placeholder="Dodo subscription id (optional, sub_…)" autocomplete="off" dir="auto">
+        <button type="button" class="btn btn-primary btn-block" id="admin-dodo-submit">Check status</button>
+        <div class="err-text" id="admin-dodo-error" style="margin-top:4px;"></div>
+        <div id="admin-dodo-mode" style="display:none; margin-top:8px; text-align:center; padding:14px; border-radius:14px; border:1px solid var(--border); font-weight:800; font-size:22px; letter-spacing:0.5px;"></div>
+        <div id="admin-dodo-result" style="display:none; margin-top:8px; padding:12px 14px; border-radius:14px; background:var(--surface); border:1px solid var(--border); font-size:12.5px; color:var(--text-muted); line-height:1.5; white-space:pre-wrap;"></div>
+      </div>
+
       <div style="margin-top:22px; text-align:center;">
         <a class="link-text" href="tracker.html">Open the tracker (open tasks &amp; ideas) →</a>
       </div>
@@ -546,6 +574,87 @@
             '. Daily claim: ' + x.j.dailyClaimAmount + ' tokens/day. Reopen the shop / home to see it.';
         })
         .catch(function () { btn.disabled = false; btn.textContent = 'Activate trial'; errEl.textContent = "Couldn't reach the server — try again."; });
+    });
+  })();
+
+  // ===== Dodo — live/test mode + subscription status (READ-ONLY diagnostic,
+  //       server gate in admin-diagnose-dodo-status.js) =====
+  (function () {
+    var btn = document.getElementById('admin-dodo-submit');
+    if (!btn) return;
+    var errEl = document.getElementById('admin-dodo-error');
+    var modeEl = document.getElementById('admin-dodo-mode');
+    var resEl = document.getElementById('admin-dodo-result');
+    var ERRS = {
+      'E2: missing_owner_email': "Server isn't configured with an owner email yet.",
+      'E4: missing_fields': 'Enter your owner username/email, password, and either a subscription id or an email.',
+      'E5: forbidden': "Couldn't verify — that must be the owner account's real username/email + password."
+    };
+
+    function fmtMoney(sub) {
+      if (sub.amount_display) return sub.amount_display;
+      if (typeof sub.recurring_pre_tax_amount === 'number') {
+        return (sub.recurring_pre_tax_amount / 100).toFixed(2) + (sub.currency ? ' ' + sub.currency : '');
+      }
+      return '—';
+    }
+
+    function fmtSub(sub) {
+      var state = sub.trialing ? 'TRIALING' : (sub.status ? sub.status.toUpperCase() : 'unknown');
+      var lines = [
+        'Subscription: ' + (sub.subscription_id || '—'),
+        'Status: ' + state + (sub.trialing && sub.status ? ' (Dodo status: ' + sub.status + ')' : ''),
+        'Amount: ' + fmtMoney(sub) + ' / recurring'
+      ];
+      if (sub.trialing && sub.trial_end) lines.push('Trial ends: ' + sub.trial_end + (sub.trial_period_days ? ' (' + sub.trial_period_days + '-day trial)' : ''));
+      if (sub.next_billing_date) lines.push('Next billing: ' + sub.next_billing_date);
+      if (sub.cancel_at_next_billing_date) lines.push('⚠️ Set to cancel at next billing date');
+      if (sub.cancelled_at) lines.push('Cancelled at: ' + sub.cancelled_at);
+      if (sub.product_id) lines.push('Product: ' + sub.product_id);
+      if (sub.created_at) lines.push('Created: ' + sub.created_at);
+      return lines.join('\n');
+    }
+
+    function renderMode(activeMode, keyPresent) {
+      var isLive = activeMode === 'live_mode';
+      modeEl.style.display = 'block';
+      modeEl.textContent = isLive ? 'LIVE MODE' : (activeMode === 'test_mode' ? 'TEST MODE' : activeMode);
+      modeEl.style.color = isLive ? '#e5484d' : '#f5a623';
+      modeEl.style.borderColor = isLive ? '#e5484d' : '#f5a623';
+      if (!keyPresent) modeEl.textContent += ' — no API key set';
+    }
+
+    btn.addEventListener('click', function () {
+      errEl.textContent = ''; modeEl.style.display = 'none'; resEl.style.display = 'none';
+      var usernameOrEmail = document.getElementById('admin-dodo-source').value.trim();
+      var password = document.getElementById('admin-dodo-password').value;
+      var email = document.getElementById('admin-dodo-email').value.trim();
+      var subscriptionId = document.getElementById('admin-dodo-sub').value.trim();
+      if (!usernameOrEmail || !password) { errEl.textContent = 'Enter your owner username/email and password.'; return; }
+      if (!email && !subscriptionId) { errEl.textContent = 'Enter a subscription id or a customer email (at least one).'; return; }
+
+      btn.disabled = true; btn.textContent = 'Checking…';
+      fetch('/.netlify/functions/admin-diagnose-dodo-status', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usernameOrEmail: usernameOrEmail, password: password, email: email || undefined, subscriptionId: subscriptionId || undefined })
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (x) {
+          btn.disabled = false; btn.textContent = 'Check status';
+          var data = x.j || {};
+          if (!data.ok) { errEl.textContent = ERRS[data.error] || (data.error && data.error.indexOf('E6') === 0 ? data.error.replace(/^E6:\s*/, '') : (data.error || 'Something went wrong — try again.'));
+            // Even on a Dodo-API error the mode is still reported — show it.
+            if (data.activeMode) renderMode(data.activeMode, data.keyPresent);
+            return; }
+          renderMode(data.activeMode, data.keyPresent);
+          resEl.style.display = 'block';
+          if (data.warning) { resEl.textContent = data.warning.replace(/^E7:\s*/, '') + '\n(Set DODO_API_KEY in Netlify to look up subscriptions.)'; return; }
+          if (data.subscription) { resEl.textContent = fmtSub(data.subscription); return; }
+          var subs = data.subscriptions || [];
+          if (!subs.length) { resEl.textContent = 'No subscriptions found for that ' + (subscriptionId ? 'id' : 'email') + '.'; return; }
+          resEl.textContent = subs.map(fmtSub).join('\n\n———\n\n');
+        })
+        .catch(function () { btn.disabled = false; btn.textContent = 'Check status'; errEl.textContent = "Couldn't reach the server — try again."; });
     });
   })();
 
