@@ -238,6 +238,33 @@
     return (mood && mood.lighting) || MOOD_CHIPS.filter(function (m) { return m.key === DEFAULT_MOOD; })[0].lighting;
   }
 
+  // ── Inferred fallback PLACE per action (question-first wizard trim) ──
+  // wizard.html's question-first screen 1 dropped the standalone Setting
+  // ("Where did it happen?") step as a QUESTION — the visitor never picks a
+  // place — so the caption still needs a sensible scene. This mirrors the
+  // growth funnel's per-action `displayFallbackPlace` (dreamtube-growth/
+  // index.html's ACTION_OPTIONS): each action that reads better WITH a place
+  // gets one whose key is a real SETTING_PLACE_CHIPS entry, so assembleCaption
+  // appends it through the SAME action-connector + place-phrase machinery a
+  // user-chosen place would use (e.g. flying → 'sky' → "flying through an open
+  // sky"). Actions that already read cleanly on their own (calm/meeting/exam/
+  // late/trying/newroom/child) return null — assembleCaption then simply omits
+  // the place clause, exactly as it does for a skipped Setting step today.
+  //
+  // Used ONLY by wizard.html (whose Setting step is gone); create.html's
+  // "Build it" keeps its real Setting step and passes the user's chosen
+  // placeKey, so it never calls this and its captions are unchanged.
+  var FALLBACK_PLACE_BY_ACTION = {
+    flying: 'sky',
+    falling: 'sky',
+    running: 'urban',
+    exploring: 'nature',
+    magical: 'unreal'
+  };
+  function inferFallbackPlaceKey(actionKey) {
+    return FALLBACK_PLACE_BY_ACTION[actionKey] || null;
+  }
+
   // ── Multi-select subject support (tracker item
   //    for-product-wizard-characters-step-is-si-paxp07, founder repro
   //    2026-08-02) — see this module's own subjectPhraseAndCharacterId/
@@ -594,6 +621,7 @@
     persistedMood: persistedMood,
     inferCamera: inferCamera,
     inferLighting: inferLighting,
+    inferFallbackPlaceKey: inferFallbackPlaceKey,
     assembleCaption: assembleCaption,
     buildDeterministicStory: buildDeterministicStory
   };
