@@ -1625,3 +1625,241 @@ test('the Dreamer Pass conversion\'s distinct_id resolves the same way as the pa
   })));
   assert.equal(spies.posthogCalls[0].body.distinct_id, 'passdistinctiduser');
 });
+
+// ============================================================================
+// TRIAL-STATE SYNTHESIS (money-path fix, 2026-08-10 — founder repro on two real
+// Dodo subscriptions). The confirmed live bug: Dodo reports EVERY Dreamer Pass
+// trial — the $0 freetrial AND the paid trial50 — with status:'active',
+// trialing:false, trial_end:null. It has NO 'trialing' status at all. So the
+// 100/day trial boost (entitlements.isTrialActive, which requires
+// status==='trialing') NEVER fired during a trial — users got the normal
+// 20/day. The fix: for a TRIAL-start subscription.active we synthesize the
+// 'trialing' state ourselves, writing trialEnd = Dodo's own first-period end
+// (next_billing_date / current_period_end), while the notrial product (which
+// has NO trial) is never synthesized and grants its 3,000 immediately. See
+// dodo-webhook.js's handleSubscriptionEvent TRIAL-STATE SYNTHESIS block and
+// firstPeriodIsTrial / resolveSynthesizedTrialEnd.
+//
+// These payloads model Dodo's REAL shape: status:'active' (NOT overridden to
+// trialing), trialing:false, no trial_end field, but a real trial_period_days
+// + next_billing_date (the trial-end date). Contrast the earlier tests above,
+// which fed an explicit status:'trialing' Dodo does not actually send.
+// ============================================================================
+
+test('REAL DODO BUG (free trial): a freetrial subscription.active arriving status:active/trialing:false/trial_end:null is SYNTHESIZED as trialing from currentPeriodEnd — 100/day fires, trialEnd = next_billing_date, and NO 3,000 lump lands', async function () {
+  var email = 'realfreetrial@example.com';
+  await seedZeroBalance(email);
+  var trialEnd = Date.now() + 3 * DAY_MS;
+  var res = await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active',            // Dodo's REAL label during a trial (no 'trialing' status exists)
+    trialing: false,             // Dodo's REAL label
+    // no trial_end field at all — Dodo's Subscription doesn't expose one
+    trial_period_days: 3,
+    created_at: new Date().toISOString(),
+    next_billing_date: new Date(trialEnd).toISOString(), // = the 3-day trial end
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_rft', email: email }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.subscription.status, 'trialing', 'we synthesize trialing despite Dodo saying active');
+  assert.equal(record.subscription.trialEnd, trialEnd, 'trialEnd = Dodo\'s own first-period end (next_billing_date)');
+  assert.equal(record.active, true);
+  assert.equal(record.tokens.balance, 0, 'no 3,000 lump during the trial');
+
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 100, 'THE FIX: the 100/day boost fires during the trial, not 20');
+});
+
+test('after a synthesized freetrial trial, the $0 trial-start payment.succeeded grants NOTHING and the 100/day boost stays intact', async function () {
+  var email = 'realfreetrialzero@example.com';
+  await seedZeroBalance(email);
+  var trialEnd = Date.now() + 3 * DAY_MS;
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    trial_period_days: 3, created_at: new Date().toISOString(),
+    next_billing_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_rftz', email: email }
+  })));
+  await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_real_ft_zero', total_amount: 0,
+    product_cart: [{ product_id: 'pdt_dreamer_pass_test', quantity: 1 }],
+    customer: { customer_id: 'cus_rftz', email: email }
+  })));
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.tokens.balance, 0, 'the $0 trial-start still grants nothing (unchanged guard)');
+  assert.equal(record.subscription.status, 'trialing', 'and the account stays in the synthesized trial');
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 100, 'boost intact');
+});
+
+test('REAL DODO BUG (paid trial): a trial50 subscription.active arriving status:active is SYNTHESIZED as trialing — 100/day fires, and the $1 paid-trial charge grants NO 3,000 lump (trial50 abuse-hole guard now actually engages)', async function () {
+  var email = 'realtrial50@example.com';
+  await seedZeroBalance(email);
+  var trialEnd = Date.now() + 3 * DAY_MS;
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    trial_period_days: 3, created_at: new Date().toISOString(),
+    next_billing_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_dreamer_pass_trial50_test',
+    customer: { customer_id: 'cus_rt50', email: email }
+  })));
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.subscription.status, 'trialing', 'the paid trial is synthesized as trialing too');
+  assert.equal(record.subscription.trialEnd, trialEnd);
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 100, 'the paid trial also boosts to 100/day');
+
+  // The $1 paid-trial fee lands WHILE trialing -> the trial50 guard (which
+  // relies on this synthesized trialing state) skips the lump. Before this fix
+  // the record read 'active', so that guard never engaged.
+  await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_real_t50_start', total_amount: 100,
+    product_cart: [{ product_id: 'pdt_dreamer_pass_trial50_test', quantity: 1 }],
+    metadata: { dreamtube_pass_variant: 'trial50' },
+    customer: { customer_id: 'cus_rt50', email: email }
+  })));
+  var afterCharge = await entitlements.getEntitlement({}, email);
+  assert.equal(afterCharge.tokens.balance, 0, 'the $1 paid-trial fee must NOT grant the 3,000 lump');
+  assert.equal(afterCharge.subscription.status, 'trialing', 'still trialing after the trial fee');
+});
+
+test('at the REAL first billing after a synthesized trial (subscription.renewed), the 3,000 lump grants exactly once and flips to active — idempotent across a redelivery', async function () {
+  var email = 'realtrialrenew@example.com';
+  await seedZeroBalance(email);
+  var trialEnd = Date.now() + 3 * DAY_MS;
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    trial_period_days: 3, created_at: new Date().toISOString(),
+    next_billing_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_rtr', email: email }
+  })));
+  // Trial converts: the first real billing arrives as subscription.renewed with
+  // next_billing now a month out (the trial is over).
+  var renewPayload = subEvent('subscription.renewed', {
+    payment_id: 'pay_real_first_billing',
+    product_id: 'pdt_dreamer_pass_test',
+    status: 'active',
+    next_billing_date: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+    recurring_pre_tax_amount: 999, currency: 'USD',
+    customer: { customer_id: 'cus_rtr', email: email }
+  });
+  await handler(signedEvent(renewPayload, { id: 'msg_first_billing_1' }));
+  var afterFirst = await entitlements.getEntitlement({}, email);
+  assert.equal(afterFirst.tokens.balance, DREAMER_PASS_MONTHLY, 'the 3,000 lands at the real first billing (isTrialActive now false)');
+  assert.equal(afterFirst.subscription.status, 'active', 'trial over -> active');
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 20, 'paid subscriber -> normal 20/day');
+
+  await handler(signedEvent(renewPayload, { id: 'msg_first_billing_2' }));
+  var afterRedeliver = await entitlements.getEntitlement({}, email);
+  assert.equal(afterRedeliver.tokens.balance, DREAMER_PASS_MONTHLY, 'a redelivered first billing must not add a second 3,000');
+});
+
+test('notrial subscription.active is NEVER synthesized as trialing (trial_period_days 0) — stays active, and its own immediate payment.succeeded grants 3,000 exactly once (idempotent)', async function () {
+  var email = 'realnotrial@example.com';
+  await seedZeroBalance(email);
+  // notrial: Dodo reports active, trial_period_days 0, first period a full month.
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    trial_period_days: 0,
+    created_at: new Date().toISOString(),
+    next_billing_date: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+    product_id: 'pdt_dreamer_pass_notrial_test',
+    customer: { customer_id: 'cus_rnt', email: email }
+  })));
+  var afterActive = await entitlements.getEntitlement({}, email);
+  assert.equal(afterActive.subscription.status, 'active', 'notrial must NEVER be synthesized as trialing');
+  assert.equal(afterActive.subscription.trialEnd, null, 'no trial end for a no-trial sub');
+  assert.equal(afterActive.tokens.balance, 0, 'no lump yet — the immediate charge grants it, not the state event');
+  var s1 = await entitlements.getTokenStatus({}, email);
+  assert.equal(s1.dailyClaimAmount, 20, 'notrial is never boosted to 100');
+
+  // The immediate real $7.99 charge grants the 3,000 up front (no 3-day wait).
+  var payPayload = passPaymentPayload({
+    payment_id: 'pay_real_notrial_charge',
+    product_cart: [{ product_id: 'pdt_dreamer_pass_notrial_test', quantity: 1 }],
+    total_amount: 799,
+    metadata: { dreamtube_pass_variant: 'notrial' },
+    customer: { customer_id: 'cus_rnt', email: email }
+  });
+  await handler(signedEvent(payPayload, { id: 'msg_nt_charge_1' }));
+  var afterCharge = await entitlements.getEntitlement({}, email);
+  assert.equal(afterCharge.tokens.balance, DREAMER_PASS_MONTHLY, 'notrial grants its 3,000 immediately');
+  assert.equal(afterCharge.subscription.status, 'active');
+
+  await handler(signedEvent(payPayload, { id: 'msg_nt_charge_2' }));
+  var afterRedeliver = await entitlements.getEntitlement({}, email);
+  assert.equal(afterRedeliver.tokens.balance, DREAMER_PASS_MONTHLY, 'a redelivered notrial charge must not double-grant');
+});
+
+test('trial discrimination falls back to the product VARIANT when trial_period_days is absent: a freetrial subscription.active with no trial_period_days still synthesizes trialing', async function () {
+  var email = 'variantfallback@example.com';
+  await seedZeroBalance(email);
+  var trialEnd = Date.now() + 3 * DAY_MS;
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    // NO trial_period_days at all
+    created_at: new Date().toISOString(),
+    next_billing_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_dreamer_pass_test', // freetrial -> has a trial
+    customer: { customer_id: 'cus_vf', email: email }
+  })));
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.subscription.status, 'trialing', 'variant (freetrial) resolves the trial when trial_period_days is missing');
+  assert.equal(record.subscription.trialEnd, trialEnd);
+});
+
+test('trial discrimination LAST-RESORT falls back to first-period LENGTH: no trial_period_days and an unrecognized product_id — ~3 days out reads trial, ~1 month out reads paid', async function () {
+  // ~3 days out -> trial
+  var shortEmail = 'lengthshort@example.com';
+  await seedZeroBalance(shortEmail);
+  var trialEnd = Date.now() + 3 * DAY_MS;
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    created_at: new Date().toISOString(),
+    next_billing_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_rotated_unknown_variant', // resolves to no known variant
+    metadata: {},
+    customer: { customer_id: 'cus_ls', email: shortEmail }
+  })));
+  var shortRec = await entitlements.getEntitlement({}, shortEmail);
+  assert.equal(shortRec.subscription.status, 'trialing', 'a ~3-day first period reads as a trial by length');
+
+  // ~1 month out -> paid period (not a trial)
+  var longEmail = 'lengthlong@example.com';
+  await seedZeroBalance(longEmail);
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    created_at: new Date().toISOString(),
+    next_billing_date: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+    product_id: 'pdt_rotated_unknown_variant',
+    metadata: {},
+    customer: { customer_id: 'cus_ll', email: longEmail }
+  })));
+  var longRec = await entitlements.getEntitlement({}, longEmail);
+  assert.equal(longRec.subscription.status, 'active', 'a ~1-month first period reads as a paid period, not a trial');
+  assert.equal(longRec.subscription.trialEnd, null);
+});
+
+test('a redelivered subscription.active (replaying the ORIGINAL, now-elapsed first-period end) does NOT re-open the trial boost', async function () {
+  var email = 'redeliveractive@example.com';
+  await seedZeroBalance(email);
+  // A redelivery arriving after the trial converted replays the original
+  // payload, whose first-period end is by now in the PAST.
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    trial_period_days: 3,
+    created_at: new Date(Date.now() - 5 * DAY_MS).toISOString(),
+    next_billing_date: new Date(Date.now() - 1000).toISOString(), // trial end already passed
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_rda', email: email }
+  })));
+  var record = await entitlements.getEntitlement({}, email);
+  assert.notEqual(record.subscription.status, 'trialing', 'a past first-period end must not synthesize a live trial');
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 20, 'no boost re-opened by a stale redelivery');
+});
