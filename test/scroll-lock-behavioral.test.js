@@ -94,6 +94,35 @@ async function seedResultPage(page, dreamId) {
   }, dreamId);
   await page.goto(baseUrl + '/result.html?id=' + dreamId, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.scroll-area', { timeout: 5000 });
+  // #app's own entrance animation (css/styles.css: `#app{ animation:fadeIn
+  // .25s ease; }`, translateY(6px) -> translateY(0)) is still resolving for
+  // up to 250ms after this page loads. Confirmed by direct instrumentation
+  // (round-3 flake investigation, docs/flake-investigation-round3-notes.md):
+  // while that transform is in flight, document.scrollingElement's
+  // scrollHeight transiently exceeds its clientHeight by a few px (shrinking
+  // monotonically to exactly 0 in lockstep with the transform's residual
+  // translateY, hitting 0 the instant the animation's playState reports
+  // finished) — invisible/harmless to a real user, but this file's
+  // installScrollProbe() (deliberately mirroring js/scroll-lock.js's own
+  // windowIsScroller() check) treats ANY scrollHeight-clientHeight > 1 as "a
+  // real, testable scroller". Racing this test's start against the
+  // still-decaying animation intermittently (independent of system load —
+  // this reproduced in complete isolation, not just under full-suite
+  // contention) misclassifies the document as scrollable with only a few px
+  // of real range, which the "scroll to 20 and confirm it landed on 20"
+  // assertion downstream can then never satisfy. Wait for the animation to
+  // actually finish (condition-based, not a fixed sleep — matches this
+  // repo's test/helpers/settle.js convention of waiting for the real
+  // condition under test) before any scroll-probe measurement is taken, so
+  // the probe reflects final, settled geometry rather than a mid-transition
+  // artifact.
+  await page.evaluate(function () {
+    var app = document.getElementById('app');
+    if (!app || !app.getAnimations) return;
+    return Promise.all(app.getAnimations().map(function (a) {
+      return a.finished.catch(function () { /* cancelled/already done — fine either way */ });
+    }));
+  });
 }
 
 function lockState(page) {
