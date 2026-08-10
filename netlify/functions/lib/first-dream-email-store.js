@@ -102,6 +102,25 @@ async function hasSent(event, username) {
 }
 
 /**
+ * Returns the full { username, dreamId, sentAt, claimId } record for this
+ * account's first-dream email, or null if none has ever been sent. Added so
+ * the "unwatched dream" retention nudge (send-unwatched-dream-nudges.js) can
+ * check whether the first-dream email ALREADY covered a SPECIFIC dream (by
+ * comparing `dreamId`) and suppress its own send for that exact dream —
+ * both are "your dream is ready, come watch it" emails, so they must never
+ * both fire for the same person/dream. A thin read wrapper over the same
+ * per-normalized-username record hasSent already checks; unchanged behavior
+ * for every existing caller (none used it before). Returns null (never
+ * throws) for an empty/invalid username, matching this store's other reads.
+ */
+async function getSentRecord(event, username) {
+  var key = normalizeUsername(username);
+  if (!key) return null;
+  connectLambda(event);
+  return (await store().get(key, { type: 'json' })) || null;
+}
+
+/**
  * Atomically records this account's first-dream email as sent, but only
  * if it hasn't been already. Returns { ok:true } the first time for a
  * given username, { ok:false, alreadySent:true } every time after
@@ -199,4 +218,4 @@ async function releaseFailedSend(event, username, claimId) {
   }
 }
 
-module.exports = { STORE_NAME, normalizeUsername, hasSent, markSentOnce, releaseFailedSend };
+module.exports = { STORE_NAME, normalizeUsername, hasSent, getSentRecord, markSentOnce, releaseFailedSend };

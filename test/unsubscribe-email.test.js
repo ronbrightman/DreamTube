@@ -109,9 +109,48 @@ test('unsubscribe-email: missing email/token -> E2', function () {
   });
 });
 
-test('unsubscribe-email: wrong method -> E1', async function () {
+test('unsubscribe-email: an unsupported method (neither GET nor the one-click POST) -> E1', async function () {
   var handler = require('../netlify/functions/unsubscribe-email').handler;
-  var res = await handler(fakeEvent({ method: 'POST', query: {} }));
+  var res = await handler(fakeEvent({ method: 'PUT', query: {} }));
   assert.equal(res.statusCode, 405);
   assert.match(JSON.parse(res.body).error, /^E1/);
+});
+
+// RFC 8058 one-click POST (added for the "unwatched dream" retention-nudge
+// round) -- a mail client honoring the List-Unsubscribe-Post header sends a
+// machine POST (no browser) to the same url; email/token are on the query
+// string. It suppresses exactly like GET but returns a minimal JSON 200,
+// never the human confirmation page.
+test('unsubscribe-email: a valid one-click POST suppresses and returns a minimal JSON 200 (no HTML page)', function () {
+  return withEnv(ENV, async function () {
+    var unsubscribeToken = require('../netlify/functions/lib/unsubscribe-token');
+    var suppressionStore = require('../netlify/functions/lib/email-suppression-store');
+    var handler = require('../netlify/functions/unsubscribe-email').handler;
+
+    var token = unsubscribeToken.signToken('oneclick@example.com');
+    var res = await handler(fakeEvent({
+      method: 'POST',
+      query: { email: 'oneclick@example.com', token: token },
+      body: 'List-Unsubscribe=One-Click'
+    }));
+    assert.equal(res.statusCode, 200);
+    assert.equal(JSON.parse(res.body).ok, true, 'a machine POST gets JSON, not the confirmation HTML');
+    assert.equal(await suppressionStore.isSuppressed(fakeEvent({}), 'oneclick@example.com'), true);
+  });
+});
+
+test('unsubscribe-email: a one-click POST with a bad token is rejected (400) without suppressing', function () {
+  return withEnv(ENV, async function () {
+    var suppressionStore = require('../netlify/functions/lib/email-suppression-store');
+    var handler = require('../netlify/functions/unsubscribe-email').handler;
+
+    var res = await handler(fakeEvent({
+      method: 'POST',
+      query: { email: 'victim@example.com', token: 'not-the-real-token' },
+      body: 'List-Unsubscribe=One-Click'
+    }));
+    assert.equal(res.statusCode, 400);
+    assert.match(JSON.parse(res.body).error, /^E3/);
+    assert.equal(await suppressionStore.isSuppressed(fakeEvent({}), 'victim@example.com'), false, 'a bad token must never suppress an arbitrary address');
+  });
 });
