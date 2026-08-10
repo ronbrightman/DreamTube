@@ -2276,8 +2276,20 @@
       // showMonetizationMoment below.
       var navUrl = 'home.html?generate=1';
       if(opts.freshSignup && !isFunnelHandoffArrival){
-        showMonetizationMoment(email, navUrl);
-        return;
+        // ROBUSTNESS: never let a paywall failure strand a signed-up user.
+        // We are PAST adopt/claim here — if showMonetizationMoment throws
+        // (js/paywall-moment.js failed to load so window.PaywallMoment is
+        // undefined, the overlay build throws, a deploy hiccup, anything), the
+        // returned promise would otherwise reject unhandled with NO navigation,
+        // leaving the user stuck on wizard.html after their account already
+        // exists. On ANY failure, fall through to the normal home handoff.
+        try {
+          showMonetizationMoment(email, navUrl);
+          return; // overlay shown; it owns navigation from here (dismiss/CTA)
+        } catch(e) {
+          try { track('paywall_moment_error', { message: (e && e.message) || 'error' }); } catch(_e) {}
+          // fall through to location.href = navUrl below
+        }
       }
       location.href = navUrl;
     });
@@ -2471,8 +2483,16 @@
         plan: 'dreamer_pass',
         passVariant: passVariant,
         // Return to home on both legs so the adopted pending dream resumes.
+        // The cancel leg MUST carry ?generate=1: on the pendingStartFailed
+        // path (pre-account generation call failed -> no pendingJob adopted)
+        // there is nothing for home.html's pendingJob-resume to pick up, so
+        // without ?generate=1 a cancelled checkout would silently drop the
+        // drafted dream (handleCheckoutReturn ignores non-success). ?generate=1
+        // fires home.html's fresh-generation fallback from the intact draft.
+        // When a pendingJob IS present, ?generate=1 is ignored (pendingJob-first
+        // resume wins), so this can never cause a double-generation.
         successUrl: '/home.html?checkout=success',
-        cancelUrl: '/home.html?checkout=cancelled',
+        cancelUrl: '/home.html?generate=1&checkout=cancelled',
         _afterCheckoutMarker: function(data){
           // Subscription-shaped pending marker (same key/shape shop.html uses)
           // so home.html's checkout-return shows the "trial/subscription
@@ -2518,8 +2538,12 @@
       startPaywallCheckout({
         email: email,
         pack: 'pack099',
+        // Cancel leg carries ?generate=1 for the same reason as the
+        // subscription CTA above: on the pendingStartFailed path a cancelled
+        // checkout must still run the fresh-generation fallback from the intact
+        // draft, and ?generate=1 is ignored when a pendingJob was adopted.
         successUrl: '/home.html?checkout=success',
-        cancelUrl: '/home.html?checkout=cancelled',
+        cancelUrl: '/home.html?generate=1&checkout=cancelled',
         _afterCheckoutMarker: function(data){
           // Same pending-purchase marker shape shop.html/purchase-sheet.js set
           // for a pack buy, so home.html's checkout-return confirmation + token

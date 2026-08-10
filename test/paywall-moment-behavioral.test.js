@@ -87,8 +87,8 @@ async function stubBackend(page) {
   return checkoutCalls;
 }
 
-/** Drives a fresh organic wizard arrival to the signup wall (Flying tile -> Subject -> Style -> free text -> recap -> wall), then submits an email to trigger the moment. `search` carries founder overrides (?paywall=/?trialarm=). */
-async function signupToMoment(page, search, email) {
+/** Drives a fresh organic wizard arrival to the signup wall (Flying tile -> Subject -> Style -> free text -> recap -> wall) and submits an email. Does NOT wait for the moment overlay — used both by signupToMoment (which then waits) and by the robustness test (where the module is blocked so no overlay ever appears). `search` carries founder overrides (?paywall=/?trialarm=). */
+async function driveToWallAndSubmit(page, search, email) {
   await safeGoto(page, baseUrl + '/wizard.html' + (search || ''));
   await page.click('#fn-q-grid [data-tile="0"]'); // Flying -> build, Action seeded + skipped
   await page.waitForSelector('#subject-chip-row');
@@ -101,6 +101,11 @@ async function signupToMoment(page, search, email) {
   await page.waitForSelector('#contact-email');
   await page.fill('#contact-email', email || ('mm-' + Date.now() + '@example.com'));
   await page.click('#fn-contact-continue');
+}
+
+/** driveToWallAndSubmit + wait for the moment overlay to appear. */
+async function signupToMoment(page, search, email) {
+  await driveToWallAndSubmit(page, search, email);
   await page.waitForSelector('.mm-overlay', { timeout: 8000 });
 }
 
@@ -131,6 +136,9 @@ test('SUBSCRIPTION arm: toggle OFF -> CTA POSTs passVariant "notrial"; DISMISS t
     assert.equal(checkoutCalls[0].plan, 'dreamer_pass');
     assert.equal(checkoutCalls[0].passVariant, 'notrial', 'toggle OFF maps to notrial');
     assert.equal(checkoutCalls[0].email, 'sub-notrial@example.com');
+    // FINDING 1: the cancel leg must carry ?generate=1 so a pendingStartFailed
+    // fresh signup that cancels the Dodo checkout still auto-generates at home.
+    assert.equal(checkoutCalls[0].cancelUrl, '/home.html?generate=1&checkout=cancelled', 'the subscription cancel URL carries ?generate=1 (dream-loss fix)');
   } finally { await page.close(); }
 });
 
@@ -196,6 +204,8 @@ test('TOKENS arm (forced): the 99c/300-token starter renders and its CTA POSTs p
     await settle(function () { return checkoutCalls.length >= 1; });
     assert.equal(checkoutCalls[0].pack, 'pack099', 'the tokens arm reuses the pack099 starter checkout path');
     assert.ok(!checkoutCalls[0].plan, 'the tokens arm is a pack checkout, not a subscription');
+    // FINDING 1: same cancel-leg fix on the tokens arm.
+    assert.equal(checkoutCalls[0].cancelUrl, '/home.html?generate=1&checkout=cancelled', 'the tokens cancel URL carries ?generate=1 (dream-loss fix)');
   } finally { await page.close(); }
 });
 
@@ -223,5 +233,98 @@ test('DISMISS via the big X also goes straight to home.html', async function (t)
     await page.click('.mm-x');
     await page.waitForURL(/home\.html/, { timeout: 8000 });
     assert.match(page.url(), /home\.html/);
+  } finally { await page.close(); }
+});
+
+// ===========================================================================
+// FINDING 1 (end to end): the fixed cancel URL (home.html?generate=1&
+// checkout=cancelled) must still auto-generate the drafted dream when NO
+// pendingJob was adopted (the real pendingStartFailed case). This drives the
+// exact URL the CTA now hands Dodo as its cancel_url, landing on home.html
+// with an intact draft and no pendingJob, and asserts the fresh generation
+// still fires. The contrast test proves the OLD url (?checkout=cancelled with
+// no ?generate=1) is what would have silently dropped the dream.
+// ===========================================================================
+
+/** Seeds a signed-in account with an intact draft (no pendingJob) and stubs home.html's boot + generation endpoints. Returns the captured generate-video call array. */
+async function seedHomeUserWithDraftAndStubs(page, email, draft) {
+  var generateCalls = [];
+  await page.route('**/.netlify/functions/get-feed', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ feed: [], dreamOfDayId: null }) });
+  });
+  await page.route('**/.netlify/functions/get-token-status*', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ balance: 1000, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 10 }) });
+  });
+  await page.route('**/.netlify/functions/get-profile*', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+  });
+  await page.route('**/.netlify/functions/video-status**', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
+  });
+  await page.route('**/.netlify/functions/generate-video', function (route) {
+    generateCalls.push(JSON.parse(route.request().postData() || '{}'));
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fake-model:req-cancelleg-1', status: 'queued' }) });
+  });
+  await safeGoto(page, baseUrl + '/login.html');
+  await page.evaluate(function (args) {
+    var username = args.email.split('@')[0];
+    var state = { user: { handle: '@' + username, username: username }, accounts: {}, dreams: [], likedIds: {}, charactersByUser: {}, draft: args.draft };
+    state.accounts[username] = { password: 'testpass1', email: args.email };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  }, { email: email, draft: draft });
+  return generateCalls;
+}
+
+var CANCEL_LEG_DRAFT = { caption: 'Aerial wide shot of me flying through an open sky, dreamlike.', storyText: 'I was flying through an open sky.', style: 'Cinematic', characterIds: [], sceneryTime: null, sceneryPlace: null, restore: false };
+
+test('FINDING 1: the fixed cancel URL (home.html?generate=1&checkout=cancelled) auto-generates the drafted dream when no pendingJob was adopted', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var generateCalls = await seedHomeUserWithDraftAndStubs(page, 'cancel-leg-ok@example.com', CANCEL_LEG_DRAFT);
+    await safeGoto(page, baseUrl + '/home.html?generate=1&checkout=cancelled');
+    await settle(function () { return generateCalls.length >= 1; });
+    assert.ok(generateCalls.length >= 1, 'the drafted dream must auto-generate on the cancel leg — the dream is not dropped');
+    assert.equal(generateCalls[0].caption, CANCEL_LEG_DRAFT.caption, 'it generates from the intact draft');
+  } finally { await page.close(); }
+});
+
+test('FINDING 1 (contrast): the OLD cancel URL (checkout=cancelled, NO generate=1) would have dropped the dream — no generation fires', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var generateCalls = await seedHomeUserWithDraftAndStubs(page, 'cancel-leg-old@example.com', CANCEL_LEG_DRAFT);
+    await safeGoto(page, baseUrl + '/home.html?checkout=cancelled');
+    // Wait for boot to genuinely progress (token-status resolved -> the page's
+    // own render ran) before asserting the negative, so this isn't racing an
+    // un-booted page. The bottom nav is present on every booted home render.
+    await page.waitForSelector('#bottom-nav, .bottom-nav, nav', { timeout: 8000 }).catch(function () {});
+    await settle(function () { return true; }); // let any microtasks flush
+    assert.equal(generateCalls.length, 0, 'without ?generate=1 the drafted dream is NOT auto-generated — this is the dream-loss bug the fix closes');
+  } finally { await page.close(); }
+});
+
+// ===========================================================================
+// FINDING 3 (robustness): if js/paywall-moment.js fails to load (a deploy
+// hiccup, CDN blip), window.PaywallMoment is undefined and
+// showMonetizationMoment throws. The try/catch around the moment call must
+// swallow that and fall through to the normal home handoff, so a user whose
+// account already exists is NEVER stranded on wizard.html.
+// ===========================================================================
+test('FINDING 3: a failed paywall-moment.js load (PaywallMoment undefined) still navigates a fresh signup to home.html — never stranded on wizard', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    // Block the module so window.PaywallMoment never gets defined.
+    await page.route('**/js/paywall-moment.js', function (route) { route.abort(); });
+    await stubBackend(page);
+    await driveToWallAndSubmit(page, '?paywall=subscription', 'module-missing@example.com');
+    // The moment call throws (PaywallMoment undefined) -> caught -> home handoff.
+    await page.waitForURL(/home\.html/, { timeout: 8000 });
+    assert.match(page.url(), /home\.html/, 'the signed-up user still lands on home, not stranded on wizard');
+    assert.equal(await page.locator('.mm-overlay').count(), 0, 'no overlay renders when the module failed to load');
   } finally { await page.close(); }
 });
