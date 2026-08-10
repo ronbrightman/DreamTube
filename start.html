@@ -718,6 +718,25 @@
   // state (draft, staged characters, quiz vars) is touched, so a logged-in
   // visitor never even pays for a wasted render.
   if(!resumedFromFacebook && DreamStore.getCurrentUser()){
+    // Signed-in funnel arrival carrying a BUILT DREAM (?resume=1 + caption,
+    // the Build/Write handoff) — tracker item for-product-life-origin-
+    // generate-handoff-founder-repro-8yc4wm follow-up. They already have an
+    // account, so there is NO signup wall to run and NO reason to drop them
+    // into create.html's fresh builder (which loses the carried dream — the
+    // founder repro). ADOPT the dream and GENERATE it directly via the same
+    // signed-in generate path style.html uses (home.html?generate=1),
+    // persisting the exact same draft shape the logged-out funnel persists
+    // below (caption + style; storyText resolves from caption downstream —
+    // see finalizeDream). A NEW/logged-out arrival still flows through the
+    // signup wall unchanged. A signed-in arrival with no caption (record
+    // mode / bare resume) keeps its existing straight-to-Home behavior.
+    var signedInCaption = getParam('caption') || '';
+    if(signedInCaption.trim()){
+      DreamStore.clearDraft();
+      DreamStore.setDraft({ caption: signedInCaption, style: getParam('style') || null, sourceDreamId: null });
+      location.href = 'home.html?generate=1';
+      return;
+    }
     location.href = 'home.html';
     return;
   }

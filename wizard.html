@@ -570,7 +570,26 @@
   // guard: the Facebook return leg is an active identity exchange in
   // progress that must be allowed to finish here, even if this browser
   // also happens to hold an unrelated older session.
-  if(!resumedFromFacebook && DreamStore.getCurrentUser()){ location.href = 'create.html'; return; }
+  if(!resumedFromFacebook && DreamStore.getCurrentUser()){
+    // EXCEPT a funnel handoff carrying a built dream (?resume=1 + caption):
+    // that visitor already has an account, so skip the signup wall and
+    // GENERATE the carried dream directly (home.html?generate=1, the
+    // signed-in generate path), persisting the same caption+style draft the
+    // logged-out funnel arrival persists — instead of bouncing to
+    // create.html's fresh builder and LOSING the dream (founder repro,
+    // tracker item for-product-life-origin-generate-handoff-founder-repro-
+    // 8yc4wm follow-up). Any other signed-in visitor still goes to the
+    // normal logged-in New Dream flow (create.html) as before.
+    var signedInFunnelCaption = (getParam('resume') === '1') ? (getParam('caption') || '') : '';
+    if(signedInFunnelCaption.trim()){
+      DreamStore.clearDraft();
+      DreamStore.setDraft({ caption: signedInFunnelCaption, style: getParam('style') || null, sourceDreamId: null });
+      location.href = 'home.html?generate=1';
+      return;
+    }
+    location.href = 'create.html';
+    return;
+  }
 
   // Returning-but-currently-logged-out entry guard (tracker item
   // for-product-life-origin-generate-handoff-founder-repro-8yc4wm, founder
@@ -2311,22 +2330,22 @@
   //
   // NESTED trial-type A/B inside the subscription arm (50/50, persisted):
   //   'free'  (Arm A) -> the trial toggle-ON is a 3-day FREE trial.
-  //   'fifty' (Arm B) -> the trial toggle-ON is a ONE-TIME 50¢ trial.
+  //   'fifty' (Arm B) -> the trial toggle-ON is a ONE-TIME $1 trial.
   //
   // passVariant mapping sent to create-checkout-session-dodo:
   //   toggle OFF                    -> 'notrial'   ($7.99/mo, billed today)   [LIVE]
   //   toggle ON + trial-arm 'free'  -> 'freetrial' ($9.99/mo, 3-day free)     [LIVE]
-  //   toggle ON + trial-arm 'fifty' -> 'trial50'   ($9.99/mo, one-time 50¢)   [GATED — see below]
+  //   toggle ON + trial-arm 'fifty' -> 'trial50'   ($9.99/mo, one-time $1)   [GATED — see below]
   //
   // >>> TRIAL50 GATE (money-critical) <<<
-  // trial50 must NOT reach real users until a real 50¢ purchase confirms Dodo
+  // trial50 must NOT reach real users until a real $1 purchase confirms Dodo
   // reports the paid trial as `trialing` (so the webhook's trial50 guard —
   // dodo-webhook.js — actually suppresses the 3,000-token grant at trial
   // start). Until then, the nested arm is HARD-GATED to 'free' for real
   // traffic: real users assigned 'fifty' are shown 'free' and check out as
   // 'freetrial'. The founder can still reach trial50 for HIS OWN real-card
   // test via the ?trialarm=fifty override below.
-  var PAYWALL_TRIAL50_ENABLED = false; // >>> flip only after the founder's real 50¢ test confirms Dodo reports the paid trial as trialing <<<
+  var PAYWALL_TRIAL50_ENABLED = false; // >>> flip only after the founder's real $1 test confirms Dodo reports the paid trial as trialing <<<
 
   // FOUNDER TEST OVERRIDES (kept easy to find on purpose — the founder tests
   // with his own real card and needs to force each variant deterministically):
@@ -2409,7 +2428,7 @@
   function buildSubscriptionScreen(overlay, email, arm, trialArm, dismiss){
     var TRIAL = {
       free:  { label: 'Enable 3-day free trial',        onCue: '3-day free trial · 100 free tokens/day · then $9.99/mo', onCta: 'Start free trial',      onSub: 'On — free for 3 days first' },
-      fifty: { label: 'Start with a one-time 50¢ trial', onCue: '3 days for a one-time 50¢ (100 free tokens/day), then $9.99/mo', onCta: 'Start — 50¢ one time', onSub: 'On — 50¢ one time for 3 days first' }
+      fifty: { label: 'Start with a one-time $1 trial', onCue: '3 days for a one-time $1 (100 free tokens/day), then $9.99/mo', onCta: 'Start — $1 one time', onSub: 'On — $1 one time for 3 days first' }
     };
     var t = TRIAL[trialArm] || TRIAL.free;
     overlay.innerHTML =

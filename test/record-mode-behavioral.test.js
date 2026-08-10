@@ -253,7 +253,7 @@ test('create.html: ?record=1 auto-invokes the mic-record flow (startRecordingUI)
   }
 });
 
-test('create.html: without ?record=1, a normal visit still shows the Build/Write/Record choice screen and never calls getUserMedia', async function (t) {
+test('create.html: without ?record=1, a normal visit shows the question-first entry (with the Speak-it link) and never calls getUserMedia', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -263,9 +263,12 @@ test('create.html: without ?record=1, a normal visit still shows the Build/Write
 
     await seedLoggedInUserAt(page, 'norecordparamtester', '/create.html');
 
-    await page.waitForSelector('#choice-record', { timeout: 5000 });
-    var selectDisplay = await page.locator('#create-select').evaluate(function (el) { return getComputedStyle(el).display; });
-    assert.notEqual(selectDisplay, 'none', 'without ?record=1 the choice screen must still show, unchanged');
+    // The question-first grid is the entry now (the old Build/Write/Record
+    // chooser was replaced); the Speak-it secondary link is the record
+    // on-ramp, and no recording starts until it's tapped.
+    await page.waitForSelector('#create-q-grid', { timeout: 5000 });
+    assert.equal(await page.locator('#create-question').isVisible(), true, 'the question-first entry must show on a normal visit');
+    assert.equal(await page.locator('#create-q-speak').isVisible(), true, 'the Speak-it record on-ramp must be offered');
 
     var getUserMediaCalls = await page.evaluate(function () { return window.__getUserMediaCalls; });
     assert.equal(getUserMediaCalls, 0, 'without ?record=1, getUserMedia must never be called automatically');

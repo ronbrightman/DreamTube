@@ -483,7 +483,7 @@ test('create.html character sheet: tap-outside closes, drag-dismiss/snap-back bo
     // hidden by default behind create.html's initial Build/Write/Record
     // choice screen — reach it the same way test/avatar-describe-
     // behavioral.test.js's create.html coverage does.
-    await page.click('#choice-write');
+    await page.click('#create-q-grid [data-tile="5"]');
     await page.waitForSelector('#adv-toggle');
     await page.click('#adv-toggle');
     await page.waitForSelector('#char-add-other');
@@ -1052,7 +1052,7 @@ test('create.html character sheet: #app stays capped and the sheet still has a c
       localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
     });
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#choice-write');
+    await page.click('#create-q-grid [data-tile="5"]');
     await page.waitForSelector('#adv-toggle');
     await page.click('#adv-toggle');
     await page.waitForSelector('#char-add-other');

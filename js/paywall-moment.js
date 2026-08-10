@@ -18,15 +18,15 @@
 //   'tokens'       -> the 99¢/300-token starter pop-up.
 // NESTED (paywall-trial-arm, 50/50, persisted) inside the subscription arm:
 //   'free'  -> toggle-ON is a 3-day FREE trial.
-//   'fifty' -> toggle-ON is a ONE-TIME 50¢ trial.
+//   'fifty' -> toggle-ON is a ONE-TIME $1 trial.
 //
 // passVariant mapping sent to create-checkout-session-dodo:
 //   toggle OFF                    -> 'notrial'   ($7.99/mo, billed today)  [LIVE]
 //   toggle ON + trial-arm 'free'  -> 'freetrial' ($9.99/mo, 3-day free)    [LIVE]
-//   toggle ON + trial-arm 'fifty' -> 'trial50'   ($9.99/mo, one-time 50¢)  [GATED]
+//   toggle ON + trial-arm 'fifty' -> 'trial50'   ($9.99/mo, one-time $1)  [GATED]
 //
 // >>> TRIAL50 GATE (money-critical) <<<
-// trial50 must NOT reach real users until a real 50¢ purchase confirms Dodo
+// trial50 must NOT reach real users until a real $1 purchase confirms Dodo
 // reports the paid trial as `trialing` (so dodo-webhook.js's trial50 guard
 // actually suppresses the 3,000-token grant at trial start). effectiveTrialArm
 // hard-collapses a raw 'fifty' assignment to 'free' for real traffic while the
@@ -137,7 +137,7 @@
 
   /**
    * passVariant for create-checkout-session-dodo, from the toggle state and
-   * the EFFECTIVE trial arm. 50¢ is always surfaced as "one-time" in copy; the
+   * the EFFECTIVE trial arm. $1 is always surfaced as "one-time" in copy; the
    * variant token itself is 'trial50'.
    */
   function passVariantFor(trialOn, trialArm) {

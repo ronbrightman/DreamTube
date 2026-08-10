@@ -156,8 +156,10 @@ function mockFailedTranscription(page) {
 
 /** Drives create.html from the choice screen through record -> stop -> review-continue, leaving the caller at whatever screen that produces. */
 async function recordAndSubmitForTranscription(page) {
-  await page.waitForSelector('#choice-record', { timeout: 5000 });
-  await page.click('#choice-record');
+  // Question-first entry: the Speak-it secondary link routes into the same
+  // record flow the old #choice-record card did (startRecordingUI).
+  await page.waitForSelector('#create-q-speak', { timeout: 5000 });
+  await page.click('#create-q-speak');
   await page.waitForSelector('#create-record[style*="display: flex"]', { timeout: 5000 });
   await page.click('#stop-record');
   await page.waitForSelector('#create-review[style*="display: flex"]', { timeout: 5000 });
@@ -333,8 +335,10 @@ test('create.html: tapping topbar Back while a transcription is in flight abando
     assert.equal(await page.textContent('#review-continue'), 'Transcribing…');
 
     await page.click('#create-back');
-    await page.waitForSelector('#create-select[style*="display: block"]', { timeout: 5000 });
-    await page.click('#choice-write');
+    // Back from the record/review panel returns to the question-first entry
+    // (the chooser it replaced is gone); the "I'll describe it" tile -> Write.
+    await page.waitForSelector('#create-question', { state: 'visible', timeout: 5000 });
+    await page.click('#create-q-grid [data-tile="5"]');
     await page.waitForSelector('#create-write[style*="display: flex"]', { timeout: 5000 });
 
     // Give the delayed transcription's response time to actually resolve.

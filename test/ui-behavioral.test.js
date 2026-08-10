@@ -1415,7 +1415,7 @@ test('create.html: Advanced accordion chip-edit-area padding is comfortably clos
     await page.waitForURL(/home\.html/, { timeout: 5000 });
 
     await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
-    await page.click('#choice-write');
+    await page.click('#create-q-grid [data-tile="5"]');
     await page.click('#adv-toggle');
     await page.waitForSelector('.adv-section.open', { timeout: 5000 });
 
@@ -1466,7 +1466,7 @@ test('create.html: Advanced accordion chips render with the new lighter --surfac
     await page.waitForURL(/home\.html/, { timeout: 5000 });
 
     await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
-    await page.click('#choice-write');
+    await page.click('#create-q-grid [data-tile="5"]');
     await page.click('#adv-toggle');
     await page.waitForSelector('.adv-section.open', { timeout: 5000 });
 
@@ -1524,7 +1524,7 @@ test('create.html: keyboard-mash gibberish in the Write textarea is blocked with
     await page.waitForURL(/home\.html/, { timeout: 5000 });
 
     await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
-    await page.click('#choice-write');
+    await page.click('#create-q-grid [data-tile="5"]');
     await page.waitForSelector('#dream-text', { timeout: 5000 });
 
     // 1. The exact reported string -- pure keyboard mashing, well past the
@@ -2243,7 +2243,7 @@ test("style.html's out-of-tokens purchase sheet shows a real price AND keeps the
     await blockThirdParty(page);
     await mockTokenStatus(page, { balance: 0, claimable: false, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 100, streak: 0 });
     await seedLoggedInUserAt(page, baseUrl, 'quotasheettester', '/create.html');
-    await page.click('#choice-write');
+    await page.click('#create-q-grid [data-tile="5"]');
     await page.fill('#dream-text', 'A dream about flying over a glowing city at night');
     await page.click('#write-continue');
     await page.waitForSelector('.style-card[data-style="Cartoon"]', { timeout: 5000 });

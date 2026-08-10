@@ -182,10 +182,10 @@ test('FOUNDER OVERRIDE: ?trialarm=fifty force-reveals trial50 — toggle ON POST
   try {
     var checkoutCalls = await stubBackend(page);
     await signupToMoment(page, '?paywall=subscription&trialarm=fifty', 'founder-trial50@example.com');
-    // The toggle-ON copy must always say "one-time" for the 50c.
+    // The toggle-ON copy must always say "one-time" for the $1 trial.
     await page.click('#mm-sw');
     await page.waitForSelector('#mm-sw.on');
-    assert.match(await page.locator('#mm-cue').textContent(), /one-time 50/, 'the 50c is always written as one-time');
+    assert.match(await page.locator('#mm-cue').textContent(), /one-time \$1/, 'the $1 trial is always written as one-time');
     await page.click('#mm-cta');
     await settle(function () { return checkoutCalls.length >= 1; });
     assert.equal(checkoutCalls[0].passVariant, 'trial50', 'the founder override reaches trial50');

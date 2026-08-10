@@ -115,7 +115,14 @@ async function gotoCreateBuild(page) {
     localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
   });
   await safeGoto(page, baseUrl + '/create.html');
-  await page.click('#choice-build');
+  // Question-first trim: the "Someone specific" tile enters Build asking the
+  // full Who -> What -> free text flow (every scenario tile instead seeds the
+  // What beat and skips it). It opens the character sheet on arrival --
+  // dismiss it for a clean Subject step.
+  await page.waitForSelector('#create-q-grid');
+  await page.click('#create-q-grid [data-tile="2"]');
+  await page.waitForSelector('#build-sheet-character-overlay.open');
+  await page.click('#build-char-cancel');
   await page.waitForSelector('#build-subject-chip-row');
 }
 
@@ -1399,27 +1406,15 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
     });
 
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#choice-build');
+    // Question-first trim: the "A place" scenario tile seeds the Action beat
+    // ('exploring') and skips that step; Setting and Mood are gone (inferred).
+    // The flow is Subject -> free text.
+    await page.waitForSelector('#create-q-grid');
+    await page.click('#create-q-grid [data-tile="3"]'); // A place
 
     await page.waitForSelector('#build-subject-chip-row');
     await page.click('[data-build-subj-other="none"]');
     await page.click('#build-subject-continue');
-
-    await page.waitForSelector('#build-place-row');
-    await page.click('[data-build-place="urban"]');
-    await page.click('#build-setting-continue');
-
-    await page.waitForSelector('#build-action-row');
-    assert.equal(await page.locator('#build-action-continue').count(), 1);
-    // "exploring" is curated behind the "+N more" expander by default now
-    // (tracker item for-product-wizard-step-3-has-too-many-c-lrg1ct) --
-    // expand before selecting it, same as a real visitor would have to.
-    await page.click('#build-action-more-toggle');
-    await page.click('[data-build-action="exploring"]');
-    await page.click('#build-action-continue');
-
-    await page.waitForSelector('#build-mood-row');
-    await page.click('#build-mood-skip');
 
     await page.waitForSelector('#build-freetext-input');
     await page.click('#build-freetext-skip');
@@ -1442,89 +1437,17 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
 // ===========================================================================
 // create.html Layout-B parity (tracker item
 // for-product-founder-picked-layout-b-flo--lks7mj): the logged-in "Build it"
-// flow now wears the same Flo pill-row skin as wizard.html + the funnel, with
-// two founder-ruled interaction specifics that DIFFER from a naive port:
-//   - Mood (the one single-select Build step with no secondary field)
-//     AUTO-advances ~260ms after a tap, no Continue needed.
-//   - Setting (place + Day/Night) and Action (chip + POV) must NOT
-//     auto-advance on the primary tap — they carry a secondary choice, so
-//     they require Continue. (Founder: place tap was skipping Day/Night;
-//     action tap was skipping POV.)
-// The pre-existing test above already pins the caption/draft contract; these
-// pin exactly the restyle's behavior deltas. Skin is byte-stable logic — no
-// analytics/payload assertions change.
+// flow wears the same Flo pill-row skin as wizard.html + the funnel. The
+// question-first trim later REMOVED the standalone Setting and Mood steps
+// (inferred now) — so the two former tests here that pinned the Mood-step
+// auto-advance / Continue-inside-the-window behavior were retired with the
+// step itself (create.html no longer has any auto-advancing step; Mood's was
+// the only one). What remains and still matters is the Action-step POV
+// toggle + Me-photo character path riding into the generation draft, pinned
+// below on the trimmed Who -> What -> free-text flow.
 // ===========================================================================
 
-test('create.html Layout-B: Mood auto-advances on a chip tap (no Continue), while Setting and Action do NOT auto-advance — their Day/Night and POV secondary choices stay reachable after the primary tap', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    await gotoCreateBuild(page);
-
-    // Subject: skip straight past.
-    await page.click('#build-subject-skip');
-
-    // Setting: tap a place, then confirm we're STILL on Setting (no
-    // auto-advance) and Day/Night is still pickable afterwards.
-    await page.waitForSelector('#build-place-row [data-build-place="urban"]');
-    await page.click('#build-place-row [data-build-place="urban"]');
-    await page.waitForTimeout(400); // longer than the 260ms auto-advance window
-    assert.equal(await page.locator('#build-place-row').count(), 1, 'Setting must NOT auto-advance on a place tap — it carries the Day/Night pick');
-    await page.click('#build-time-row [data-build-time="Night"]');
-    assert.equal(await page.locator('#build-time-row .fn-chip.sel').count(), 1, 'Day/Night is still reachable after the place tap');
-    await page.click('#build-setting-continue');
-
-    // Action: tap a chip, then confirm we're STILL on Action and POV is
-    // still toggleable afterwards.
-    await page.waitForSelector('#build-action-row [data-build-action="flying"]');
-    await page.click('#build-action-row [data-build-action="flying"]');
-    await page.waitForTimeout(400);
-    assert.equal(await page.locator('#build-action-row').count(), 1, 'Action must NOT auto-advance on a chip tap — it carries the POV toggle');
-    await page.click('.fn-toggle-row .fn-switch-track'); // the POV switch (the hidden checkbox is toggled via its label)
-    assert.equal(await page.isChecked('#build-pov-toggle'), true, 'POV toggle is still reachable after the action tap');
-    await page.click('#build-action-continue');
-
-    // Mood: a chip tap AUTO-advances to Free text with no Continue tap.
-    await page.waitForSelector('#build-mood-row [data-build-mood="joyful"]');
-    await page.click('#build-mood-row [data-build-mood="joyful"]');
-    await page.waitForSelector('#build-freetext-input', { timeout: 3000 });
-    assert.equal(await page.locator('#build-freetext-input').count(), 1, 'Mood must auto-advance on a chip tap (no secondary field)');
-  } finally {
-    await page.close();
-  }
-});
-
-test('create.html Layout-B: a Continue tap inside Mood\'s auto-advance window advances exactly once (never double-hops past Free text)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    await gotoCreateBuild(page);
-    await page.click('#build-subject-skip');
-    await page.click('#build-place-row [data-build-place="urban"]');
-    await page.click('#build-setting-continue');
-    await page.click('#build-action-row [data-build-action="flying"]');
-    await page.click('#build-action-continue');
-    await page.waitForSelector('#build-mood-row [data-build-mood="joyful"]');
-
-    // Chip-tap + Continue-tap in the SAME tick (guaranteed inside the 260ms
-    // window): buildNext cancels the armed auto-advance, so this lands on
-    // Free text exactly once — it must not double-hop straight to style.html.
-    await page.evaluate(function () {
-      document.querySelector('#build-mood-row [data-build-mood="joyful"]').click();
-      document.getElementById('build-mood-continue').click();
-    });
-    await page.waitForSelector('#build-freetext-input', { timeout: 3000 });
-    await page.waitForTimeout(500); // let the cancelled 260ms timer's window elapse
-    assert.equal(await page.locator('#build-freetext-input').count(), 1, 'must be sitting on Free text — a Continue tap inside the auto-advance window advances exactly once');
-    assert.equal(new URL(page.url()).pathname, '/create.html', 'must NOT have double-advanced through Free text to style.html');
-  } finally {
-    await page.close();
-  }
-});
-
-test('create.html Layout-B: tapping Me opens the character sheet, and an uploaded photo flows straight into the generation draft characterIds (logged-in — no cross-origin stash), with POV riding into the caption', async function (t) {
+test('create.html Layout-B (question-first trim): tapping Me opens the character sheet, and an uploaded photo flows straight into the generation draft characterIds (logged-in — no cross-origin stash), with POV riding into the caption', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -1548,15 +1471,13 @@ test('create.html Layout-B: tapping Me opens the character sheet, and an uploade
     assert.equal(meHasPhoto, true, 'the uploaded photo is persisted on the real Me character');
     await page.click('#build-subject-continue');
 
-    // Setting -> Action with POV ON.
-    await page.click('#build-place-row [data-build-place="urban"]');
-    await page.click('#build-setting-continue');
+    // Action (asked via the "Someone specific" entry, which does NOT seed the
+    // beat) with POV ON — Setting/Mood are gone, so free text follows next.
+    await page.waitForSelector('#build-action-row [data-build-action="flying"]');
     await page.click('#build-action-row [data-build-action="flying"]');
     await page.click('.fn-toggle-row .fn-switch-track');
     await page.click('#build-action-continue');
 
-    // Mood auto-advances, then finish through Free text.
-    await page.click('#build-mood-row [data-build-mood="dreamy"]');
     await page.waitForSelector('#build-freetext-input');
     await page.click('#build-freetext-continue');
 
@@ -1869,13 +1790,14 @@ test('wizard.html round-8 recap step: "Here\'s your dream — make it yours" is 
 });
 
 // ===========================================================================
-// Entry-chooser mode analytics (founder ask 2026-08-07, routed onto the
-// Layout-B branch): 'wizard_entry_mode_chosen' { mode, surface:'create' }
-// fires ONCE per committed chooser tap on create.html's Build/Write/Record
-// pills — the single sanctioned event addition on this otherwise
-// analytics-frozen branch. Same PostHog-stub-queue read as
-// test/phase1-product-events-behavioral.test.js (blockThirdParty aborts
-// the real PostHog script, so captures stay queued on the pre-init stub).
+// Entry-mode analytics (founder ask 2026-08-07): 'wizard_entry_mode_chosen'
+// { mode, surface:'create', tile } fires ONCE per committed entry choice on
+// create.html. The old Build/Write/Record chooser pills were replaced by the
+// question-first six-tile grid (matching wizard.html), so the event now fires
+// from a tile tap (build/write) or the Speak-it link (record), carrying the
+// resolved mode + the tile label. Same PostHog-stub-queue read as
+// test/phase1-product-events-behavioral.test.js (blockThirdParty aborts the
+// real PostHog script, so captures stay queued on the pre-init stub).
 // ===========================================================================
 
 /** Same posthog stub-queue read as test/phase1-product-events-behavioral.test.js's readPostHogCaptureCalls — see that file's header for why this beats a monkeypatch. */
@@ -1887,7 +1809,7 @@ function readEntryModeEvents(page) {
   });
 }
 
-test('create.html entry chooser: each pill tap fires wizard_entry_mode_chosen exactly once with its own mode and surface:"create" — Build, Write, and Record each', async function (t) {
+test('create.html question-first entry: each committed choice fires wizard_entry_mode_chosen exactly once with its resolved mode, surface:"create", and the tile label — a build tile, the "I\'ll describe it" (write) tile, and the Speak-it (record) link', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -1898,29 +1820,32 @@ test('create.html entry chooser: each pill tap fires wizard_entry_mode_chosen ex
       localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
     });
 
-    // Build — a real tap; the event must fire once, immediately (before
-    // the Layout-B flash delay resolves, since the tap IS the choice).
+    // Build tile ("Flying") — the event fires synchronously on the tile tap
+    // (before the 260ms commit resolves, since the tap IS the choice).
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#choice-build');
+    await page.waitForSelector('#create-q-grid');
+    await page.click('#create-q-grid [data-tile="0"]');
     var buildEvents = await readEntryModeEvents(page);
-    assert.equal(buildEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per Build tap');
-    assert.deepEqual(buildEvents[0], { mode: 'build', surface: 'create' });
+    assert.equal(buildEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per build tile tap');
+    assert.deepEqual(buildEvents[0], { mode: 'build', surface: 'create', tile: 'Flying' });
 
-    // Write — fresh page load (fresh stub queue), same shape.
+    // Write tile ("I'll describe it") — fresh page load (fresh stub queue).
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#choice-write');
+    await page.waitForSelector('#create-q-grid');
+    await page.click('#create-q-grid [data-tile="5"]');
     var writeEvents = await readEntryModeEvents(page);
-    assert.equal(writeEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per Write tap');
-    assert.deepEqual(writeEvents[0], { mode: 'write', surface: 'create' });
+    assert.equal(writeEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per write tile tap');
+    assert.deepEqual(writeEvents[0], { mode: 'write', surface: 'create', tile: "I'll describe it" });
 
-    // Record — the event fires synchronously in the tap handler, BEFORE
-    // startRecordingUI's getUserMedia (which may fail in headless — the
-    // choice was still made and must still count).
+    // Speak-it link (record) — the event fires synchronously in the tap
+    // handler, BEFORE startRecordingUI's getUserMedia (which may fail in
+    // headless — the choice was still made and must still count).
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#choice-record');
+    await page.waitForSelector('#create-q-speak');
+    await page.click('#create-q-speak');
     var recordEvents = await readEntryModeEvents(page);
-    assert.equal(recordEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per Record tap');
-    assert.deepEqual(recordEvents[0], { mode: 'record', surface: 'create' });
+    assert.equal(recordEvents.length, 1, 'exactly ONE wizard_entry_mode_chosen per Speak-it tap');
+    assert.deepEqual(recordEvents[0], { mode: 'record', surface: 'create', tile: null });
   } finally {
     await page.close();
   }

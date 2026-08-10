@@ -927,37 +927,36 @@ test('home.html: the bare Tonight CTA button has the founder\'s exact "What did 
     await page.click('#tonight-cta');
     await page.waitForURL(function (url) { return /\/create\.html$/.test(url.pathname) && url.search === ''; }, { timeout: 5000, waitUntil: 'domcontentloaded' });
 
-    // Confirm the actual Build/Write/Record choice screen is what's
-    // showing -- not the wizard, not any other create.html state. All
-    // three real choice cards must be visible and correctly routed.
-    await page.waitForSelector('#create-select', { state: 'visible', timeout: 5000 });
-    assert.equal(await page.locator('#create-build').isVisible(), false, 'the chip wizard must NOT be shown yet -- the choice screen comes first');
-    assert.equal(await page.locator('#choice-build').isVisible(), true, '"Build it" choice card must be offered');
-    assert.equal(await page.locator('#choice-write').isVisible(), true, '"Write it" choice card must be offered');
-    assert.equal(await page.locator('#choice-record').isVisible(), true, '"Record it" choice card must be offered');
+    // Confirm the question-first entry is what's showing -- not the wizard,
+    // not any other create.html state. The old Build/Write/Record chooser was
+    // replaced by the six-tile "What was your dream about?" grid.
+    await page.waitForSelector('#create-q-grid', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#create-build').isVisible(), false, 'the chip wizard must NOT be shown yet -- the question-first grid comes first');
+    assert.equal(await page.locator('#create-q-grid .fn-q-tile').count(), 6, 'the six question tiles must be offered');
+    assert.equal(await page.locator('#create-q-speak').isVisible(), true, 'the Speak-it record on-ramp must be offered');
 
-    // Build it -> the chip-first wizard, same rigor as the old test: the
-    // Subject step (step 1) must actually render, not just an empty/
-    // generic build screen. The Layout-B redesign replaced the old "step 1
-    // of 5" text progress indicator with #build-dots (pill/dot styling,
-    // same as wizard.html) -- no text equivalent exists to pin anymore, so
-    // this now checks the real, still-meaningful properties: landing on
-    // the actual Subject step content, and dot 1 (of 5) marked current.
-    await page.click('#choice-build');
+    // A build tile -> the chip-first wizard's Subject step. "Someone specific"
+    // is the tile that enters the full Who -> What -> free text flow (scenario
+    // tiles seed+skip What); it opens the character sheet first, dismiss it.
+    // The trimmed flow shows 3 progress dots (Subject / Action / free text),
+    // with dot 1 (Subject) current on landing.
+    await page.click('#create-q-grid [data-tile="2"]');
+    await page.waitForSelector('#build-sheet-character-overlay.open', { timeout: 5000 });
+    await page.click('#build-char-cancel');
     await page.waitForSelector('#create-build', { state: 'visible', timeout: 5000 });
-    assert.equal(await page.locator('#create-select').isVisible(), false);
+    assert.equal(await page.locator('#create-question').isVisible(), false);
     assert.equal(await page.locator('#build-subject-chip-row').isVisible(), true, 'the Subject step\'s chip row must be visible -- not just an empty/generic build screen');
     var dots = await page.locator('#build-dots i').evaluateAll(function (els) {
       return els.map(function (el) { return el.className; });
     });
-    assert.equal(dots.length, 5, 'the Build-it wizard should show 5 progress dots');
+    assert.equal(dots.length, 3, 'the trimmed Build-it wizard should show 3 progress dots (Subject / Action / free text)');
     assert.match(dots[0], /\bon\b/, 'dot 1 (Subject) should be marked current on first landing');
   } finally {
     await context.close();
   }
 });
 
-test('home.html: the Tonight CTA button\'s choice screen, from Write it / Record it, still leads to their correct existing destinations (create.html\'s own #choice-write/#choice-record handlers, unchanged)', async function (t) {
+test('home.html: the Tonight CTA button\'s question-first entry, from the "I\'ll describe it" (Write) tile / Speak-it (Record) link, still leads to their correct existing create.html destinations', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -968,10 +967,10 @@ test('home.html: the Tonight CTA button\'s choice screen, from Write it / Record
 
     await page.waitForSelector('#tonight-cta', { timeout: 5000 });
     await page.click('#tonight-cta');
-    await page.waitForSelector('#choice-write', { state: 'visible', timeout: 5000 });
-    await page.click('#choice-write');
+    await page.waitForSelector('#create-q-grid', { state: 'visible', timeout: 5000 });
+    await page.click('#create-q-grid [data-tile="5"]'); // I'll describe it -> Write
     await page.waitForSelector('#create-write', { state: 'visible', timeout: 5000 });
-    assert.equal(await page.locator('#create-select').isVisible(), false);
+    assert.equal(await page.locator('#create-question').isVisible(), false);
   } finally {
     await context.close();
   }
@@ -1011,13 +1010,12 @@ test('home.html: the Tonight CTA button\'s choice screen, from Write it / Record
 
     await page2.waitForSelector('#tonight-cta', { timeout: 5000 });
     await page2.click('#tonight-cta');
-    await page2.waitForSelector('#choice-record', { state: 'visible', timeout: 5000 });
-    await page2.click('#choice-record');
-    // #choice-record's own handler (startRecordingUI) opens the record
-    // panel -- same existing, already-tested destination as the ?record=1
-    // deep-link.
+    await page2.waitForSelector('#create-q-speak', { state: 'visible', timeout: 5000 });
+    await page2.click('#create-q-speak');
+    // The Speak-it link's handler (startRecordingUI) opens the record panel --
+    // same existing, already-tested destination as the ?record=1 deep-link.
     await page2.waitForSelector('#create-record', { state: 'visible', timeout: 5000 });
-    assert.equal(await page2.locator('#create-select').isVisible(), false);
+    assert.equal(await page2.locator('#create-question').isVisible(), false);
   } finally {
     await context2.close();
   }
