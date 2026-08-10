@@ -439,6 +439,34 @@
    * already used for `daily_claim_completed`/`runClaim`'s own `onClaimed`
    * — the credit genuinely happened and the caller's state should reflect
    * it no matter which sheet instance is currently on screen.
+   *
+   * Tracker item for-product-low-out-of-tokens-sheet-inli-uqt6or (LOW,
+   * founder-reported 08-10): sibling of the show()-time affordability
+   * guard above (BUG 1, commit e67a52e) — that fix only covered a
+   * balance that was ALREADY sufficient at the moment the sheet opened.
+   * It deliberately left this case out to avoid changing the approved
+   * claim UX in the same pass: a claim landed HERE, inline, while the
+   * sheet is already open, that itself lifts the balance to cover cost.
+   * Before this fix `renderPurchaseAmounts()` below just re-rendered the
+   * nonsensical "You need 0 more" — same bug, different trigger. Now
+   * checked right after the balance/tokenStatus bookkeeping above: if the
+   * fresh server-confirmed `data.balance` covers `claimTarget.cost`, this
+   * closes the sheet (the same non-dismiss close `handleImageFallbackTap`
+   * already uses — a real resolved choice, not a `dismiss`) and invokes
+   * `claimTarget.onAfford()` if the caller supplied one — the SAME option
+   * show()'s own guard already reads (see that doc comment), reused
+   * rather than adding a second callback name for the identical
+   * "balance now covers cost, proceed" contract. A caller with no
+   * sensible proceed action to hand in simply omits `onAfford`; the sheet
+   * still closes either way rather than leaving the user stuck looking at
+   * "need 0 more" when they can now afford it — cost defaults to 100
+   * (video) when missing, same defaulting `renderPurchaseAmounts` uses.
+   * Gated on `myGen === currentGen` (same instance guard as every other
+   * DOM-mutating branch in this function) since, unlike `onClaimed`/
+   * `daily_claim_completed` above, closing the sheet and firing a
+   * navigation/retry side effect is NOT safe to run against a stale
+   * instance — the sheet could have been dismissed and reopened for a
+   * completely different blocked action by the time this resolves.
    */
   function claimInline() {
     if (!current) return;
@@ -464,6 +492,22 @@
       if (myGen !== currentGen) return;
       claimTarget.balance = data.balance;
       claimTarget.tokenStatus = Object.assign({}, claimTarget.tokenStatus || {}, { claimable: false, balance: data.balance, streak: data.streak });
+
+      // The claim itself just lifted the balance to cover cost — proceed
+      // instead of re-rendering "need 0 more" (see this function's own
+      // doc comment above, tracker item
+      // for-product-low-out-of-tokens-sheet-inli-uqt6or).
+      var claimCost = typeof claimTarget.cost === 'number' ? claimTarget.cost : 100;
+      if (data.balance >= claimCost) {
+        trackLocal('out_of_tokens_choice', { source: claimTarget.source || null, choice: 'claim_unblocked' });
+        var sheetEl = document.getElementById(SHEET_ID);
+        if (sheetEl) sheetEl.classList.remove('open');
+        current = null;
+        currentGen++;
+        if (typeof claimTarget.onAfford === 'function') claimTarget.onAfford();
+        return;
+      }
+
       renderClaimOption();
       renderPurchaseAmounts();
     }).catch(function (err) {
@@ -684,6 +728,14 @@
    *                     Omit it for a call site that has nothing sensible to
    *                     do in that case (the guard then just no-ops the
    *                     nonsensical sheet, which is still the correct fix).
+   *                     Also the proceed callback for the SIBLING case
+   *                     (tracker item for-product-low-out-of-tokens-sheet-
+   *                     inli-uqt6or): an in-sheet inline "Claim +N" that
+   *                     itself lifts balance to cover cost — see
+   *                     claimInline()'s own doc comment. Same "balance now
+   *                     covers cost, proceed" contract either way, so this
+   *                     one option covers both triggers rather than adding
+   *                     a second callback name for the same thing.
    */
   function show(opts) {
     opts = opts || {};

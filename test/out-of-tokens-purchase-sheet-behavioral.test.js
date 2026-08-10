@@ -1088,6 +1088,20 @@ test('style.html: claimable state shows "Claim +N free tokens" above the buy CTA
     var claimBtnVisibleAfter = await page.isVisible('#ps-claim-btn');
     assert.equal(claimBtnVisibleAfter, false, 'the claim button hides itself once claimed -- nothing left to claim this cooldown');
 
+    // Regression coverage (tracker item for-product-low-out-of-tokens-
+    // sheet-inli-uqt6or): this claim (40 -> 60) still leaves the video's
+    // 100-token cost short by 40 -- the sheet must stay open and
+    // renderPurchaseAmounts() must still re-render with the REAL updated
+    // shortfall, not the "close and proceed" branch that only fires once
+    // balance actually covers cost.
+    var sheetStillOpen = await page.evaluate(function () {
+      return document.getElementById('purchase-sheet-overlay').classList.contains('open');
+    });
+    assert.ok(sheetStillOpen, 'a claim that does not cover cost must leave the sheet open, not close it');
+    var bodyAfterClaim = await page.textContent('#ps-body');
+    assert.match(bodyAfterClaim, /You have\s*60/, 'the balance shown must reflect the real post-claim balance');
+    assert.match(bodyAfterClaim, /40 more/, 'the shortfall must be recomputed off the new balance (100 - 60), not left stale or shown as 0');
+
     var phCalls = await page.evaluate(function () { return window.__phCalls; });
     var completedCalls = phCalls.filter(function (c) { return c.name === 'daily_claim_completed'; });
     assert.equal(completedCalls.length, 1, 'daily_claim_completed fires exactly once, on the real server-confirmed response');
@@ -1257,6 +1271,121 @@ test('style.html: NOT claimable -> the inline claim button stays hidden entirely
 
     var claimBtnVisible = await page.isVisible('#ps-claim-btn');
     assert.equal(claimBtnVisible, false);
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// Inline claim that itself lifts balance to cover cost (tracker item
+// for-product-low-out-of-tokens-sheet-inli-uqt6or, LOW, founder-reported
+// 08-10): sibling of the show()-time affordability guard (BUG 1, commit
+// e67a52e) -- that fix only covered a balance that was ALREADY sufficient
+// the moment the sheet opened; this covers the claim landing WHILE the
+// sheet is open and itself bridging the gap. Before this fix,
+// renderPurchaseAmounts() just re-rendered the nonsensical "You need 0
+// more" instead of closing/proceeding.
+// ============================================================================
+
+test('style.html: an inline claim that itself lifts balance to cover cost closes the sheet and proceeds (generates), instead of re-rendering "need 0 more"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    // Balance 0 blocks everything; the daily claim (+20) covers the
+    // 10-token image cost but would NOT cover a 100-token video -- picking
+    // the image media type below is what makes this claim genuinely
+    // unblock the action, proving the fix rather than just the arithmetic.
+    await mockTokenStatus(page, { balance: 0, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 0 });
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 20, streak: 1, nextClaimAt: Date.now() + 72000000 }) });
+    });
+    var generateImageCalls = [];
+    await page.route('**/.netlify/functions/generate-image', function (route) {
+      var body = null;
+      try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+      generateImageCalls.push(body);
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ operationName: 'fal:fal-ai/flux/dev:claim-unblock-1' }) });
+    });
+    await page.route('**/.netlify/functions/image-status*', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, imageUrl: 'https://example.com/claim-unblock-image.jpg' }) });
+    });
+
+    await seedAccount(page, { username: 'claimunblocks', draft: { caption: 'A dream about the tide' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+    await page.waitForTimeout(200);
+
+    await page.click('.media-type-btn[data-media-type="image"]');
+    await page.click('.style-card[data-style="Realistic"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    var title = await page.textContent('#ps-title');
+    assert.match(title, /Almost there — this image needs 10 tokens/);
+
+    await page.waitForSelector('#ps-claim-btn:visible', { timeout: 3000 });
+    await page.click('#ps-claim-btn');
+
+    // The claim (0 -> 20) covers the 10-token image cost -- the sheet must
+    // close and proceed (onAfford = proceedToGenerate navigates away
+    // essentially synchronously with the classList removal, same as the
+    // image-fallback-link tests above -- checking for a lingering
+    // "need 0 more" DOM state here would race the navigation itself, so
+    // the real proof is what proceeding actually produces: a real
+    // navigation + a real generate-image submission carrying the same
+    // persisted draft, not just an inert close).
+    await page.waitForURL('**/home.html**', { timeout: 8000, waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#dreams-row .dream-row-tile:not(.generating), #d0-video.ready', { timeout: 8000 });
+    await settle(function () { return generateImageCalls.length >= 1; });
+    assert.equal(generateImageCalls.length, 1, 'the proceed callback must have actually submitted the generation');
+    assert.equal(generateImageCalls[0].caption, 'A dream about the tide', 'the SAME persisted draft must carry through, not a fresh/empty one');
+  } finally {
+    await context.close();
+  }
+});
+
+test('PurchaseSheet: an inline claim that lifts balance to cover cost still closes the sheet even when the caller supplied NO onAfford -- never left stuck on "need 0 more"', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    var pageErrors = [];
+    page.on('pageerror', function (err) { pageErrors.push(err); });
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, claimable: true, nextClaimAt: Date.now() - 1000, dailyClaimAmount: 20, streak: 0 });
+    await page.route('**/.netlify/functions/claim-daily-tokens', function (route) {
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ claimed: true, balance: 60, streak: 1, nextClaimAt: Date.now() + 72000000 }) });
+    });
+
+    await seedAccount(page, { username: 'claimunblocknoop', draft: { caption: 'A dream about the shore' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#claim-sheet-overlay.open', { timeout: 3000 });
+    await page.click('#claim-sheet-overlay', { position: { x: 5, y: 5 } });
+    await page.waitForSelector('#claim-sheet-overlay:not(.open)', { timeout: 3000 });
+    await page.waitForTimeout(200);
+    await page.waitForFunction(function () { return window.PurchaseSheet && typeof window.PurchaseSheet.show === 'function'; }, null, { timeout: 5000 });
+
+    // Manually open the sheet with a cost (50) the pre-claim balance (40)
+    // can't cover but the post-claim balance (60) can -- and deliberately
+    // no onAfford, exercising the no-callback fallback path directly.
+    await page.evaluate(function () {
+      window.PurchaseSheet.show({
+        mediaType: 'video', cost: 50, balance: 40,
+        tokenStatus: { claimable: true, dailyClaimAmount: 20, streak: 0 },
+        source: 'test'
+      });
+    });
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    await page.waitForSelector('#ps-claim-btn:visible', { timeout: 3000 });
+    await page.click('#ps-claim-btn');
+
+    await page.waitForSelector('#purchase-sheet-overlay:not(.open)', { timeout: 3000 });
+    var bodyAfterClose = await page.textContent('#ps-body');
+    assert.ok(bodyAfterClose.indexOf('need 0 more') === -1, 'must never render "need 0 more", even with no onAfford supplied -- the safest fallback is closing, not re-rendering the nonsensical shortfall');
+    assert.equal(pageErrors.length, 0, 'no uncaught error when onAfford is absent -- ' + pageErrors.map(function (e) { return e.message; }).join('; '));
   } finally {
     await context.close();
   }

@@ -2608,6 +2608,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
             PurchaseSheet.renderBalanceChip(tokenChip, fresh);
           }).catch(function(){});
         },
+        // Proceed callback (tracker item for-product-low-out-of-tokens-
+        // sheet-inli-uqt6or) -- see style.html's identical wiring/comment.
+        // proceedWithEditDelta() does its own full persistEditDeltaDraft +
+        // navigate, safe to call regardless of whether this fires from the
+        // show()-time guard or an in-sheet inline claim.
+        onAfford: proceedWithEditDelta,
         // "Make it as an image instead" fallback (tracker item
         // for-product-out-of-tokens-sheet-founder--dg5q1y) -- the
         // edit-delta sheet is the DEFAULT edit mechanism on this page now
@@ -2743,6 +2749,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
             PurchaseSheet.renderBalanceChip(tokenChip, fresh);
           }).catch(function(){});
         },
+        // Proceed callback (tracker item for-product-low-out-of-tokens-
+        // sheet-inli-uqt6or) -- see style.html's identical wiring/comment.
+        onAfford: proceedWithGenerateAgain,
         // "Make it as an image instead" fallback (tracker item
         // for-product-out-of-tokens-sheet-founder--dg5q1y) -- the full
         // edit-wizard sheet's own "Generate Again" is one of the
@@ -2781,6 +2790,14 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
             tokenStatus = fresh;
             PurchaseSheet.renderBalanceChip(tokenChip, fresh);
           }).catch(function(){});
+        },
+        // Proceed callback (tracker item for-product-low-out-of-tokens-
+        // sheet-inli-uqt6or) -- same "call turnImageIntoVideo + navigate"
+        // the unblocked click path below already does. Safe to call again
+        // even though persistDraft already ran turnImageIntoVideo once
+        // when the sheet opened (idempotent draft write).
+        onAfford: function(){
+          if(DreamStore.turnImageIntoVideo(dream.id)){ location.href = 'home.html?generate=1'; }
         }
       });
       return;
