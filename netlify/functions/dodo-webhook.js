@@ -109,11 +109,12 @@
 // Dreamer Pass server-side conversion (tracker item
 // for-product-build-conversion-tracking-fo-k5ow3q): the pack-purchase
 // Purchase conversion above has always fired for every credited token pack;
-// this SAME release adds the equivalent for the Dreamer Pass SUBSCRIPTION,
-// so no revenue goes untracked from the day the Pass itself goes live to
-// real customers — the Pass is still owner-gated/diagnostic as of this
-// change, this is purely getting the tracking ready ahead of that. See
-// fireDreamerPassConversion (a sibling of firePurchaseConversion, not a
+// this closes the matching gap for the Dreamer Pass SUBSCRIPTION, which has
+// been LIVE FOR EVERYONE since 2026-08-09 (see the "Dreamer Pass is LIVE
+// FOR EVERYONE" comment in shop.html) with NO conversion event of its own
+// until this change — real customers have been able to subscribe with this
+// revenue going completely untracked in Meta CAPI/PostHog the whole time.
+// See fireDreamerPassConversion (a sibling of firePurchaseConversion, not a
 // generalization of it — see that function's own doc comment for why) and
 // its two call sites: handleDreamerPassPayment (the first real charge —
 // fires Meta's 'Subscribe') and handleSubscriptionEvent's
@@ -385,10 +386,18 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
  * match between the checkout session that minted the id and this one first
  * charge) is the one case where the caller passes that metadata id through;
  * every renewal call passes no eventId at all, so a fresh one is minted
- * per-call here. There is no live subscription checkout flow shipped yet
- * (the Pass itself is still owner-gated), so neither case has a client-side
- * fire to dedupe against today either way — see
- * docs/EVENT_TAXONOMY.md's Subscribe/Purchase (Dreamer Pass) entry.
+ * per-call here. The Dreamer Pass checkout flow IS live (shop.html's
+ * `purchasePlan`, un-gated for everyone since 2026-08-09), but its own
+ * client-side return-trip fire is a DIFFERENT event at a DIFFERENT moment —
+ * `subscription_started` (PostHog only, no Meta CAPI pair), fired on the
+ * `?checkout=success` return right after the trial STARTS (a $0
+ * authorization, not a real charge) — see shop.html's `handleCheckoutReturn`.
+ * There is no client-side fire for the actual first real charge (which
+ * happens up to 3 days later, off a separate webhook delivery entirely) or
+ * for any renewal, so neither case here has a same-event-name client fire to
+ * dedupe against — this function's Subscribe/Purchase events are the only
+ * place either moment is ever reported. See docs/EVENT_TAXONOMY.md's
+ * Subscribe/Purchase (Dreamer Pass) entry.
  *
  * Never throws — identical contract to firePurchaseConversion: analytics
  * failure must never turn a successful token credit into a failed webhook
