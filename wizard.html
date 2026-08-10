@@ -429,6 +429,24 @@
     100%{ filter:hue-rotate(-12deg) saturate(1.1); }
   }
   @media (prefers-reduced-motion: reduce){ .fn-forming-frame .fn-form-sweep, .fn-forming-frame .fn-form-arc, .fn-forming-frame .fn-form-nebula{ animation:none !important;} }
+
+  /* ── Question-first screen 1 ("What was your dream about?") ──────────────
+     The wizard's new first screen (replacing the round-8 build/write/speak
+     mode chooser): a promise line, a STATIC 2x2 store-image collage hero
+     (webview-safe, zero video), and a six-tile grid whose tap SEEDS the
+     wizard (see QUESTION_TILES). Uses the same Layout-B palette/type as
+     every other step; only the collage + tile-grid geometry is new here. */
+  .fn-q-collage{ position:relative; width:100%; aspect-ratio:16/10; border-radius:20px; overflow:hidden; border:1px solid var(--fn-line); display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; background:var(--fn-card); margin:2px 0 16px; box-shadow:0 16px 40px -18px rgba(20,10,40,.7);}
+  .fn-q-collage img{ width:100%; height:100%; object-fit:cover; display:block;}
+  .fn-q-collage::after{ content:''; position:absolute; inset:0; background:linear-gradient(180deg,rgba(20,12,40,0) 45%,rgba(20,12,40,.55)); pointer-events:none;}
+  .fn-q-collage .fn-q-cap{ position:absolute; left:14px; bottom:11px; z-index:1; font-size:12.5px; font-weight:700; color:#fff; letter-spacing:.01em; text-shadow:0 1px 6px rgba(0,0,0,.55);}
+  .fn-q-promise{ font-size:15px; font-weight:800; color:#fff; text-align:center; line-height:1.35; text-wrap:balance; margin:0 0 4px;}
+  .fn-q-promise .u{ background:linear-gradient(90deg,var(--lb-pink),var(--lb-purple)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
+  .fn-q-label{ font-size:13.5px; font-weight:700; color:var(--fn-ink-soft); text-align:center; margin:0 0 14px;}
+  .fn-q-grid{ display:grid; grid-template-columns:1fr 1fr; gap:11px; margin-bottom:14px;}
+  .fn-q-tile{ display:flex; align-items:center; gap:11px; width:100%; box-sizing:border-box; padding:14px 13px; border-radius:16px; background:var(--fn-card); border:1.5px solid var(--fn-line); font-size:14.5px; font-weight:700; color:var(--fn-ink); cursor:pointer; text-align:left; font-family:var(--fn-font-body); transition:all .12s; -webkit-tap-highlight-color:transparent;}
+  .fn-q-tile:active,.fn-q-tile.sel{ border-color:var(--fn-accent-solid); background:var(--lb-pink-tint);}
+  .fn-q-tile .fn-q-emoji{ width:34px; height:34px; border-radius:99px; background:var(--lb-pink-tint); display:flex; align-items:center; justify-content:center; font-size:18px; flex:none;}
 </style>
 
 <script src="js/icons.js"></script>
@@ -1181,80 +1199,19 @@
   }
 
   // ===================================================================
-  // Step 2 — Setting ("Where does it take place?") — widened place chips
-  // + Day/Night, reusing DreamStore.getDraft()'s existing sceneryTime/
-  // sceneryPlace fields exactly like create.html/style.html always have.
+  // Setting ("Where") — REMOVED as a question by the question-first trim
+  // (mirrors the growth funnel). The place is now INFERRED per action
+  // (WizardChips.inferFallbackPlaceKey) and baked into the caption by
+  // assembleCaption, exactly as a skipped Setting step always fell back.
+  // These two vars are KEPT because the state they hold still flows
+  // through: the generation payload's sceneryPlace (honestly null — the
+  // visitor never chose a scenery place), the Facebook-redirect snapshot,
+  // and currentChipFields' inference input. settingPlaceKey stays null and
+  // settingOtherText stays '' now that no UI writes them; the caption's
+  // scene comes entirely from the per-action inference below.
   // ===================================================================
   var settingPlaceKey = null;
   var settingOtherText = '';
-
-  function renderSetting(el){
-    var chips = WizardChips.SETTING_PLACE_CHIPS.map(function(c){
-      return '<span class="fn-chip' + (c.key === 'other' ? ' lb-ghost' : '') + '" data-setting-place="' + c.key + '">' + lbChip('place', c.key) + esc(c.label) + '</span>';
-    }).join('');
-    el.innerHTML =
-      '<div class="fn-headline">Where did it happen?</div>' +
-      '<div class="fn-body-copy">The closest match sets the scene.</div>' +
-      '<div class="fn-mini-label">Time of day</div>' +
-      '<div class="fn-chip-row lb-half-row" id="setting-time-row">' +
-        '<span class="fn-chip" data-scenery-time="Day">' + lbChip('time', 'Day') + 'Day</span>' +
-        '<span class="fn-chip" data-scenery-time="Night">' + lbChip('time', 'Night') + 'Night</span>' +
-      '</div>' +
-      '<div class="fn-mini-label">Place</div>' +
-      '<div class="fn-chip-row" id="setting-place-row">' + chips + '</div>' +
-      '<div class="fn-other-reveal" id="setting-other-reveal" style="display:none;">' +
-        '<input class="fn-field" id="setting-other-input" placeholder="Describe the place" dir="auto">' +
-      '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary lb-cta" id="fn-setting-continue" type="button">Continue</button>' +
-      '<span class="fn-small-link" id="fn-setting-skip" style="cursor:pointer;">Skip</span>';
-
-    function renderTimeChips(){
-      var draft = DreamStore.getDraft();
-      Array.prototype.forEach.call(document.querySelectorAll('#setting-time-row .fn-chip'), function(chipEl){
-        chipEl.classList.toggle('sel', chipEl.dataset.sceneryTime === draft.sceneryTime);
-      });
-    }
-    function renderPlaceChips(){
-      Array.prototype.forEach.call(document.querySelectorAll('#setting-place-row .fn-chip'), function(chipEl){
-        chipEl.classList.toggle('sel', chipEl.dataset.settingPlace === settingPlaceKey);
-      });
-      document.getElementById('setting-other-reveal').style.display = settingPlaceKey === 'other' ? 'block' : 'none';
-    }
-    document.getElementById('setting-time-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.fn-chip');
-      if(!chip) return;
-      var val = chip.dataset.sceneryTime;
-      var current = DreamStore.getDraft().sceneryTime;
-      DreamStore.setDraft({ sceneryTime: current === val ? null : val });
-      renderTimeChips();
-    });
-    document.getElementById('setting-place-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.fn-chip');
-      if(!chip) return;
-      // This step carries a SECOND choice on the same screen — Day/Night
-      // above — so a place tap must NOT auto-advance (founder 08-08: "it
-      // goes to the next page without letting you choose day or night").
-      // A place tap only SELECTS; the visitor then picks Day/Night and taps
-      // Continue, which is the only way forward. "Answered nothing" stays
-      // reachable via Skip. (Single-select, no deselect — Skip covers the
-      // empty answer, same as before.)
-      settingPlaceKey = chip.dataset.settingPlace;
-      renderPlaceChips();
-      if(settingPlaceKey === 'other'){
-        // "+ Something else" opens its write-in; Continue advances with
-        // whatever was typed.
-        document.getElementById('setting-other-input').focus();
-      }
-    });
-    document.getElementById('setting-other-input').addEventListener('input', function(e){ settingOtherText = e.target.value; });
-    if(settingOtherText) document.getElementById('setting-other-input').value = settingOtherText;
-
-    renderTimeChips();
-    renderPlaceChips();
-    document.getElementById('fn-setting-continue').addEventListener('click', next);
-    document.getElementById('fn-setting-skip').addEventListener('click', next);
-  }
 
   // ===================================================================
   // Step 3 — Action ("What's happening?") — required, no skip. Default
@@ -1351,81 +1308,32 @@
   }
 
   // ===================================================================
-  // Step 4 — Mood ("What's the mood?") — default pre-highlighted to
-  // "Dreamy/surreal" per the spec.
+  // Mood ("How did the dream feel?") — REMOVED as a question by the
+  // question-first trim (mirrors the growth funnel). The mood is now
+  // INFERRED: moodKey stays at DEFAULT_MOOD ('dreamy'), so assembleCaption
+  // bakes the default dreamy mood + hazy-ethereal lighting into the caption
+  // exactly as before, and the deterministic story reads "…feeling dreamy
+  // and surreal." No UI writes these vars now, so moodOtherText stays ''.
+  //
+  // moodSkipped defaults to TRUE: the visitor never CHOSE a mood, so — for
+  // music-bed purposes only — currentMoodForDream() persists null (the
+  // visual-style bed applies), the same honest answer a tapped Skip always
+  // produced. This is STORAGE only; prompt/story assembly reads raw moodKey
+  // and is unchanged. These vars are kept for the payload, the Facebook-
+  // redirect snapshot, and currentChipFields' inference input.
   // ===================================================================
   var moodKey = WizardChips.DEFAULT_MOOD;
   var moodOtherText = '';
-  // Did the user SKIP this step rather than answer it? (tracker item
-  // for-product-founder-08-04-evening-music--jfjco0.) moodKey alone can't
-  // tell: it's pre-seeded to DEFAULT_MOOD so a chip is always visibly
-  // pre-highlighted, making "tapped Skip" indistinguishable from "accepted
-  // the highlighted default via Continue" — but those are different answers
-  // for music-bed purposes (Skip falls back to the visual-style bed). Only
-  // affects what gets STORED as dream.mood; prompt/story assembly still
-  // reads raw moodKey and is completely unchanged. Mirrors create.html's
-  // buildMoodSkipped — see that file's comment, and
-  // WizardChips.persistedMood.
-  var moodSkipped = false;
+  var moodSkipped = true; // inferred, never chosen → persist null mood (visual-style music bed)
 
   /**
-   * The value to persist as this dream's `mood` — always read LIVE off the
-   * two vars above at the moment it's needed, never captured into a
-   * snapshot variable earlier in the flow. Same discipline chosenStyle/
-   * currentStoryText already follow at these call sites, and for the same
-   * reason: this wizard lets the user go Back and change an earlier step,
-   * so a value captured at Continue time can be stale by the time signup
-   * actually completes and the pending job is adopted.
+   * The value to persist as this dream's `mood` — read LIVE at the moment
+   * it's needed (see WizardChips.persistedMood). With the Mood step gone
+   * this always returns null (moodSkipped is true), matching create.html's
+   * buildMoodSkipped contract for a declined mood.
    */
   function currentMoodForDream(){
     return WizardChips.persistedMood(moodKey, moodSkipped);
-  }
-
-  function renderMood(el){
-    var chips = WizardChips.MOOD_CHIPS.map(function(c){
-      return '<span class="fn-chip' + (c.key === 'other' ? ' lb-ghost' : '') + '" data-mood="' + c.key + '">' + lbChip('mood', c.key) + esc(c.label) + '</span>';
-    }).join('');
-    el.innerHTML =
-      '<div class="fn-headline">How did the dream feel?</div>' +
-      '<div class="fn-body-copy">This shapes your video’s music and light.</div>' +
-      '<div class="fn-chip-row" id="mood-row">' + chips + '</div>' +
-      '<div class="fn-other-reveal" id="mood-other-reveal" style="display:none;">' +
-        '<input class="fn-field" id="mood-other-input" placeholder="Describe the mood" dir="auto">' +
-      '</div>' +
-      '<div class="fn-spacer"></div>' +
-      '<button class="fn-btn-primary lb-cta" id="fn-mood-continue" type="button">Continue</button>' +
-      '<span class="fn-small-link" id="fn-mood-skip" style="cursor:pointer;">Skip</span>';
-
-    function renderChips(){
-      Array.prototype.forEach.call(document.querySelectorAll('#mood-row .fn-chip'), function(chipEl){
-        chipEl.classList.toggle('sel', chipEl.dataset.mood === moodKey);
-      });
-      document.getElementById('mood-other-reveal').style.display = moodKey === 'other' ? 'block' : 'none';
-    }
-    document.getElementById('mood-row').addEventListener('click', function(e){
-      var chip = e.target.closest('.fn-chip');
-      if(!chip) return;
-      moodKey = chip.dataset.mood;
-      moodSkipped = false; // tapping a chip is a real answer -- clears a Skip from an earlier pass (Back is available)
-      renderChips();
-      if(moodKey === 'other'){
-        // Write-in — no auto-advance while typing (mock round 2). Note a
-        // free-text mood still persists as null (WizardChips.persistedMood),
-        // untouched by the redesign.
-        cancelAutoAdvance();
-        document.getElementById('mood-other-input').focus();
-        return;
-      }
-      scheduleAutoAdvance();
-    });
-    document.getElementById('mood-other-input').addEventListener('input', function(e){ moodOtherText = e.target.value; });
-    if(moodOtherText) document.getElementById('mood-other-input').value = moodOtherText;
-
-    renderChips();
-    // Continue = the highlighted chip IS the answer; Skip = declined. Both
-    // still call next() identically -- see moodSkipped's own comment.
-    document.getElementById('fn-mood-continue').addEventListener('click', function(){ moodSkipped = false; next(); });
-    document.getElementById('fn-mood-skip').addEventListener('click', function(){ moodSkipped = true; next(); });
   }
 
   // ===================================================================
@@ -1590,10 +1498,16 @@
       return c ? { subjectKey: c.isSelf ? 'me' : 'someone', character: c, subjectOtherText: '' } : null;
     }).filter(Boolean);
     if(subjectOtherKind) subjects.push({ subjectKey: subjectOtherKind, character: null, subjectOtherText: subjectOtherText });
+    // Setting was removed as a question — the place is inferred per action
+    // (WizardChips.inferFallbackPlaceKey), so the caption still reads with a
+    // scene (e.g. flying → "an open sky") exactly like the growth trim. A
+    // restored/explicit settingPlaceKey (only ever a Facebook-snapshot
+    // remnant now) still wins if somehow present.
+    var placeKey = settingPlaceKey || WizardChips.inferFallbackPlaceKey(actionKey);
     return {
       subjects: subjects,
       subjectKey: 'none', character: null, subjectOtherText: subjectOtherText,
-      placeKey: settingPlaceKey, placeOtherText: settingOtherText, sceneryTime: DreamStore.getDraft().sceneryTime,
+      placeKey: placeKey, placeOtherText: settingOtherText, sceneryTime: DreamStore.getDraft().sceneryTime,
       actionKey: actionKey, actionOtherText: actionOtherText, pov: povOn,
       moodKey: moodKey, moodOtherText: moodOtherText
     };
@@ -2115,6 +2029,7 @@
         settingPlaceKey: settingPlaceKey, settingOtherText: settingOtherText,
         sceneryTime: DreamStore.getDraft().sceneryTime,
         actionKey: actionKey, actionOtherText: actionOtherText, povOn: povOn,
+        actionSeededByTile: actionSeededByTile,
         moodKey: moodKey, moodOtherText: moodOtherText,
         chosenStyle: chosenStyle, freeText: freeText,
         storyText: currentStoryText,
@@ -2170,6 +2085,7 @@
       actionKey = parsed.actionKey || WizardChips.DEFAULT_ACTION;
       actionOtherText = parsed.actionOtherText || '';
       povOn = !!parsed.povOn;
+      actionSeededByTile = !!parsed.actionSeededByTile;
       moodKey = parsed.moodKey || WizardChips.DEFAULT_MOOD;
       moodOtherText = parsed.moodOtherText || '';
       chosenStyle = parsed.chosenStyle || WizardChips.DEFAULT_STYLE;
@@ -2698,40 +2614,52 @@
   }
 
   // ===================================================================
-  // Entry chooser — the approved mock's screen 1 (🪄 build / ✍️ write /
-  // 🎙️ speak), added as wizard.html's FIRST screen per founder round 8:
-  // "Clicking get started skips the choosing between the 3 options."
-  // Shown to FRESH entries only (?entry=index or a direct hit) — never
-  // to a Facebook return leg (an identity exchange resuming at the
-  // wall) and never to a funnel-style resume arrival (?resume=1 — not a
-  // real wizard.html path today, but excluded defensively per the same
-  // rule: funnel users already chose their mode funnel-side).
+  // Question-first screen 1 — "What was your dream about?" as a six-tile
+  // grid, wizard.html's FIRST screen. This REPLACED the round-8 build/
+  // write/speak mode chooser: mirroring the growth funnel's finalized
+  // question-first entry (dreamtube-growth/index.html — screen1-static-
+  // hero-trim), the six tiles ARE the mode choice, and each tile SEEDS the
+  // wizard (mode + starting chip state) and jumps to the first follow-up
+  // it hasn't already answered, so nothing is re-asked. Shown to FRESH
+  // entries only — never a Facebook return leg (resumes at the wall) and
+  // never a funnel-style ?resume=1 arrival (those already chose funnel-
+  // side), exactly like the chooser it replaced.
   //
-  // Deliberately a PRE-step outside SCREEN_RENDERERS: it fires only
-  // wizard_entry_mode_chosen { mode, surface:'wizard' } (the sanctioned
-  // event create.html's chooser already fires with surface:'create') —
-  // no wizard_step_viewed, so every existing step number stays
-  // byte-stable (see STEP_ANALYTICS).
+  // Static, webview-SAFE hero: a 2x2 collage of local store images (no
+  // video, no autoplay, zero extra network beyond four same-origin webp
+  // thumbnails), per the finalized growth shape (which dropped the
+  // tap-to-play hero, the "surprise me" escape hatch, and the beta
+  // footnote — none are carried here).
   //
-  // Routing per mode:
-  //   build  → the normal step flow from Subject (goToStep(0)).
-  //   write  → straight to the existing free-text step; the remaining
-  //            machinery runs unchanged from there (free text → recap →
-  //            wall). See assembleFromState for the write-mode caption
-  //            contract, and the Back handler for write-mode Back.
-  //   record → create.html's existing record flow via its login gate
-  //            (location.href='create.html?record=1'). Pre-signup
-  //            recording would need transcription for a visitor with no
-  //            account — a new server surface this deliberately does NOT
-  //            build; create.html's gate sends them through login/signup
-  //            first, exactly its existing behavior. Hidden entirely in
-  //            FB/IG in-app webviews, mirroring create.html's own
-  //            record-guard (same UA-token detection, same per-page-copy
-  //            convention — see create.html's detectInAppHost).
+  // Still a PRE-step outside SCREEN_RENDERERS: it fires only
+  // wizard_entry_mode_chosen { mode, surface:'wizard', tile } (the same
+  // sanctioned event the chooser fired, plus which tile committed) — no
+  // wizard_step_viewed, so every retained step number stays byte-stable
+  // (see STEP_ANALYTICS).
+  //
+  // Tile → seed/route (mirrors the growth funnel's QUESTION_TILES):
+  //   Flying / Being chased / A place / Something surreal → build mode,
+  //     each SEEDS the Action ("the one beat") and marks it answered
+  //     (actionSeededByTile) so the Action step is skipped — the visitor
+  //     lands on Who → Style → …, never re-asked what they just told us.
+  //   Someone specific → build mode, routes into the Subject/who-detail
+  //     path (opens the character sheet on the Subject step); the Action
+  //     is NOT seeded, so it IS asked (Who → What → Style → …).
+  //   I'll describe it → write mode, straight to the free-text step, then
+  //     recap → wall — identical to the chooser's old write routing.
+  //
+  // Speak-it is preserved as a secondary link below the grid (NOT one of
+  // the six tiles), routing to create.html's existing record flow via its
+  // login gate (create.html?record=1) exactly as the chooser's record
+  // option did, and hidden entirely in FB/IG in-app webviews (media-
+  // constrained — same detectInAppHost guard). Dropping it from the entry
+  // point would orphan the pre-signup speak path; create.html keeps its
+  // own record entry regardless.
   // ===================================================================
-  var chooserOffered = false; // did THIS session show the chooser? (drives the extra first progress dot)
-  var chooserActive = false;  // is the chooser the screen on display right now?
-  var entryMode = null;       // null | 'build' | 'write' | 'record' — the committed chooser pick
+  var chooserOffered = false; // did THIS session show the question-first screen? (drives the extra first progress dot)
+  var chooserActive = false;  // is the question-first screen the one on display right now?
+  var entryMode = null;       // null | 'build' | 'write' | 'record' — the committed tile pick
+  var actionSeededByTile = false; // a scenario tile already answered the Action step → skip it (see next()/Back)
 
   function detectInAppHost(){
     var ua = navigator.userAgent || '';
@@ -2740,69 +2668,126 @@
     return null;
   }
 
-  function showChooser(){
+  // The six question tiles. `seed()` mutates the wizard's starting state
+  // (mode + chips); `someone`/`write` mark the two tiles with special
+  // routing (see the click handler). Order/labels mirror the growth
+  // funnel's finalized QUESTION_TILES exactly. Action keys are this app's
+  // WizardChips.ACTION_CHIPS keys ('running' is the app's key for the
+  // growth funnel's 'chased').
+  var QUESTION_TILES = [
+    { emoji:'🕊️', label:'Flying',           seed:function(){ entryMode='build'; actionKey='flying';    actionSeededByTile=true; } },
+    { emoji:'🏃', label:'Being chased',      seed:function(){ entryMode='build'; actionKey='running';   actionSeededByTile=true; } },
+    { emoji:'👤', label:'Someone specific',  someone:true, seed:function(){ entryMode='build'; } },
+    { emoji:'🏞️', label:'A place',           seed:function(){ entryMode='build'; actionKey='exploring'; actionSeededByTile=true; } },
+    { emoji:'🌀', label:'Something surreal',  seed:function(){ entryMode='build'; actionKey='magical';   actionSeededByTile=true; } },
+    { emoji:'✍️', label:"I'll describe it",  write:true,   seed:function(){ entryMode='write'; } }
+  ];
+
+  function showQuestionFirst(){
     chooserActive = true;
     cancelAutoAdvance();
     renderProgress();
-    var speakRow = detectInAppHost()
-      ? '' // media-constrained webview — same "never offer a path that can't work" rule as create.html's record guard
-      : '<span class="fn-chip" data-entry-mode="record">' + '<span class="lb-chip">🎙️</span>' + 'Speak it — just talk</span>';
+    var tilesHtml = QUESTION_TILES.map(function(t, i){
+      return '<button class="fn-q-tile" type="button" data-tile="' + i + '">' +
+        '<span class="fn-q-emoji" aria-hidden="true">' + t.emoji + '</span>' +
+        '<span>' + esc(t.label) + '</span>' +
+      '</button>';
+    }).join('');
+    // Static 2x2 store-image collage — local same-origin assets, no video.
+    var collage =
+      '<div class="fn-q-collage" aria-hidden="true">' +
+        '<img src="assets/store/dream-desert.webp" alt="">' +
+        '<img src="assets/store/dream-neon.webp" alt="">' +
+        '<img src="assets/store/dream-ocean.webp" alt="">' +
+        '<img src="assets/store/dream-forest.webp" alt="">' +
+        '<span class="fn-q-cap">Real dreams, brought to life</span>' +
+      '</div>';
+    // Speak-it secondary link — preserved from the old chooser's record
+    // option, hidden in media-constrained webviews (same rule as before).
+    var speakLink = detectInAppHost()
+      ? ''
+      : '<span class="fn-small-link" id="fn-q-speak" style="cursor:pointer;">🎙️ Prefer to talk it through? Speak it instead</span>';
     screenEl.innerHTML =
-      '<div class="fn-headline">What did you dream?</div>' +
-      '<div class="fn-body-copy">However it comes back to you — we take it from there.</div>' +
-      '<div class="fn-chip-row" id="entry-mode-row">' +
-        '<span class="fn-chip" data-entry-mode="build"><span class="lb-chip">🪄</span>Build it step by step</span>' +
-        '<span class="fn-chip" data-entry-mode="write"><span class="lb-chip">✍️</span>Write it in your own words</span>' +
-        speakRow +
-      '</div>' +
-      '<div class="fn-spacer"></div>';
+      collage +
+      '<div class="fn-q-promise">Turn your dream into a <span class="u">video</span> in about a minute</div>' +
+      '<div class="fn-q-label">What was your dream about?</div>' +
+      '<div class="fn-q-grid" id="fn-q-grid">' + tilesHtml + '</div>' +
+      speakLink;
     screenEl.scrollTop = 0;
     window.scrollTo(0, 0);
 
-    var chooserCommitTimer = null; // single-flight, re-armed per tap — a quick second tap on a different row means the LAST pick wins, exactly once
-    document.getElementById('entry-mode-row').addEventListener('click', function(e){
-      var row = e.target.closest('.fn-chip');
-      if(!row) return;
-      var mode = row.dataset.entryMode;
-      // Once per commit-tap — the tap IS the choice; the 260ms flash
-      // below is presentation (same beat as create.html's chooser).
-      track('wizard_entry_mode_chosen', { mode: mode, surface: 'wizard' });
-      Array.prototype.forEach.call(document.querySelectorAll('#entry-mode-row .fn-chip'), function(x){ x.classList.remove('sel'); });
-      row.classList.add('sel');
-      if(chooserCommitTimer) clearTimeout(chooserCommitTimer);
-      chooserCommitTimer = setTimeout(function(){
-        chooserCommitTimer = null;
-        entryMode = mode;
-        if(mode === 'record'){ location.href = 'create.html?record=1'; return; }
+    var commitTimer = null; // single-flight, re-armed per tap — a quick second tap means the LAST pick wins, exactly once
+    document.getElementById('fn-q-grid').addEventListener('click', function(e){
+      var btn = e.target.closest('[data-tile]');
+      if(!btn) return;
+      var tile = QUESTION_TILES[+btn.dataset.tile];
+      if(!tile) return;
+      Array.prototype.forEach.call(document.querySelectorAll('#fn-q-grid .fn-q-tile'), function(x){ x.classList.remove('sel'); });
+      btn.classList.add('sel');
+      if(tile.seed) tile.seed();
+      // Same sanctioned event the chooser fired (entryMode is the resolved
+      // mode), plus which tile committed — additive, no renumbering.
+      track('wizard_entry_mode_chosen', { mode: entryMode, surface: 'wizard', tile: tile.label });
+      if(commitTimer) clearTimeout(commitTimer);
+      commitTimer = setTimeout(function(){
+        commitTimer = null;
         chooserActive = false;
-        goToStep(mode === 'write' ? FREETEXT_STEP : 0);
+        if(tile.write){ goToStep(FREETEXT_STEP); return; }
+        // Build tiles land on the Subject (Who) step. "Someone specific"
+        // additionally opens the character sheet there, routing straight
+        // into the who-detail path (mirrors the growth funnel's openWho).
+        goToStep(0);
+        if(tile.someone && typeof openCharSheet === 'function'){ openCharSheet('other', null); }
       }, 260);
+    });
+
+    var speakEl = document.getElementById('fn-q-speak');
+    if(speakEl) speakEl.addEventListener('click', function(){
+      entryMode = 'record';
+      track('wizard_entry_mode_chosen', { mode: 'record', surface: 'wizard', tile: null });
+      location.href = 'create.html?record=1';
     });
   }
 
   // ===================================================================
   // Navigation engine — same shape as start.html's own goToStep/next/prev.
   // ===================================================================
-  var SCREEN_RENDERERS = [renderSubject, renderSetting, renderAction, renderMood, renderStyleStep, renderFreeText, renderRecap, renderSignupWall];
-  // ANALYTICS STABILITY (founder round 8's recap step + the entry
-  // chooser, added WITHOUT renumbering anything): every screen that
-  // existed before keeps the exact wizard_step_viewed step value it has
-  // always reported — Subject..FreeText stay 1-6 and the wall stays 7,
-  // so every historical funnel/dashboard keyed on those numbers reads
-  // on. The recap screen maps to null here and fires the new, sanctioned
-  // wizard_recap_viewed {} instead (see render below); the entry chooser
-  // is a pre-step outside this array entirely and fires only
-  // wizard_entry_mode_chosen. This table is positional against
-  // SCREEN_RENDERERS — a new screen gets null + its own event, never a
-  // renumbering.
-  var STEP_ANALYTICS = [1, 2, 3, 4, 5, 6, null, 7];
+  // Question-first trim (mirrors the growth funnel): the standalone
+  // Setting ("Where") and Mood ("How did it feel") steps were REMOVED as
+  // questions — both are now inferred into the caption (a per-action
+  // fallback place via WizardChips.inferFallbackPlaceKey, plus the default
+  // dreamy mood/hazy-ethereal lighting assembleCaption already infers).
+  // The flow is now Who → What → Style → (free text) → recap → wall, and a
+  // scenario tile that pre-seeded the Action skips the What step too (see
+  // next()/Back's actionSeededByTile handling).
+  var SCREEN_RENDERERS = [renderSubject, renderAction, renderStyleStep, renderFreeText, renderRecap, renderSignupWall];
+  // ANALYTICS STABILITY: every RETAINED screen keeps the exact
+  // wizard_step_viewed step value it has always reported, so historical
+  // funnels/dashboards keyed on those numbers read on across the trim —
+  // Subject stays 1, Action stays 3, Style stays 5, FreeText stays 6, the
+  // wall stays 7. The removed Setting (2) and Mood (4) numbers simply no
+  // longer fire; the recap maps to null and fires wizard_recap_viewed {}
+  // instead (see render below); the question-first screen is a pre-step
+  // outside this array entirely and fires only wizard_entry_mode_chosen.
+  // This table is positional against SCREEN_RENDERERS.
+  var STEP_ANALYTICS = [1, 3, 5, 6, null, 7];
   // Same dynamic-lookup reasoning as start.html's SIGNUP_STEP — these
   // indexes shift if a screen is ever added in front of them, so nothing
   // below hardcodes them.
   var WALL_STEP = SCREEN_RENDERERS.indexOf(renderSignupWall);
   var RECAP_STEP = SCREEN_RENDERERS.indexOf(renderRecap);
   var FREETEXT_STEP = SCREEN_RENDERERS.indexOf(renderFreeText);
+  var ACTION_STEP = SCREEN_RENDERERS.indexOf(renderAction);
   var cur = 0;
+
+  // A step the sequential next()/Back walk should step OVER (never a
+  // directly-targeted goToStep). The Action ("What") step is skipped when a
+  // question-first scenario tile already answered it (actionSeededByTile) —
+  // the growth funnel achieves the same by omitting build_what from that
+  // tile's tail. Nothing else is ever skipped.
+  function stepShouldSkip(i){
+    return i === ACTION_STEP && actionSeededByTile;
+  }
   var screenEl = document.getElementById('fnScreen');
   var progressEl = document.getElementById('fnProgress');
   var backBtn = document.getElementById('fnBack');
@@ -2817,6 +2802,7 @@
     var dots = '';
     if(chooserOffered) dots += '<i class="' + (chooserActive ? 'now' : 'done') + '"></i>';
     for(var i = 0; i < WALL_STEP; i++){
+      if(stepShouldSkip(i)) continue; // a tile-seeded Action step is never visited — don't render a dot for it
       dots += '<i class="' + (chooserActive ? '' : (i < cur ? 'done' : i === cur ? 'now' : '')) + '"></i>';
     }
     progressEl.innerHTML = (chooserActive || cur < WALL_STEP) ? dots : '';
@@ -2842,7 +2828,9 @@
     // here is what makes a Continue tap inside the auto-advance window
     // advance exactly once (see scheduleAutoAdvance's own comment).
     cancelAutoAdvance();
-    goToStep(cur + 1);
+    var n = cur + 1;
+    while(n < SCREEN_RENDERERS.length && stepShouldSkip(n)) n++; // step over a tile-seeded Action
+    goToStep(n);
   }
   backBtn.addEventListener('click', function(){
     // An auto-advance armed on the step being left must never fire into
@@ -2888,19 +2876,25 @@
     pendingGenerationToken++;
     pendingGenerationComparisonKey = null;
     // Chooser-aware Back: the first screen this visitor actually SAW
-    // comes back — Subject's Back returns to the chooser when one was
-    // offered (else index.html, as always), and a write-mode visitor's
-    // Back from the free-text step returns to the chooser too (they
-    // never saw Subject..Style, so stepping into those would be a screen
-    // they don't recognize; picking Build from the chooser afterwards
-    // walks them forward normally).
-    if(chooserOffered && (cur === 0 || (entryMode === 'write' && cur === FREETEXT_STEP))){ showChooser(); return; }
+    // comes back — Subject's Back returns to the question-first screen when
+    // one was offered (else index.html, as always), and a write-mode
+    // visitor's Back from the free-text step returns to it too (they never
+    // saw Subject..Style, so stepping into those would be a screen they
+    // don't recognize; tapping a build tile there walks them forward
+    // normally). A scenario tile re-seeds cleanly on the next pick, so
+    // reset its Action-skip marker on the way back to the tiles.
+    if(chooserOffered && (cur === 0 || (entryMode === 'write' && cur === FREETEXT_STEP))){ actionSeededByTile = false; showQuestionFirst(); return; }
     // Funnel arrivals land DIRECTLY on the wall — the steps behind it
     // belong to the funnel (its own recap is one browser-Back away), not
     // to this page's empty chip flow, so Back leaves the way they came
     // instead of stepping into a wizard they never walked.
     if(funnelArrival && cur === WALL_STEP){ history.back(); return; }
-    if(cur > 0){ goToStep(cur - 1); return; }
+    if(cur > 0){
+      var p = cur - 1;
+      while(p > 0 && stepShouldSkip(p)) p--; // step back over a tile-seeded Action
+      goToStep(p);
+      return;
+    }
     location.href = 'index.html';
   });
 
@@ -2918,13 +2912,12 @@
       // savedAt age check — this is the cheaper, more direct half of the
       // same guarantee).
       clearPersistedWizardState();
-      // Fresh entries (Get Started / direct) meet the entry chooser
-      // first — founder round 8. A ?resume=1 arrival (funnel-style
-      // handoff) skips it: funnel users already chose their mode
-      // funnel-side.
+      // Fresh entries (Get Started / direct) meet the question-first
+      // screen 1 first. A ?resume=1 arrival (funnel-style handoff) skips
+      // it: funnel users already chose their scenario funnel-side.
       if(getParam('resume') !== '1'){
         chooserOffered = true;
-        showChooser();
+        showQuestionFirst();
         return;
       }
       // ===== FUNNEL-ARRIVAL WALL LEG (wall routing, 2026-08-08) =====
