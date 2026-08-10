@@ -25,6 +25,7 @@ var deleteAccountHandler = require('../netlify/functions/delete-account').handle
 var accountStore = require('../netlify/functions/lib/account-store');
 var entitlements = require('../netlify/functions/lib/entitlements');
 var accountAuthToken = require('../netlify/functions/lib/account-auth-token');
+var blockStore = require('../netlify/functions/lib/block-store');
 
 var ipCounter = 0;
 function nextIp() {
@@ -101,6 +102,32 @@ test('delete-account: full happy path — deletes the account, its published dre
   // 3. Token ledger is gone.
   var entitlementAfter = await entitlements.getEntitlement(fakeEvent({ method: 'GET' }), 'nora@example.com');
   assert.equal(entitlementAfter, null);
+});
+
+test('delete-account: deletes the account\'s block-store.js record too, so a later account re-registering the SAME freed username does not inherit the old account\'s block list (tracker item delete-account-js-never-cleans-up-block--luhb4f)', async function () {
+  await registerAndLogin('petra', 'realpassword1', 'petra@example.com');
+  var addResult = await blockStore.addBlockedHandle(fakeEvent({ method: 'POST' }), 'petra', '@someone-annoying');
+  assert.equal(addResult.ok, true);
+  var blockedBefore = await blockStore.getBlockedHandles(fakeEvent({ method: 'GET' }), 'petra');
+  assert.deepEqual(blockedBefore, ['@someone-annoying'], 'setup: the block must actually be recorded before deletion');
+
+  var res = await deleteAccountHandler(fakeEvent({ method: 'POST', body: { username: 'petra', password: 'realpassword1' } }));
+  assert.equal(JSON.parse(res.body).ok, true);
+
+  // The record itself is gone, not merely emptied — getBlockedHandles
+  // returning [] is ALSO what a never-existed record looks like, so this
+  // alone wouldn't distinguish "deleted" from "was always empty". The
+  // real proof is the reuse scenario below.
+  var blockedAfterDelete = await blockStore.getBlockedHandles(fakeEvent({ method: 'GET' }), 'petra');
+  assert.deepEqual(blockedAfterDelete, []);
+
+  // A BRAND-NEW account claims the same freed username (account-store.js
+  // has no reuse cooldown — see delete-account.js's own header comment on
+  // this exact fact in the authToken-invalidation context). It must start
+  // with a genuinely empty block list, not inherit the deleted account's.
+  await registerAndLogin('petra', 'differentpassword2', 'newpetra@example.com');
+  var blockedForNewAccount = await blockStore.getBlockedHandles(fakeEvent({ method: 'GET' }), 'petra');
+  assert.deepEqual(blockedForNewAccount, [], 'a freshly re-registered username must never inherit a previous holder\'s block list');
 });
 
 test('delete-account: an account with no published dreams and no token balance yet still deletes cleanly (nothing to sweep is not an error)', async function () {
