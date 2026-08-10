@@ -112,8 +112,53 @@ forwarding, etc.).
 | **Fires from** | `js/store.js`'s `finalizeDream` — the one function every completed generation runs through regardless of caller (`startGeneration`'s only call site, itself reached from `result.html`'s fresh-generate flow, `explore.html`'s resume-completion path, and every regenerate/edit-style/turn-into-video flow), so it's the single choke point true for all of them |
 | **Vendors** | PostHog only. Deliberately **not** sent to Meta CAPI — this is a raw creation-volume counter, not a discrete "this person just did something rare and conversion-worthy" moment the way `FirstVideoCreated` is; firing it to an ad platform on every single generation has no ad-optimization value and would just be noise there |
 | **Guard** | None — fires every time `finalizeDream` runs, by design (this is explicitly meant to be a volume metric, distinct from `first_video_created`'s fire-once-per-account KPI just below) |
-| **What's sent** | `{ style, mediaType }` — same non-PII shape as `FirstVideoCreated`, never the dream's caption |
+| **What's sent** | `{ style, mediaType, duration_ms }` — same non-PII shape as `FirstVideoCreated`, never the dream's caption. `duration_ms` (tracker item `for-product-track-avg-video-generation-t-2ci8ue`, founder ask 2026-08-10: "track average video/image generation time") is `Date.now() - startedAt`, where `startedAt` is `startGeneration`'s own hoisted submission timestamp (the same moment `pollUntilDone`'s `MAX_POLL_MS` budget and the persisted `pendingJob.startedAt` both measure from) — same `_ms` naming convention `js/interpret-experience.js`'s `interp_voice_complete` event already uses. `null` on the same honest-gap basis as every other forward-only field in `finalizeDream` (should be unreachable today — the sole call site always passes it — but never fabricated if it somehow doesn't) |
 | **Relationship to FirstVideoCreated** | Complementary, not overlapping in purpose: `first_video_created` answers "did this account ever create a video" (a one-time activation KPI); `video_created` answers "how many generations happen, total, across every account, every time" (a volume metric). An account's very first generation fires BOTH events; every generation after that fires only `video_created` |
+
+### generation_slow
+
+Tracker item `for-product-track-avg-video-generation-t-2ci8ue` (founder ask,
+2026-08-10): "alert if any single job exceeds 3 minutes" — the founder's own
+explicit stated threshold (180000ms, not derived from any other constant in
+this codebase — see `js/store.js`'s `GENERATION_SLOW_THRESHOLD_MS`, kept
+deliberately separate from `MAX_POLL_MS`'s 10-minute "give up entirely"
+ceiling; a generation can cross this and still finish completely normally).
+
+| | |
+|---|---|
+| **Trigger** | The completed job's own `duration_ms` (see `video_created` above) exceeds 180000ms |
+| **Fires from** | `js/store.js`'s `finalizeDream`, immediately after `video_created`, on the SAME completed job |
+| **Vendors** | PostHog only — an internal reliability/ops signal, not an ad-optimization conversion |
+| **Guard** | `durationMs !== null && durationMs > GENERATION_SLOW_THRESHOLD_MS`. A SEPARATE event, not just a flag property riding along on `video_created` — deliberately, so Growth/Ron can build a PostHog alert/insight directly off this event's own volume without first having to filter `video_created` by a duration property (mirrors how `tokens_refunded` is its own event rather than a flag on `video_created`, even though both describe the same underlying job). Only ever fires alongside `video_created` on the same job, never on its own |
+| **What's sent** | `{ style, mediaType, modelUsed, duration_ms }` — `modelUsed` (video-only, null otherwise — same convention as `model_used`'s own field) is included specifically so a slow job can be chased down by model/style, per the founder's own ask |
+
+### generation_failed
+
+Tracker item `for-product-track-avg-video-generation-t-2ci8ue` (founder ask,
+2026-08-10): "the true fail/vanish rate" — before this event, PostHog could
+only see `tokens_refunded` (fired 0 times against 205 `video_created` over
+60 days of real production data — see that event's own entry above), which
+covers only the narrow E205/E208-refund-eligible subset of failures, never
+a poll timeout, a transport-level hiccup, or a completed generation whose
+dream record never confirmed syncing. This event covers EVERY terminal
+failure shape, not just the refund-eligible one, from two independent choke
+points.
+
+| | |
+|---|---|
+| **Trigger (choke point 1 — a real rejected generation)** | `startGeneration`'s own outer `.catch` rejects for any reason: a real fal-reported error passed through as-is (E205/E208/E505/E508, and every other E1xx-E5xx code — not just the refund-eligible subset), a client-side poll timeout (`E301: generation_timeout`), a sustained poll network failure (`E302`), or a submission-time failure (`E303`/`E399`, or an E1xx/E4xx from `generate-video.js`/`generate-image.js`) |
+| **Trigger (choke point 2 — the E304 "vanish" shape)** | `attemptPrivateDreamSync`'s own local retry budget (`PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS`, 3 attempts total) is fully exhausted for a dream that still has no confirmed server-side dream-sync copy — i.e. the generation itself genuinely succeeded, only ITS SYNC failed. This is the exact observable shape of the P0 data-loss "vanish" incident (tracker item `for-product-p0-data-loss-founder-repro-0-6bzvv1`, fix merged as commit `7b7828c`) — this event OBSERVES that shape recurring, it does not re-fix the sync mechanism itself (already hardened by that earlier fix: retry-with-backoff plus `retryUnconfirmedPrivateDreamSyncs`' load-time sweep). Deliberately re-fires every time this gives up again for the same still-unconfirmed dream (e.g. a later page load's sweep retrying and exhausting again) — each occurrence is a real, continued instance being observed, not a one-time flag |
+| **Fires from** | `js/store.js`'s `startGeneration` (.catch) and `attemptPrivateDreamSync` (terminal give-up) |
+| **Vendors** | PostHog only — an internal reliability signal, not an ad-optimization conversion |
+| **Guard (choke point 1)** | Deliberately SKIPPED for a STALE/superseded edit's late failure (`isStaleEdit` — see `js/store.js`'s own doc comment) — that attempt is already silently ignored elsewhere in the app (no error toast; the newer attempt owns `pendingJob` and settles on its own), so firing here too would double-count against the same dream's other, live attempt. Regression-covered by `test/generation-instrumentation-behavioral.test.js`'s own stale-edit test |
+| **What's sent** | `{ reason, mediaType, elapsed_ms, model }`, plus `dreamId` on choke point 2 only (review finding: since that fire deliberately re-triggers on the SAME dream across repeated retry-budget exhaustions, raw event volume alone can't distinguish one repeatedly-observed vanished dream from several distinct ones — `dreamId` lets a downstream query dedupe to a true distinct-dream count; `dream.id` is already sent to the server elsewhere, e.g. the first-dream email send, so this adds no new exposure). `reason` is the same `"ENNN: ..."` string convention this codebase already uses elsewhere (`tokens_refunded`'s own `reason`, `err.message` verbatim for choke point 1) — or the synthetic `'E304: dream_sync_unconfirmed'` tag for choke point 2 (see `js/store.js`'s own E3xx doc block for why E304 was added to that same range purely for a consistent reason-code shape, even though it's never a thrown/rejected JS `Error` the way E301-E303/E399 are). `elapsed_ms` is time-since-submission for choke point 1 (mirrors `video_created`'s own `duration_ms`, measured from the same hoisted `startedAt`) or time-since-dream-creation for choke point 2 (`Date.now() - dream.createdAt` — a long-unconfirmed dream is a more useful signal there than the short, fixed ~3.3s local retry-burst window itself would be). `model` is whichever rotation-eligible model key the job reported (video only, null otherwise — same convention as `model_used`) |
+| **Known gap this build's investigation surfaced (not fixed here — instrumentation only)** | Re: the `tokens_refunded` silence this event exists to help explain — no code-level wiring bug was found in the refund→event pipeline itself (`video-status.js`/`image-status.js`'s `refundAndReport`, `lib/entitlements.js`'s `refundTokensOnce`, `lib/job-owners.js`'s fail-closed-by-design authorization check, `lib/posthog-capture.js`'s production-safe test guard — all read correctly wired end to end). The more likely explanation: `tokens_refunded` only ever fires for the narrow E205/E208 subset (a fal-CONFIRMED failure), while a real transport-level hiccup (E203/E204/E206/E207 — never refund-eligible, per `REFUND_ELIGIBLE_CODES`'s own deliberate scope) still rejects the user-visible generation exactly the same way. If those transient codes are common in production (a separate tracker item, `for-product-netlify-cost-deploys-are-97--9vbpd4`, references a 17.6% raw status-check request error rate, though that figure was never confirmed to mean "17.6% of jobs fail" specifically), most real user-facing failures may already be landing outside refund-eligible scope by design, not by bug. `generation_failed`'s full reason-code breakdown (once real production data accumulates) is what will make this empirically answerable rather than a guess — revisiting `REFUND_ELIGIBLE_CODES`'s scope with that real distribution is a follow-up decision for the founder, not something this build changes |
+
+**Files touched:**
+
+- `js/store.js` — `GENERATION_SLOW_THRESHOLD_MS`, `startGeneration`'s hoisted `startedAt` (now also carried through submission-time failures, not just post-submission ones), `finalizeDream`'s `durationMs`/`video_created`'s new `duration_ms` property/new `generation_slow` fire, `startGeneration`'s outer `.catch`'s new `generation_failed` fire, `attemptPrivateDreamSync`'s new E304 `generation_failed` fire on terminal give-up, new E304 doc block
+- `test/generation-instrumentation-behavioral.test.js` — new, full behavioral coverage for all of the above
+- `docs/TEST_REGISTRY.md` — new row
 
 ### video_published
 

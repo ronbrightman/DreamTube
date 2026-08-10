@@ -261,6 +261,48 @@
 //   E303 network error submitting the initial generate-video request
 //   E399 server returned an error response with no error text at all (should be unreachable — every
 //        E1xx/E2xx path always sets one — but a code exists in case something upstream changes)
+//   E304 dream_sync_unconfirmed  — NOT a rejected-Promise error like the four
+//        above (never thrown, never shown to the user) — a synthetic
+//        `generation_failed` reason tag (see that event's own doc block
+//        below and docs/EVENT_TAXONOMY.md) fired when a dream that DID
+//        finish generating still has no confirmed server-side dream-sync
+//        copy after attemptPrivateDreamSync's full local retry budget is
+//        exhausted — the observable shape of the P0 data-loss "vanish" bug
+//        (tracker item for-product-p0-data-loss-founder-repro-0-6bzvv1,
+//        fix merged as commit 7b7828c) reappearing, kept in this same E3xx
+//        range purely for a consistent reason-code shape across every
+//        generation_failed fire, instrumentation-only (tracker item
+//        for-product-track-avg-video-generation-t-2ci8ue).
+//
+// 'generation_failed' (PostHog) — fired once per terminal generation
+// failure, from TWO independent choke points so every real failure shape is
+// covered, not just the refund-eligible subset:
+//   (1) startGeneration's own outer .catch — covers a real fal-reported
+//       error (E205/E208/E505/E508 etc, passed through from video-status.js/
+//       image-status.js as-is), a client-side poll timeout (E301), a
+//       sustained poll network failure (E302), and a submission-time
+//       failure (E1xx/E4xx from generate-video.js/generate-image.js, or
+//       E303/E399 client-side). Deliberately skipped for a STALE/superseded
+//       edit's late failure (see isStaleEdit below) — that attempt was
+//       already quietly ignored (no error toast, the newer attempt owns
+//       pendingJob and settles on its own), so counting it as a real
+//       failure would double-count against the same dream's other, live
+//       attempt.
+//   (2) attemptPrivateDreamSync's own terminal give-up (see that function
+//       below) — covers the E304 vanish shape above, a class of failure
+//       that never rejects startGeneration's promise at all (the
+//       generation itself succeeded; only the sync of the finished dream
+//       record failed).
+// `{ reason, mediaType, elapsed_ms, model }` — `reason` is the same
+// "ENNN: ..." string this codebase already surfaces elsewhere (tokens_refunded's
+// own `reason`, err.message here) for (1), or the synthetic E304 tag for
+// (2); `elapsed_ms` is time-since-submission for (1) (mirrors
+// video_created's own `duration_ms`, see finalizeDream below) or
+// time-since-dream-creation for (2) (a long-unconfirmed dream is a more
+// useful signal there than the short local retry-burst window);  `model` is
+// whichever rotation-eligible model key the job reported (video only, null
+// otherwise — same null-means-not-applicable convention as `model_used`).
+// See docs/EVENT_TAXONOMY.md for the full spec.
 //
 // requestInterpretationQuestions()/generateInterpretationReading() below
 // (Interpretation Wave 1) pass through whatever "E4NN: reason" string
@@ -285,6 +327,16 @@
   // still completing successfully on fal's side moments later. 10 minutes
   // gives real headroom while still not leaving a truly stuck job hanging.
   var MAX_POLL_MS = 10 * 60 * 1000;
+
+  // Founder's own explicit stated threshold (2026-08-10, tracker item
+  // for-product-track-avg-video-generation-t-2ci8ue): "alert if any single
+  // job exceeds 3 minutes." Deliberately a literal 3 * 60 * 1000, not
+  // derived from MAX_POLL_MS or POLL_INTERVAL_MS above — this is a
+  // reporting/alerting threshold about how long is "unusually slow," a
+  // completely separate concern from MAX_POLL_MS's "give up entirely"
+  // ceiling (10 minutes) — a generation can cross this and still finish
+  // completely normally.
+  var GENERATION_SLOW_THRESHOLD_MS = 3 * 60 * 1000;
 
   // Single on/off point for the whole private-dream server-sync feature
   // (tracker item for-product-build-p0-server-side-dream-p-zl3rb2) — the
@@ -1559,6 +1611,42 @@
     function scheduleRetryOrGiveUp() {
       if (attemptIndex < PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS.length) {
         setTimeout(function () { attemptPrivateDreamSync(dream, attemptIndex + 1); }, PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS[attemptIndex]);
+      } else {
+        // 'generation_failed' reason:'E304: dream_sync_unconfirmed' (tracker
+        // item for-product-track-avg-video-generation-t-2ci8ue) — the
+        // OBSERVE-only half of this build: this is the exact shape of the
+        // P0 data-loss "vanish" bug (for-product-p0-data-loss-founder-
+        // repro-0-6bzvv1, fix merged as commit 7b7828c) — a real, already-
+        // finished generation whose local dream record still has no
+        // confirmed server-side copy after this function's own full local
+        // retry budget (PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS) is exhausted.
+        // Fires here, not in startGeneration's own .catch above, because
+        // this failure never rejects that promise at all — the generation
+        // itself succeeded; only ITS SYNC failed. Deliberately re-fires
+        // every time this gives up again for the same still-unconfirmed
+        // dream (e.g. retryUnconfirmedPrivateDreamSyncs sweeping it again
+        // on a later page load) — each occurrence is a real, continued
+        // instance of the shape being observed, not a one-time flag; see
+        // this file's own E304 doc comment near the top for the full
+        // reasoning, including why elapsed_ms is measured from the dream's
+        // createdAt rather than this retry burst's own (much shorter) span.
+        trackAnalytics('generation_failed', {
+          reason: 'E304: dream_sync_unconfirmed',
+          mediaType: dream.mediaType || 'video',
+          elapsed_ms: dream.createdAt ? (Date.now() - dream.createdAt) : null,
+          model: dream.modelUsed || null,
+          // dreamId (review finding, tracker for-product-track-avg-video-
+          // generation-t-2ci8ue): this event deliberately re-fires every
+          // time this function's retry budget exhausts again for the SAME
+          // still-unconfirmed dream (see the doc comment above) -- without
+          // a stable per-dream key, raw PostHog event volume can't tell
+          // "1 dream vanished, observed 10 times" from "10 dreams each
+          // vanished once", which corrupts the exact "true vanish rate"
+          // this instrumentation exists to produce. dream.id is already
+          // sent to the server elsewhere (see e.g. sendFirstDreamEmail's
+          // own dreamId field above), so this adds no new exposure.
+          dreamId: dream.id || null
+        });
       }
     }
   }
@@ -2186,6 +2274,14 @@
     // which is a first-class, permanently-supported state, not a gap to
     // backfill: it falls back to the visual-style bed exactly as today.
     var extraMood = (extra && extra.mood) || null;
+    // durationMs (tracker item for-product-track-avg-video-generation-t-
+    // 2ci8ue) — startGeneration's own hoisted `startedAt`, threaded
+    // through via `extra` (see that function's finalizeDream call site).
+    // null for any caller that doesn't pass one (there is none today — the
+    // sole call site always does — but this stays honest rather than
+    // fabricating a number the way every other forward-only field in this
+    // function already does, e.g. createdAt/modelUsed above).
+    var durationMs = (extra && typeof extra.startedAt === 'number') ? (Date.now() - extra.startedAt) : null;
     var dream;
     if (sourceDreamId) {
       dream = findDream(sourceDreamId);
@@ -2365,7 +2461,29 @@
     // "never break the app" fire-and-forget discipline as every other
     // analytics call in this file. Phase 1 reporting instrumentation —
     // tracker item for-product-phase-1-reporting-instrument-kjlh46.
-    trackAnalytics('video_created', { style: dream.style, mediaType: dream.mediaType });
+    // duration_ms (tracker item for-product-track-avg-video-generation-t-
+    // 2ci8ue, founder ask 2026-08-10: "track average video/image generation
+    // time") — same `_ms` naming convention js/interpret-experience.js's
+    // interp_voice_complete event already uses, rather than inventing a new
+    // one. null on the same honest-gap basis as durationMs's own doc
+    // comment above (should be unreachable today — the sole call site
+    // always passes startedAt — but never fabricated if it somehow isn't).
+    trackAnalytics('video_created', { style: dream.style, mediaType: dream.mediaType, duration_ms: durationMs });
+    // 'generation_slow' (same tracker item, same founder ask: "alert if any
+    // single job exceeds 3 minutes") — a SEPARATE event, not just a flag
+    // property riding along on video_created, specifically so Growth/Ron
+    // can build a PostHog alert/insight directly off this event's own
+    // volume without having to first filter video_created by a duration
+    // property (matches how e.g. `tokens_refunded` is its own event rather
+    // than a flag on video_created, even though both are about the same
+    // underlying job). Carries enough to chase a slow job down by model/
+    // style, per the founder's own ask. Only ever fires alongside
+    // video_created (same completed-job precondition), never on its own.
+    if (durationMs !== null && durationMs > GENERATION_SLOW_THRESHOLD_MS) {
+      trackAnalytics('generation_slow', {
+        style: dream.style, mediaType: dream.mediaType, modelUsed: dream.modelUsed || null, duration_ms: durationMs
+      });
+    }
     // 'model_used' (docs/EDIT_MECHANISM_SPEC.md §3.5) — fires alongside
     // video_created above, video-only (mediaType 'video' is the only
     // mediaType the model-rotation mechanism ever applies to — see
@@ -2445,6 +2563,20 @@
     // mid-generation in any way that should retroactively affect which
     // balance a post-submission-failure refund lands on.
     var email = currentAccountEmail();
+
+    // startedAt — hoisted here (previously computed only after the
+    // submission request had already resolved, inside operationPromise's
+    // own .then below) so it's available even when submission itself fails
+    // (E1xx/E303/E399, never previously had a startedAt to measure
+    // elapsed_ms from) and so pollUntilDone's own timeout budget, the
+    // pending job's persisted startedAt, and every generation_failed/
+    // video_created elapsed/duration figure below all measure from the
+    // exact same moment. Moving this earlier for a fresh (non-resume)
+    // submission means it now marks "request kicked off" rather than
+    // "submission request resolved" — a difference of at most the
+    // submission round trip (typically well under a second), and if
+    // anything a more honest "generation start" moment than before.
+    var startedAt = resume ? resume.startedAt : Date.now();
 
     // Captured here (rather than threaded through pollUntilDone's own
     // resolved value) so finalizeDream below can stamp it onto the
@@ -2532,7 +2664,8 @@
 
     return operationPromise.then(function (operationName) {
       capturedOperationName = operationName;
-      var startedAt = resume ? resume.startedAt : Date.now();
+      // startedAt is now hoisted to the top of startGeneration (see its own
+      // doc comment above) — no longer re-declared here.
       savePendingJob({
         operationName: operationName, startedAt: startedAt,
         caption: caption, storyText: storyText, style: style, sourceDreamId: sourceDreamId,
@@ -2601,7 +2734,12 @@
       var dream = finalizeDream(mediaUrl, caption, style, sourceDreamId, mediaType, capturedOperationName, storyText, {
         modelUsed: capturedModelUsed,
         editHistoryEntry: opts.editHistoryEntry || null,
-        mood: mood
+        mood: mood,
+        // startedAt (tracker item for-product-track-avg-video-generation-t-
+        // 2ci8ue) — lets finalizeDream compute duration_ms for video_created
+        // and decide whether to fire generation_slow. See this function's
+        // own hoisted startedAt doc comment above.
+        startedAt: startedAt
       });
       // No duration concept applies to a still image — only probe/patch
       // dream.dur on the video path. Don't make the user wait on this —
@@ -2633,6 +2771,24 @@
         err.superseded = true;
       } else {
         clearPendingJob();
+        // 'generation_failed' (tracker item for-product-track-avg-video-
+        // generation-t-2ci8ue) — the single, consistent fire covering EVERY
+        // real terminal failure this promise chain can reject with: a
+        // fal-reported error (E205/E208/E505/E508, passed through as-is), a
+        // client-side poll timeout (E301), a sustained poll network failure
+        // (E302), or a submission-time failure (E1xx/E4xx from generate-
+        // video.js/generate-image.js, or E303/E399 client-side) — see this
+        // file's own E3xx doc block above for the full reasoning, including
+        // why this is deliberately skipped on the isStaleEdit branch (that
+        // attempt was already quietly ignored, never shown to the user as a
+        // failure, and counting it here would double-count against the same
+        // dream's other, live attempt).
+        trackAnalytics('generation_failed', {
+          reason: (err && err.message) || 'unknown_error',
+          mediaType: mediaType,
+          elapsed_ms: Date.now() - startedAt,
+          model: capturedModelUsed
+        });
       }
       // Defensive cleanup — a failed job's own pendingInterpretations entry
       // (if the user opened the Chamber while it was still generating,
