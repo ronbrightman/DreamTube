@@ -299,7 +299,31 @@ test('share mini-sheet: "Share link" falls back to clipboard-copy + toast when n
     await openShareSheetFromResult(page);
 
     await page.click('#share-opt-link');
-    await page.waitForSelector('.toast.show', { timeout: 3000 });
+    // Waits for the SPECIFIC toast text, not the generic '.toast.show' class.
+    // result.html's #toast is a single shared element reused by every toast
+    // on the page, including the sound-discoverability nudge
+    // (maybeShowSoundNudge, '🎵 Tap for sound') that fires automatically on
+    // load for any bed-eligible video on a fresh device -- which this test's
+    // seeded dream always is (js/music-bed.js's eligible() resolves a
+    // default-mood bed for every real video dream). Under full-suite CPU
+    // contention that nudge's own 2200ms auto-hide timer can still be
+    // running (not yet removed '.show') when this test reaches its own
+    // click, so a bare '.toast.show' wait was satisfied immediately by the
+    // STALE nudge toast rather than the new one -- and since chooseLink()'s
+    // clipboard branch only calls showToast() inside a
+    // navigator.clipboard.writeText().then(...) (a genuine async hop, not
+    // guaranteed complete just because page.click() resolved), the very
+    // next textContent read could still race that pending promise and read
+    // the stale '🎵 Tap for sound' text instead (confirmed root cause,
+    // tracker item full-test-suite-has-broader-nondetermini-6fbmcb, round 2
+    // pass -- see docs/flake-investigation-round2-notes.md). Waiting on the
+    // real condition under test (the toast's text actually being the
+    // clipboard-copy message) makes this correct regardless of the nudge's
+    // timing.
+    await page.waitForFunction(function () {
+      var t = document.getElementById('toast');
+      return !!t && t.classList.contains('show') && /Link copied to clipboard/.test(t.textContent || '');
+    }, null, { timeout: 3000 });
     assert.match(await page.textContent('#toast'), /Link copied to clipboard/);
 
     var clipboardText = await page.evaluate(function () { return navigator.clipboard.readText(); });
