@@ -14,6 +14,16 @@
 //
 // ON EVERY RUN, for every operationName still enqueued in
 // lib/first-dream-email-pending-store.js:
+//   0. VIEWED? (added 2026-08-10, founder complaint — "I still get 'your
+//      video is ready to watch' even when I DID watch it; only the NEW
+//      watched-aware flow should be live"). If lib/result-view-store.js has
+//      a viewed marker for this operationName, the user already opened the
+//      fullscreen player — SUPPRESS (dequeue, send nothing). This email's
+//      body literally says "Your dream is ready to watch.", so it must not
+//      go out for a watched dream; this is the exact suppression
+//      send-unwatched-dream-nudges.js's own scan already does at its step 1,
+//      now applied to this (previously watched-UNAWARE) "your dream is ready"
+//      path too so no such email of any kind reaches a watcher.
 //   1. Look up that record's owner's (`record.username`) private dreams
 //      (lib/dream-store.js's getPrivateDreams) and find the one whose
 //      `sourceOperationName` matches — see the pending-store's own header
@@ -80,6 +90,7 @@
 var { schedule } = require('@netlify/functions');
 var pendingStore = require('./lib/first-dream-email-pending-store');
 var dreamStore = require('./lib/dream-store');
+var resultViewStore = require('./lib/result-view-store');
 var firstDreamEmailSender = require('./lib/first-dream-email-sender');
 
 // How long to keep retrying for a thumbnail before GIVING UP (dropping the
@@ -114,6 +125,7 @@ async function scanAndSend(event) {
 
   var scanned = 0;
   var sentWithImage = 0;
+  var suppressedViewed = 0;
   var droppedNoThumbnail = 0;
   var stillWaiting = 0;
 
@@ -124,6 +136,25 @@ async function scanAndSend(event) {
     var record = await pendingStore.getPending(event, operationName);
     if (!record) continue; // already dequeued by a concurrent/earlier run
 
+    // WATCHED-AWARE SUPPRESSION (founder complaint 2026-08-10 — "I still get
+    // the email 'your video is ready to watch' even when I DID watch the
+    // video; make sure only the NEW watched-aware flow is live"). This email
+    // says "Your dream is ready to watch." — do NOT send it for a dream the
+    // user has already opened the fullscreen player for. Checked FIRST, the
+    // same shape and the same lib/result-view-store.js marker
+    // send-unwatched-dream-nudges.js's own scan uses as its step 1: if a
+    // viewed marker exists for this operationName, dequeue and send nothing.
+    // lib/first-dream-email-sender.js also re-checks this at the true send
+    // moment (belt-and-suspenders for the client-triggered path that doesn't
+    // route through this scan), but doing it here too means a watched dream
+    // never even reaches the send/dequeue branch.
+    var viewed = await resultViewStore.hasViewed(event, operationName);
+    if (viewed) {
+      await pendingStore.removePending(event, operationName);
+      suppressedViewed++;
+      continue;
+    }
+
     var dreams = await dreamStore.getPrivateDreams(event, record.username);
     var dream = findDreamForOperation(dreams, operationName);
 
@@ -132,6 +163,7 @@ async function scanAndSend(event) {
         username: record.username,
         email: record.email,
         dreamId: dream.id,
+        operationName: operationName,
         imageUrl: dream.imageUrl,
         auto: true
       });
@@ -153,7 +185,7 @@ async function scanAndSend(event) {
     stillWaiting++;
   }
 
-  return { scanned: scanned, sentWithImage: sentWithImage, droppedNoThumbnail: droppedNoThumbnail, stillWaiting: stillWaiting };
+  return { scanned: scanned, sentWithImage: sentWithImage, suppressedViewed: suppressedViewed, droppedNoThumbnail: droppedNoThumbnail, stillWaiting: stillWaiting };
 }
 
 exports.handler = schedule('* * * * *', async function (event) {
@@ -161,6 +193,7 @@ exports.handler = schedule('* * * * *', async function (event) {
     var result = await scanAndSend(event);
     console.log('send-pending-first-dream-emails: scanned ' + result.scanned
       + ', sentWithImage ' + result.sentWithImage
+      + ', suppressedViewed ' + result.suppressedViewed
       + ', droppedNoThumbnail ' + result.droppedNoThumbnail
       + ', stillWaiting ' + result.stillWaiting);
   } catch (e) {

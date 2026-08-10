@@ -6665,6 +6665,15 @@
             username: state.user.username,
             password: account.password,
             dreamId: dream.id,
+            // The dream's server-issued job id — lets the server suppress
+            // this "your dream is ready to watch" email if the user has
+            // already opened the fullscreen player for this dream (founder
+            // complaint 2026-08-10; same watched-aware marker the unwatched-
+            // dream nudge uses — see send-first-dream-email.js). Usually
+            // present on a real finished dream; null for a legacy dream with
+            // no sourceOperationName, in which case the server just can't
+            // viewed-check and behaves as before.
+            operationName: dream.sourceOperationName || null,
             caption: dream.caption,
             style: dream.style,
             videoUrl: dream.videoUrl,

@@ -101,6 +101,20 @@
 // it was the exact thing that produced the founder's thumbnail-less email,
 // so it's removed rather than left as reachable dead code.
 //
+// WATCHED-AWARE SUPPRESSION (founder complaint 2026-08-10 &mdash; "I still get
+// the email 'your video is ready to watch' even when I DID watch the video;
+// make sure only the NEW watched-aware flow is live"): this email's body
+// literally says "Your dream is ready to watch.", and it used to be the one
+// "your dream is ready" path that sent regardless of whether the user had
+// actually watched. It now suppresses (WITHOUT burning the once-ever guard)
+// when the dream's operationName has a server-side viewed marker
+// (lib/result-view-store.js) &mdash; the SAME marker the unwatched-dream nudge
+// already suppresses on &mdash; so no "ready to watch" email of any kind now goes
+// out for a dream the user has opened the fullscreen player for. See
+// sendIfEligible's own "WATCHED-AWARE SUPPRESSION" inline comment for the
+// full reasoning (including why this never causes a double-send with the
+// nudge) and opts.operationName's doc for the legacy-dream fall-through.
+//
 // PostHog event: fires 'first_dream_email_sent' server-side (via
 // lib/posthog-capture.js, the same server-side-capture pattern
 // dodo-webhook.js's firePurchaseConversion already established for
@@ -131,6 +145,7 @@
 var firstDreamEmailStore = require('./first-dream-email-store');
 var posthogCapture = require('./posthog-capture');
 var emailSuppressionStore = require('./email-suppression-store');
+var resultViewStore = require('./result-view-store');
 var unsubscribeToken = require('./unsubscribe-token');
 var emailLayout = require('./email-layout');
 var siteOrigin = require('./site-origin');
@@ -280,6 +295,14 @@ async function reportSkip(username, email, reason, auto) {
  *             (skipped:'no_thumbnail') WITHOUT sending or burning the
  *             once-ever guard &mdash; see the header's "THUMBNAIL-GATED SEND"
  *             paragraph
+ *   operationName (optional) &mdash; the dream's server-issued job id. When
+ *             present, this send is SUPPRESSED (skipped:'already_viewed',
+ *             WITHOUT burning the once-ever guard) if the user has already
+ *             opened the fullscreen player for this dream &mdash; see the
+ *             "WATCHED-AWARE SUPPRESSION" note below and the founder
+ *             complaint it closes. Absent (a legacy dream with no
+ *             sourceOperationName) &mdash; the check is skipped and this behaves
+ *             exactly as before.
  *
  * Returns { ok:true, sent:true } ONLY when Resend actually accepted the
  * send, or { ok:true, sent:false, skipped:<reason> } for every other case
@@ -324,6 +347,38 @@ async function sendIfEligible(event, opts) {
   if (suppressed) {
     await reportSkip(username, email, 'suppressed', opts.auto);
     return { ok: true, sent: false, skipped: 'suppressed' };
+  }
+
+  // WATCHED-AWARE SUPPRESSION (founder complaint 2026-08-10 &mdash; "I still
+  // get the email 'your video is ready to watch' even when I DID watch the
+  // video; make sure only the NEW watched-aware flow is live"). This email's
+  // own body literally says "Your dream is ready to watch." &mdash; sending it to
+  // someone who has already watched is exactly the reported bug. It used to
+  // be the one "your dream is ready" path that was NOT watched-aware (the
+  // newer unwatched-dream nudge already suppresses a viewed dream at its own
+  // scan step 1 &mdash; see send-unwatched-dream-nudges.js). Now both consult the
+  // SAME server-side viewed marker (lib/result-view-store.js, keyed by the
+  // dream's server-issued operationName, written by mark-result-viewed.js
+  // from result.html's fullscreen-open). Checked BEFORE claiming the
+  // once-ever guard, exactly like the suppression + thumbnail gates around
+  // it, so a suppressed-because-watched send never burns the account's
+  // one-and-only marker &mdash; a genuinely-unwatched later dream is still free to
+  // claim it (the guard is per account, and the nudge sender's own first-
+  // dream-overlap check keys off whichever dream actually claimed it, so this
+  // can never produce a double-send &mdash; see lib/unwatched-dream-nudge-
+  // sender.js). operationName is optional: a legacy dream with no
+  // sourceOperationName can't be viewed-checked, so it falls through
+  // unchanged (the dominant automatic path always has one &mdash; the scan is
+  // keyed by it). hasViewed fails toward NOT-viewed on a read blip (see its
+  // own doc comment), matching this feature's "a wrongly-sent email is
+  // bounded by the once-ever guard + unsubscribe, wrongly-suppressing kills
+  // the feature" posture &mdash; the same direction the nudge scan degrades.
+  if (opts.operationName) {
+    var alreadyViewed = await resultViewStore.hasViewed(event, opts.operationName);
+    if (alreadyViewed) {
+      await reportSkip(username, email, 'already_viewed', opts.auto);
+      return { ok: true, sent: false, skipped: 'already_viewed' };
+    }
   }
 
   // THUMBNAIL GATE (founder rule 2026-08-08 &mdash; see this file's own

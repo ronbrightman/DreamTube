@@ -238,5 +238,47 @@ test('a record whose thumbnail lands, for an account that already got its once-e
 
 test('an empty pending store is a harmless no-op scan', async function () {
   var result = await sendPending.scanAndSend(fakeEvent({}));
-  assert.deepEqual(result, { scanned: 0, sentWithImage: 0, droppedNoThumbnail: 0, stillWaiting: 0 });
+  assert.deepEqual(result, { scanned: 0, sentWithImage: 0, suppressedViewed: 0, droppedNoThumbnail: 0, stillWaiting: 0 });
+});
+
+test('WATCHED-AWARE: a pending record whose dream the user has already opened the fullscreen player for is SUPPRESSED — no send, even with a thumbnail synced (founder complaint 2026-08-10)', async function () {
+  var resultViewStore = require('../netlify/functions/lib/result-view-store');
+  await registerAccount('watched', 'watched@example.com');
+  // The dream is fully ready (thumbnail synced) — the ONLY reason not to send
+  // is that it was watched.
+  await seedSyncedDream('watched', 'mock:1:watched', 'https://img.example/watched.jpg');
+  await pendingStore.markPending(fakeEvent({}), 'mock:1:watched', 'watched', 'watched@example.com');
+  // The user opened the fullscreen player — the server-side viewed marker.
+  await resultViewStore.markViewed(fakeEvent({}), 'mock:1:watched');
+  var spies = installFetchSpy();
+
+  var result = await sendPending.scanAndSend(fakeEvent({}));
+
+  assert.equal(result.suppressedViewed, 1, 'a watched dream must be suppressed');
+  assert.equal(result.sentWithImage, 0);
+  assert.equal(spies.resendCalls.length, 0, 'must NOT send a "ready to watch" email for a dream the user already watched');
+  assert.equal(await pendingStore.getPending(fakeEvent({}), 'mock:1:watched'), null, 'suppressed record must be dequeued');
+});
+
+test('WATCHED-AWARE belt-and-suspenders: even if a scan somehow reached the send branch, the shared sender itself re-checks the viewed marker and refuses to send (no guard burned)', async function () {
+  var resultViewStore = require('../netlify/functions/lib/result-view-store');
+  var firstDreamEmailStore = require('../netlify/functions/lib/first-dream-email-store');
+  var firstDreamEmailSender = require('../netlify/functions/lib/first-dream-email-sender');
+  await registerAccount('senderguard', 'senderguard@example.com');
+  await resultViewStore.markViewed(fakeEvent({}), 'mock:1:senderguard');
+  var spies = installFetchSpy();
+
+  var res = await firstDreamEmailSender.sendIfEligible(fakeEvent({}), {
+    username: 'senderguard', email: 'senderguard@example.com',
+    dreamId: 'd-senderguard', operationName: 'mock:1:senderguard',
+    imageUrl: 'https://img.example/x.jpg', auto: true
+  });
+
+  assert.equal(res.sent, false);
+  assert.equal(res.skipped, 'already_viewed');
+  assert.equal(spies.resendCalls.length, 0);
+  // Crucially: the once-ever guard must NOT be burned — a genuinely-unwatched
+  // later dream must still be able to claim it.
+  var guard = await firstDreamEmailStore.markSentOnce(fakeEvent({}), 'senderguard');
+  assert.ok(guard.ok, 'the account\'s one-time guard must still be claimable — the watched-suppress must not have burned it');
 });
