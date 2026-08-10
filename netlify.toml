@@ -144,6 +144,18 @@
 [functions."send-pending-first-dream-emails"]
   schedule = "* * * * *"
 
+# Same belt-and-suspenders reasoning as send-daily-claim-pushes above --
+# the "unwatched dream" retention nudge (founder-approved retention plan,
+# piece 1). Every 3 minutes -- NOT every-minute like send-pending-first-
+# dream-emails above, because this nudge's dominant bound is its 7-minute
+# unwatched FLOOR (land the email ~7-10 min after ready), not "send the
+# instant a thumbnail lands": max delay is floor + one interval = ~10 min,
+# and a finer cadence would just triple invocations for no benefit since
+# nothing here acts in the first 7 minutes. See send-unwatched-dream-
+# nudges.js's own header comment for the full cadence reasoning.
+[functions."send-unwatched-dream-nudges"]
+  schedule = "*/3 * * * *"
+
 # ==========================================================================
 # /go/* -- serve the marketing ads funnel under this site's own domain
 # (https://dreamtube.life/go/), so paid-ad visitors can land and stay on

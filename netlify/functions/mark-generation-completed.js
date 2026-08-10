@@ -150,6 +150,7 @@ var generationCompletionStore = require('./lib/generation-completion-store');
 var jobOwners = require('./lib/job-owners');
 var accountStore = require('./lib/account-store');
 var firstDreamEmailPendingStore = require('./lib/first-dream-email-pending-store');
+var unwatchedDreamNudgeStore = require('./lib/unwatched-dream-nudge-store');
 var rateLimit = require('./lib/rate-limit');
 var posthogCapture = require('./lib/posthog-capture');
 var pendingDreams = require('./lib/pending-dreams');
@@ -304,6 +305,19 @@ exports.handler = async function (event) {
         await maybeSendVideoReadyPush(event, operationName);
       } catch (pushErr) {
         console.error('mark-generation-completed: video-ready push step failed (non-fatal)', pushErr);
+      }
+      // "Unwatched dream" retention nudge (founder-approved retention plan,
+      // piece 1) — its own try/catch, same "must never affect the completion
+      // marker" discipline as the two steps above. Enqueues a pending nudge;
+      // send-unwatched-dream-nudges.js's scheduled scan decides, ~7-10 min
+      // later, whether the user actually watched it (suppress) or not (send).
+      // See maybeEnqueueUnwatchedNudge's own doc comment for how it stays
+      // non-overlapping with BOTH the pre-signup ready email and the
+      // automatic first-dream email.
+      try {
+        await maybeEnqueueUnwatchedNudge(event, operationName);
+      } catch (nudgeErr) {
+        console.error('mark-generation-completed: unwatched-dream nudge enqueue step failed (non-fatal)', nudgeErr);
       }
     }
     // An operationName that doesn't verify is a silent no-op -- see header
@@ -501,6 +515,69 @@ async function maybeSendAutomaticFirstDreamEmail(event, operationName) {
   // client-triggered send-first-dream-email.js fallback remains as a
   // second, independent path that can still cover it).
   await firstDreamEmailPendingStore.markPending(event, operationName, account.username, account.email);
+}
+
+/**
+ * Enqueues a pending "unwatched dream" retention nudge (founder-approved
+ * retention plan, piece 1) for THIS just-verified video completion, if it
+ * belongs to a real registered account. send-unwatched-dream-nudges.js's
+ * scheduled scan is what actually decides, ~7-10 min later, whether the user
+ * watched it (a server-side viewed marker exists -> suppress) or not (send
+ * a warm nudge embedding their own dream text + the real thumbnail). See
+ * that file's header comment for the full mechanism.
+ *
+ * Deliberately its own function, running independently of
+ * maybeSendAutomaticFirstDreamEmail above even though it resolves identity
+ * the SAME way (lib/job-owners.js's submission-time operationName -> owner
+ * binding) — same "each completion side-effect is its own independent,
+ * best-effort branch" shape as maybeSendVideoReadyPush. Every branch is a
+ * silent no-op (never an error, never a distinguishable HTTP response),
+ * same posture as this function's siblings.
+ *
+ * NO-OVERLAP GUARANTEE, the enqueue-side half (the sender owns the other
+ * half — see lib/unwatched-dream-nudge-sender.js's header comment):
+ *   - PRE-SIGNUP ready email (dream-webhook.js): excluded here. A funnel-
+ *     started job carries a `pendingId`; if its pending-dreams `readyAt` is
+ *     set, that pre-signup email already sent (or committed to sending), so
+ *     this does NOT enqueue a nudge for the same dream. This is the exact
+ *     pendingId/readyAt guard maybeSendAutomaticFirstDreamEmail uses, and
+ *     the same getWithReadyRetry that narrows its eventual-consistency race
+ *     (see that function's "DOUBLE-SEND FIX"/"RESIDUAL-RACE HARDENING"
+ *     comments).
+ *   - Non-registered / pre-signup visitors: excluded, because a nudge only
+ *     enqueues for a job whose owner email resolves to a real account
+ *     (accountStore.getByEmail). A pre-signup visitor has no account, so
+ *     never gets this signed-up-users-only nudge.
+ *   - The automatic FIRST-dream email overlap is handled per-dream at SEND
+ *     time in the sender (a first-dream email that already covered THIS
+ *     exact dream suppresses the nudge) rather than at enqueue, because
+ *     whether it sent isn't yet known at completion time.
+ *
+ * Video-only scope, matching the retention email's own long-standing scope
+ * (an unrecorded/unknown mediaType fails closed, never assumed video) — see
+ * maybeSendAutomaticFirstDreamEmail's own comment.
+ */
+async function maybeEnqueueUnwatchedNudge(event, operationName) {
+  var ownerRecord = await jobOwners.getJobOwnerRecordWithRetry(event, operationName);
+  if (!ownerRecord || !ownerRecord.email) return;
+  if (ownerRecord.mediaType !== 'video') return;
+
+  // Pre-signup ready-email overlap: skip a funnel-started dream whose
+  // abandonment email already sent (readyAt set). Same guard/reasoning as
+  // maybeSendAutomaticFirstDreamEmail above.
+  if (ownerRecord.pendingId) {
+    var pendingRecord = await pendingDreams.getWithReadyRetry(event, ownerRecord.pendingId);
+    if (pendingRecord && pendingRecord.readyAt) return;
+  }
+
+  var account = await accountStore.getByEmail(event, ownerRecord.email);
+  if (!account || !account.username) return;
+
+  // Idempotent + best-effort — a duplicate call for the SAME operationName
+  // is a harmless no-op against the already-ticking window (onlyIfNew CAS),
+  // and a failed enqueue is a silent miss for this one nudge (no failure
+  // ever surfaces to the caller), same posture as the first-dream enqueue.
+  await unwatchedDreamNudgeStore.markPending(event, operationName, account.username, account.email);
 }
 
 /**

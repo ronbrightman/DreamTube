@@ -210,6 +210,9 @@
 //       sessionStorage "just generated" marker; called from processing.html right before its redirect.
 //   wasOperationJustCompleted(operationName) -> Promise<boolean>, POST /.netlify/functions/consume-generation-marker
 //       — durable counterpart to markGenerationJustCompleted, consumed exactly once by result.html.
+//   markResultViewed(operationName) -> fire-and-forget, POST /.netlify/functions/mark-result-viewed
+//       — durable server marker that the user actually WATCHED their result (fullscreen open); the
+//       suppression signal for the "unwatched dream" retention nudge. Called from result.html's openFullscreenVideo.
 //   isOnlyCompletedDream(dreamId) -> local read-only query, same eligibility computation as
 //       markFirstVideoCreatedIfEligible minus its one-time flag — feeds the PostHog
 //       first_video_result_view sanity-check signal (see result.html's call site).
@@ -6712,6 +6715,36 @@
       if (!operationName) return;
       try {
         fetch('/.netlify/functions/mark-generation-completed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operationName: operationName }),
+          keepalive: true
+        }).catch(function () { /* best-effort, must never break the app */ });
+      } catch (e) { /* best-effort, must never break the app */ }
+    },
+
+    /**
+     * Records, server-side, that the user actually WATCHED their fresh
+     * video result -- fire-and-forget, POST
+     * /.netlify/functions/mark-result-viewed { operationName }. This is the
+     * suppression signal for the "unwatched dream" retention nudge: the
+     * scheduled scan (send-unwatched-dream-nudges.js) can't read the client-
+     * only `first_video_result_view` PostHog event or any localStorage flag,
+     * so it needs this durable server marker to tell a watched dream from an
+     * unwatched one. Called from result.html's openFullscreenVideo -- i.e.
+     * the ENGAGED watch (opening the fullscreen player), NOT the mere page
+     * render, since the render is also what captures the thumbnail and would
+     * make "thumbnail available AND unwatched" impossible (see
+     * mark-result-viewed.js's header comment). `operationName` is the dream's
+     * own `sourceOperationName` (the server-issued job id) -- a legacy dream
+     * with none simply never marks (nothing to key on), an honest no-op.
+     * keepalive so a mark issued as the player opens still completes even if
+     * the page is navigated moments later.
+     */
+    markResultViewed: function (operationName) {
+      if (!operationName) return;
+      try {
+        fetch('/.netlify/functions/mark-result-viewed', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ operationName: operationName }),

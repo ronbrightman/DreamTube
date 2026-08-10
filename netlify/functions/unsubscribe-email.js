@@ -15,6 +15,18 @@
 // carry (this link's whole point, like verify-email-link.js's, is that it
 // needs no signed-in session on the clicking device at all).
 //
+// RFC 8058 ONE-CLICK POST (added 2026-08-10, the "unwatched dream"
+// retention-nudge round): the newer retention sends also carry the
+// `List-Unsubscribe` + `List-Unsubscribe-Post: List-Unsubscribe=One-Click`
+// headers Gmail/Yahoo require on bulk mail. When a mail client honors those,
+// it sends a machine POST (no human, no browser) to this SAME url — with
+// `email`/`token` still on the query string (they're baked into the
+// List-Unsubscribe url) and a `List-Unsubscribe=One-Click` form body. So
+// this endpoint now ALSO accepts POST: it verifies the exact same token and
+// suppresses the exact same way as GET, but returns a minimal 200 (no HTML
+// page — nothing renders it). GET stays the human-facing confirmation page.
+// Any non-GET/POST method is still rejected.
+//
 // TOKEN: `token` must be the real lib/unsubscribe-token.js HMAC signature
 // for `email` — see that module's own header comment for why this is a
 // stateless, deterministic HMAC rather than this codebase's usual
@@ -64,22 +76,36 @@ function htmlResponse(statusCode, title, message, code) {
 }
 
 exports.handler = async function (event) {
-  if (event.httpMethod !== 'GET') {
+  var method = event.httpMethod;
+  if (method !== 'GET' && method !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'E1: method_not_allowed' }) };
   }
 
+  // Both the human GET and the RFC 8058 one-click POST carry `email`/`token`
+  // on the query string (they're baked into the List-Unsubscribe url) — see
+  // this file's header comment. The POST additionally has a
+  // `List-Unsubscribe=One-Click` form body, which we don't need to read: the
+  // token in the url is the whole authorization.
   var query = (event.queryStringParameters || {});
   var email = (query.email || '').trim();
   var token = (query.token || '').trim();
+
+  // A machine POST gets a minimal JSON body, never the human confirmation
+  // page (nothing renders it); a human GET gets the page.
+  var isOneClickPost = (method === 'POST');
+
   if (!email || !token) {
+    if (isOneClickPost) return { statusCode: 400, body: JSON.stringify({ error: 'E2: missing_params' }) };
     return htmlResponse(400, 'Invalid link', 'This unsubscribe link is missing some information. Please use the link from your original email.', 'E2: missing_params');
   }
 
   if (!unsubscribeToken.verifyToken(email, token)) {
+    if (isOneClickPost) return { statusCode: 400, body: JSON.stringify({ error: 'E3: invalid_token' }) };
     return htmlResponse(400, 'Invalid link', 'This unsubscribe link isn\'t valid. Please use the link from your original email.', 'E3: invalid_token');
   }
 
   await emailSuppressionStore.suppress(event, email);
 
+  if (isOneClickPost) return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   return htmlResponse(200, 'You\'re unsubscribed', 'You won\'t get any more of these emails from DreamTube. If this was a mistake, just start a new dream and we\'ll pick it back up.');
 };

@@ -91,6 +91,19 @@ var COLORS = {
 // the founder's own explicit ask, not "as faint as possible" alone.
 var ADDRESS_COLOR = '#48436a';
 
+// The visible unsubscribe footer's dedicated small/faint style (founder
+// request 2026-08-10, the "unwatched dream" retention-nudge round: "small
+// faint font"). One step fainter than body text and smaller than it, but
+// deliberately NOT as faint as ADDRESS_COLOR above -- this line still
+// carries the one actionable footer LINK (the unsubscribe itself), so it
+// stays legible/clickable, just quiet. Applies to every email using this
+// shared shell. UNSUBSCRIBE_FONT_SIZE is smaller than the old 12px the
+// footer used; the link now sits at COLORS.textFaint (a step down from the
+// brighter COLORS.textMuted it used before) so it no longer reads as the
+// most prominent thing in the footer.
+var UNSUBSCRIBE_FONT_SIZE = '11px';
+var UNSUBSCRIBE_LINK_COLOR = COLORS.textFaint;
+
 var MAILING_ADDRESS = '10 Dgania, Herzliya, Israel';
 
 function esc(s) {
@@ -140,9 +153,11 @@ function renderShell(opts) {
   var footer = opts.unsubscribeUrl
     ? (
       '<tr><td style="padding:20px 28px 28px;border-top:1px solid ' + COLORS.border + ';">' +
-      '<p style="margin:16px 0 6px;font-size:12px;line-height:1.6;color:' + COLORS.textFaint + ';">' +
+      // Small + faint, one quiet line -- see UNSUBSCRIBE_FONT_SIZE/
+      // UNSUBSCRIBE_LINK_COLOR above (founder "small faint font" request).
+      '<p style="margin:16px 0 6px;font-size:' + UNSUBSCRIBE_FONT_SIZE + ';line-height:1.6;color:' + COLORS.textFaint + ';">' +
       'You\'re getting this because you have a DreamTube account. ' +
-      '<a href="' + esc(opts.unsubscribeUrl) + '" style="color:' + COLORS.textMuted + ';text-decoration:underline;">Unsubscribe</a>' +
+      '<a href="' + esc(opts.unsubscribeUrl) + '" style="color:' + UNSUBSCRIBE_LINK_COLOR + ';text-decoration:underline;">Unsubscribe</a>' +
       '</p>' +
       '<p style="margin:0;font-size:10px;line-height:1.5;color:' + ADDRESS_COLOR + ';">' + esc(MAILING_ADDRESS) + '</p>' +
       '</td></tr>'
@@ -168,4 +183,4 @@ function ctaButton(url, label) {
   return '<a href="' + esc(url) + '" style="display:inline-block;padding:14px 26px;background:' + COLORS.ctaBg + ';color:' + COLORS.ctaText + ';border-radius:100px;text-decoration:none;font-weight:700;font-size:14.5px;">' + esc(label) + '</a>';
 }
 
-module.exports = { COLORS, ADDRESS_COLOR, MAILING_ADDRESS, esc, selfOrigin, logoUrl, renderShell, ctaButton };
+module.exports = { COLORS, ADDRESS_COLOR, MAILING_ADDRESS, UNSUBSCRIBE_FONT_SIZE, UNSUBSCRIBE_LINK_COLOR, esc, selfOrigin, logoUrl, renderShell, ctaButton };

@@ -2053,6 +2053,18 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     function openFullscreenVideo(){
       if(!dream.videoUrl) return;
 
+      // Server-side "actually watched their result" marker (suppresses the
+      // "unwatched dream" retention nudge) -- fired HERE, at the engaged
+      // fullscreen-open (the real watch), not on page render, since the
+      // render is also what captures the thumbnail and marking "viewed"
+      // there would make the nudge's own "thumbnail available AND unwatched"
+      // trigger unreachable (see mark-result-viewed.js's header comment).
+      // Owner-only + best-effort: only this dream's own account should ever
+      // mark it, and a failure is a harmless no-op (worst case a nudge for a
+      // dream they did watch, bounded by the once-per-dream guard + the
+      // unsubscribe link).
+      if(isMyDream && dream.sourceOperationName){ DreamStore.markResultViewed(dream.sourceOperationName); }
+
       // 1) iOS Safari's own native fullscreen-video API.
       if(typeof video.webkitEnterFullscreen === 'function'){
         try { video.webkitEnterFullscreen(); return; } catch (e) { /* fall through */ }
@@ -2102,6 +2114,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         history.replaceState(null, '', cleaned.pathname + cleaned.search + cleaned.hash);
       }
       if(dream && dream.videoUrl){
+        // Arriving via an explicit Play tap on home's Day-0 card is a
+        // genuine watch too -- mark it viewed, same as openFullscreenVideo
+        // above (which this deep-link path deliberately bypasses).
+        if(isMyDream && dream.sourceOperationName){ DreamStore.markResultViewed(dream.sourceOperationName); }
         openOverlayPlayer();
         var kickBedOnce = function(){
           document.removeEventListener('touchstart', kickBedOnce, true);
