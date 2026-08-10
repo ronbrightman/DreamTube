@@ -275,3 +275,23 @@ test('with no RESEND_API_KEY, the send defers (guard released) and stays enqueue
   assert.equal(result2.sent, 1, 'the released guard lets a later run send — the config gap did not burn this dream\'s one nudge');
   assert.equal(spies2.resendCalls.length, 1);
 });
+
+test('SEND-TIME viewed re-check: the sender itself refuses to send if a viewed marker landed after the scan\'s step-1 check, WITHOUT burning the once-per-dream guard (founder ask: re-check watched at send time, not just enqueue)', async function () {
+  var nudgeSender = require('../netlify/functions/lib/unwatched-dream-nudge-sender');
+  var op = 'mock:1:sendrace';
+  await resultViewStore.markViewed(fakeEvent({}), op);
+  var spies = installFetchSpy();
+
+  var res = await nudgeSender.sendIfEligible(fakeEvent({}), {
+    operationName: op,
+    username: 'racer', email: 'racer@example.com',
+    dream: { id: 'd-sendrace', imageUrl: 'https://img.example/r.jpg', storyText: 'a dream' }
+  });
+
+  assert.equal(res.sent, false);
+  assert.equal(res.skipped, 'already_viewed');
+  assert.equal(spies.resendCalls.length, 0, 'a watched dream must not get a nudge even if it reaches the sender');
+  // The once-per-dream guard must NOT have been burned by the watched-suppress.
+  var guard = await nudgeStore.markNudgedOnce(fakeEvent({}), op, 'd-sendrace');
+  assert.ok(guard.ok, 'the watched re-check must skip BEFORE claiming the guard — it must still be claimable');
+});

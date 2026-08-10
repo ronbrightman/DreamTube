@@ -58,6 +58,7 @@
 
 var nudgeStore = require('./unwatched-dream-nudge-store');
 var firstDreamEmailStore = require('./first-dream-email-store');
+var resultViewStore = require('./result-view-store');
 var posthogCapture = require('./posthog-capture');
 var emailSuppressionStore = require('./email-suppression-store');
 var unsubscribeToken = require('./unsubscribe-token');
@@ -183,6 +184,26 @@ async function sendIfEligible(event, opts) {
   if (!operationName || !username || !email) {
     await reportSkip(username, email, 'missing_identity');
     return { ok: true, sent: false, skipped: 'missing_identity' };
+  }
+
+  // WATCHED-AWARE RE-CHECK AT SEND TIME (founder complaint 2026-08-10 —
+  // "the 'ready to watch' nudge must NOT be sent to a user who has already
+  // watched that dream; re-check the watched flag at send time, not just at
+  // enqueue time"). send-unwatched-dream-nudges.js's scan already suppresses
+  // a viewed dream at its step 1 (BEFORE ever calling in here), but this is
+  // the single actual send choke point, so the guarantee lives here too:
+  // re-read the viewed marker right before doing anything, closing the narrow
+  // window where the user opens the fullscreen player AFTER the scan's step-1
+  // read but BEFORE this send, and protecting any future caller that reaches
+  // this sender without the scan's own pre-check. Checked BEFORE claiming the
+  // once-per-dream guard, exactly like the gates below it, so a suppressed-
+  // because-watched nudge never burns this dream's one-and-only marker.
+  // Same lib/result-view-store.js marker (keyed by operationName) the scan
+  // and the first-dream email both consult.
+  var alreadyViewed = await resultViewStore.hasViewed(event, operationName);
+  if (alreadyViewed) {
+    await reportSkip(username, email, 'already_viewed');
+    return { ok: true, sent: false, skipped: 'already_viewed' };
   }
 
   // Thumbnail gate (the scan already enforces this, but this is the single

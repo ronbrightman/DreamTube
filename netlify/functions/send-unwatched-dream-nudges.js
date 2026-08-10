@@ -98,7 +98,13 @@ var TERMINAL_SKIPS = {
   suppressed: true,
   first_dream_email_already_sent: true,
   already_nudged: true,
-  missing_identity: true
+  missing_identity: true,
+  // The sender's own belt-and-suspenders viewed re-check (a viewed marker
+  // that landed after this scan's own step-1 check) — a watched dream never
+  // becomes unwatched, so dequeue rather than re-check forever. The scan
+  // suppresses viewed dreams at step 1 anyway; this only fires in the narrow
+  // step-1-to-send race the sender re-check closes.
+  already_viewed: true
 };
 
 /** Finds the private dream (if any) whose sourceOperationName matches — same correlation as send-pending-first-dream-emails.js's findDreamForOperation. */

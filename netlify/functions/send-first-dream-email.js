@@ -1,7 +1,7 @@
 // netlify/functions/send-first-dream-email.js
 //
 // POST { username, password, dreamId, caption, style, videoUrl, mediaType,
-//        imageUrl }
+//        imageUrl, operationName }
 // -> sends the "your dream is ready" RETENTION email (day-1 -> day-2+
 // return), tracker.html's for-product-retention-email-send-user-th-eke9ra
 // item, founder-greenlit 2026-07-26 ("start now, before paywall"). imageUrl
@@ -189,6 +189,17 @@ exports.handler = async function (event) {
   // back to the flat-color banner, never rejected or treated as a
   // malformed request.
   var imageUrl = payload.imageUrl;
+  // operationName (added 2026-08-10, founder complaint — "I still get 'your
+  // video is ready to watch' even when I DID watch it"): the dream's
+  // server-issued job id (js/store.js passes dream.sourceOperationName). Lets
+  // the shared sender suppress this "your dream is ready to watch" email for
+  // a dream the user has already opened the fullscreen player for (the same
+  // watched-aware suppression the automatic scan and the unwatched-dream
+  // nudge apply — see lib/first-dream-email-sender.js's WATCHED-AWARE
+  // SUPPRESSION note). Optional: absent (a legacy dream with no
+  // sourceOperationName) just means this send can't be viewed-checked and
+  // behaves exactly as before.
+  var operationName = payload.operationName;
   var mediaType = payload.mediaType === 'image' ? 'image' : 'video';
 
   if (!username || !password || !dreamId || !videoUrl) {
@@ -243,6 +254,7 @@ exports.handler = async function (event) {
       username: account.username,
       email: account.email,
       dreamId: dreamId,
+      operationName: operationName,
       caption: caption,
       style: style,
       imageUrl: imageUrl,
