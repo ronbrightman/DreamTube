@@ -128,7 +128,7 @@ test('wizard.html: cancelling a photo pick on the self character\'s sheet, then 
   await blockThirdParty(page);
   try {
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
     await page.waitForSelector('#subject-chip-row');
 
     // Create the self character with a REAL photo (unstubbed resize) so it

@@ -246,14 +246,16 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     // ===== The actual wizard.html click-through, exactly as a real visitor
     // would drive it (no shortcuts/localStorage seeding) =====
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="2"]'); // question-first: "Someone specific" → build, Action still asked
+    await page.waitForSelector('#sheet-character-overlay.open');
+    await page.click('#char-cancel'); // dismiss the who-detail sheet for a clean Subject
+    await page.waitForSelector('#subject-chip-row');
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
-    await page.waitForSelector('[data-action="flying"]');
+    await page.waitForSelector('[data-action="flying"]'); // Setting gone: Subject → Action directly
     await page.click('[data-action="flying"]'); // selects; Action needs Continue (compound step)
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
     await page.click('#fn-recap-continue'); // round 8: recap step before the wall
@@ -459,7 +461,7 @@ async function driveWizardWallArrival(page, stash, email) {
       stashAfterLoad: localStorage.getItem(key),
       onWall: !!document.getElementById('contact-email'),
       veil: !!document.querySelector('.fn-forming-frame'),
-      noChooser: !document.getElementById('entry-mode-row'),
+      noChooser: !document.getElementById('fn-q-grid'),
       noSubjectStep: !document.getElementById('subject-chip-row')
     };
   }, STASH_KEY);

@@ -171,24 +171,26 @@ test('journey 2 (organic): index.html -> wizard.html\'s documented step sequence
   await page.waitForSelector('a[href="wizard.html"], a[href*="wizard.html"]', { timeout: 10000 });
 
   await safeGoto(origin + '/wizard.html');
-  // 1. Subject
+  // 0. Question-first screen 1: the "Someone specific" tile is the one build
+  //    tile that still asks the Action step (scenario tiles pre-seed + skip
+  //    it); it opens the who-detail sheet, which we dismiss. Setting and Mood
+  //    are gone (inferred), so the flow is Who → What → Style → free text.
+  await page.waitForSelector('#fn-q-grid [data-tile="2"]', { timeout: 10000 });
+  await page.click('#fn-q-grid [data-tile="2"]');
+  await page.waitForSelector('#sheet-character-overlay.open', { timeout: 10000 });
+  await page.click('#char-cancel');
+  // 1. Subject (Who)
   await page.waitForSelector('[data-subj-other="none"]', { timeout: 10000 });
   await page.click('[data-subj-other="none"]');
   await page.click('#fn-subject-continue');
-  // 2. Setting
-  await page.waitForSelector('#fn-setting-skip', { timeout: 10000 });
-  await page.click('#fn-setting-skip');
-  // 3. Action
+  // 2. Action (What) — Setting is gone, so Subject leads straight here.
   await page.waitForSelector('[data-action="flying"]', { timeout: 10000 });
   await page.click('[data-action="flying"]');
   await page.click('#fn-action-continue');
-  // 4. Mood
-  await page.waitForSelector('#fn-mood-skip', { timeout: 10000 });
-  await page.click('#fn-mood-skip');
-  // 5. Style
+  // 3. Style — Mood is gone, so Action leads straight here.
   await page.waitForSelector('#fn-style-skip', { timeout: 10000 });
   await page.click('#fn-style-skip');
-  // 6. Free text
+  // 4. Free text
   await page.waitForSelector('#fn-freetext-skip', { timeout: 10000 });
   await page.click('#fn-freetext-skip');
   // 7. The merged signup wall (docs/JOURNEY_MANIFEST.md journey 2 step 7,

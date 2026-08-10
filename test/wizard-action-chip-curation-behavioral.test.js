@@ -74,16 +74,15 @@ async function safeGoto(page, url) {
   }
 }
 
-/** Advances wizard.html from the very start through to Step 3 (Action), leaving the visitor sitting on it. */
+/** Advances wizard.html from the very start through to the Action step, leaving the visitor sitting on it. Enters via the "Someone specific" question tile (index 2) — the one build tile that reaches the Action step (scenario tiles pre-seed + skip it); its who-detail sheet is dismissed. Setting is gone, so Subject leads straight to Action. */
 async function reachActionStep(page) {
   await safeGoto(page, baseUrl + '/wizard.html');
-  // Round 8: fresh arrivals meet the entry chooser first — commit Build.
-  await page.click('#entry-mode-row [data-entry-mode="build"]');
+  await page.click('#fn-q-grid [data-tile="2"]');
+  await page.waitForSelector('#sheet-character-overlay.open');
+  await page.click('#char-cancel');
   await page.waitForSelector('[data-subj-other="none"]');
   await page.click('[data-subj-other="none"]');
   await page.click('#fn-subject-continue');
-  await page.waitForSelector('#fn-setting-skip');
-  await page.click('#fn-setting-skip');
   await page.waitForSelector('#action-row');
 }
 
@@ -186,7 +185,7 @@ test('wizard.html Step 3: every default-visible chip is selectable by itself (si
       if (key === 'other') continue; // the write-in row reveals an input instead -- covered right below
       await page.click('#action-row [data-action="' + key + '"]');
       await page.click('#fn-action-continue');
-      await page.waitForSelector('#mood-row', { timeout: 3000 });
+      await page.waitForSelector('#style-grid', { timeout: 3000 }); // Mood removed: Action -> Style directly
       await page.click('#fnBack');
       await page.waitForSelector('#action-row');
       var selectedKeys = await page.$$eval('#action-row .fn-chip.sel', function (els) { return els.map(function (e) { return e.dataset.action; }); });
@@ -220,7 +219,7 @@ test('wizard.html Step 3: every chip behind the "+N more" expander is fully sele
       var key = HIDDEN_KEYS[i];
       await page.click('#action-row [data-action="' + key + '"]');
       await page.click('#fn-action-continue');
-      await page.waitForSelector('#mood-row', { timeout: 3000 });
+      await page.waitForSelector('#style-grid', { timeout: 3000 }); // Mood removed: Action -> Style directly
       await page.click('#fnBack');
       await page.waitForSelector('#action-row');
       var selectedKeys = await page.$$eval('#action-row .fn-chip.sel', function (els) { return els.map(function (e) { return e.dataset.action; }); });
@@ -243,7 +242,7 @@ test('wizard.html Step 3: once a hidden chip is selected, the expander stays ope
     // must force the expander open (the active selection lives behind it and
     // must never be hidden from view).
     await page.click('#fn-action-continue');
-    await page.waitForSelector('#mood-row', { timeout: 3000 });
+    await page.waitForSelector('#style-grid', { timeout: 3000 }); // Mood removed: Action -> Style directly
     await page.click('#fnBack');
     await page.waitForSelector('#action-row');
     assert.ok((await page.locator('[data-action="late"].sel').count()) === 1, '"late" must come back still selected after the advance-and-Back round trip');
@@ -264,7 +263,7 @@ test('wizard.html Step 3: once a hidden chip is selected, the expander stays ope
     // toggle tap needed.
     await page.click('#action-row [data-action="flying"]');
     await page.click('#fn-action-continue');
-    await page.waitForSelector('#mood-row', { timeout: 3000 });
+    await page.waitForSelector('#style-grid', { timeout: 3000 }); // Mood removed: Action -> Style directly
     await page.click('#fnBack');
     await page.waitForSelector('#action-row');
     var keysAfterRealCollapse = await page.$$eval('#action-row [data-action]', function (els) { return els.map(function (e) { return e.dataset.action; }); });
@@ -310,8 +309,6 @@ test('wizard.html: a default-visible chip AND a hidden chip both reach the Conta
     await reachActionStep(page);
     await page.click('#action-row [data-action="exam"]');
     await page.click('#fn-action-continue');
-    await page.waitForSelector('#fn-mood-skip');
-    await page.click('#fn-mood-skip');
     await page.waitForSelector('#fn-style-skip');
     await page.click('#fn-style-skip');
     await page.waitForSelector('#fn-freetext-skip');
@@ -325,8 +322,6 @@ test('wizard.html: a default-visible chip AND a hidden chip both reach the Conta
     await page.click('#action-more-toggle');
     await page.click('#action-row [data-action="late"]');
     await page.click('#fn-action-continue');
-    await page.waitForSelector('#fn-mood-skip');
-    await page.click('#fn-mood-skip');
     await page.waitForSelector('#fn-style-skip');
     await page.click('#fn-style-skip');
     await page.waitForSelector('#fn-freetext-skip');
@@ -413,7 +408,7 @@ test('wizard.html Step 3 on a real mobile viewport: chips and the expander are g
     // pattern as the click-based tests above).
     await page.tap('#action-row [data-action="calm"]');
     await page.tap('#fn-action-continue');
-    await page.waitForSelector('#mood-row', { timeout: 3000 });
+    await page.waitForSelector('#style-grid', { timeout: 3000 }); // Mood removed: Action -> Style directly
     await page.tap('#fnBack');
     await page.waitForSelector('#action-row');
     assert.equal(await page.locator('[data-action="calm"].sel').count(), 1, 'a real touch tap must select a chip behind the expander');

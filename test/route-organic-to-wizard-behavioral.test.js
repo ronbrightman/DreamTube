@@ -118,10 +118,10 @@ test('wizard.html: works correctly as a completely fresh entry point -- no query
     var title = await page.title();
     assert.equal(title, 'Build your dream — DreamTube');
 
-    // Step 1 (Subject) must render with no crash/blank screen -- this is
-    // the same first screen a real visitor sees.
+    // The question-first screen 1 must render with no crash/blank screen --
+    // this is the same first screen a real visitor sees.
     var bodyText = await page.evaluate(function () { return document.body.innerText; });
-    assert.match(bodyText, /What did you dream\?/, 'wizard.html must render its first screen (the round-8 entry chooser) with no query params or prior state');
+    assert.match(bodyText, /What was your dream about\?/, 'wizard.html must render its first screen (the question-first tile grid) with no query params or prior state');
 
     // No console errors on a totally cold load.
     var consoleErrors = [];

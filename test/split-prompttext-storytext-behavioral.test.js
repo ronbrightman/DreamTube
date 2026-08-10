@@ -621,13 +621,16 @@ test('wizard.html: chips-only (no free text) pre-signup flow produces a human-re
     });
 
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="2"]'); // "Someone specific" → build, Action still asked
+    await page.waitForSelector('#sheet-character-overlay.open');
+    await page.click('#char-cancel'); // dismiss the who-detail sheet
+    await page.waitForSelector('#subject-chip-row');
     await page.click('[data-subj-other="stranger"]');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action
     await page.click('[data-action="flying"]'); // selects; Action needs Continue (compound step)
     await page.click('#fn-action-continue');
-    await page.click('[data-mood="epic"]');     // Mood still auto-advances (single choice)
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style (mood inferred = default dreamy)
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
 
@@ -702,13 +705,16 @@ test('wizard.html: chips WITH free text -- storyText keeps the chip story AND th
 
     var FREE_TEXT = 'A dragon showed me the way home.';
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="2"]'); // "Someone specific" → build, Action still asked
+    await page.waitForSelector('#sheet-character-overlay.open');
+    await page.click('#char-cancel'); // dismiss the who-detail sheet
+    await page.waitForSelector('#subject-chip-row');
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action
     await page.click('[data-action="flying"]'); // selects; Action needs Continue (compound step)
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.fill('#free-text-input', FREE_TEXT);
     await page.click('#fn-freetext-continue');

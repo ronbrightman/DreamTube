@@ -81,7 +81,15 @@ async function safeGoto(page, url) {
 /** Fresh wizard.html arrivals meet the round-8 entry chooser first (build/write/speak). This opens the wizard and commits Build — the path every pre-existing chip-flow test exercises. */
 async function gotoWizardBuild(page) {
   await safeGoto(page, baseUrl + '/wizard.html');
-  await page.click('#entry-mode-row [data-entry-mode="build"]');
+  // Question-first screen 1: the "Someone specific" tile (index 2) is the one
+  // build tile that lands on the Subject step with the Action ("What") step
+  // still to be asked — scenario tiles pre-seed the Action and skip it. It
+  // opens the character sheet on arrival (the who-detail route); dismiss it
+  // for a clean Subject step. Flow from here: Subject → Action → Style →
+  // free text → recap → wall (Setting/Mood are gone, now inferred).
+  await page.click('#fn-q-grid [data-tile="2"]');
+  await page.waitForSelector('#sheet-character-overlay.open');
+  await page.click('#char-cancel');
   await page.waitForSelector('#subject-chip-row');
 }
 
@@ -100,50 +108,44 @@ async function gotoCreateBuild(page) {
 // A 1x1 PNG, used to exercise the Me character's Upload-photo path.
 var TINY_PNG_BUFFER = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQAY3Y2wAAAAAElFTkSuQmCC', 'base64');
 
-test('wizard.html: every core step is completable purely by tapping chips (zero typing), Action has no Skip (required), and the assembled caption reaches the draft with the inferred camera/lighting baked in', async function (t) {
+test('wizard.html (question-first trim): the core steps Who → What → Style are completable purely by tapping chips (zero typing), the removed Setting/Mood steps never appear, Action has no Skip (required), and the assembled caption reaches the draft with the inferred camera/lighting/place baked in', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
+    // gotoWizardBuild enters via the "Someone specific" tile (build, Action
+    // still asked) and dismisses the who-detail sheet -- the trimmed flow's
+    // one entry that reaches the Action step.
     await gotoWizardBuild(page);
 
-    // Step 1 -- Subject: tap "A stranger" (no character sheet, no typing).
-    // Multi-select step -- Continue advances (Layout-B keeps its button).
+    // Step 1 -- Subject (Who): tap "A stranger" (no character sheet, no
+    // typing). Multi-select step -- Continue advances.
     await page.waitForSelector('#subject-other-row [data-subj-other="stranger"]');
     await page.click('#subject-other-row [data-subj-other="stranger"]');
     await page.click('#fn-subject-continue');
 
-    // Step 2 -- Setting: a COMPOUND step (place + Day/Night on one screen).
-    // Founder 08-08: a place tap must NOT auto-advance, or Day/Night gets
-    // skipped. Tap Sky/space, then Night, then Continue -- Continue is the
-    // only way forward. (Order deliberately place-then-time here to prove
-    // the place tap left the screen alone so Day/Night was still reachable.)
-    await page.waitForSelector('#setting-time-row [data-scenery-time="Night"]');
-    await page.click('#setting-place-row [data-setting-place="sky"]');
-    await page.click('#setting-time-row [data-scenery-time="Night"]');
-    await page.click('#fn-setting-continue');
+    // The removed Setting step must NEVER appear -- Subject advances
+    // straight to Action.
+    assert.equal(await page.locator('#setting-place-row').count(), 0, 'the Setting step was removed (place is inferred) and must never render');
 
-    // Step 3 -- Action: REQUIRED, no Skip link should exist at all. Also a
-    // COMPOUND step (POV toggle alongside), so the chip tap SELECTS and
-    // Continue advances -- no auto-advance (founder 08-08).
+    // Step 2 -- Action (What): REQUIRED, no Skip link should exist at all.
+    // Also a COMPOUND step (POV toggle alongside), so the chip tap SELECTS
+    // and Continue advances -- no auto-advance (founder 08-08).
     await page.waitForSelector('#action-row [data-action="flying"]');
     assert.equal(await page.locator('#fn-action-skip').count(), 0, 'Action step must have no Skip control per the spec');
     await page.click('#action-row [data-action="flying"]');
     await page.click('#fn-action-continue');
 
-    // Step 4 -- Mood: tap Epic (drives camera inference -> sweeping crane,
-    // overridden below since Flying was chosen -- Flying/Falling wins over
-    // Epic per the documented priority order, see js/wizard-chips.js).
-    // Auto-advances.
-    await page.waitForSelector('#mood-row [data-mood="epic"]');
-    await page.click('#mood-row [data-mood="epic"]');
+    // The removed Mood step must NEVER appear -- Action advances straight
+    // to Style.
+    assert.equal(await page.locator('#mood-row').count(), 0, 'the Mood step was removed (mood/lighting is inferred) and must never render');
 
-    // Step 5 -- Style: tap Anime (a pill row now, not a style card --
-    // Layout-B) -- auto-advances like every other single-select step.
+    // Step 3 -- Style: tap Anime (a pill row -- Layout-B) -- auto-advances
+    // like every other single-select step.
     await page.waitForSelector('#style-grid [data-style="Anime"]');
     await page.click('#style-grid [data-style="Anime"]');
 
-    // Step 6 (optional free text) -- skip entirely, no typing.
+    // Optional free text -- skip entirely, no typing.
     await page.waitForSelector('#fn-freetext-skip');
     await page.click('#fn-freetext-skip');
 
@@ -154,7 +156,7 @@ test('wizard.html: every core step is completable purely by tapping chips (zero 
     // Now at contact capture -- read the draft state assembled so far
     // (before any pre-signup generation call actually resolves) to
     // confirm the whole chip-only path produced a real, well-formed
-    // caption with the inferred camera+lighting baked in, and never
+    // caption with the inferred camera+lighting+place baked in, and never
     // required a single keystroke.
     await page.waitForSelector('#contact-email');
     var draft = await page.evaluate(function () { return window.DreamStore.getDraft(); });
@@ -329,11 +331,10 @@ test('wizard.html Subject step: ALL selections (Me with a photo, "Someone I know
     await page.click('#subject-other-row [data-subj-other="stranger"]');
 
     await page.click('#fn-subject-continue');
-    await page.waitForSelector('#setting-time-row [data-scenery-time="Night"]');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action directly
     await page.click('[data-action="flying"]'); // selects; Action needs Continue (compound step)
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
     await page.click('#fn-recap-continue'); // round 8: recap step before the wall
@@ -387,15 +388,14 @@ test('wizard.html Subject step: ALL selections (Me with a photo, "Someone I know
 // endpoint explicitly.
 // ===========================================================================
 
-/** Walks a fresh page through the core wizard steps up to the signup wall — shared by every wall test below. Action is a compound step (POV toggle alongside), so its chip tap SELECTS and Continue advances; every skippable step still advances via its Skip link; the round-8 recap step is accepted as-is. */
+/** Walks a fresh page through the trimmed wizard up to the signup wall — shared by every wall test below. Enters via the "Flying" question tile (index 0), which seeds the Action and skips the What step, so the path is Subject → Style → free text → recap → wall; Setting and Mood are gone (inferred). */
 async function reachWall(page) {
-  await gotoWizardBuild(page);
+  await safeGoto(page, baseUrl + '/wizard.html');
+  await page.click('#fn-q-grid [data-tile="0"]'); // Flying → build, Action seeded + skipped
+  await page.waitForSelector('#subject-chip-row');
   await page.click('[data-subj-other="none"]');
   await page.click('#fn-subject-continue');
-  await page.click('#fn-setting-skip');
-  await page.click('[data-action="flying"]');
-  await page.click('#fn-action-continue');
-  await page.click('#fn-mood-skip');
+  await page.waitForSelector('#fn-style-skip');
   await page.click('#fn-style-skip');
   await page.click('#fn-freetext-skip');
   await page.click('#fn-recap-continue');
@@ -405,14 +405,11 @@ async function reachWall(page) {
 /** Same walk as reachWall, but opens wizard.html with an explicit query string (used to force the wall_subtext_arm override). */
 async function reachWallWithSearch(page, search) {
   await safeGoto(page, baseUrl + '/wizard.html' + (search || ''));
-  await page.click('#entry-mode-row [data-entry-mode="build"]');
+  await page.click('#fn-q-grid [data-tile="0"]'); // Flying → build, Action seeded + skipped
   await page.waitForSelector('#subject-chip-row');
   await page.click('[data-subj-other="none"]');
   await page.click('#fn-subject-continue');
-  await page.click('#fn-setting-skip');
-  await page.click('[data-action="flying"]');
-  await page.click('#fn-action-continue');
-  await page.click('#fn-mood-skip');
+  await page.waitForSelector('#fn-style-skip');
   await page.click('#fn-style-skip');
   await page.click('#fn-freetext-skip');
   await page.click('#fn-recap-continue');
@@ -1574,7 +1571,7 @@ test('create.html Layout-B: tapping Me opens the character sheet, and an uploade
 // boolean asserts only (assert.ok((await page.$(...)) === null, ...)).
 // ===========================================================================
 
-test('wizard.html: the compound Action step does NOT auto-advance on a chip tap (POV is a secondary field on the same screen) — the POV toggle stays reachable and Continue is the only way forward — while a single-choice step (Mood) still auto-advances', async function (t) {
+test('wizard.html: the compound Action step does NOT auto-advance on a chip tap (POV is a secondary field on the same screen) — the POV toggle stays reachable and Continue advances straight to Style (the Mood step was removed)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -1582,8 +1579,7 @@ test('wizard.html: the compound Action step does NOT auto-advance on a chip tap 
     await gotoWizardBuild(page);
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
-    await page.waitForSelector('#action-row [data-action="flying"]');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action
 
     // (a) A chip tap SELECTS but must NOT advance — founder 08-08: POV
     // lives on this same screen and a tap-to-advance skipped past it.
@@ -1591,27 +1587,23 @@ test('wizard.html: the compound Action step does NOT auto-advance on a chip tap 
     assert.equal(await page.locator('[data-action="flying"].sel').count(), 1, 'the tapped action chip must show as selected');
     await page.waitForTimeout(500); // well past the old 260ms auto-advance window
     assert.equal(await page.locator('#action-row').count(), 1, 'the Action step must NOT auto-advance on a chip tap — POV is a secondary field here');
-    assert.equal(await page.locator('#mood-row').count(), 0, 'must still be sitting on Action, not skipped ahead to Mood');
+    assert.equal(await page.locator('#style-grid').count(), 0, 'must still be sitting on Action, not advanced yet');
 
     // (b) The POV toggle is reachable precisely because the screen stayed.
     // Flip it on (tap the visible switch, delivered to #pov-toggle via the
-    // wrapping <label>), then Continue advances exactly once to Mood.
+    // wrapping <label>), then Continue advances exactly once — to Style,
+    // since the Mood step is now inferred, not asked.
     await page.click('.fn-toggle-row .fn-switch-track');
     assert.equal(await page.locator('#pov-toggle').isChecked(), true, 'POV must be reachable and toggleable before leaving the Action step');
     await page.click('#fn-action-continue');
-    await page.waitForSelector('#mood-row', { timeout: 3000 });
-
-    // (c) Mood is a single-choice step with NO secondary field, so it STILL
-    // auto-advances on a chip tap — no Continue needed.
-    await page.click('#mood-row [data-mood="epic"]');
     await page.waitForSelector('#style-grid', { timeout: 3000 });
-    assert.equal(await page.locator('#style-grid').count(), 1, 'Mood must still auto-advance to Style on a single tap');
+    assert.equal(await page.locator('#mood-row').count(), 0, 'the Mood step was removed — Action advances straight to Style');
   } finally {
     await page.close();
   }
 });
 
-test('wizard.html: the compound Setting step does NOT auto-advance on a place tap (Day/Night is a secondary field on the same screen) — both stay selectable together and Continue is required — while the single-choice Style step still auto-advances', async function (t) {
+test('wizard.html (question-first trim): the removed Setting and Mood steps never render — Subject advances straight to Action and Action straight to Style — and the single-choice Style step still auto-advances to the free-text step', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -1619,34 +1611,19 @@ test('wizard.html: the compound Setting step does NOT auto-advance on a place ta
     await gotoWizardBuild(page);
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
-    await page.waitForSelector('#setting-place-row [data-setting-place="sky"]');
 
-    // (a) A place tap SELECTS but must NOT advance — founder 08-08: "it
-    // goes to the next page without letting you choose day or night".
-    await page.click('#setting-place-row [data-setting-place="sky"]');
-    assert.equal(await page.locator('#setting-place-row [data-setting-place="sky"].sel').count(), 1, 'the tapped place chip must show as selected');
-    await page.waitForTimeout(500); // well past the old 260ms auto-advance window
-    assert.equal(await page.locator('#setting-place-row').count(), 1, 'the Setting step must NOT auto-advance on a place tap');
-    assert.equal(await page.locator('#action-row').count(), 0, 'must still be sitting on Setting, not skipped ahead to Action');
-
-    // (b) Day/Night is still reachable AFTER the place pick and selectable
-    // without racing an advance — the whole point of the fix. Both
-    // selections coexist on the one screen.
-    await page.click('#setting-time-row [data-scenery-time="Night"]');
-    assert.equal(await page.locator('#setting-time-row [data-scenery-time="Night"].sel').count(), 1, 'Day/Night must be selectable after a place is picked');
-    assert.equal(await page.locator('#setting-place-row [data-setting-place="sky"].sel').count(), 1, 'the place selection must survive picking Day/Night');
-
-    // (c) Continue is the only way forward.
-    await page.click('#fn-setting-continue');
+    // Subject → Action directly (no Setting step in between).
     await page.waitForSelector('#action-row [data-action="flying"]', { timeout: 3000 });
-
-    // (d) Style (single choice, no secondary field) STILL auto-advances --
-    // walk to it and confirm one tap moves off it to the free-text step.
+    assert.equal(await page.locator('#setting-place-row').count(), 0, 'the Setting step must never render (place is inferred)');
     await page.click('#action-row [data-action="flying"]');
     await page.click('#fn-action-continue');
-    await page.waitForSelector('#fn-mood-skip');
-    await page.click('#fn-mood-skip');
-    await page.waitForSelector('#style-grid [data-style="Anime"]');
+
+    // Action → Style directly (no Mood step in between).
+    await page.waitForSelector('#style-grid [data-style="Anime"]', { timeout: 3000 });
+    assert.equal(await page.locator('#mood-row').count(), 0, 'the Mood step must never render (mood/lighting is inferred)');
+
+    // Style (single choice, no secondary field) STILL auto-advances on a
+    // single tap to the free-text step.
     await page.click('#style-grid [data-style="Anime"]');
     await page.waitForSelector('#fn-freetext-skip', { timeout: 3000 });
     assert.equal(await page.locator('#fn-freetext-skip').count(), 1, 'Style must still auto-advance to the free-text step on a single tap');
@@ -1710,10 +1687,10 @@ test('wizard.html round-8 Subject: tapping Me selects it immediately AND opens t
     assert.equal(alexAdjacency.rowIsAlex, true, 'Alex\'s detail input must sit DIRECTLY below her own row');
 
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action directly
     await page.click('[data-action="flying"]');
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
     await page.click('#fn-recap-continue');
@@ -1771,10 +1748,10 @@ test('wizard.html round-8 Subject: cancelling the Me sheet keeps Me SELECTED wit
     });
     assert.equal(stillSelected, true, 'Cancel must keep Me SELECTED — the sheet is an optional ask, not a gate');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action directly
     await page.click('[data-action="flying"]');
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
     await page.click('#fn-recap-continue');
@@ -1828,10 +1805,10 @@ test('wizard.html round-8 recap step: "Here\'s your dream — make it yours" is 
     await gotoWizardBuild(page);
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action directly
     await page.click('[data-action="flying"]');
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
     await page.waitForSelector('#fn-story-recap-text', { timeout: 3000 });
@@ -1937,33 +1914,37 @@ test('create.html entry chooser: each pill tap fires wizard_entry_mode_chosen ex
 // existing step number stays byte-stable.
 // ===========================================================================
 
-test('wizard.html entry chooser: a fresh arrival sees the 3-option chooser first (chooser dot active, no wizard_step_viewed fired); picking Build fires the event with surface:"wizard" exactly once and lands on the Subject step (which then fires its usual step:1)', async function (t) {
+test('wizard.html question-first screen 1: a fresh arrival sees the six-tile "What was your dream about?" grid over a STATIC store-image collage (no video, no "surprise me", no beta footnote); the question dot is the active first dot, no wizard_step_viewed fires; tapping a scenario tile fires wizard_entry_mode_chosen(mode:build) exactly once and lands on the Subject step (which fires its usual step:1)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.waitForSelector('#entry-mode-row');
-    assert.equal(await page.locator('#entry-mode-row [data-entry-mode="build"]').count(), 1);
-    assert.equal(await page.locator('#entry-mode-row [data-entry-mode="write"]').count(), 1);
-    assert.equal(await page.locator('#entry-mode-row [data-entry-mode="record"]').count(), 1, 'Speak must be offered outside FB/IG webviews');
-    assert.match(await page.locator('.fn-headline').first().textContent(), /What did you dream\?/);
-    // The chooser is the FIRST progress dot (mock) and is active.
+    await page.waitForSelector('#fn-q-grid');
+    assert.equal(await page.locator('#fn-q-grid .fn-q-tile').count(), 6, 'exactly six question tiles');
+    assert.match(await page.locator('.fn-q-label').first().textContent(), /What was your dream about\?/);
+    // Static 2x2 store-image collage hero — four <img>, never a <video>.
+    assert.equal(await page.locator('.fn-q-collage img').count(), 4, 'the hero is a static 2x2 store-image collage (four images)');
+    assert.equal(await page.locator('.fn-q-collage video').count(), 0, 'the hero must be static — no video element');
+    // The finalized shape drops the "surprise me" escape hatch and the beta footnote.
+    assert.equal(await page.locator('#fn-q-surprise').count(), 0, 'no "surprise me" option in the finalized shape');
+    assert.equal(await page.getByText('Free while', { exact: false }).count(), 0, 'no beta footnote in the finalized shape');
+    // The question screen is the FIRST progress dot and is active.
     var firstDotActive = await page.evaluate(function () {
       var dot = document.querySelector('#fnProgress i');
       return !!(dot && dot.classList.contains('now'));
     });
-    assert.equal(firstDotActive, true, 'the chooser must be the first, active progress dot');
+    assert.equal(firstDotActive, true, 'the question-first screen must be the first, active progress dot');
 
-    // No wizard_step_viewed yet — the chooser is analytics-invisible to
-    // the step funnel (numbering stays byte-stable).
+    // No wizard_step_viewed yet — the question screen is analytics-invisible
+    // to the step funnel (numbering stays byte-stable).
     var preEvents = await page.evaluate(function () {
       var queue = (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];
       return queue.filter(function (e) { return e[0] === 'capture' && e[1] === 'wizard_step_viewed'; }).length;
     });
-    assert.equal(preEvents, 0, 'the chooser itself must never fire wizard_step_viewed');
+    assert.equal(preEvents, 0, 'the question screen itself must never fire wizard_step_viewed');
 
-    await page.click('#entry-mode-row [data-entry-mode="build"]');
+    await page.click('#fn-q-grid [data-tile="0"]'); // Flying → build (seeds Action, skips What)
     await page.waitForSelector('#subject-chip-row');
     var events = await page.evaluate(function () {
       var queue = (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];
@@ -1973,8 +1954,8 @@ test('wizard.html entry chooser: a fresh arrival sees the 3-option chooser first
       };
     });
     assert.equal(events.mode.length, 1, 'exactly ONE wizard_entry_mode_chosen per commit tap');
-    assert.deepEqual(events.mode[0], { mode: 'build', surface: 'wizard' });
-    assert.deepEqual(events.steps, [1], 'Subject must fire its usual step:1 — numbering untouched by the chooser');
+    assert.deepEqual(events.mode[0], { mode: 'build', surface: 'wizard', tile: 'Flying' });
+    assert.deepEqual(events.steps, [1], 'Subject must fire its usual step:1 — numbering untouched by the trim');
   } finally {
     await page.close();
   }
@@ -1999,7 +1980,8 @@ test('wizard.html entry chooser: Write jumps straight to the free-text step and 
     });
 
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="write"]');
+    await page.waitForSelector('#fn-q-grid');
+    await page.click('#fn-q-grid [data-tile="5"]'); // "I'll describe it" → write mode
     // Lands directly on the free-text step — no chip steps in between.
     await page.waitForSelector('#free-text-input');
     await page.fill('#free-text-input', WRITTEN);
@@ -2037,10 +2019,10 @@ test('wizard.html Build mode: "Anything to add?" text JOINS the chip-assembled s
     await gotoWizardBuild(page);
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action directly
     await page.click('[data-action="flying"]');
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.fill('#free-text-input', EXTRA);
     await page.click('#fn-freetext-continue');
@@ -2058,13 +2040,14 @@ test('wizard.html Build mode: "Anything to add?" text JOINS the chip-assembled s
   }
 });
 
-test('wizard.html entry chooser: Speak routes to create.html\'s existing record flow (?record=1, via its login gate — no new pre-signup recording surface), and is hidden entirely in an Instagram in-app webview', async function (t) {
+test('wizard.html question-first screen 1: the Speak-it secondary link routes to create.html\'s existing record flow (?record=1, via its login gate — no new pre-signup recording surface), and is hidden entirely in an Instagram in-app webview while the six tiles still render', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="record"]');
+    await page.waitForSelector('#fn-q-speak');
+    await page.click('#fn-q-speak');
     // create.html's own logged-out gate takes it from here (login.html) —
     // asserting we left FOR create.html?record=1 is the contract.
     await page.waitForURL(/create\.html\?record=1|login\.html/, { timeout: 5000 });
@@ -2072,37 +2055,37 @@ test('wizard.html entry chooser: Speak routes to create.html\'s existing record 
     await page.close();
   }
 
-  // Instagram webview UA: the Speak row must not render at all — same
-  // "never offer a path that can't work" rule as create.html's guard.
+  // Instagram webview UA: the Speak link must not render at all — same
+  // "never offer a path that can't work" rule as create.html's guard. The
+  // six question tiles are unaffected (they never need media to work).
   var ctx = await browser.newContext({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Instagram 300.0.0.0' });
   var page2 = await ctx.newPage();
   await blockThirdParty(page2);
   try {
     await safeGoto(page2, baseUrl + '/wizard.html');
-    await page2.waitForSelector('#entry-mode-row');
-    assert.equal(await page2.locator('#entry-mode-row [data-entry-mode="record"]').count(), 0, 'Speak must be hidden in an IG in-app webview');
-    assert.equal(await page2.locator('#entry-mode-row [data-entry-mode="build"]').count(), 1, 'Build must remain');
-    assert.equal(await page2.locator('#entry-mode-row [data-entry-mode="write"]').count(), 1, 'Write must remain');
+    await page2.waitForSelector('#fn-q-grid');
+    assert.equal(await page2.locator('#fn-q-speak').count(), 0, 'the Speak link must be hidden in an IG in-app webview');
+    assert.equal(await page2.locator('#fn-q-grid .fn-q-tile').count(), 6, 'all six question tiles must still render in a webview');
   } finally {
     await page2.close();
     await ctx.close();
   }
 });
 
-test('wizard.html entry chooser: NOT shown to non-fresh arrivals — a ?resume=1 arrival goes straight to the step flow, and a Facebook ?fb_error return leg lands on the wall (both chooser-free)', async function (t) {
+test('wizard.html question-first screen 1: NOT shown to non-fresh arrivals — a ?resume=1 arrival goes straight to the step flow, and a Facebook ?fb_error return leg lands on the wall (both tile-grid-free)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    // Funnel-style resume arrival: straight to Subject, no chooser.
+    // Funnel-style resume arrival: straight to Subject, no question grid.
     await safeGoto(page, baseUrl + '/wizard.html?resume=1');
     await page.waitForSelector('#subject-chip-row');
-    assert.ok((await page.$('#entry-mode-row')) === null, 'a resume arrival must never see the chooser — funnel users already chose their mode funnel-side');
+    assert.ok((await page.$('#fn-q-grid')) === null, 'a resume arrival must never see the question grid — funnel users already chose their scenario funnel-side');
 
-    // Facebook error return leg: straight to the wall, no chooser.
+    // Facebook error return leg: straight to the wall, no question grid.
     await safeGoto(page, baseUrl + '/wizard.html?fb_error=denied');
     await page.waitForSelector('#contact-email');
-    assert.ok((await page.$('#entry-mode-row')) === null, 'a Facebook return leg must never see the chooser');
+    assert.ok((await page.$('#fn-q-grid')) === null, 'a Facebook return leg must never see the question grid');
   } finally {
     await page.close();
   }
@@ -2119,7 +2102,7 @@ test('wizard.html entry chooser: NOT shown to non-fresh arrivals — a ?resume=1
 // and unit-level in test/wizard-chips.test.js.
 // ===========================================================================
 
-test('wizard.html round 9: wall→Back repaints the LLM-upgraded story with NO template flash and NO second rewrite-dream-story call — while a REAL content change (different mood) releases it and recomputes fresh', async function (t) {
+test('wizard.html round 9: wall→Back repaints the LLM-upgraded story with NO template flash and NO second rewrite-dream-story call — while a REAL content change (different action) releases it and recomputes fresh', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -2134,10 +2117,10 @@ test('wizard.html round 9: wall→Back repaints the LLM-upgraded story with NO t
     await gotoWizardBuild(page);
     await page.click('[data-subj-other="stranger"]');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action directly
     await page.click('[data-action="flying"]');
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
     await page.waitForFunction(function (expected) {
@@ -2156,14 +2139,17 @@ test('wizard.html round 9: wall→Back repaints the LLM-upgraded story with NO t
     assert.equal(rewriteCalls.length, 1, 'an unchanged revisit must NOT fire a second rewrite call — that was double LLM spend per revisit');
     assert.equal(await page.inputValue('#fn-story-recap-text'), REWRITTEN + ' v1', 'still the settled story after the would-have-been rewrite window');
 
-    // Now a REAL content change: Back to mood, pick epic, forward again —
-    // the signature differs, so the recap recomputes (template first,
-    // then a NEW rewrite).
-    await page.click('#fnBack'); // freetext
-    await page.click('#fnBack'); // style
-    await page.click('#fnBack'); // mood
-    await page.waitForSelector('#mood-row');
-    await page.click('#mood-row [data-mood="epic"]'); // auto-advances to style
+    // Now a REAL content change: Back to the Action step, change the action,
+    // forward again — the signature differs, so the recap recomputes
+    // (template first, then a NEW rewrite). (The Mood step this test used to
+    // change is gone; the Action step is the equivalent signature-affecting
+    // input now.)
+    await page.click('#fnBack'); // recap → freetext
+    await page.click('#fnBack'); // freetext → style
+    await page.click('#fnBack'); // style → action (Mood removed)
+    await page.waitForSelector('#action-row [data-action="running"]');
+    await page.click('#action-row [data-action="running"]'); // change the action → new content signature
+    await page.click('#fn-action-continue');
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
     await page.waitForFunction(function (expected) {
@@ -2188,10 +2174,10 @@ test('wizard.html round 9: a hand-edited recap SURVIVES an accidental Back→For
     await gotoWizardBuild(page);
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action directly
     await page.click('[data-action="flying"]');
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
     await page.waitForSelector('#fn-story-recap-text');
@@ -2241,10 +2227,10 @@ test('wizard.html round 9: the deterministic chips+freetext join is sentence-cas
     await gotoWizardBuild(page);
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action directly
     await page.click('[data-action="flying"]');
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.fill('#free-text-input', 'the sea was made of glass'); // lowercase, no period — the bug-hunt repro
     await page.click('#fn-freetext-continue');
@@ -2280,10 +2266,10 @@ test('wizard.html round 9 fix #6: neither the wall\'s email input nor the recap 
     await gotoWizardBuild(page);
     await page.click('[data-subj-other="none"]');
     await page.click('#fn-subject-continue');
-    await page.click('#fn-setting-skip');
+    await page.waitForSelector('#action-row [data-action="flying"]'); // Setting gone: Subject → Action directly
     await page.click('[data-action="flying"]');
     await page.click('#fn-action-continue');
-    await page.click('#fn-mood-skip');
+    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
     await page.click('#fn-style-skip');
     await page.click('#fn-freetext-skip');
 

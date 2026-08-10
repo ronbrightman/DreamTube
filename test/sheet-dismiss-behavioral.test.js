@@ -570,7 +570,7 @@ test('wizard.html character sheet: tap-outside closes, drag-dismiss/snap-back bo
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
     await page.waitForSelector('#subject-chip-row');
     await page.waitForSelector('#subj-add-other');
 
@@ -644,7 +644,7 @@ test('wizard.html character sheet ("Me"): a rapid second tap at the same spot (~
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
     // Round 8: tapping the Me row opens the character sheet directly
     // (self mode, photo option included) -- so the Me row tap itself is
     // where the rapid-re-tap protection has to hold for "Me".
@@ -665,7 +665,7 @@ test('wizard.html character sheet ("Someone I know"): same rapid-re-tap protecti
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
     await page.waitForSelector('#subj-add-other');
 
     await tapTwiceRapidly(page, '#subj-add-other', 25);
@@ -683,7 +683,7 @@ test('wizard.html character sheet: a genuine tap-outside at a DIFFERENT position
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
     await page.waitForSelector('#subj-add-other');
     await page.click('#subj-add-other');
     // No settle wait -- dismiss immediately (same instant the .open class
@@ -706,7 +706,7 @@ test('wizard.html character sheet: a genuine tap-outside well after opening stil
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
     await page.waitForSelector('#subj-add-other');
     await page.click('#subj-add-other');
     await waitForSheetSettled(page, '#sheet-character-overlay');
@@ -743,7 +743,7 @@ test('wizard.html character sheet: opened via a normal (non-adversarial) tap, sa
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
     await page.waitForSelector('#subject-other-row [data-subj-other="stranger"]');
 
     // Select "A stranger" FIRST (an ordinary tap, no character sheet involved).
@@ -1086,7 +1086,7 @@ test('wizard.html character sheet: #app stays capped and the sheet still has a c
     var page = await context.newPage();
     await blockThirdParty(page);
     await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#entry-mode-row [data-entry-mode="build"]'); // round-8 entry chooser
+    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
     await page.waitForSelector('#subject-chip-row');
 
     await inflateContentTallerThanViewport(page, '#fnScreen');
