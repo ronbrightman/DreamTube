@@ -130,15 +130,20 @@ async function removeBlockedHandle(event, username, handle) {
  * Deletes `username`'s entire block-list record outright (not a
  * clear-to-empty-array write) — the account-deletion cleanup path
  * (delete-account.js), same "one record per account, one delete() call"
- * shape as dreamStore.deleteAllPrivateDreams/accountAuthToken.
- * invalidateTokensForUsername already use there. Without this, the record
- * survives its own account's deletion and — since usernames can be
- * re-registered once freed (account-store.js has no reuse cooldown) — a
- * brand-new, unrelated future account claiming the same freed username
- * would silently inherit the OLD account's block list on its very first
- * getBlockedHandles read. Never throws; a failed delete here must not
- * block the rest of account deletion (same posture as every other step
- * in that flow).
+ * shape as dreamStore.deleteAllPrivateDreams's own deleteAllPrivateDreams
+ * already uses there — UNLIKE accountAuthToken.invalidateTokensForUsername,
+ * which doesn't delete anything at all (it WRITES a per-username cutoff
+ * timestamp that makes every token minted before it fail verification —
+ * see that file's own IDENTITY-CUTOFF INVALIDATION header comment), a
+ * genuinely different mechanism achieving the same "old identity can no
+ * longer act" goal for a different, non-deletable kind of state. Without
+ * this function, the block-list record survives its own account's
+ * deletion and — since usernames can be re-registered once freed
+ * (account-store.js has no reuse cooldown) — a brand-new, unrelated future
+ * account claiming the same freed username would silently inherit the OLD
+ * account's block list on its very first getBlockedHandles read. Never
+ * throws; a failed delete here must not block the rest of account
+ * deletion (same posture as every other step in that flow).
  */
 async function deleteBlocksForUsername(event, username) {
   var key = normalizeUsername(username);
