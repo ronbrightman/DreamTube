@@ -381,3 +381,184 @@ makes that call.
   for its analogous share-sheet fix, this is a test-infrastructure fix
   (a condition-based wait, replacing a race-prone measurement), not a
   behavior/coverage change.
+
+## Round 4 — comment-sheet-behavioral.test.js's delete-rollback flake, ROOT-CAUSED AND FIXED
+
+Tracker item `for-product-low-behavioral-test-suite-se-4on41a` (LOW
+priority). Branch `fix-behavioral-suite-order-dependent-flakes`. Picks
+up round 2's own "MutationObserver-batching, NOT confirmed" hypothesis
+for `comment-sheet-behavioral.test.js`'s "deleting a comment rolls back
+on a failed delete-comment response" test, which had recurred across
+multiple rounds (round 2, round 3's own priority-2 experiment run E, and
+independently again this round) without ever being pinned down.
+
+### Environment note: this sandbox runs multiple concurrent agent sessions
+
+Confirmed directly via `ps`/`/proc/<pid>/cwd`: while investigating,
+**a completely separate session's own `npm test` (a different worktree,
+`dreamtube-fix-out-of-tokens-inline-claim`, an unrelated branch) was
+running concurrently** on this same 4-CPU sandbox, driving the observed
+load average up to 17-20 (vs. 4 cores). This is a REAL, broader form of
+the "resource exhaustion" theme rounds 2-3 already established — full-
+suite runs on this infrastructure are subject to genuine CROSS-SESSION
+CPU contention, not only node:test's own file-level concurrency among a
+single suite's own workers. Worth knowing for anyone else chasing a
+load-dependent flake here: a suspiciously bad run (or a suspiciously
+long one) may be someone else's session, not a regression.
+
+### Step 1 — reproduce
+
+Isolated (`node --test test/comment-sheet-behavioral.test.js`): 16/16
+clean, 2/2 runs — matches every prior round's finding. Ran the full
+suite; the environment's live cross-session load made a true full
+264-273-file run impractical to complete inside a single tool
+invocation (see below), so used round 3's own established "faster
+reproduction proxy" technique: the first 90 alphabetically-sorted files
+(`ls test/*.test.js | sort | head -90`, comment-sheet-behavioral.test.js
+is file #43). This subset reliably reproduced the exact real symptom on
+the first attempt: `not ok 508 - deleting a comment rolls back on a
+failed delete-comment response...` / `page.waitForSelector: Timeout
+3000ms exceeded ... 10 x locator resolved to visible ... never
+detached` — identical error shape to every prior round's capture.
+
+### Step 2 — distinguish shared-state vs. resource-exhaustion (task's own suggested test)
+
+Structurally already ruled out per `test/helpers/settle.js`'s own header
+comment: `node --test test/*.test.js` runs every FILE in its own child
+process, so no JS module-level state can leak between files at all —
+confirmed independently again by inspecting this file: every test opens
+its own fresh `browser.newContext()` (isolated storage), the one
+file-level shared `browser` instance is only reused as a Chromium
+process handle (no shared page/state), and `js/comment-sheet.js`'s own
+`currentGen` guard variable lives inside the PAGE's JS realm, reset on
+every fresh navigation. Genuinely nothing to leak.
+
+### Step 3 — direct instrumentation confirms the precise mechanism
+
+Built a standalone instrumented reproduction (`page.on('console')`
+logging + Node-side `Date.now()` timestamps around each step, plus an
+in-page `MutationObserver`) mirroring the failing test's exact steps,
+run alongside real concurrent Chromium-driven test files (not raw CPU
+busy-loops — an early attempt at those over-saturated the box badly
+enough to produce an unrelated symptom, a real network stall on this
+file's own unmocked `https://example.com/fake-feed-video.mp4` — see
+"other findings" below).
+
+Under real contention (`media-library-page.test.js` +
+`wizard-ui-behavioral.test.js` + `social-layer-v2-profile-
+behavioral.test.js` running concurrently), reproduced the EXACT real
+failure twice in a row. Timestamps from one run:
+
+```
+T+202ms  NODE: delete-comment route handler invoked
+T+202ms  NODE: delete-comment route.fulfill() returned
+T+237ms  PAGE CONSOLE: Failed to load resource: the server responded with a status of 500
+T+265ms  clicked delete (page.click() resolved)
+T+3269ms TIMED OUT waiting for detached: page.waitForSelector: Timeout 3000ms exceeded.
+```
+
+**The mocked 500 response was already fulfilled and processed by the
+page — including running `.catch()` and reinserting the row — 28ms
+BEFORE Node even resolved its own `await page.click(...)` a few lines
+earlier in the test.** Under low/no contention (same script, no
+concurrent load), the identical sequence completes end-to-end in ~100ms
+with `page.click()` resolving well before the route fires, so the
+transient "detached" window is easily observed by the very first poll.
+
+**Root cause**: `js/comment-sheet.js`'s `deleteCommentAction` removes
+the row from `loadedComments` and calls `renderList()` SYNCHRONOUSLY on
+click, before `fetch()` is even called — so far so correct, and not the
+bug. The bug is entirely in the test: the mocked `delete-comment` route
+(`route.fulfill()`, zero artificial delay — a real network call would
+never resolve this fast) requires only ONE CDP round-trip through Node.
+Under CPU/scheduling contention, Node's own message-processing loop can
+lag badly enough that a handful of its own SEQUENTIAL awaits (here,
+`page.click()` itself) resolve LATE relative to what has already
+happened inside the browser — including the entire remove -> mocked-fail
+-> rollback-reinsert cycle, which needs no further help from Node once
+the route has fired. By the time the test's own
+`waitForSelector(state:'detached')` call is even reached, the transient
+detached state has ALREADY come and gone — it will not recur, so no
+amount of additional timeout budget could ever catch it (confirmed: the
+observed failure is not "ran out of time", it's "10/10 polls, never
+once caught mid-transition"). This is the same causal-ordering-
+assumption family `test/helpers/settle.js`'s own header comment already
+documents (a fixed await sequence assumes an ordering that Node-side/CDP
+delay doesn't actually guarantee under load) — but the earlier documented
+cases there are about a DOM gate racing a Node-side counter; this one is
+about a Node-side mocked network reply racing Node's own outstanding
+awaits, a variant not previously named in that file.
+
+This also DEFINITIVELY answers round 2's own "the reasoning [for
+MutationObserver batching] doesn't cleanly explain why load would cause
+it" concern: it isn't MutationObserver batching at all — it's a genuine
+causal race between Node's own event-loop scheduling and a same-tick-fast
+mocked network reply, which real network calls are never fast enough to
+trigger (explaining why this specific pattern is rare) but a mocked,
+zero-delay `route.fulfill()` can, given `page.click()`'s own resolution
+is what's variably delayed under contention, not the round-trip itself.
+
+### Fix — gate the mocked response (test-only, no product code touched)
+
+`test/comment-sheet-behavioral.test.js`'s "deleting a comment rolls back
+on a failed delete-comment response" test now holds the mocked
+`delete-comment` 500 response behind `test/helpers/settle.js`'s own
+`gate()` helper — the exact, already-established remedy this file's own
+header comment documents for "a mocked endpoint racing the test's own
+drive-to-state" (previously used there for the "abandoned attempt"
+tests' fixed-`setTimeout` pattern; applied here as a NEW use of the same
+primitive, not a new mechanism). The response cannot be fulfilled until
+the test explicitly opens the gate, which it now does only AFTER
+confirming the optimistic removal — eliminating the race by
+construction rather than by widening an unwindable window. `js/comment-
+sheet.js` was not touched; this is purely a test-timing fix for an
+assertion sequence that was unsound under load, matching this round's
+own "root cause first, no symptom patches" standard (a longer timeout
+was considered and rejected — the transient state genuinely cannot recur
+once past, so more budget doesn't help, only removing the race does).
+
+**Not touched, flagged for a future pass**: `test/comment-sheet-
+behavioral.test.js`'s sibling "posting a comment rolls back on a failed
+add-comment response" test already anticipated this exact class of race
+(its own comment: "an instantly-resolving mock races the optimistic-
+insert assertion... since both happen on the same tick") and works
+around it with a fixed `setTimeout(r, 900... 200)` delay instead of a
+gate — the same inferior pattern `test/helpers/settle.js`'s own header
+comment already argues against ("there is no 'safe' number to raise 900
+to; the window is a race by construction"). It has not been observed
+failing in any round so far, so left alone this round (one fix at a
+time, in scope), but it is latent risk of the identical family and a
+good target for the SAME `gate()` treatment next time it's touched.
+
+### Verification
+
+- Isolated, before fix: 16/16 clean (2/2 runs).
+- Isolated, after fix: 16/16 clean (2/2 runs).
+- **The exact 90-file subset that reproduced the original failure, re-run
+  with the fix applied**: the target test passed at the identical test
+  index (508) it failed at before; 0 failures in 683/~700 tests reached
+  before the run was cut off by this environment's live cross-session
+  load (see below) — a direct apples-to-apples comparison against the
+  pre-fix reproduction above.
+- **The real, fixed test file re-run 3x under the SAME real concurrent
+  Chromium contention that reproduced the original failure twice via the
+  standalone instrumented script** (`media-library-page.test.js` +
+  `wizard-ui-behavioral.test.js` + `social-layer-v2-profile-
+  behavioral.test.js` running concurrently): 16/16 clean, 3/3 runs. One
+  of these three runs saw an UNRELATED test in the same file
+  ("empty composer disables Post...", which this fix does not touch)
+  flake once and pass clean on immediate isolated re-run — consistent
+  with this repo's already-documented broader theme (other tests in this
+  suite still have their own, separate contention sensitivity; out of
+  this task's scope, not a regression from this change).
+- **A true, complete `npm test` run could not be captured as a single
+  tool invocation** in this environment during this investigation — this
+  sandbox's per-call tool timeout ceiling (600s) is shorter than a full
+  273-file run even under IDEAL conditions (this doc's own "Test tiering"
+  section in `docs/TEST_REGISTRY.md` states 15-30 min normally), and was
+  further slowed by the confirmed live cross-session contention above.
+  Multiple large partial runs (90-580+ files reached per invocation) were
+  used instead as the closest available proxy, consistent with round 3's
+  own established precedent for exactly this constraint.
+- `docs/TEST_REGISTRY.md` not touched — same rationale as round 3's own
+  scroll-lock fix: pure test-timing fix, no behavior/coverage change.
