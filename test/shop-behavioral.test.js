@@ -91,7 +91,7 @@ async function seedShopPage(page, email) {
   await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
 }
 
-test('all four pack buttons are enabled and state their exact price ("Pay $X.XX"), not a generic "Buy"', async function (t) {
+test('all four pack buttons are enabled and state their exact price ("Get · $X.XX"), not a generic "Buy"', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -110,10 +110,10 @@ test('all four pack buttons are enabled and state their exact price ("Pay $X.XX"
     assert.equal(await pack199.isDisabled(), false);
     assert.equal(await pack499.isDisabled(), false);
     assert.equal(await pack999.isDisabled(), false);
-    assert.match((await pack099.textContent()).trim(), /Pay \$0\.99/);
-    assert.match((await pack199.textContent()).trim(), /Pay \$2\.99/);
-    assert.match((await pack499.textContent()).trim(), /Pay \$4\.99/);
-    assert.match((await pack999.textContent()).trim(), /Pay \$9\.99/);
+    assert.match((await pack099.textContent()).trim(), /Get · \$0\.99/);
+    assert.match((await pack199.textContent()).trim(), /Get · \$2\.99/);
+    assert.match((await pack499.textContent()).trim(), /Get · \$4\.99/);
+    assert.match((await pack999.textContent()).trim(), /Get · \$9\.99/);
   } finally {
     await context.close();
   }
@@ -399,16 +399,16 @@ test('per-pack dreams/tokens/value copy is computed correctly on each card', asy
     await seedShopPage(page);
     await page.waitForSelector('#pack199-dreams', { timeout: 5000 });
 
-    assert.equal((await page.textContent('#pack199-dreams')).trim(), '5 dream videos');
-    assert.equal((await page.textContent('#pack199-tokens')).trim(), '500 tokens · or 50 dream images');
+    assert.equal((await page.textContent('#pack199-dreams')).trim(), '500 Tokens');
+    assert.equal((await page.textContent('#pack199-tokens')).trim(), '5 Dream Videos · or 50 Dream Images');
     assert.equal((await page.textContent('#pack199-value')).trim(), '$0.60 per dream');
 
-    assert.equal((await page.textContent('#pack499-dreams')).trim(), '10 dream videos');
-    assert.equal((await page.textContent('#pack499-tokens')).trim(), '1000 tokens · or 100 dream images');
+    assert.equal((await page.textContent('#pack499-dreams')).trim(), '1000 Tokens');
+    assert.equal((await page.textContent('#pack499-tokens')).trim(), '10 Dream Videos · or 100 Dream Images');
     assert.equal((await page.textContent('#pack499-value')).trim(), '$0.50 per dream');
 
-    assert.equal((await page.textContent('#pack999-dreams')).trim(), '25 dream videos');
-    assert.equal((await page.textContent('#pack999-tokens')).trim(), '2500 tokens · or 250 dream images');
+    assert.equal((await page.textContent('#pack999-dreams')).trim(), '2500 Tokens');
+    assert.equal((await page.textContent('#pack999-tokens')).trim(), '25 Dream Videos · or 250 Dream Images');
     assert.equal((await page.textContent('#pack999-value')).trim(), '$0.40 per dream');
   } finally {
     await context.close();

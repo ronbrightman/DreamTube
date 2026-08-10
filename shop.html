@@ -371,8 +371,8 @@ body{ background:#000; color:var(--shop-ink); }
         <div class="offer-eyebrow">Welcome offer · one time only</div>
         <h2 class="offer-title" id="hero-offer-title">Your first dreams — 99¢</h2>
         <div class="offer-anchor"><s>$2.99</s><span class="now">$0.99</span></div>
-        <p class="offer-sub" id="hero-offer-sub">300 tokens · or 30 dream images</p>
-        <button type="button" class="pill pill-gold" id="shop-buy-pack099" data-pack="pack099">Pay $0.99 — one-time</button>
+        <p class="offer-sub" id="hero-offer-sub">3 Dream Videos · or 30 Dream Images</p>
+        <button type="button" class="pill pill-gold" id="shop-buy-pack099" data-pack="pack099">Get · $0.99 — one-time</button>
         <div class="redirect-cue">Taking you to our secure payment page</div>
       </section>
 
@@ -531,17 +531,17 @@ body{ background:#000; color:var(--shop-ink); }
         // The hero's own copy, not a regular pack card — title/sub/button
         // label all computed from PACK_INFO too, never hand-typed.
         document.getElementById('hero-offer-title').textContent = 'Your first ' + dreams + ' dreams — ' + Math.round(info.price * 100) + '¢';
-        document.getElementById('hero-offer-sub').textContent = info.tokens + ' tokens · or ' + images + ' dream images';
-        if(buyBtn) buyBtn.textContent = 'Pay ' + fmtPrice(info.price) + ' — one-time';
+        document.getElementById('hero-offer-sub').textContent = dreams + ' Dream Videos · or ' + images + ' Dream Images';
+        if(buyBtn) buyBtn.textContent = 'Get · ' + fmtPrice(info.price) + ' — one-time';
         return;
       }
       var dreamsEl = document.getElementById(pack + '-dreams');
       var tokensEl = document.getElementById(pack + '-tokens');
       var valueEl = document.getElementById(pack + '-value');
-      if(dreamsEl) dreamsEl.textContent = dreams + ' dream videos';
-      if(tokensEl) tokensEl.textContent = info.tokens + ' tokens · or ' + images + ' dream images';
+      if(dreamsEl) dreamsEl.textContent = info.tokens + ' Tokens';
+      if(tokensEl) tokensEl.textContent = dreams + ' Dream Videos · or ' + images + ' Dream Images';
       if(valueEl) valueEl.textContent = fmtPrice(info.price / dreams) + ' per dream';
-      if(buyBtn) buyBtn.textContent = 'Pay ' + fmtPrice(info.price);
+      if(buyBtn) buyBtn.textContent = 'Get · ' + fmtPrice(info.price);
     });
   }
   renderPackCards();
