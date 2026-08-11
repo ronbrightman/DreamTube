@@ -62,6 +62,7 @@ test.before(async function () {
 
 test.after(async function () {
   if (browser) await browser.close();
+  if (server) await server.close();
 });
 
 function newMobileContext() {
