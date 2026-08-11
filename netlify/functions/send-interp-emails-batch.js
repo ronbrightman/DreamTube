@@ -61,6 +61,7 @@
 //   E6 invalid_which        — `which` present but not "unread"/"none"/"both"
 //   E7 invalid_preview_to   — `previewTo` present but not a plausible address
 
+var { getStore, connectLambda } = require('@netlify/blobs');
 var { normalizeEmail } = require('./lib/entitlements');
 var accountStore = require('./lib/account-store');
 var emailSuppressionStore = require('./lib/email-suppression-store');
@@ -121,6 +122,30 @@ function firstUnreadPersona(readSet) {
 }
 
 /**
+ * The population this batch scans is the PRIVATE-DREAMS store's keys (the
+ * accounts that have actually synced at least one private dream), NOT every
+ * account. This is the perf fix's core (2026-08-11): enumerating all accounts
+ * via accountStore.listAccounts is an N+1 (one list + a get PER account) that,
+ * at ~253 accounts, alone consumed ~6s — the whole selection budget — before
+ * any per-dream work, so the real send timed out and even the bounded scan
+ * made zero progress. Only accounts with a synced private dream can EVER be
+ * eligible (both triggers require a dream record), so iterating the private-
+ * dreams store's keys directly scans exactly that population and skips the
+ * redundant per-account get entirely (getPrivateDreams reads the record we
+ * need anyway). Email is resolved LAZILY, only for an actual candidate
+ * (accountStore.getByUsername), so the expensive per-account lookups happen a
+ * handful of times, not once per account. Same "iterate the store that already
+ * carries what you need" shape send-daily-claim-pushes.js uses over the
+ * entitlements store.
+ */
+async function listDreamOwnerUsernames(event) {
+  connectLambda(event);
+  var store = getStore({ name: dreamStore.STORE_NAME });
+  var listResult = await store.list();
+  return (listResult.blobs || []).map(function (b) { return b.key; });
+}
+
+/**
  * The select + hard-cap + send core, exported separately from the handler so
  * tests can drive it directly with a fake event / mocked stores. `opts`:
  *   limit      (required) — already-validated, already-clamped-to-MAX_LIMIT
@@ -135,12 +160,15 @@ async function selectAndSend(event, opts) {
   var selBudget = (typeof opts.selectionBudgetMs === 'number') ? opts.selectionBudgetMs : selectionBudgetMs();
   var sendDeadline = (typeof opts.sendDeadlineMs === 'number') ? opts.sendDeadlineMs : sendDeadlineMs();
 
-  var accounts = await accountStore.listAccounts(event);
+  var owners = await listDreamOwnerUsernames(event);
 
   var summary = {
     ok: true,
     limit: limit,
-    totalAccounts: accounts.length,
+    // `totalAccounts`/`accountsScanned` here count DREAM-OWNERS (accounts with
+    // a synced private dream — the only population that can be eligible), not
+    // every account. Names kept stable for the response contract.
+    totalAccounts: owners.length,
     accountsScanned: 0,
     timeBudgetHit: false, // selection scan was cut short by SELECTION_BUDGET_MS
     sendBudgetHit: false, // send loop was cut short by SEND_DEADLINE_MS
@@ -159,22 +187,16 @@ async function selectAndSend(event, opts) {
     }
   };
 
-  // ── Selection pass (cheap filters first; per-dream async reads only for
-  //    accounts that survive the account-level filters). Bounded by both the
-  //    send cap (`limit`) AND the wall-clock budget (see header) so it can
-  //    never blow the platform timeout on a large user base. ──
+  // ── Selection pass over dream-owners, bounded by both the send cap (`limit`)
+  //    AND the wall-clock budget (see header) so it can never blow the platform
+  //    timeout. Per-dream trigger classification first (cheap, no account
+  //    lookup); the account email is resolved LAZILY only once a user actually
+  //    has a candidate. ──
   var eligible = [];
-  for (var i = 0; i < accounts.length && eligible.length < limit; i++) {
-    // Time budget — stop scanning and send whatever we've found so far.
+  for (var i = 0; i < owners.length && eligible.length < limit; i++) {
     if (Date.now() - startedAt > selBudget) { summary.timeBudgetHit = true; break; }
     summary.accountsScanned++;
-    var record = accounts[i];
-    var email = record && record.email;
-    var username = record && record.username;
-
-    if (!email) { summary.skipped.no_email++; continue; }
-    if (winbackSender.isExcludedEmail(email, ownerEmail)) { summary.skipped.excluded++; continue; }
-    if (await emailSuppressionStore.isSuppressed(event, email)) { summary.skipped.suppressed++; continue; }
+    var username = owners[i];
 
     var dreams = await dreamStore.getPrivateDreams(event, username);
     if (!dreams || !dreams.length) { summary.skipped.no_dreams++; continue; }
@@ -186,7 +208,6 @@ async function selectAndSend(event, opts) {
     // them on a LATER run, gated only by the per-dream once-ever markers). We
     // scan ALL of this account's dreams to find the best single candidate,
     // PREFERRING the flagship "unread" over "none", then push exactly one.
-    // Per-dream skip reasons are still counted for the summary.
     var unreadCandidate = null;
     var noneCandidate = null;
     for (var d = 0; d < dreams.length; d++) {
@@ -205,7 +226,7 @@ async function selectAndSend(event, opts) {
         if (!unreadKey) { summary.skipped.not_eligible++; continue; } // defensive — a 1-4 count always has an unread
         if (!unreadCandidate) {
           unreadCandidate = {
-            type: 'unread', username: username, email: email, dream: dream, operationName: operationName,
+            type: 'unread', username: username, dream: dream, operationName: operationName,
             readPersonaKey: readSet[0], unreadPersonaKey: unreadKey
           };
         }
@@ -219,7 +240,7 @@ async function selectAndSend(event, opts) {
         if (await interpEmailStore.hasSentNone(event, operationName)) { summary.skipped.already_sent_none++; continue; }
         if (!noneCandidate) {
           noneCandidate = {
-            type: 'none', username: username, email: email, dream: dream, operationName: operationName
+            type: 'none', username: username, dream: dream, operationName: operationName
           };
         }
         continue;
@@ -231,7 +252,18 @@ async function selectAndSend(event, opts) {
 
     // One email per user this run — flagship "unread" wins over "none".
     var chosen = unreadCandidate || noneCandidate;
-    if (chosen) eligible.push(chosen);
+    if (chosen) {
+      // Resolve the account email LAZILY (only for a real candidate) and apply
+      // the founder/test exclusion + suppression gates now, so the send cap
+      // isn't spent on a recipient that would skip anyway. The senders re-apply
+      // both at the choke point (the CAS claim is the real guarantee).
+      var acct = await accountStore.getByUsername(event, username);
+      var email = acct && acct.email;
+      if (!email) { summary.skipped.no_email++; }
+      else if (winbackSender.isExcludedEmail(email, ownerEmail)) { summary.skipped.excluded++; }
+      else if (await emailSuppressionStore.isSuppressed(event, email)) { summary.skipped.suppressed++; }
+      else { chosen.email = email; eligible.push(chosen); }
+    }
     if (summary.timeBudgetHit) break; // budget hit mid-account — stop after finishing this one
   }
 
@@ -279,36 +311,34 @@ async function selectAndSend(event, opts) {
  *     a wall-clock-bounded scan (same per-dream classification as the send
  *     path, minus the per-user cap and the `limit`). If `timeBudgetHit` is
  *     true this is a LOWER BOUND (the scan stopped early), not the full total.
- *   accountsScanned / totalAccounts / timeBudgetHit — scan coverage.
+ *   accountsScanned / totalAccounts / timeBudgetHit — scan coverage (of
+ *     DREAM-OWNERS, the only eligible population — see listDreamOwnerUsernames).
  * Bounded by the same SELECTION_BUDGET_MS as the send scan, so it also fits the
- * platform timeout.
+ * platform timeout. The eligible tally counts eligible DREAMS in the queue and
+ * does NOT subtract founder/test/suppressed owners (a cheap diagnostic upper
+ * bound); `alreadySent` is exact regardless.
  */
 async function scanCounts(event, opts) {
-  var ownerEmail = opts.ownerEmail;
   var startedAt = Date.now();
   var selBudget = (typeof opts.selectionBudgetMs === 'number') ? opts.selectionBudgetMs : selectionBudgetMs();
 
   var alreadySent = await interpEmailStore.countSent(event);
-  var accounts = await accountStore.listAccounts(event);
+  var owners = await listDreamOwnerUsernames(event);
 
   var res = {
     ok: true,
     mode: 'countOnly',
-    totalAccounts: accounts.length,
+    totalAccounts: owners.length, // dream-owners (see selectAndSend's note)
     accountsScanned: 0,
     timeBudgetHit: false,
     alreadySent: alreadySent,
     eligible: { unread: 0, none: 0 }
   };
 
-  for (var i = 0; i < accounts.length; i++) {
+  for (var i = 0; i < owners.length; i++) {
     if (Date.now() - startedAt > selBudget) { res.timeBudgetHit = true; break; }
     res.accountsScanned++;
-    var record = accounts[i];
-    var email = record && record.email;
-    var username = record && record.username;
-    if (!email || winbackSender.isExcludedEmail(email, ownerEmail)) continue;
-    if (await emailSuppressionStore.isSuppressed(event, email)) continue;
+    var username = owners[i];
 
     var dreams = await dreamStore.getPrivateDreams(event, username);
     if (!dreams || !dreams.length) continue;

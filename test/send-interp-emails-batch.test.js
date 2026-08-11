@@ -60,17 +60,21 @@ function installFetchSpy() {
   return { resendCalls: resendCalls, posthogCalls: posthogCalls };
 }
 
+// Keys are NORMALIZED (lowercased) exactly like production's account-store
+// createAccount + dream-store, so the batch's lazy getByUsername(normalized)
+// resolves the record the private-dreams store's (normalized) key points at.
 async function seedAccount(username, email) {
-  var record = { username: username, email: email, password: 'pw', updatedAt: Date.now(), emailVerified: true };
+  var u = String(username).trim().toLowerCase();
+  var record = { username: u, email: email, password: 'pw', updatedAt: Date.now(), emailVerified: true };
   var s = getStore({ name: 'dreamtube-accounts' });
-  await s.setJSON('u:' + username, record);
-  await s.setJSON('e:' + email, username);
+  await s.setJSON('u:' + u, record);
+  await s.setJSON('e:' + email, u);
 }
 
 /** Seeds one private dream (server-synced) for `username` directly into the dream store. */
 async function seedDream(username, dream) {
   var event = fakeEvent({ method: 'POST' });
-  await dreamStore.upsertPrivateDream(event, username, dream);
+  await dreamStore.upsertPrivateDream(event, String(username).trim().toLowerCase(), dream);
 }
 
 /** Marks `personas` (array of keys) as read for `operationName`. */
