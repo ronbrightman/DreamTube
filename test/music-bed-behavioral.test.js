@@ -340,3 +340,71 @@ test('explore.html: the shared feed renders a bed for every video card with a kn
     await context.close();
   }
 });
+
+// ===== tracker item for-product-bug-founder-result-page-audi-zrjy48 =====
+//
+// Founder repro: on result.html, with sound ON, tapping "Dream meaning"
+// (#interp-cta-btn) did NOT pause the ambient card video or its music bed --
+// audio kept playing, layered under the Chamber, with no way to stop it.
+// Root cause: the button's click handler called InterpretExperience.open()
+// directly with no pause step at all. The video/bed themselves already sync
+// via a 'pause' listener registered once at page load (see this file's own
+// coverage above) -- the fix just needed to call that same video.pause()
+// this file already proves cascades to the bed, before handing off to the
+// Chamber, matching the exact pattern the tab-visibility handler elsewhere
+// in result.html already uses to silence playback.
+test('result.html: tapping the interpretation pill pauses the ambient video and its music bed BEFORE the Chamber opens -- audio must never keep playing underneath', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedLoggedInUserWithDreams(page, 'audiostoptester', [{
+      id: 'dream-audio-stop', ownerHandle: '@audiostoptester', caption: 'A dream about the sea',
+      style: 'Cartoon', mediaType: 'video',
+      videoUrl: '/assets/music-beds/anime.wav',
+      dur: '0:08', isPublished: false, likes: 0, likedByMe: false
+    }]);
+    // Sound genuinely ON (not the muted-by-default state) -- this is the
+    // exact device-level pref both #result-video and #result-music-bed
+    // read on load (DreamStore.getSoundPref), and the founder's repro was
+    // specifically "with the video's sound turned ON".
+    await page.evaluate(function () { localStorage.setItem('dreamtube_sound_on', '1'); });
+    await page.goto(baseUrl + '/result.html?id=dream-audio-stop', { waitUntil: 'domcontentloaded' });
+
+    // Force real playback (same explicit v.play() this file's own sync test
+    // above uses, rather than relying on the browser's own autoplay
+    // heuristics) and wait for the bed to genuinely follow, so the
+    // assertions below prove a real stop, not a false positive against an
+    // already-silent baseline.
+    await page.evaluate(async function () {
+      var v = document.getElementById('result-video');
+      try { await v.play(); } catch (e) { /* ignore */ }
+    });
+    await page.waitForFunction(function () {
+      var v = document.getElementById('result-video');
+      var a = document.getElementById('result-music-bed');
+      return v && !v.paused && a && !a.paused;
+    }, { timeout: 5000 });
+
+    var before = await page.evaluate(function () {
+      return { videoMuted: document.getElementById('result-video').muted, bedMuted: document.getElementById('result-music-bed').muted };
+    });
+    assert.equal(before.videoMuted, false, 'the video must genuinely be unmuted going into this test');
+    assert.equal(before.bedMuted, false, 'the bed must genuinely be unmuted going into this test -- otherwise "stopped" below proves nothing');
+
+    await page.click('#interp-cta-btn');
+
+    var after = await page.evaluate(function () {
+      return { videoPaused: document.getElementById('result-video').paused, bedPaused: document.getElementById('result-music-bed').paused };
+    });
+    assert.equal(after.videoPaused, true, 'the ambient video must be paused the instant the Chamber pill is tapped');
+    assert.equal(after.bedPaused, true, 'the music bed must be paused too, not left playing on underneath the Chamber');
+
+    // And the Chamber genuinely did open -- this isn't a case where the tap
+    // silently no-op'd instead of actually launching InterpretExperience.
+    await page.waitForSelector('.itp-persona-card', { state: 'visible', timeout: 5000 });
+  } finally {
+    await context.close();
+  }
+});
