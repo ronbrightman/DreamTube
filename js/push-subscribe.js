@@ -6,10 +6,14 @@
 // (service worker must already be registering) and js/push-config.js
 // (VAPID_PUBLIC_KEY) both being loaded first.
 //
-// WHEN THIS ASKS (per this feature's own build task: "ask at a genuinely
-// high-intent moment... never on page load, never as an unprompted
-// popup"): processing.html calls maybeShowAsk() right after a first video
-// starts generating — see that page's own call site for exactly where.
+// WHEN THIS ASKS: home.html calls maybeShowAsk() on a normal logged-in
+// home visit — see that page's refreshNotifyCard for exactly where. (This
+// used to fire only "right after a first video starts generating"; founder
+// ask 2026-08-11 loosened it to show on every logged-in home visit, since
+// the generation-only gate meant almost nobody was ever prompted and so
+// almost nobody subscribed. The high-intent-only rationale in this module's
+// original design is superseded by that decision; the module's own gating
+// below is unchanged — only the call site's WHEN changed.)
 // Asked at most ONCE EVER per browser (DreamStore.getPushAskDismissed/
 // dismissPushAsk — a device-level marker, same reasoning as the install
 // nudge's own dismissal marker: this belongs to whoever is holding the
@@ -46,13 +50,12 @@
 // — one shared visual language, not a second copy). Push becomes available
 // naturally once they're running installed — no separate mechanism.
 //
-// Both real call paths into maybeShowAsk were checked and confirmed to hit
-// the SAME single slot: processing.html's #push-ask-slot is the only
-// caller in this codebase (confirmed by grep), and processing.html is
-// itself the one shared generation-wait page for both the wizard/
-// pre-signup flow (wizard.html -> processing.html) and the logged-in
-// Record-it flow (create.html -> style.html -> processing.html) — so a
-// fix at this one call site reaches both, no second wiring needed.
+// CALL SITE (updated): the ask now renders into home.html's
+// #notify-card-slot (rehomed from processing.html's old #push-ask-slot),
+// shown to every logged-in home visitor via refreshNotifyCard rather than
+// only during a generation — see home.html's ORPHAN (a) block. That is the
+// one caller in this codebase; the iOS-fallback chaining below applies
+// there identically.
 window.PushSubscribe = (function () {
   /** Fire-and-forget PostHog capture, same guarded shape every other page-local track() helper in this codebase uses. */
   function track(name, props) {

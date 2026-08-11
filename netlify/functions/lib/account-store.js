@@ -495,6 +495,45 @@ async function markEmailVerified(event, username) {
 }
 
 /**
+ * Enumerates every real account record in the store — the "u:<username>"
+ * records only (never the "e:<email>" secondary-index entries, which hold a
+ * bare username string, not an account object). Added for the owner-gated
+ * win-back batch sender (send-winback-batch.js), the first caller in this
+ * codebase that needs to walk every account rather than resolve one by a
+ * known username/email. Same whole-store `list({ prefix })` enumeration
+ * shape send-daily-claim-pushes.js established for a scheduled scan (see
+ * lib/push-subscription-store.js), scoped here by the "u:" key prefix so a
+ * growing "e:" index never bloats the walk.
+ *
+ * Best-effort per record: a record that fails to parse / has no username is
+ * simply skipped, never thrown — one bad blob must not abort the whole
+ * enumeration a batch send depends on. Returns an array of account records
+ * (possibly empty). NOTE this is a full read of every account; it's only
+ * ever called from the owner-gated, hard-capped batch endpoint, not from
+ * any hot request path.
+ */
+async function listAccounts(event) {
+  connectLambda(event);
+  var s = store();
+  var listResult = await s.list({ prefix: 'u:' });
+  var blobs = (listResult && listResult.blobs) || [];
+  var records = [];
+  for (var i = 0; i < blobs.length; i++) {
+    var key = blobs[i] && blobs[i].key;
+    if (!key) continue;
+    var record;
+    try {
+      record = await s.get(key, { type: 'json' });
+    } catch (e) {
+      console.error('account-store: failed to read an account record during enumeration -- skipping it', e);
+      continue;
+    }
+    if (record && record.username) records.push(record);
+  }
+  return records;
+}
+
+/**
  * Flags the account registered under `email` as having a bounced address
  * — the write side of resend-bounce-webhook.js's own hard-bounce handling
  * (see that file's header comment for the "first send only" / "Permanent
@@ -528,6 +567,7 @@ module.exports = {
   normalizeWhatsappNumber,
   getByUsername,
   getByEmail,
+  listAccounts,
   createAccount,
   verifyLogin,
   applyPasswordReset,

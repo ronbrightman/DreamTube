@@ -1173,11 +1173,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       </section>
 
       <!-- ORPHAN (a) rehomed from processing.html's #push-ask-slot — the
-           notify-me/push-prompt, shown only while the My-dreams row's
-           first tile is generating (see wireGeneratingTile below). Empty
-           by default; js/push-subscribe.js's own maybeShowAsk() populates
-           (or leaves empty, if its own gates don't pass — see that file's
-           header comment) it. -->
+           notify-me/push-prompt, shown to every logged-in home visitor
+           whose push permission is still unanswered and undismissed (see
+           refreshNotifyCard below), no longer gated on a generation being
+           in flight. Empty by default; js/push-subscribe.js's own
+           maybeShowAsk() populates it (or leaves it empty, if its own gates
+           don't pass — see that file's header comment). -->
       <div id="notify-card-slot"></div>
 
       <!-- Dodo-checkout-return confirmation card (tracker item follow-up-
@@ -2519,18 +2520,26 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   }
 
   // ===== ORPHAN (a) — the notify-me/push-prompt card, rehomed from
-  // processing.html's #push-ask-slot. js/push-subscribe.js's own header
-  // comment already names "right after a generation starts" as the ideal
-  // moment for this ask — shown for as long as (and only while) the
-  // My-dreams row's first tile is actually generating; cleared the moment
-  // it resolves either way (see onGenerationSettled above). All of the
-  // real gating logic (never inside a webview, never once already asked,
-  // never once permission is already answered, the iOS-browser-tab
-  // fallback chain) lives in that shared module, unchanged — this is
-  // purely placement. =====
+  // processing.html's #push-ask-slot. Now shown to EVERY logged-in home
+  // visitor whose OS permission is still unanswered and who hasn't
+  // dismissed it — NOT only while a generation is in flight (founder ask
+  // 2026-08-11: push was almost never prompted, so almost nobody ever
+  // subscribed; enable the ask for everyone from now on). All the real
+  // gating logic (never inside an FB/IG in-app webview, never once already
+  // dismissed, never once Notification.permission is already answered, and
+  // the iOS-Safari-tab "add to home screen" fallback) still lives in
+  // js/push-subscribe.js's maybeShowAsk, unchanged — this is purely about
+  // WHEN we surface it. =====
   function refreshNotifyCard(){
     var slot = document.getElementById('notify-card-slot');
-    if(!pendingJob){ slot.innerHTML = ''; return; }
+    if(!slot) return;
+    // Don't re-render a card that's already up: refreshHomeState() runs
+    // this on every state refresh, and re-rendering would re-fire the
+    // card's shown-telemetry and reset the iOS fallback's expanded state.
+    // maybeShowAsk's own gates make a repeat call a no-op once the card was
+    // answered/dismissed, so nothing here nags — the one-ever dismissed
+    // marker still holds.
+    if(slot.querySelector('.push-ask-card')) return;
     if(window.PushSubscribe && user) PushSubscribe.maybeShowAsk(slot, user.username);
   }
   refreshNotifyCard();
