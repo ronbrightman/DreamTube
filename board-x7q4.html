@@ -38,6 +38,9 @@ summary.rsum{flex-direction:column;align-items:stretch;gap:4px}
 a{color:#9ab0ff;font-weight:700;text-decoration:none}
 .note{color:#8f88b3;font-size:12px;margin-top:20px;line-height:1.55}
 .donebox{background:#10160f;border:1px solid rgba(126,226,168,.25);border-radius:12px;padding:11px 14px;font-size:13.5px;color:#cfe8d6}
+.stalebucket{margin-top:8px}
+.stalesum{cursor:pointer;color:#caa96a;font-size:12.5px;opacity:.85;padding:6px 2px;list-style:none}
+.stalebucket .body,.stalebucket details{opacity:.7}
 .err{color:#8f88b3;font-size:12px}
 </style></head><body>
 <h1>🗂 The Board</h1>
@@ -86,6 +89,41 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
   }
   // Strip whichever founder tag ([for ron] / [for founder]) leads the title.
   function stripFounder(t){ return (t||'').replace(/^\s*\[for (ron|founder)\]\s*/i,''); }
+
+  // ROOT-CAUSE HONESTY (founder 08-11 reliability program): every open item
+  // used to count as "in flight," so ~80 shipped-but-never-closed items made
+  // the board read 26/58/11 when the genuinely-active work was a fraction of
+  // that ("I don't believe it's true"). The board's render was already correct
+  // (it filters `!done`, and `done` is a clean boolean) — the real defect is
+  // STALE DATA: items shipped without their `done` flag flipped. So instead of
+  // trusting `done` alone, derive each item's LAST ACTIVITY from its own
+  // timestamps (createdAt/startedAt/reviewedAt/doneAt + newest comment) and
+  // treat anything untouched > STALE_DAYS as "likely shipped, needs closing":
+  // it drops out of the active count into a collapsed, clearly-labelled bucket,
+  // never masquerading as active work again. Not a band-aid — the headline
+  // count now means what it says. Timestamps are ISO strings → Date.parse.
+  // STALE = old AND quiet (a hybrid, deliberately). Age alone mislabels a
+  // long-running genuine task; comment-recency alone is fooled by bookkeeping
+  // comments ("already mirrored, will close") that keep a shipped item looking
+  // fresh. An item is only demoted to "needs closing" when BOTH hold: opened
+  // more than STALE_DAYS ago AND untouched for more than QUIET_DAYS. Nothing is
+  // hidden — stale items still render, collapsed and labelled — so this is an
+  // honest reframe of the count, not a band-aid that buries them.
+  var STALE_DAYS=7, STALE_MS=STALE_DAYS*24*60*60*1000;
+  var QUIET_DAYS=3, QUIET_MS=QUIET_DAYS*24*60*60*1000;
+  function lastActivityMs(i){
+    var ts=[i.createdAt,i.startedAt,i.reviewedAt,i.doneAt], cs=i.comments||[];
+    for(var k=0;k<cs.length;k++){ ts.push(cs[k].timestamp||cs[k].at||cs[k].createdAt); }
+    var best=0;
+    for(var j=0;j<ts.length;j++){ var m=Date.parse(ts[j]); if(!isNaN(m)&&m>best) best=m; }
+    return best; // 0 when nothing parses
+  }
+  function isStale(i){
+    var cm=Date.parse(i.createdAt); var la=lastActivityMs(i);
+    var old=isNaN(cm) || (Date.now()-cm)>STALE_MS;     // opened > STALE_DAYS ago
+    var quiet=(la===0) || (Date.now()-la)>QUIET_MS;    // untouched > QUIET_DAYS
+    return old && quiet;
+  }
 
   fetch('/.netlify/functions/get-tracker-items').then(function(r){return r.json();}).then(function(data){
     var items=(data.items||[]).filter(function(i){return !i.done;});
@@ -136,13 +174,24 @@ a{color:#9ab0ff;font-weight:700;text-decoration:none}
 
     // In flight, per worker side — title only, collapsed, tap to expand.
     function renderSide(tag, elId, hId, label){
-      var list=items.filter(function(i){return new RegExp('^\\s*\\[for '+tag+'\\]','i').test(i.title||'');});
-      document.getElementById(hId).textContent='🟡 In flight — '+label+' — '+list.length;
-      document.getElementById(elId).innerHTML=list.length?list.map(function(i){
+      var all=items.filter(function(i){return new RegExp('^\\s*\\[for '+tag+'\\]','i').test(i.title||'');});
+      var active=all.filter(function(i){return !isStale(i);});
+      var stale=all.filter(isStale);
+      // Headline = ACTIVE only, so the count reflects real in-flight work.
+      document.getElementById(hId).textContent='🟡 In flight — '+label+' — '+active.length;
+      function card(i){
         var title=esc(strip(i.title,tag));
         var body=i.detail?'<div class="body">'+linkify(esc(i.detail))+'</div>':'';
         return '<details><summary><span class="t">'+title+'</span></summary>'+body+'</details>';
-      }).join(''):'<div class="note">Nothing open.</div>';
+      }
+      var html=active.length?active.map(card).join(''):'<div class="note">Nothing actively in flight.</div>';
+      // Stale bulk (shipped-but-unclosed) is still visible — collapsed and
+      // labelled as needing closing — so it prompts a close-pass instead of
+      // silently padding the in-flight count.
+      if(stale.length){
+        html+='<details class="stalebucket"><summary class="stalesum">⚠️ '+stale.length+' stale — opened &gt;'+STALE_DAYS+'d ago &amp; quiet &gt;'+QUIET_DAYS+'d, likely shipped &amp; need closing</summary>'+stale.map(card).join('')+'</details>';
+      }
+      document.getElementById(elId).innerHTML=html;
     }
     renderSide('product','prod','h-prod','PRODUCT');
     renderSide('growth','growth','h-growth','GROWTH');
