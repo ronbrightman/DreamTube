@@ -126,6 +126,14 @@ tight (curate, don't dump).
   (PostHog by session) over Meta clicks; **max-step-reached** to locate the
   drop-off screen; **dwell-time buckets** to tell accidental taps from real
   bounces. These three cracked the "why won't they convert" question.
+- **Report CPS as Growth's "clean real CPS" — never the raw/attributed
+  nightly number** (Founder rule 2026-08-11). When surfacing cost-per-signup
+  to Ron (morning brief, any report), use the exact figure Growth labels
+  **clean real CPS** — real, pixel-verified, non-IL signups, attribution-lag
+  excluded — and pull it verbatim from Growth's decisions-log line rather than
+  computing your own or headlining the higher attributed CPS (spend ÷ raw
+  CompleteRegistration). The whole portfolio must report the SAME CPS number so
+  Ron sees one figure, not a different one per session.
 - **Verify what's actually deployed on `origin/main`** before assuming a
   branch's state. (Learned: I assumed my branch had the fix; main was ahead —
   wrong diagnosis followed.)
