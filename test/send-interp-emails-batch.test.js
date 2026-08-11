@@ -417,6 +417,27 @@ test('time budget: with a generous budget it scans and sends normally (bound is 
   assert.equal(spy.resendCalls.length, 1);
 });
 
+test('drain cursor: startOffset/nextOffset page through dream-owners across calls, sending each exactly once', async function () {
+  var spy = installFetchSpy();
+  // Three distinct none-eligible owners, seeded in order o0,o1,o2.
+  for (var k = 0; k < 3; k++) {
+    await seedAccount('o' + k, 'o' + k + '@real-user.com');
+    await seedDream('o' + k, { id: 'd' + k, sourceOperationName: 'fal:veo3:o' + k, storyText: 'x' });
+    await seedWatched('fal:veo3:o' + k);
+  }
+  var opts = { limit: 1, ownerEmail: OWNER, selectionBudgetMs: 60000 };
+  var r0 = await sendInterp.selectAndSend(fakeEvent({ method: 'POST' }), opts);
+  assert.equal(r0.sent.none, 1);
+  assert.equal(r0.nextOffset, 1, 'resume cursor points at the next owner');
+  var r1 = await sendInterp.selectAndSend(fakeEvent({ method: 'POST' }), Object.assign({}, opts, { startOffset: r0.nextOffset }));
+  assert.equal(r1.sent.none, 1);
+  assert.equal(r1.nextOffset, 2);
+  var r2 = await sendInterp.selectAndSend(fakeEvent({ method: 'POST' }), Object.assign({}, opts, { startOffset: r1.nextOffset }));
+  assert.equal(r2.sent.none, 1);
+  assert.equal(r2.nextOffset, null, 'null nextOffset = the scan reached the end');
+  assert.equal(spy.resendCalls.length, 3, 'each owner emailed exactly once across the paged drain');
+});
+
 test('countOnly: reports exact already-sent counts + eligible counts and SENDS NOTHING', async function () {
   var spy = installFetchSpy();
   var ev = fakeEvent({ method: 'POST' });

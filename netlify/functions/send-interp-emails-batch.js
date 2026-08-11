@@ -60,6 +60,13 @@
 //   E5 forbidden           — POST body's `email` didn't match OWNER_EMAIL
 //   E6 invalid_which        — `which` present but not "unread"/"none"/"both"
 //   E7 invalid_preview_to   — `previewTo` present but not a plausible address
+//   E8 invalid_start_offset — `startOffset` present but not a non-negative integer
+//
+// DRAIN CURSOR: an owner-gated `startOffset` (and `countOnly` too) scans
+// dream-owners [startOffset, …) within the budget and returns `nextOffset` —
+// the index to resume at, or null when the scan reached the end. Repeated
+// calls (each passing back the prior `nextOffset`) drain the whole population
+// in bounded chunks regardless of the platform timeout.
 
 var { getStore, connectLambda } = require('@netlify/blobs');
 var { normalizeEmail } = require('./lib/entitlements');
@@ -159,6 +166,12 @@ async function selectAndSend(event, opts) {
   var startedAt = Date.now();
   var selBudget = (typeof opts.selectionBudgetMs === 'number') ? opts.selectionBudgetMs : selectionBudgetMs();
   var sendDeadline = (typeof opts.sendDeadlineMs === 'number') ? opts.sendDeadlineMs : sendDeadlineMs();
+  // Resume cursor: a single call scans dream-owners [startOffset, …) until the
+  // budget/cap; it returns `nextOffset` so the caller drains the whole population
+  // in bounded chunks across repeated calls, independent of the platform timeout
+  // (each call re-starting from 0 would otherwise never reach owners past what
+  // one budget window covers). null nextOffset = the scan reached the end.
+  var startOffset = (typeof opts.startOffset === 'number' && opts.startOffset > 0) ? Math.floor(opts.startOffset) : 0;
 
   var owners = await listDreamOwnerUsernames(event);
 
@@ -169,6 +182,8 @@ async function selectAndSend(event, opts) {
     // a synced private dream — the only population that can be eligible), not
     // every account. Names kept stable for the response contract.
     totalAccounts: owners.length,
+    startOffset: startOffset,
+    nextOffset: null, // set below: the owner index to resume at, or null when done
     accountsScanned: 0,
     timeBudgetHit: false, // selection scan was cut short by SELECTION_BUDGET_MS
     sendBudgetHit: false, // send loop was cut short by SEND_DEADLINE_MS
@@ -193,7 +208,8 @@ async function selectAndSend(event, opts) {
   //    lookup); the account email is resolved LAZILY only once a user actually
   //    has a candidate. ──
   var eligible = [];
-  for (var i = 0; i < owners.length && eligible.length < limit; i++) {
+  var i;
+  for (i = startOffset; i < owners.length && eligible.length < limit; i++) {
     if (Date.now() - startedAt > selBudget) { summary.timeBudgetHit = true; break; }
     summary.accountsScanned++;
     var username = owners[i];
@@ -266,6 +282,11 @@ async function selectAndSend(event, opts) {
     }
     if (summary.timeBudgetHit) break; // budget hit mid-account — stop after finishing this one
   }
+  // Where the NEXT drain call should resume: the first owner index not fully
+  // covered this call, or null if the scan reached the end (fully drained the
+  // scanned population). Re-scanning an owner is idempotent (already-sent dreams
+  // skip at the CAS guard), so an off-by-one overlap is harmless.
+  summary.nextOffset = (i < owners.length) ? i : null;
 
   summary.selected.unread = eligible.filter(function (e) { return e.type === 'unread'; }).length;
   summary.selected.none = eligible.filter(function (e) { return e.type === 'none'; }).length;
@@ -321,6 +342,7 @@ async function selectAndSend(event, opts) {
 async function scanCounts(event, opts) {
   var startedAt = Date.now();
   var selBudget = (typeof opts.selectionBudgetMs === 'number') ? opts.selectionBudgetMs : selectionBudgetMs();
+  var startOffset = (typeof opts.startOffset === 'number' && opts.startOffset > 0) ? Math.floor(opts.startOffset) : 0;
 
   var alreadySent = await interpEmailStore.countSent(event);
   var owners = await listDreamOwnerUsernames(event);
@@ -329,13 +351,16 @@ async function scanCounts(event, opts) {
     ok: true,
     mode: 'countOnly',
     totalAccounts: owners.length, // dream-owners (see selectAndSend's note)
+    startOffset: startOffset,
+    nextOffset: null, // resume cursor — page countOnly to tally the FULL eligible total
     accountsScanned: 0,
     timeBudgetHit: false,
     alreadySent: alreadySent,
     eligible: { unread: 0, none: 0 }
   };
 
-  for (var i = 0; i < owners.length; i++) {
+  var i;
+  for (i = startOffset; i < owners.length; i++) {
     if (Date.now() - startedAt > selBudget) { res.timeBudgetHit = true; break; }
     res.accountsScanned++;
     var username = owners[i];
@@ -359,6 +384,7 @@ async function scanCounts(event, opts) {
     }
     if (res.timeBudgetHit) break;
   }
+  res.nextOffset = (i < owners.length) ? i : null;
 
   return res;
 }
@@ -388,6 +414,15 @@ exports.handler = async function (event) {
       return { statusCode: 400, body: JSON.stringify({ error: 'E4: invalid_limit' }) };
     }
     limit = Math.min(payload.limit, MAX_LIMIT); // absolute safety ceiling
+  }
+
+  // Optional resume cursor (owner-gated drain in chunks — see selectAndSend).
+  var startOffset = 0;
+  if (Object.prototype.hasOwnProperty.call(payload, 'startOffset') && payload.startOffset !== null && payload.startOffset !== undefined) {
+    if (typeof payload.startOffset !== 'number' || !Number.isInteger(payload.startOffset) || payload.startOffset < 0) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'E8: invalid_start_offset' }) };
+    }
+    startOffset = payload.startOffset;
   }
 
   // `which` validated BEFORE the owner check, same ordering discipline as the
@@ -429,11 +464,11 @@ exports.handler = async function (event) {
   // Owner-gated COUNT-ONLY / DRY-RUN diagnostic — scans and reports counts,
   // SENDS NOTHING (see scanCounts). Reachable only past the owner check above.
   if (payload.countOnly === true || payload.dryRun === true) {
-    var counts = await scanCounts(event, { ownerEmail: ownerEmail });
+    var counts = await scanCounts(event, { ownerEmail: ownerEmail, startOffset: startOffset });
     return { statusCode: 200, body: JSON.stringify(counts) };
   }
 
-  var summary = await selectAndSend(event, { limit: limit, ownerEmail: ownerEmail });
+  var summary = await selectAndSend(event, { limit: limit, ownerEmail: ownerEmail, startOffset: startOffset });
   return { statusCode: 200, body: JSON.stringify(summary) };
 };
 
