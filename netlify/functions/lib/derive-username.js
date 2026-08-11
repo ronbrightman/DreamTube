@@ -2,12 +2,12 @@
 //
 // The "derive an @handle from an email address, retrying with a random
 // numeric suffix on collision" logic this app has used since signup was
-// client-side-only. It exists here, server-side, because it is now needed
-// in a THIRD place: netlify/functions/facebook-oauth-callback.js creates
-// real accounts with no user-chosen username at all (Facebook Login never
-// asks for one — see docs/SIGNUP_FACEBOOK_LOGIN_SPEC.md §3), and a
-// Netlify Function obviously cannot reach into start.html's or
-// wizard.html's page-local <script> block for it.
+// client-side-only. It exists here, server-side, because it is needed by
+// netlify/functions/register-account-passwordless.js, which creates real
+// accounts server-side with no user-chosen username on hand (the
+// passwordless path derives the handle from the email), and a Netlify
+// Function obviously cannot reach into start.html's or wizard.html's
+// page-local <script> block for it.
 //
 // The two existing copies (start.html's deriveUsernameBase/attemptSignup
 // and wizard.html's identical pair) are deliberately left alone for now:
@@ -24,8 +24,8 @@
 //
 // Behavior is intentionally IDENTICAL to start.html's/wizard.html's
 // current implementations, character for character in the base-derivation
-// rules, so an account created via Facebook Login gets the same kind of
-// handle a manual signup with the same email would:
+// rules, so an account created server-side (passwordless) gets the same
+// kind of handle a manual signup with the same email would:
 //   - local part of the email, lowercased
 //   - every non [a-z0-9] character stripped
 //   - padded with 'dreamer' if that leaves fewer than 3 characters
@@ -39,9 +39,8 @@
 // MAX_ATTEMPTS times.
 //
 // That "identical" claim is enforced, not just asserted: see
-// test/account-store-facebook.test.js, which pulls deriveUsernameBase
-// straight out of both start.html and wizard.html and runs all three
-// implementations against the same inputs.
+// test/passwordless-signup.test.js, which exercises this module's
+// derivation against the same base rules the two page copies use.
 
 var MAX_ATTEMPTS = 8;
 
@@ -64,8 +63,8 @@ function randomSuffix() {
  * in turn. Deliberately takes a predicate rather than require()-ing
  * lib/account-store.js directly: this file stays dependency-free and
  * trivially unit-testable, and the caller keeps full control over what
- * "taken" means (facebook-oauth-callback.js asks the real account store;
- * a test can answer from a plain object).
+ * "taken" means (register-account-passwordless.js asks the real account
+ * store; a test can answer from a plain object).
  *
  * Returns { ok:true, username } on success, or { ok:false,
  * error:'no_available_username' } if every attempt collided — which the

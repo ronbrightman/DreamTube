@@ -12,8 +12,8 @@ until those are answered.
 ## The problem
 
 Every account created via `register-account-passwordless.js` (all
-signups since `wizard-funnel-signup-unify` merged 2026-08-05, plus every
-Facebook-Login account, which has always had `password: null`) has no
+signups since `wizard-funnel-signup-unify` merged 2026-08-05, plus any
+session-transfer account, which has always had `password: null`) has no
 way to satisfy `delete-account.js`'s only ownership proof: a real
 password match (`account.password !== password` in
 `lib/account-store.js`'s `verifyLogin`). For a `password: null` record,
@@ -274,10 +274,10 @@ review — see open questions):
   path to a password-holding account — defense in depth, and prevents
   this from quietly becoming a second, weaker deletion route for
   accounts that already have a strong one.
-- **Side effect worth naming**: this also fixes deletion for
-  Facebook-Login-only accounts (`account-store.js`'s header comment
-  confirms these also carry `password: null`), which have the exact
-  same `E5: incorrect_password` bug today, undocumented until now. Not
+- **Side effect worth naming**: this also fixes deletion for any other
+  `password: null` account (e.g. a session-transfer account —
+  `account-store.js`'s header comment confirms that shape), which has the
+  exact same `E5: incorrect_password` bug today, undocumented until now. Not
   a scope expansion — it's the same `password === null` gate,
   correctly applied.
 

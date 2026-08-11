@@ -48,8 +48,7 @@
 // `_lastCommentCountOp`, and the same pattern on other stores' records
 // too (`_lastFollowerCountOp` in lib/follow-store.js, `_transitionClaim`
 // in lib/pending-dreams.js, `_syncMarker` in lib/dream-store.js,
-// `_consumeClaim` in lib/session-transfer-token.js and
-// lib/facebook-identity-token.js). So this strips by PATTERN rather than
+// `_consumeClaim` in lib/session-transfer-token.js). So this strips by PATTERN rather than
 // by name: any top-level key starting with `_` is dropped, silently
 // covering a future internal marker that follows the codebase's own
 // existing convention with no edit needed here. No currently-real public

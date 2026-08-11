@@ -289,8 +289,8 @@ async function verifyCode(event, username, code) {
   // Match against ANY still-valid code in the rolling window (see the
   // "MULTIPLE RECENT CODES" header note) — not just the newest, so a
   // slightly-stale but real code still verifies. Constant-time compare per
-  // entry — same reasoning as facebook-oauth-callback.js's safeEqual for
-  // its CSRF nonce — and the loop never short-circuits (a match on an
+  // entry — the standard defense against timing oracles on a secret
+  // compare — and the loop never short-circuits (a match on an
   // OLDER code takes the same time as one on the newest), keeping that
   // guarantee across the whole window.
   var entries = activeCodeEntries(record, Date.now());

@@ -79,10 +79,9 @@
     6 Signup wall (renderSignupWall) — ONE hybrid screen, at parity with
       start.html's screen 13 (founder order, tracker item
       for-product-wizard-signup-wall-is-the-ol-lt1l9j): the forming-veil
-      "your dream is already forming" indicator on top, the (flag-gated)
-      Facebook Login button + "or" divider, then a single EMAIL field —
-      passwordless-first, exactly the live screen-13 wall, NOT the old
-      username+password form. Submitting fires start-pending-generation.js
+      "your dream is already forming" indicator on top, then a single
+      EMAIL field — passwordless-first, exactly the live screen-13 wall,
+      NOT the old username+password form. Submitting fires start-pending-generation.js
       (the real, billed generation — BEFORE any account exists) in
       parallel with DreamStore.signupPasswordless(email); a brand-new
       email is signed straight in, an already-registered one swaps to the
@@ -289,14 +288,6 @@
   .fn-btn-primary.lb-cta{ position:sticky; bottom:0;}
   .fn-small-link{ background:none; border:none; color:var(--fn-ink-soft); font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:2px; text-align:center; width:100%; padding:10px 0 0; cursor:pointer;}
 
-  /* Pill the Facebook button on THIS wizard only (mock grammar — every
-     tappable is a pill). facebookButtonHtml (js/facebook-config.js) is
-     shared with start.html and carries its radius inline, so this is a
-     scoped override rather than an edit to the shared, Meta-brand-
-     compliant markup (radius is a shape tweak; color/copy/logo — the
-     parts Meta's guidelines actually pin — are untouched). */
-  #app.funnel-app #fn-fb-continue{ border-radius:999px !important;}
-
   /* The recap STEP's editable dream text (renderRecap — founder round 8:
      "Here's your dream — make it yours", its own screen before the wall,
      and OBVIOUSLY editable: real input chrome — a visible border that
@@ -348,13 +339,6 @@
      pooling below the CTA. See fnStageHtml() in the script below. */
   .fn-signup-stage{ display:flex; flex-direction:column; min-height:100%;}
   .fn-stage-spacer{ flex:1; min-height:14px;}
-
-  /* The standard "or" social-login separator between the Facebook button
-     and the email field — rendered ONLY when the Facebook button itself is
-     (see facebookOrDividerHtml's shared isFacebookLoginConfigured() guard
-     in the script below). */
-  .fn-or-divider{ display:flex; align-items:center; gap:12px; margin:0; color:var(--fn-ink-faint); font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;}
-  .fn-or-divider::before, .fn-or-divider::after{ content:''; flex:1; height:1px; background:var(--fn-line);}
 
   /* The "your dream is forming" veil — shimmer-sweep + spinning-arc +
      caption over a live nebula/aurora drift layer, the same convention
@@ -459,7 +443,6 @@
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
-<script src="js/facebook-config.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/wizard-chips.js"></script>
@@ -543,34 +526,10 @@
     }, 260);
   }
 
-  // ===== Facebook Login — return-leg markers (screen-13 parity, tracker
-  // item for-product-wizard-signup-wall-is-the-ol-lt1l9j) =====
-  // facebook-oauth-callback.js 302s back to THIS page (via the strictly
-  // allowlisted `rp=wizard` resume param the signup wall packs into the
-  // OAuth `state` — see that function's redirect() and startFacebookLogin
-  // below), carrying exactly one of the same three markers start.html's
-  // own return leg documents:
-  //   ?bt=<session-transfer token>  — signed in; consume it and complete
-  //                                    the wall (boot() below)
-  //   ?fb_error=<slug>              — failed closed; inline error on the
-  //                                    wall, email path fully usable
-  //   ?fb_needs_email=<marker>      — Facebook confirmed who they are but
-  //                                    returned no email; ask for one field
-  // Read BEFORE anything else touches the URL — DreamStore's own
-  // consumeSessionTransferTokenFromUrlSync strips `bt` the moment it runs.
-  var fbTransferPresent = !!getParam('bt');
-  var facebookErrorSlug = getParam('fb_error');
-  var facebookNeedsEmailToken = getParam('fb_needs_email');
-  var resumedFromFacebook = !!(fbTransferPresent || facebookErrorSlug || facebookNeedsEmailToken);
-
   // Already-signed-in visitors have no business in a PRE-signup wizard —
   // send them to the normal logged-in "New Dream" flow instead (create.html's
   // own chip wizard retrofit covers the same chip-first experience there).
-  // Gated on !resumedFromFacebook, same as start.html's own equivalent
-  // guard: the Facebook return leg is an active identity exchange in
-  // progress that must be allowed to finish here, even if this browser
-  // also happens to hold an unrelated older session.
-  if(!resumedFromFacebook && DreamStore.getCurrentUser()){
+  if(DreamStore.getCurrentUser()){
     // EXCEPT a funnel handoff carrying a built dream (?resume=1 + caption):
     // that visitor already has an account, so skip the signup wall and
     // GENERATE the carried dream directly (home.html?generate=1, the
@@ -633,10 +592,6 @@
   // explicit click-through from index.html always proceeds. A genuinely
   // first-time visitor (hasLocalAccountHistory() false) is unaffected
   // either way, exactly as docs/JOURNEY_MANIFEST.md documents.
-  // (Also gated on !resumedFromFacebook, same reasoning as the signed-in
-  // guard above — a Facebook round trip legitimately re-lands here without
-  // the ?entry=index marker, and may itself have just created the local
-  // account history this guard reads.)
   var cameFromIndexGetStarted = new URLSearchParams(location.search).get('entry') === 'index';
   // Funnel-arrival exemption (wall routing, 2026-08-08): a ?resume=1
   // arrival CARRYING A BUILT DREAM (caption param) is the growth funnel's
@@ -647,7 +602,7 @@
   // (start.html's own resume leg never had this guard either). Same
   // reasoning exempts it from the local-account-history bounce below.
   var isFunnelHandoffArrival = getParam('resume') === '1' && !!getParam('caption');
-  if(!resumedFromFacebook && !cameFromIndexGetStarted && !isFunnelHandoffArrival && DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
+  if(!cameFromIndexGetStarted && !isFunnelHandoffArrival && DreamStore.hasLocalAccountHistory()){ location.href = 'index.html'; return; }
   if(cameFromIndexGetStarted){
     var __cleanParams = new URLSearchParams(location.search);
     __cleanParams.delete('entry');
@@ -1233,8 +1188,8 @@
   // assembleCaption, exactly as a skipped Setting step always fell back.
   // These two vars are KEPT because the state they hold still flows
   // through: the generation payload's sceneryPlace (honestly null — the
-  // visitor never chose a scenery place), the Facebook-redirect snapshot,
-  // and currentChipFields' inference input. settingPlaceKey stays null and
+  // visitor never chose a scenery place) and currentChipFields' inference
+  // input. settingPlaceKey stays null and
   // settingOtherText stays '' now that no UI writes them; the caption's
   // scene comes entirely from the per-action inference below.
   // ===================================================================
@@ -1347,8 +1302,8 @@
   // music-bed purposes only — currentMoodForDream() persists null (the
   // visual-style bed applies), the same honest answer a tapped Skip always
   // produced. This is STORAGE only; prompt/story assembly reads raw moodKey
-  // and is unchanged. These vars are kept for the payload, the Facebook-
-  // redirect snapshot, and currentChipFields' inference input.
+  // and is unchanged. These vars are kept for the payload and
+  // currentChipFields' inference input.
   // ===================================================================
   var moodKey = WizardChips.DEFAULT_MOOD;
   var moodOtherText = '';
@@ -1497,9 +1452,7 @@
   // state. characterIdsForGeneration comes from the adopted funnel
   // character stash (see boot()'s funnel-arrival leg), so a stashed self
   // photo/description rides the wall's start-pending-generation exactly
-  // like a wizard-entered character. Both ride the Facebook snapshot too
-  // (persistWizardForFacebookRedirect), so an fb_error return re-renders
-  // the wall around the SAME funnel dream instead of chip defaults.
+  // like a wizard-entered character.
   var funnelArrival = false;
   var funnelCaption = '';
 
@@ -1528,9 +1481,8 @@
     if(subjectOtherKind) subjects.push({ subjectKey: subjectOtherKind, character: null, subjectOtherText: subjectOtherText });
     // Setting was removed as a question — the place is inferred per action
     // (WizardChips.inferFallbackPlaceKey), so the caption still reads with a
-    // scene (e.g. flying → "an open sky") exactly like the growth trim. A
-    // restored/explicit settingPlaceKey (only ever a Facebook-snapshot
-    // remnant now) still wins if somehow present.
+    // scene (e.g. flying → "an open sky") exactly like the growth trim. An
+    // explicit settingPlaceKey still wins if somehow present.
     var placeKey = settingPlaceKey || WizardChips.inferFallbackPlaceKey(actionKey);
     return {
       subjects: subjects,
@@ -1928,11 +1880,11 @@
   }
 
   // ===================================================================
-  // Step 7 — the signup wall (renderSignupWall): ONE hybrid screen at
-  // parity with start.html's live screen 13 (founder order, tracker item
+  // Step 7 — the signup wall (renderSignupWall): ONE screen at parity
+  // with start.html's live screen 13 (founder order, tracker item
   // for-product-wizard-signup-wall-is-the-ol-lt1l9j — "bring the wizard
-  // wall to parity with screen 13, passwordless-first + Facebook +
-  // divider, same analytics, reusing the funnel implementation").
+  // wall to parity with screen 13, passwordless-first, same analytics,
+  // reusing the funnel implementation").
   //
   // Beats, top to bottom (fnStageHtml groups, same vertical-distribution
   // treatment as screen 13):
@@ -1942,9 +1894,8 @@
   //      preview requirement from tracker item for-product-split-
   //      prompttext-storytext-f-yt5kc7 is satisfied there)
   //   2. reassurance line (screen 13 passwordless's own copy, verbatim)
-  //   3. (flag-gated) Facebook button, then the "or" divider
-  //   4. email field + inline error
-  //   5. the "Send me my dream" CTA (never "Sign up" — screen 13's rule)
+  //   3. email field + inline error
+  //   4. the "Send me my dream" CTA (never "Sign up" — screen 13's rule)
   //
   // Submit mirrors renderScreen13Passwordless's trySubmit exactly:
   // deliverability check first (checkEmailAvailable — only `deliverable`
@@ -1960,14 +1911,16 @@
   // email + claim-dream.html, the same accepted tradeoff screen 13's
   // live wall already made.
   //
-  // The wizard deliberately does NOT fire the ad funnel's own
-  // funnel_step_viewed / ReachedEmailEntry / signup_email_entered
-  // events — those feed funnel-specific optimization metrics (Meta's
-  // REE target, the wall-variant A/Bs) and must not be polluted by
-  // organic traffic. This page's own wizard_step_viewed /
-  // wizard_contact_captured / wizard_completed events are unchanged;
-  // signup_method values match screen 13's exactly ('passwordless_code'
-  // for the email path, 'facebook' for Facebook — tracker item
+  // TRACKING (see fireFunnelWallReachedEvents / maybeTrackFunnelEmailEntered
+  // above): for PAID funnel arrivals (isFunnelHandoffArrival) this wall
+  // fires the ad funnel's own funnel_step_viewed(email_capture) /
+  // ReachedEmailEntry / signup_email_entered / signup_email_first_variant_shown
+  // — the flo arm routes those visitors HERE, so REE has to be measurable
+  // here (tracking regression fix, 2026-08-11). ORGANIC visitors fire NONE
+  // of them, so the paid REE metric is never polluted by organic traffic.
+  // This page's own wizard_step_viewed / wizard_contact_captured /
+  // wizard_completed events are unchanged; the sole signup_method value is
+  // 'passwordless_code' (tracker item
   // for-product-signup-method-analytics-foun-y1oqt4).
   // ===================================================================
   // Per-attempt token — same unscoped-async-callback pattern as
@@ -1982,198 +1935,12 @@
   // start.html enumerates.
   var signupAttemptToken = 0;
 
-  // Rendered into #contact-error the next time the wall draws, then
-  // cleared — so a failed Facebook round trip surfaces exactly once,
-  // inline, with the email path beside it fully usable as the fallback
-  // (same shape as start.html's pendingFacebookErrorSlug).
-  var pendingFacebookErrorSlug = facebookErrorSlug;
-
-  function facebookErrorMessage(slug){
-    if(slug === 'denied') return 'Facebook sign-in was cancelled — you can continue with email below.';
-    if(slug === 'rate_limited') return 'Too many sign-in attempts from your network today — please continue with email below.';
-    if(slug === 'account_conflict') return "We couldn't match that Facebook account to an account here — please continue with email below.";
-    return 'Something went wrong signing in with Facebook — try again, or continue with email below.';
-  }
-
-  /** Paints (once) whatever Facebook error this load arrived with into the just-rendered wall's error slot. Called at the end of renderWallEmailStep. */
-  function applyPendingFacebookError(){
-    if(!pendingFacebookErrorSlug) return;
-    var errEl = document.getElementById('contact-error');
-    if(!errEl) return;
-    errEl.textContent = facebookErrorMessage(pendingFacebookErrorSlug);
-    track('signup_facebook_error_shown', { reason: pendingFacebookErrorSlug, variant: 'wizard' });
-    pendingFacebookErrorSlug = null;
-  }
-
-  /**
-   * Markup for the additive Facebook button (js/facebook-config.js's
-   * Meta-brand-compliant facebookButtonHtml), or '' while the feature
-   * flag is a placeholder — in which case NOTHING is written into the
-   * DOM, same contract as start.html's copy of this function.
-   */
-  function facebookSignupButtonHtml(){
-    if(typeof isFacebookLoginConfigured !== 'function' || !isFacebookLoginConfigured()) return '';
-    return facebookButtonHtml('fn-fb-continue');
-  }
-
-  /** The "or" separator below the Facebook button — shares its exact feature-flag guard so the two always appear or disappear together (a divider with no button above it would be a visible orphan). Same as start.html's copy. */
-  function facebookOrDividerHtml(){
-    if(typeof isFacebookLoginConfigured !== 'function' || !isFacebookLoginConfigured()) return '';
-    return '<div class="fn-or-divider" id="fn-fb-or-divider">or</div>';
-  }
-
-  /** Wires the button rendered by facebookSignupButtonHtml, if it's there. Safe no-op when the flag is off (no such element exists). */
-  function wireFacebookSignupButton(){
-    var btn = document.getElementById('fn-fb-continue');
-    if(!btn) return;
-    btn.addEventListener('click', function(){ startFacebookLogin(btn); });
-  }
-
-  // ===================================================================
-  // Facebook Login — surviving the redirect. A full-page navigation to
-  // facebook.com and back destroys all in-memory JS state, and unlike
-  // start.html (whose dream content rides the URL's own resume params),
-  // this wizard's entire built dream lives in in-memory chip state — so
-  // the WHOLE of it is snapshotted to localStorage before leaving and
-  // restored on the return leg. Same one-scoped-key + savedAt-age-bound
-  // + restore-then-clear-immediately discipline as start.html's
-  // FB_STAGED_KEY machinery (see that file's §2.5 comment), just with a
-  // wider payload since there are no URL params to lean on here.
-  // ===================================================================
-  var WIZARD_FB_KEY = 'dreamtube_wizard_fb_state';
-  var WIZARD_FB_MAX_AGE_MS = 30 * 60 * 1000;
-
-  function clearPersistedWizardState(){
-    try{ localStorage.removeItem(WIZARD_FB_KEY); }catch(e){ /* private mode / quota — nothing to clean up */ }
-  }
-
-  /** Writes the full wizard state to localStorage just before leaving for facebook.com. Returns false if it couldn't (most realistically a QuotaExceededError from a large staged photo) — the caller proceeds to Facebook regardless, same tradeoff as start.html's persistStagedForFacebookRedirect: losing the built dream is a far smaller failure than blocking signup outright, and the loss is tracked. */
-  function persistWizardForFacebookRedirect(){
-    try{
-      localStorage.setItem(WIZARD_FB_KEY, JSON.stringify({
-        savedAt: Date.now(),
-        staged: staged,
-        subjectOtherKind: subjectOtherKind, subjectOtherText: subjectOtherText,
-        settingPlaceKey: settingPlaceKey, settingOtherText: settingOtherText,
-        sceneryTime: DreamStore.getDraft().sceneryTime,
-        actionKey: actionKey, actionOtherText: actionOtherText, povOn: povOn,
-        actionSeededByTile: actionSeededByTile,
-        moodKey: moodKey, moodOtherText: moodOtherText,
-        chosenStyle: chosenStyle, freeText: freeText,
-        storyText: currentStoryText,
-        // A hand-edited recap must survive the Facebook round trip AND
-        // still be protected from recomputation after the round trip —
-        // the flag rides with the text it protects. entryMode rides too:
-        // a write-mode visitor's restored state must keep the verbatim
-        // caption contract (see assembleFromState), not fall back to
-        // chip-default assembly on the return leg.
-        storyEdited: storyEditedByUser,
-        entryMode: entryMode,
-        // Funnel-arrival wall state — must survive the round trip so the
-        // fb_error leg re-renders the wall around the SAME funnel dream
-        // (see funnelArrival's declaration / assembleFromState's branch).
-        funnelArrival: funnelArrival,
-        funnelCaption: funnelCaption
-      }));
-      return true;
-    }catch(e){
-      clearPersistedWizardState();
-      track('signup_facebook_staged_persist_failed', { characters: staged.characters.length });
-      return false;
-    }
-  }
-
-  /**
-   * Restores the snapshot on the return leg, then clears the key
-   * immediately (win or lose) so a stale snapshot can never be picked up
-   * by a later, unrelated run. Restores the RAW chip state (not a baked
-   * caption) and re-runs assembleFromState(), so the rebuilt `assembled`
-   * caption is bit-identical to what the pre-redirect wall computed
-   * (assembleCaption is deterministic) and a re-rendered wall (the
-   * fb_error leg) stays fully editable/back-navigable. Returns true only
-   * if a usable, fresh-enough snapshot was applied.
-   */
-  function restoreWizardFromFacebookRedirect(){
-    var raw = null;
-    try{ raw = localStorage.getItem(WIZARD_FB_KEY); }catch(e){ raw = null; }
-    clearPersistedWizardState();
-    if(!raw) return false;
-    try{
-      var parsed = JSON.parse(raw);
-      if(!parsed || !parsed.savedAt || (Date.now() - parsed.savedAt) > WIZARD_FB_MAX_AGE_MS) return false;
-      if(parsed.staged){
-        staged.characters = Array.isArray(parsed.staged.characters) ? parsed.staged.characters : [];
-        staged.subjectCharacterIds = Array.isArray(parsed.staged.subjectCharacterIds) ? parsed.staged.subjectCharacterIds : [];
-      }
-      subjectOtherKind = parsed.subjectOtherKind || null;
-      subjectOtherText = parsed.subjectOtherText || '';
-      settingPlaceKey = parsed.settingPlaceKey || null;
-      settingOtherText = parsed.settingOtherText || '';
-      DreamStore.setDraft({ sceneryTime: parsed.sceneryTime || null });
-      actionKey = parsed.actionKey || WizardChips.DEFAULT_ACTION;
-      actionOtherText = parsed.actionOtherText || '';
-      povOn = !!parsed.povOn;
-      actionSeededByTile = !!parsed.actionSeededByTile;
-      moodKey = parsed.moodKey || WizardChips.DEFAULT_MOOD;
-      moodOtherText = parsed.moodOtherText || '';
-      chosenStyle = parsed.chosenStyle || WizardChips.DEFAULT_STYLE;
-      freeText = parsed.freeText || '';
-      currentStoryText = parsed.storyText || '';
-      storyEditedByUser = !!parsed.storyEdited; // pre-flag snapshots simply restore un-edited — falsy is the right default
-      entryMode = parsed.entryMode || null;     // restore BEFORE assembleFromState — it decides the write-mode caption contract
-      funnelArrival = !!parsed.funnelArrival;   // ditto — the funnel-arrival contract outranks both (see assembleFromState)
-      funnelCaption = parsed.funnelCaption || '';
-      assembleFromState();
-      // The restored story text was what the visitor last SAW for these
-      // restored inputs — settle it against them (round-9 signature
-      // model), so a post-return recap visit repaints it instead of
-      // recomputing a template over a restored hand-edit/LLM story.
-      if(currentStoryText) storySettledSignature = storyContentSignature();
-      return true;
-    }catch(e){
-      return false;
-    }
-  }
-
-  /**
-   * Leaves for Facebook's OAuth dialog as a FULL-PAGE navigation (never a
-   * popup — unreliable/blocked in the FB/IG in-app webview this feature
-   * exists for; see docs/SIGNUP_FACEBOOK_LOGIN_SPEC.md §1). Same
-   * invalidation pair as start.html's copy: the token bump stops this
-   * page's callbacks, invalidatePendingSignup stops js/store.js's own
-   * background commit (see that function's doc comment). The one wizard
-   * difference: the `state` param's resume string is a synthetic
-   * 'rp=wizard' (plus the resume=1 trimResumeParams always forces) —
-   * facebook-oauth-callback.js's redirect() allowlists that exact value
-   * to send the return leg back HERE instead of start.html.
-   */
-  function startFacebookLogin(btn){
-    signupAttemptToken++;
-    DreamStore.invalidatePendingSignup();
-    backBtn.disabled = false;
-    track('signup_facebook_started', { variant: 'wizard' });
-    // Same dedicated "chose Facebook" event screen 13 fires (tracker item
-    // for-product-signup-method-analytics-foun-y1oqt4) — variant 'wizard'
-    // keeps organic clicks distinguishable from the ad funnel's arms.
-    track('signup_facebook_click', { variant: 'wizard', signup_method: 'facebook' });
-
-    // Must happen BEFORE navigating — a failure here is logged, never fatal.
-    persistWizardForFacebookRedirect();
-
-    var nonce = facebookRandomNonce();
-    setFacebookStateCookie(nonce);
-    var state = buildFacebookState(nonce, 'rp=wizard');
-    if(btn){ btn.disabled = true; }
-    location.href = buildFacebookOAuthUrl(state);
-  }
-
   /**
    * Wraps the wall's content into the .fn-signup-stage layout — see that
    * class's own CSS comment above. `groups` is an ordered array of HTML
-   * strings, one per visual beat; a falsy/empty entry (e.g. the Facebook
-   * group when the flag is off) is dropped entirely, so no orphan spacer
-   * ever appears around a group that rendered nothing. Same as
-   * start.html's fnStageHtml.
+   * strings, one per visual beat; a falsy/empty entry is dropped entirely,
+   * so no orphan spacer ever appears around a group that rendered nothing.
+   * Same as start.html's fnStageHtml.
    */
   function fnStageHtml(groups){
     var real = groups.filter(function(g){ return !!g; });
@@ -2237,10 +2004,10 @@
   }
 
   /**
-   * The ONE post-signup continuation, shared by the email/code path and
-   * the Facebook return leg (start.html's completeSignupAndAdvance,
-   * adapted): flush staged characters into the now-real account, re-point
-   * draft.characterIds at the flushed real ids (draftPatch was computed
+   * The ONE post-signup continuation for the email/code path (start.html's
+   * completeSignupAndAdvance, adapted): flush staged characters into the
+   * now-real account, re-point draft.characterIds at the flushed real ids
+   * (draftPatch was computed
    * BEFORE the flush, so it still holds "local..." staged ids — and
    * home.html's fallback fresh-generation path reads draft.characterIds
    * directly, so this is not a display-only fixup), then wait for the
@@ -2283,9 +2050,9 @@
       // ── Post-signup monetization moment (ONE screen, shown here, right
       //    before the home.html handoff) ──
       // Only for a GENUINELY fresh signup completed on THIS wall
-      // (opts.freshSignup — set true only on the email-path result.created
-      // and the Facebook fb=signup leg; returning-user code-step logins and
-      // FB logins pass it falsy and skip straight through). Also NEVER for a
+      // (opts.freshSignup — set true only on the email-path result.created;
+      // returning-user code-step logins pass it falsy and skip straight
+      // through). Also NEVER for a
       // paid-funnel ?resume arrival (isFunnelHandoffArrival): those visitors
       // already cleared the growth funnel's own hard paywall, so re-nagging
       // them here would double-gate — "respect existing gating". The pending
@@ -2632,14 +2399,63 @@
     document.head.appendChild(s);
   }
 
-  function renderSignupWall(el){
-    // Facebook confirmed who this visitor is but gave us no email — ask
-    // for exactly one field instead of the normal wall (same half-step as
-    // start.html's renderScreen13FacebookEmail).
-    if(facebookNeedsEmailToken){
-      renderFacebookEmailStep(el);
-      return;
+  // ===================================================================
+  // FUNNEL-ARRIVAL REE INSTRUMENTATION (tracking regression fix,
+  // 2026-08-11). When the growth funnel pinned its flo arm to 100% of
+  // traffic (2026-08-10), every caption-carrying (Build/Write) paid
+  // handoff started landing on THIS wall instead of start.html's screen
+  // 13 (see the funnel's own redirectToApp wall-routing, and
+  // isFunnelHandoffArrival above). start.html's screen 13 fired the ad
+  // funnel's own funnel_step_viewed(email_capture) / ReachedEmailEntry /
+  // signup_email_entered / signup_email_first_variant_shown on the way
+  // through; this wall never did (it was built when it only ever served
+  // ORGANIC traffic — see the big "deliberately does NOT fire" comment
+  // near boot). So on the first full day at 100% flo those four metrics
+  // read ZERO even though real signups kept landing (signed_up fires from
+  // js/store.js's commitLocalSignup regardless of which page drove it).
+  //
+  // Fix: fire the SAME events, with the SAME names and property shapes
+  // start.html used, but ONLY for genuine funnel arrivals
+  // (isFunnelHandoffArrival) — organic wizard traffic still fires none of
+  // them, so the "don't pollute the paid REE metric with organic traffic"
+  // intent of the original comment is preserved. variant:'wizard' marks
+  // the wall these came from and cleanly marks the cutover in the data,
+  // without inventing any new event name. Fired from render() at
+  // WALL_STEP (the arrival hook, same place wizard_step_viewed fires) so
+  // it re-fires once per fresh arrival and never on the wall's internal
+  // email<->code sub-swaps — 1:1 with start.html's own per-arrival
+  // semantics.
+  var funnelEmailEnteredTracked = false;
+  function maybeTrackFunnelEmailEntered(email){
+    if(!isFunnelHandoffArrival) return;
+    if(funnelEmailEnteredTracked) return;
+    if(!email) return;
+    funnelEmailEnteredTracked = true;
+    track('signup_email_entered', { variant: 'wizard' });
+  }
+  function fireFunnelWallReachedEvents(){
+    if(!isFunnelHandoffArrival) return;
+    // Reset per fresh arrival at the wall — NOT on the internal
+    // email->code DOM swap (which never re-enters render()), matching
+    // start.html's emailEnteredTracked reset placement.
+    funnelEmailEnteredTracked = false;
+    if(window.posthog && typeof window.posthog.register === 'function'){
+      try{ posthog.register({ signup_email_first_variant: 'wizard' }); }catch(e){ /* analytics must never break the funnel */ }
     }
+    track('signup_email_first_variant_shown', { variant: 'wizard' });
+    // REE (Reached-Email-Entry) — the metric this whole fix restores.
+    // step:1/screen:'email_capture' is byte-identical to start.html's own
+    // emission so any dashboard keyed on funnel_step_viewed
+    // screen='email_capture' reads straight across the page cutover.
+    track('funnel_step_viewed', { step: 1, screen: 'email_capture' });
+    // Meta CAPI mid-funnel optimization target, same call start.html made
+    // (custom event, event_id/CAPI-paired). fbc/fbp were already
+    // reconstructed from the handoff URL params in the funnel-arrival wall
+    // leg above, so this reaches Meta attributed to the ad.
+    fireMetaConversion('ReachedEmailEntry', {}, true);
+  }
+
+  function renderSignupWall(el){
     renderWallEmailStep(el);
   }
 
@@ -2661,8 +2477,6 @@
       wallSubtextArm === 'shown'
         ? '<div class="fn-microcopy" style="margin:0;">Free to start, no card needed — we’ll email you your dream the moment it’s ready, that’s the only reason we ask.</div>'
         : '',
-      facebookSignupButtonHtml(),
-      facebookOrDividerHtml(),
       '<input class="fn-field" id="contact-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto">' +
       '<div class="fn-err-text" id="contact-error"></div>',
       '<button class="fn-btn-primary" id="fn-contact-continue" type="button">Send me my dream</button>' +
@@ -2678,6 +2492,10 @@
 
     function trySubmit(){
       contactEmail = emailInput.value.trim();
+      // "Entered email" micro-step — fired on the first non-empty submit
+      // attempt (paired with the blur handler below), funnel arrivals
+      // only. See maybeTrackFunnelEmailEntered / fireFunnelWallReachedEvents.
+      maybeTrackFunnelEmailEntered(contactEmail);
       errEl.textContent = '';
       if(!contactEmail || contactEmail.indexOf('@') === -1){
         errEl.textContent = 'Enter a valid email address.';
@@ -2799,8 +2617,11 @@
 
     continueBtn.addEventListener('click', trySubmit);
     emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); trySubmit(); } });
-    wireFacebookSignupButton();
-    applyPendingFacebookError();
+    // "Entered email" micro-step — first non-empty blur (funnel arrivals
+    // only; no-op otherwise). Paired with the submit-time fire in
+    // trySubmit; whichever comes first wins. Mirrors start.html's screen
+    // 13 blur wiring exactly.
+    emailInput.addEventListener('blur', function(){ maybeTrackFunnelEmailEntered(emailInput.value.trim()); });
     // Round 9, fix #6 (founder iPhone screenshot): NO auto-focus here.
     // Focusing the email field on render made iOS open the keyboard +
     // AutoFill bar immediately and scroll the "Your dream is forming…"
@@ -2903,97 +2724,6 @@
     codeInput.focus();
   }
 
-  /**
-   * The Facebook "needs email" half-step (ported from start.html's
-   * renderScreen13FacebookEmail — see that function's header comment for
-   * the full why, incl. why an already-registered email is refused
-   * server-side). Submitting posts the marker + email to
-   * facebook-complete-signup.js and re-enters THIS page via ?bt= — the
-   * wizard snapshot is re-persisted first, since this page load's own
-   * restore already consumed it and the ?bt= re-entry is a fresh load
-   * that must find it again.
-   */
-  function renderFacebookEmailStep(el){
-    el.innerHTML = fnStageHtml([
-      '<div class="fn-headline">One last thing — where should we send it?</div>' +
-      '<div class="fn-microcopy" style="margin:6px 0 0;">Facebook didn’t share an email address with us, and that’s the only way we can send you your dream.</div>',
-      '<input class="fn-field" id="contact-email" type="email" placeholder="you@email.com" autocomplete="email" dir="auto">' +
-      '<div class="fn-err-text" id="contact-error"></div>',
-      '<button class="fn-btn-primary" id="fn-fb-email-continue" type="button">Continue</button>' +
-      '<button type="button" class="fn-small-link" id="fn-fb-email-fallback" style="margin:8px 0 0;">Sign up with email instead</button>' +
-      '<div class="fn-body-copy" style="font-size:11.5px; opacity:.7; text-align:center; margin:8px 0 0;">By signing up, you agree to our <a href="terms.html" style="color:inherit;">Terms</a> and <a href="privacy.html" style="color:inherit;">Privacy Policy</a>.</div>'
-    ]);
-
-    var emailInput = document.getElementById('contact-email');
-    var errEl = document.getElementById('contact-error');
-    var continueBtn = document.getElementById('fn-fb-email-continue');
-
-    document.getElementById('fn-fb-email-fallback').addEventListener('click', function(){
-      // Drop the marker and fall back to the ordinary wall. The marker is
-      // simply abandoned (it expires on its own, ~15 minutes).
-      facebookNeedsEmailToken = null;
-      track('signup_facebook_needs_email_abandoned', { variant: 'wizard' });
-      renderSignupWall(el);
-    });
-
-    function submit(){
-      var email = emailInput.value.trim();
-      errEl.textContent = '';
-      if(!email || email.indexOf('@') === -1){
-        errEl.textContent = 'Enter a valid email address.';
-        track('signup_error_shown', { reason: 'invalid_email' });
-        return;
-      }
-      continueBtn.disabled = true;
-      continueBtn.textContent = 'Creating your account…';
-      backBtn.disabled = true;
-      fetch('/.netlify/functions/facebook-complete-signup', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: facebookNeedsEmailToken, email: email })
-      }).then(function(res){
-        return res.json().then(function(data){ return { ok: res.ok, data: data }; });
-      }).then(function(result){
-        var data = result.data || {};
-        if(data.ok && data.transferToken){
-          // Re-enter through the normal ?bt= return path below. Re-persist
-          // the restored wizard state first — see this function's own doc
-          // comment.
-          persistWizardForFacebookRedirect();
-          location.href = 'wizard.html?bt=' + encodeURIComponent(data.transferToken);
-          return;
-        }
-        continueBtn.disabled = false;
-        continueBtn.textContent = 'Continue';
-        backBtn.disabled = false;
-        var err = String(data.error || '');
-        if(err.indexOf('email_taken') !== -1){
-          errEl.innerHTML = 'You already have an account with that email — <a href="login.html">sign in instead</a>.';
-          track('signup_error_shown', { reason: 'already_registered' });
-          return;
-        }
-        if(err.indexOf('invalid_or_expired') !== -1){
-          errEl.textContent = 'That Facebook sign-in expired — please sign up with email instead.';
-          track('signup_error_shown', { reason: 'fb_marker_expired' });
-          return;
-        }
-        errEl.textContent = 'Something went wrong creating your account — please try again, or sign up with email instead.';
-        track('signup_error_shown', { reason: 'fb_complete_failed' });
-      }).catch(function(){
-        continueBtn.disabled = false;
-        continueBtn.textContent = 'Continue';
-        backBtn.disabled = false;
-        errEl.textContent = 'Something went wrong creating your account — please try again, or sign up with email instead.';
-        track('signup_error_shown', { reason: 'fb_complete_failed' });
-      });
-    }
-
-    continueBtn.addEventListener('click', submit);
-    emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); submit(); } });
-    // No render-time auto-focus (round 9, fix #6) — this half-step renders
-    // off a redirect return, not a user tap, and iOS answers a focused
-    // field with the keyboard + a scroll. Same rule as the main wall.
-  }
-
   // ===================================================================
   // Question-first screen 1 — "What was your dream about?" as a six-tile
   // grid, wizard.html's FIRST screen. This REPLACED the round-8 build/
@@ -3002,9 +2732,8 @@
   // hero-trim), the six tiles ARE the mode choice, and each tile SEEDS the
   // wizard (mode + starting chip state) and jumps to the first follow-up
   // it hasn't already answered, so nothing is re-asked. Shown to FRESH
-  // entries only — never a Facebook return leg (resumes at the wall) and
-  // never a funnel-style ?resume=1 arrival (those already chose funnel-
-  // side), exactly like the chooser it replaced.
+  // entries only — never a funnel-style ?resume=1 arrival (those already
+  // chose funnel-side), exactly like the chooser it replaced.
   //
   // Static, webview-SAFE hero: a 2x2 collage of local store images (no
   // video, no autoplay, zero extra network beyond four same-origin webp
@@ -3200,6 +2929,10 @@
     var stepNo = STEP_ANALYTICS[cur];
     if(stepNo !== null) track('wizard_step_viewed', { step: stepNo });
     else track('wizard_recap_viewed', {});
+    // Ad-funnel REE instrumentation for paid arrivals landing on this wall
+    // (the flo-arm handoff, 2026-08-10). No-op for organic traffic and for
+    // every non-wall step — see fireFunnelWallReachedEvents' own comment.
+    if(cur === WALL_STEP) fireFunnelWallReachedEvents();
   }
   function goToStep(n){
     if(n < 0 || n >= SCREEN_RENDERERS.length) return;
@@ -3282,19 +3015,10 @@
   });
 
   // ===================================================================
-  // Boot — normal arrival, or the Facebook Login return leg (same
-  // structure as start.html's own boot(); see that function's doc
-  // comment for why the ?bt= branch paints a loading state first and
-  // defers the synchronous-XHR consume call by one tick).
+  // Boot — render the entry screen for this arrival (question-first for
+  // fresh/direct visitors, the signup wall for a funnel handoff).
   // ===================================================================
   function boot(){
-    if(!resumedFromFacebook){
-      // Hygiene: a snapshot left behind by an abandoned Facebook round
-      // trip must never survive into an unrelated later run of this
-      // wizard (restoreWizardFromFacebookRedirect also has its own
-      // savedAt age check — this is the cheaper, more direct half of the
-      // same guarantee).
-      clearPersistedWizardState();
       // Fresh entries (Get Started / direct) meet the question-first
       // screen 1 first. A ?resume=1 arrival (funnel-style handoff) skips
       // it: funnel users already chose their scenario funnel-side.
@@ -3311,7 +3035,7 @@
       // resume arrival CARRYING A BUILT DREAM (caption param — the same
       // param name start.html's resume leg reads) lands DIRECTLY on the
       // wall: dream already built and recapped funnel-side, so the only
-      // thing left is the veil + Facebook/email wall. Everything below
+      // thing left is the veil + email wall. Everything below
       // mirrors start.html's own arrival leg 1:1 (cross-referenced
       // there), so routing flo arrivals here loses nothing:
       //   - character stash adoption (js/funnel-character-stash.js, the
@@ -3373,108 +3097,12 @@
         funnelArrival = true;
         funnelCaption = getParam('caption');
         if(getParam('style')) chosenStyle = getParam('style');
-        assembleFromState(); // funnel branch — set eagerly so the FB snapshot always carries a real assembled dream
+        assembleFromState(); // funnel branch — set eagerly so the wall always renders a real assembled dream
         cur = WALL_STEP;
         render();
         return;
       }
       render();
-      return;
-    }
-
-    // Every Facebook leg restores (and thereby consumes) the snapshot:
-    // the fb_error leg needs the built dream back to re-render an
-    // editable wall around the inline error, and the ?bt= leg needs it to
-    // actually submit the dream. The fb_needs_email leg's own success
-    // path re-persists before its ?bt= re-entry (see
-    // renderFacebookEmailStep).
-    var restored = restoreWizardFromFacebookRedirect();
-
-    if(!fbTransferPresent){
-      // A failed round trip (?fb_error=) or the needs-email half-step
-      // (?fb_needs_email=). No token to consume — land straight on the
-      // wall, where the visitor actually was when they left.
-      cur = WALL_STEP;
-      render();
-      return;
-    }
-
-    cur = WALL_STEP;
-    renderProgress();
-    screenEl.innerHTML =
-      '<div class="fn-spacer"></div>' +
-      '<div class="fn-spin"></div>' +
-      '<div class="fn-loading-line">Signing you in…</div>' +
-      '<div class="fn-spacer"></div>';
-
-    setTimeout(function(){
-      try{ DreamStore.consumeSessionTransferTokenFromUrlSync(); }catch(e){ /* silent no-op contract -- see that function's own doc comment */ }
-
-      var user = DreamStore.getCurrentUser();
-      if(!user){
-        // The token didn't resolve (expired, already consumed, a network
-        // failure). Fail closed to the ordinary wall with an inline
-        // explanation — the email path is unaffected and remains the
-        // fallback.
-        pendingFacebookErrorSlug = pendingFacebookErrorSlug || 'signin_failed';
-        render();
-        return;
-      }
-
-      // getAccountEmail() reads the email commitTransferredSession just
-      // wrote from the server-verified token, never anything
-      // client-supplied.
-      var email = DreamStore.getAccountEmail() || '';
-      var fbOutcome = getParam('fb');
-      track('signup_facebook_completed', { variant: 'wizard', outcome: fbOutcome || null });
-      // Gated on fb=signup — the callback sets fb:'login' for an
-      // existing-email match, which is a login, not a new signup (same
-      // no-double-count rule as start.html's boot; see that copy's long
-      // comment on both the pixel fire and the PostHog 'signed_up' gap).
-      if(email && fbOutcome === 'signup'){
-        fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'facebook' } });
-        track('signed_up', { signup_method: 'facebook' });
-      }
-
-      if(!restored || !assembled || !assembled.caption){
-        // The snapshot didn't survive the round trip (most realistically
-        // the FB/IG in-app webview wiping localStorage between the two
-        // page loads). The visitor IS signed in — that half succeeded and
-        // must not be thrown away — there's just no built dream left to
-        // submit for them, so land on home.html without ?generate=1
-        // (nothing in the draft to submit) and let them build from there.
-        // Tracked so it's visible if this turns out to be common.
-        track('wizard_facebook_return_snapshot_missing', {});
-        location.href = 'home.html';
-        return;
-      }
-
-      // The dream survived — fire the real generation for the confirmed
-      // account email now (it could never start pre-redirect: the email
-      // wasn't known until Facebook vouched for it, the same accepted
-      // tradeoff start.html's Facebook path documents), then run the one
-      // shared continuation.
-      contactEmail = email;
-      var characters = resolveCharactersForGeneration();
-      var payload = {
-        email: email, whatsapp: null,
-        caption: assembled.caption, style: chosenStyle,
-        characters: characters, characterIdsForGeneration: assembled.characterIdsForGeneration,
-        sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey,
-        storyText: currentStoryText
-      };
-      var submissionKey = JSON.stringify(payload);
-      var comparisonPayload = Object.assign({}, payload, { email: email.toLowerCase() });
-      delete comparisonPayload.storyText;
-      var comparisonKey = JSON.stringify(comparisonPayload);
-      DreamStore.setDraft({ caption: assembled.caption, storyText: currentStoryText, style: chosenStyle, characterIds: assembled.characterIdsForGeneration, sceneryTime: DreamStore.getDraft().sceneryTime, sceneryPlace: settingPlaceKey });
-      completeSignupAndAdvance(email, {
-        pendingPromise: getOrStartPendingGeneration(submissionKey, comparisonKey),
-        // fb=signup is a genuinely new account (fb=login is an existing-email
-        // match handled as a login above) — only a signup earns the moment.
-        freshSignup: fbOutcome === 'signup'
-      });
-    }, 0);
   }
 
   // ===================================================================

@@ -27,7 +27,7 @@
 // retired it for every user-facing link -- those senders now all call
 // emailOrigin() here. The convention survives only where the visitor's
 // browser must round-trip back to the origin it left from
-// (facebook-oauth-callback.js, the Dodo checkout functions).
+// (the Dodo checkout functions).
 //
 // But since commit de124a5 (2026-08-04) the only path that sends the
 // automatic first-dream retention email is send-pending-first-dream-
@@ -65,7 +65,7 @@
 // (password reset, verification, share/claim tokens, retention emails,
 // unsubscribe) and the share endpoints' OG/redirect urls. NOT in scope:
 // mid-browser round trips that must return to the origin the visitor is
-// actually on (facebook-oauth-callback.js, the Dodo checkout functions)
+// actually on (the Dodo checkout functions)
 // -- those NEED the request host, because the visitor's localStorage
 // session lives on the origin they left from, and machine-to-machine
 // callbacks (start-pending-generation's fal webhook url), which no human

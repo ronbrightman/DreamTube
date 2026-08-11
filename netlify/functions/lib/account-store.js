@@ -49,48 +49,19 @@
 //       js/store.js's own findAccountKeyByEmail sidesteps client-side by
 //       just iterating its small local `accounts` object — that approach
 //       doesn't scale to a real, shared, potentially-large server store).
-//   "f:<facebook user id>"    -> "<normalized username>"
-//     — the same secondary-index shape again, for Facebook Login (see
-//       docs/SIGNUP_FACEBOOK_LOGIN_SPEC.md §3 and netlify/functions/
-//       facebook-oauth-callback.js). Added for exactly the same reason
-//       the "e:" index exists: a returning Facebook user arrives holding
-//       only their Facebook user id, and resolving that to an account
-//       must not require scanning the store. Every rule the "e:" index
-//       follows applies here identically — normalized before use as a
-//       key, never trusted blindly on read (getByFacebookUserId below has
-//       the same "does the record it points at actually still claim this
-//       id" defense-in-depth check getByEmail has), and written
-//       non-atomically alongside the "u:" record, with the same accepted
-//       race documented below.
 //
-//       Deliberately NOT retrofitted onto admin-rename-account.js /
-//       admin-consolidate-accounts.js, the two one-off owner-migration
-//       functions that write "u:"/"e:" keys raw rather than through this
-//       module: both operate on a single hardcoded owner account that has
-//       never touched Facebook Login, and getByFacebookUserId's own
-//       defense-in-depth check below already makes the worst case of any
-//       drift safe (a stale "f:" entry resolves to nothing, so that
-//       Facebook user cleanly creates a fresh account rather than being
-//       signed into the wrong one). Widening those admin migrations was
-//       judged riskier than the drift it would prevent.
+// `password: null` is an accepted shape in this codebase (js/store.js's
+// commitTransferredSession materializes exactly that for a session-
+// transfer account established without a password on hand), so nothing in
+// this module assumes a password is present on every record.
 //
-// The account record itself gains one OPTIONAL field alongside the
-// existing username/email/password/updatedAt: `fbUserId`. It is absent
-// entirely on every account that has never used Facebook Login — this is
-// purely additive, with no migration: an existing record read back with
-// no `fbUserId` behaves exactly as it always has. `password: null` is
-// likewise already an accepted shape in this codebase (js/store.js's
-// commitTransferredSession materializes exactly that for a session
-// established without a password on hand), which is what a
-// Facebook-Login-only account has.
-//
-// SECOND OPTIONAL FIELD (tracker item for-product-build-whatsapp-morning-
+// OPTIONAL FIELD (tracker item for-product-build-whatsapp-morning-
 // captu-skez3n, steps 3-4): `whatsappNumber`, an E.164-normalized phone
 // number (see normalizeWhatsappNumber below), present only on accounts
 // that have opted in to the daily "morning capture" WhatsApp reminder from
-// profile.html's Settings sheet (see save-whatsapp-number.js). Same
-// purely-additive shape as `fbUserId` — absent on every account that has
-// never opted in, no migration needed. This is a DIFFERENT field from
+// profile.html's Settings sheet (see save-whatsapp-number.js). Purely
+// additive — absent on every account that has never opted in, no migration
+// needed. This is a DIFFERENT field from
 // pending-dreams.js's `whatsapp` (an abandoned-cart re-engagement address
 // captured once, mid-signup, for a single fire-and-forget message — see
 // that file's own header comment and lib/whatsapp-client.js's) — that one
@@ -114,10 +85,9 @@
 // passwordless-signup hybrid): `emailVerified`, a boolean gate a small,
 // named set of actions now check (see the GATE LIST doc block at the
 // bottom of this comment). Written explicitly by every account-creation
-// caller now — register-account.js and facebook-oauth-callback.js's
-// createFacebookAccount both pass `emailVerified: true` (a real password
-// signup and a Facebook-confirmed email are both treated as already
-// "verified enough" for gating purposes — see below); ONLY
+// caller now — register-account.js passes `emailVerified: true` (a real
+// password signup is treated as already "verified enough" for gating
+// purposes — see below); ONLY
 // register-account-passwordless.js ever passes `emailVerified: false` for
 // a genuinely brand-new account, since that is the one signup path whose
 // whole point is deferring a real ownership check. `createAccount` DEFAULTS
@@ -226,23 +196,6 @@ function normalizeUsername(username) {
   return (typeof username === 'string' ? username : '').trim().toLowerCase();
 }
 
-/**
- * Normalizes a Facebook user id for use as an "f:" key. Facebook's own
- * `/me` returns `id` as a decimal-digit STRING, but Graph responses have
- * historically been JSON numbers in some contexts, so this coerces to a
- * string and trims — then refuses anything that isn't purely digits,
- * returning ''. That last check is deliberate and load-bearing: an "f:"
- * key is derived from data that arrived over the network, and a value
- * containing e.g. a colon or a "u:"/"e:" prefix could otherwise be shaped
- * to collide with another key family in this single shared store. Every
- * caller treats '' as "no usable Facebook id" and skips the index
- * entirely, exactly like normalizeEmail('') already gates the "e:" index.
- */
-function normalizeFacebookUserId(fbUserId) {
-  var raw = (typeof fbUserId === 'string' || typeof fbUserId === 'number') ? String(fbUserId).trim() : '';
-  return /^[0-9]{1,64}$/.test(raw) ? raw : '';
-}
-
 function store() {
   return getStore({ name: STORE_NAME });
 }
@@ -252,13 +205,13 @@ function store() {
  * 8-15 digits, first digit non-zero — the shape the WhatsApp Cloud API's
  * own `to` field expects, and what send-whatsapp-morning-capture.js sends
  * as-is with no further reformatting). Strips spaces/dashes/parens/dots a
- * user might paste in (e.g. "+1 (555) 123-4567") before validating, same
- * "be lenient about pasted formatting, strict about the stored shape"
- * approach normalizeFacebookUserId above takes for a differently-shaped
- * id. Returns '' for anything empty, non-string, or that still doesn't
- * look like a real international number after stripping — callers treat
- * '' as "no usable number" and refuse to save it, exactly like
- * normalizeFacebookUserId('') already gates the "f:" index.
+ * user might paste in (e.g. "+1 (555) 123-4567") before validating, with
+ * the same "be lenient about pasted formatting, strict about the stored
+ * shape" discipline as the email/username normalizers above. Returns ''
+ * for anything empty, non-string, or that still doesn't look like a real
+ * international number after stripping — callers treat '' as "no usable
+ * number" and refuse to save it, exactly like normalizeEmail('') already
+ * gates the "e:" index.
  */
 function normalizeWhatsappNumber(value) {
   if (typeof value !== 'string') return '';
@@ -305,57 +258,24 @@ async function getByEmail(event, email) {
 }
 
 /**
- * Looks up an account record by Facebook user id, via the "f:" secondary
- * index, or null if no account has ever linked that Facebook identity.
- * Step 1 of the identity-resolution algorithm in
- * docs/SIGNUP_FACEBOOK_LOGIN_SPEC.md §3 — a returning Facebook user whose
- * account is found here is a LOGIN, with no email lookup needed at all
- * (their Facebook email may even have changed since; the linked id is the
- * stronger signal).
- *
- * Carries getByEmail's exact defense-in-depth check, for the exact same
- * reason: the "f:" index and the "u:" record are two separate,
- * non-atomic writes (see header comment), so an index entry pointing at a
- * record that no longer claims this Facebook id must be treated as "not
- * found" rather than handed back. That matters more here than anywhere
- * else in this file — handing back the wrong record here would sign a
- * Facebook user into somebody else's account.
- */
-async function getByFacebookUserId(event, fbUserId) {
-  var normalized = normalizeFacebookUserId(fbUserId);
-  if (!normalized) return null;
-  connectLambda(event);
-  var username = await store().get('f:' + normalized, { type: 'json' });
-  if (!username) return null;
-  var record = await getByUsername(event, username);
-  if (!record || record.fbUserId !== normalized) return null;
-  return record;
-}
-
-/**
  * Registers a brand-new account. Rejects if EITHER the username or the
  * email is already registered server-side — this is the authoritative
  * uniqueness check now (see register-account.js), not js/store.js's local
  * per-browser one. Returns { ok:true, record } on success, or
- * { ok:false, error } — 'username_taken' / 'email_taken' /
- * 'facebook_id_taken' on a pre-existing collision. Plain
- * existence-check-then-write, same accepted-race shape as every other
- * Blobs-backed store in this codebase — see the header comment's INCIDENT
- * note for why an earlier, stricter-looking version of this function was
- * actually broken in production and got reverted to this simpler form.
+ * { ok:false, error } — 'username_taken' / 'email_taken' on a pre-existing
+ * collision. Plain existence-check-then-write, same accepted-race shape as
+ * every other Blobs-backed store in this codebase — see the header
+ * comment's INCIDENT note for why an earlier, stricter-looking version of
+ * this function was actually broken in production and got reverted to this
+ * simpler form.
  *
- * `account.fbUserId` is OPTIONAL (Facebook Login only — see
- * facebook-oauth-callback.js). When present and well-formed it is stored
- * on the record and indexed under "f:"; when absent the record and the
- * store are byte-for-byte what they were before this field existed, so
- * every pre-existing caller (register-account.js, the tests, the local
- * backfill path) is completely unaffected. `account.password` may be null
- * for a Facebook-only account — see the header comment.
+ * `account.password` may be null — that's an accepted shape
+ * (js/store.js's commitTransferredSession materializes a passwordless
+ * session-transfer account), so this never assumes a password is present.
  */
 async function createAccount(event, account) {
   var key = normalizeUsername(account.username);
   var email = normalizeEmail(account.email);
-  var fbUserId = normalizeFacebookUserId(account.fbUserId);
   connectLambda(event);
   var s = store();
 
@@ -381,18 +301,6 @@ async function createAccount(event, account) {
   var existingEmailOwner = await getByEmail(event, account.email);
   if (existingEmailOwner) return { ok: false, error: 'email_taken' };
 
-  // Same validated-lookup shape as the email check just above (never a
-  // raw index truthy-check — see that comment). facebook-oauth-callback.js
-  // already resolves by Facebook id BEFORE ever reaching creation, so in
-  // practice this is unreachable; it's here as defense in depth so that no
-  // future caller can create a second account claiming a Facebook identity
-  // that already belongs to one, which would leave two accounts fighting
-  // over a single "f:" index entry.
-  if (fbUserId) {
-    var existingFbOwner = await getByFacebookUserId(event, fbUserId);
-    if (existingFbOwner) return { ok: false, error: 'facebook_id_taken' };
-  }
-
   await s.setJSON('e:' + email, key);
   var record = {
     username: key, email: email, password: account.password, updatedAt: Date.now(),
@@ -402,64 +310,9 @@ async function createAccount(event, account) {
     // keeps behaving exactly as it always has.
     emailVerified: account.emailVerified === false ? false : true
   };
-  // Only ever add the field (and its index) when there's a real value —
-  // an account that has never touched Facebook Login keeps exactly the
-  // record shape it has always had, with no `fbUserId` key at all.
-  if (fbUserId) {
-    record.fbUserId = fbUserId;
-    await s.setJSON('f:' + fbUserId, key);
-  }
   await s.setJSON('u:' + key, record);
 
   return { ok: true, record: record };
-}
-
-/**
- * Links a Facebook identity onto an account that ALREADY EXISTS — step 2
- * of docs/SIGNUP_FACEBOOK_LOGIN_SPEC.md §3's resolution algorithm: a
- * Facebook login whose verified email already resolves to an account is a
- * LOGIN to that account, never a second account, and the Facebook id is
- * upserted onto it once so every later login resolves at step 1.
- *
- * Idempotent: re-linking the same id to the same account is a successful
- * no-op-ish rewrite. Returns { ok:false, error:'not_found' } if there's no
- * such account, 'invalid_facebook_id' for an unusable id, and — the one
- * that actually matters — 'facebook_id_taken' if that Facebook id is
- * already linked to a DIFFERENT account. That last case must never
- * silently repoint the index: doing so would strand the original account's
- * owner (their Facebook login would start resolving to someone else's
- * account at step 1), so it fails closed and lets the caller decide.
- *
- * Deliberately NOT folded into applyPasswordReset's upsert shape — this
- * never creates a record, because the whole point of reaching here is that
- * a real one was already found.
- */
-async function linkFacebookUserId(event, username, fbUserId) {
-  var key = normalizeUsername(username);
-  var normalized = normalizeFacebookUserId(fbUserId);
-  if (!key) return { ok: false, error: 'not_found' };
-  if (!normalized) return { ok: false, error: 'invalid_facebook_id' };
-  connectLambda(event);
-  var s = store();
-
-  var record = await s.get('u:' + key, { type: 'json' });
-  if (!record) return { ok: false, error: 'not_found' };
-  if (record.fbUserId && record.fbUserId !== normalized) {
-    // This account is already linked to a DIFFERENT Facebook identity.
-    // Refuse rather than overwrite: silently repointing would break the
-    // original Facebook user's own login.
-    return { ok: false, error: 'account_already_linked' };
-  }
-
-  var currentOwner = await getByFacebookUserId(event, normalized);
-  if (currentOwner && currentOwner.username !== key) {
-    return { ok: false, error: 'facebook_id_taken' };
-  }
-
-  var updated = Object.assign({}, record, { fbUserId: normalized, updatedAt: Date.now() });
-  await s.setJSON('f:' + normalized, key);
-  await s.setJSON('u:' + key, updated);
-  return { ok: true, record: updated };
 }
 
 /**
@@ -561,20 +414,6 @@ async function deleteAccount(event, username) {
     var currentIndexTarget = await s.get(emailKey, { type: 'json' });
     if (currentIndexTarget === key) await s.delete(emailKey);
   }
-  // Same treatment for the Facebook index, for the same reason and with
-  // the same "only if it still points at THIS username" guard — without
-  // this, deleting a Facebook-linked account would leave an orphaned "f:"
-  // entry behind, and that account's Facebook user signing in again would
-  // resolve to a dangling index instead of cleanly creating a fresh
-  // account. (getByFacebookUserId's own defense-in-depth check already
-  // refuses to hand back a missing record, so this is cleanup, not a
-  // correctness hole — exactly the same relationship the "e:" cleanup
-  // above has with getByEmail's check.)
-  if (record && record.fbUserId) {
-    var fbKey = 'f:' + normalizeFacebookUserId(record.fbUserId);
-    var currentFbTarget = await s.get(fbKey, { type: 'json' });
-    if (currentFbTarget === key) await s.delete(fbKey);
-  }
   await s.delete('u:' + key);
 
   return { ok: true };
@@ -592,8 +431,8 @@ async function deleteAccount(event, username) {
  *     but didn't survive normalizeWhatsappNumber.
  *
  * An empty/falsy `whatsappNumber` DELETES the field from the record
- * entirely (rather than storing `''`) — same "absent means never
- * opted-in/linked" shape as `fbUserId`, so a cleared opt-in is
+ * entirely (rather than storing `''`) — an "absent means never opted-in"
+ * shape, so a cleared opt-in is
  * indistinguishable from one that was never set, and
  * send-whatsapp-morning-capture.js's own scan (`if (!record.whatsappNumber)
  * continue`) treats both identically with no special-casing.
@@ -686,13 +525,10 @@ async function markEmailBounced(event, email) {
 module.exports = {
   STORE_NAME,
   normalizeUsername,
-  normalizeFacebookUserId,
   normalizeWhatsappNumber,
   getByUsername,
   getByEmail,
-  getByFacebookUserId,
   createAccount,
-  linkFacebookUserId,
   verifyLogin,
   applyPasswordReset,
   setWhatsappNumber,
