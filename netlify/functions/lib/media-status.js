@@ -42,14 +42,18 @@
 //
 // createdAt SOURCE: a private dream (dream-store.js) carries a real
 // createdAt (js/store.js's finalizeDream — forward-only migration, absent
-// on dreams made before that field existed). A published feed record
-// (get-feed.js/publish-dream.js) carries no createdAt at all, only
+// on dreams made before that field existed, AND absent on any dream synced
+// server-side before tracker item for-product-media-library-stamp-durable--
+// u4oju3's fix — see dream-sync.js's own header comment for that gap and
+// fix). A published feed record (get-feed.js/publish-dream.js) now also
+// carries a real, durably stamped createdAt as of that same fix (see
+// publish-dream.js's own header comment) — a record written before the fix,
+// or whose owning client never sent a real value, still falls back to
 // publishedAt (the moment it was first published, which can be well after
-// the dream was actually generated) — callers reading a feed record should
-// pass publishedAt as the best available stand-in; see
-// admin-media-library-data.js's/admin-backfill-media-rehost.js's own
-// comments at their feed-record call sites for why that's an accepted,
-// documented approximation, not a precise value.
+// the dream was actually generated); see admin-media-library-data.js's/
+// admin-backfill-media-rehost.js's own comments at their feed-record call
+// sites for why that fallback is an accepted, documented approximation for
+// those un-derivable legacy records, not a precise value.
 
 var NO_EXPIRY_HEADER_SHIP_AT = Date.parse('2026-07-29T06:43:46Z');
 var FAL_RETENTION_DAYS = 7;

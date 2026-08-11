@@ -236,6 +236,62 @@ test('saveClaimedDream fires a best-effort upsert to dream-sync with the new dre
   }
 });
 
+// ===== createdAt (tracker item for-product-media-library-stamp-durable--
+// u4oju3, root-cause fix): js/store.js's own POST payload builders now
+// actually forward the client's real createdAt to both server sync
+// endpoints -- before this fix, dream.createdAt existed on the local object
+// (finalizeDream stamped it) but was silently dropped before it ever left
+// the browser, which was the actual root cause of the founder's "no
+// timestamp" report for private dreams. =====
+
+test('saveClaimedDream stamps a real createdAt locally and forwards it in the dream-sync upsert payload', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var calls = mockDreamSync(page);
+    await seedUser(page);
+    await safeGoto(page, baseUrl + '/login.html');
+
+    var before = Date.now();
+    await page.evaluate(function () {
+      window.DreamStore.saveClaimedDream('a claimed dream', 'Cartoon', 'https://x/v.mp4', 'a claimed dream');
+    });
+    var after = Date.now();
+
+    var got = await waitForCall(function () { return calls.some(function (c) { return c.method === 'POST' && c.body.action === 'upsert'; }); });
+    assert.ok(got);
+    var upsertCall = calls.filter(function (c) { return c.method === 'POST' && c.body.action === 'upsert'; })[0];
+    assert.ok(typeof upsertCall.body.dream.createdAt === 'number' && upsertCall.body.dream.createdAt >= before && upsertCall.body.dream.createdAt <= after, 'saveClaimedDream must stamp and forward a real createdAt, not leave it undefined');
+
+    var myDreams = await page.evaluate(function () { return window.DreamStore.getMyDreams(); });
+    assert.equal(myDreams[0].createdAt, upsertCall.body.dream.createdAt, 'the same createdAt stamped locally must be what gets synced');
+  } finally {
+    await page.close();
+  }
+});
+
+test('publishing a private dream with a real local createdAt forwards it to publish-dream.js\'s shared feed record', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var dreamSyncCalls = mockDreamSync(page);
+    var publishCalls = mockPublishDream(page);
+    var realCreatedAt = 1780000000000;
+    await seedUser(page, { dreams: [{ id: 'private-dream-createdat', ownerHandle: '@tester', caption: 'c', style: 'Cartoon', likes: 0, likedByMe: false, isPublished: false, videoUrl: 'https://x/v.mp4', mediaType: 'video', createdAt: realCreatedAt }] });
+    await safeGoto(page, baseUrl + '/login.html');
+
+    await page.evaluate(function () { window.DreamStore.publishDream('private-dream-createdat'); });
+
+    var got = await waitForCall(function () { return publishCalls.length > 0; });
+    assert.ok(got, 'publishDream must call publish-dream.js');
+    assert.equal(publishCalls[0].createdAt, realCreatedAt, 'the dream\'s real local createdAt must be forwarded to the shared feed record, not omitted');
+  } finally {
+    await page.close();
+  }
+});
+
 test('publishDream fires a best-effort DELETE against dream-sync (a published dream leaves the private store)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
