@@ -176,10 +176,10 @@ function delay(ms) {
 
 /**
  * Bounded-retry variant of get() — used ONLY by mark-generation-
- * completed.js's maybeSendAutomaticFirstDreamEmail to check whether
+ * completed.js's maybeEnqueueUnwatchedNudge to check whether
  * dream-webhook.js's markReady has already stamped `readyAt` on a
- * funnel-started record (see that file's own "DOUBLE-SEND FIX" doc
- * comment for the full mechanism this guards).
+ * funnel-started record (see that function's own doc comment for the full
+ * pre-signup-overlap mechanism this guards).
  *
  * WHY THIS EXISTS (tracker.html's
  * narrow-residual-race-mark-generation-com-wenb3g item): a plain get()

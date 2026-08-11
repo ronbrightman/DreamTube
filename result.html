@@ -1661,10 +1661,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
         track('first_video_created', { style: dream.style });
         fireMetaConversion('FirstVideoCreated', { email: DreamStore.getAccountEmail(), custom_data: { style: dream.style } }, true);
-        // Retention email ("your dream is ready") -- see js/store.js's
-        // sendFirstDreamEmailBestEffort doc comment. Same choke point as
-        // the KPI event just above.
-        DreamStore.sendFirstDreamEmailBestEffort(dream);
+        // The "your dream is ready to watch" retention email is no longer
+        // client-triggered from here -- it's the server-side "unwatched
+        // dream" nudge (send-unwatched-dream-nudges.js), enqueued at the
+        // verified generation-complete choke point and sent ~7-10 min later
+        // only if the user hasn't watched. (Founder decision 2026-08-11
+        // retired the separate first-dream email entirely.)
       } catch (e) { /* analytics must never break the app */ }
     }).catch(function () { /* analytics must never break the app -- network failure here is a no-op */ });
   })();

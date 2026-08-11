@@ -12,8 +12,8 @@
 //
 // Every prior test covering this bug composed the chain ONE of two ways,
 // neither of which is what a real user's browser actually does:
-//   - test/automatic-first-dream-email.test.js's END-TO-END tests call the
-//     real Netlify function HANDLERS directly (start-pending-generation ->
+//   - the server-side unit/enqueue tests call the real Netlify function
+//     HANDLERS directly (start-pending-generation ->
 //     claim-pending-generation -> mark-generation-completed), proving the
 //     SERVER-side chain is correct in isolation, but never exercise
 //     wizard.html's/home.html's own client-side JS at all (the
@@ -25,7 +25,7 @@
 //     function endpoint is a canned, fake JSON response (route.fulfill with
 //     a hand-written body) -- it proves the CLIENT calls the right
 //     endpoints in the right order, but never proves the REAL server-side
-//     job-owners/pending-dreams/account-store/first-dream-email-sender
+//     job-owners/pending-dreams/account-store/unwatched-dream-nudge
 //     logic behind those endpoints actually resolves and sends.
 //
 // THIS file composes both halves at once: Playwright drives the real
@@ -40,9 +40,12 @@
 // pending-dreams record) -> register-account.js (a real account-store
 // record) -> claim-pending-generation.js -> video-status.js (real mock-mode
 // completion check) -> mark-generation-completed.js (the real
-// verifyOperationCompleted + job-owners lookup + first-dream-email-sender
-// send) -- with a real Resend fetch spy in this Node process proving the
-// actual email attempt, not a stand-in assertion.
+// verifyOperationCompleted + job-owners lookup + unwatched-dream-nudge
+// enqueue) -> send-unwatched-dream-nudges.js's scan (the real nudge send)
+// -- with a real Resend fetch spy in this Node process proving the actual
+// email attempt, not a stand-in assertion. (The retention email a signed-up
+// user gets is the "unwatched dream" nudge, the single such email since the
+// founder retired the separate first-dream email on 2026-08-11.)
 //
 // GENERATION_MOCK_MODE is used (no real fal.ai call), and start-pending-
 // generation's mock operationName is minted with Date.now() shifted back
@@ -118,7 +121,7 @@ async function dismissMomentIfPresent(page) {
   await page.click('.mm-notnow');
 }
 
-/** Same Date.now monkeypatch as test/automatic-first-dream-email.test.js's own withPastClock -- shifts the embedded mock-operationName timestamp far enough into the past that video-status.js's mock-mode elapsed-time check reports done:true immediately, without this test waiting out the real 20s MOCK_DELAY_MS. */
+/** Date.now monkeypatch -- shifts the embedded mock-operationName timestamp far enough into the past that video-status.js's mock-mode elapsed-time check reports done:true immediately, without this test waiting out the real 20s MOCK_DELAY_MS. */
 async function withPastClock(pastMs, fn) {
   var realNow = Date.now;
   Date.now = function () { return realNow() - pastMs; };
@@ -158,14 +161,14 @@ async function wireRealGetHandler(page, urlGlob, handler, transformBody) {
   });
 }
 
-test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged signup wall -> home.html\'s real resume/poll) drives the REAL server handlers (start-pending-generation -> register-account-passwordless -> claim-pending-generation -> video-status -> mark-generation-completed) and the automatic retention email genuinely sends', async function (t) {
+test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged signup wall -> home.html\'s real resume/poll) drives the REAL server handlers (start-pending-generation -> register-account-passwordless -> claim-pending-generation -> video-status -> mark-generation-completed) and the unwatched-dream retention nudge genuinely sends', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   mockBlobs.reset();
   process.env.GENERATION_MOCK_MODE = 'true';
   process.env.RESEND_API_KEY = 'test-resend-key';
   ['start-pending-generation', 'register-account-passwordless', 'claim-pending-generation', 'video-status', 'mark-generation-completed',
-    'check-email', 'lib/job-owners', 'lib/pending-dreams', 'lib/account-store', 'lib/first-dream-email-store',
-    'lib/first-dream-email-sender', 'lib/generation-completion-store', 'lib/rate-limit', 'lib/email-domain-check'
+    'send-unwatched-dream-nudges', 'check-email', 'lib/job-owners', 'lib/pending-dreams', 'lib/account-store',
+    'lib/unwatched-dream-nudge-store', 'lib/unwatched-dream-nudge-sender', 'lib/generation-completion-store', 'lib/rate-limit', 'lib/email-domain-check'
   ].forEach(function (mod) {
     var resolved = require.resolve('../netlify/functions/' + mod);
     delete require.cache[resolved];
@@ -302,20 +305,19 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     assert.ok(markCalls.length >= 1, 'home.html must have called the REAL mark-generation-completed.js at least once');
     assert.equal(markCalls[0].operationName.indexOf('mock:'), 0, 'the operationName reaching mark-generation-completed must be the SAME funnel operationName minted by start-pending-generation.js');
 
-    // THUMBNAIL-GATED SEND (tracker item for-product-email-redesign-
-    // unsubscribe-l-16ysmp's founder-approved follow-up, 2026-08-04): the
-    // real mark-generation-completed.js call above now only ENQUEUES the
-    // send (lib/first-dream-email-pending-store.js's markPending) -- the
-    // actual Resend attempt happens later, off this request, via send-
-    // pending-first-dream-emails.js's scheduled scan. This test never had
-    // a real thumbnail sync in play (no result.html visit), so force that
-    // scan's own 3-minute deadline as already elapsed and run it directly
-    // in this same Node process (mirroring test/automatic-first-dream-
-    // email.test.js's own flushPending helper) -- proving the REAL
-    // downstream send still fires off the REAL enqueued record, not a
-    // mocked stand-in.
-    var pendingStore = require('../netlify/functions/lib/first-dream-email-pending-store');
-    var sendPending = require('../netlify/functions/send-pending-first-dream-emails');
+    // The real mark-generation-completed.js call above ENQUEUES the
+    // "unwatched dream" retention nudge (lib/unwatched-dream-nudge-store.js's
+    // markPending) -- the actual Resend attempt happens later, off this
+    // request, via send-unwatched-dream-nudges.js's scheduled scan (the
+    // single "your dream is ready to watch" email a signed-up user gets since
+    // the founder retired the separate first-dream email on 2026-08-11). This
+    // test never had a real thumbnail sync or a real 7-minute wait in play, so
+    // seed the thumbnail and force the record past the unwatched floor, then
+    // run the scan directly in this same Node process -- proving the REAL
+    // downstream send still fires off the REAL enqueued record, not a mocked
+    // stand-in.
+    var nudgeStore = require('../netlify/functions/lib/unwatched-dream-nudge-store');
+    var sendNudges = require('../netlify/functions/send-unwatched-dream-nudges');
     // Wait for the real mark-generation-completed.js invocation to actually
     // RESOLVE before reading the record it is supposed to have enqueued.
     //
@@ -339,23 +341,16 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     // and settles as soon as the poll loop paints, which happens off the
     // video-status response, not off the mark-generation-completed one.
     // This is exactly the unsound-ordering shape test/helpers/settle.js was
-    // written for (see its header comment) -- the pre-existing
-    // `settle(resendCalls...)` at the bottom used to absorb this window
-    // incidentally back when mark-generation-completed.js sent the email
-    // inline; commit de124a5 (thumbnail-gated send) moved the send off this
-    // request and inserted this synchronous store read ahead of that
-    // settle, leaving the new assertion racing an in-flight handler with
-    // nothing sequencing it. The production code is not at fault: a real
-    // caller gets its 200 only after markPending has already returned.
+    // written for (see its header comment). The production code is not at
+    // fault: a real caller gets its 200 only after markPending has returned.
     await settle(function () { return markCompletions.length >= 1; });
     assert.ok(markCompletions.length >= 1, 'the real mark-generation-completed.js handler must have actually resolved before its enqueue is asserted on');
-    var pendingRecord = await pendingStore.getPending(fakeEvent({}), markCalls[0].operationName);
-    assert.ok(pendingRecord, 'the real mark-generation-completed.js call must have enqueued a pending record for this exact operationName');
-    // Seed the synced thumbnail this operationName is waiting on -- since
-    // the founder's 08-08 thumbnail-gate rule, a real thumbnail is the only
-    // thing that makes the scheduled scan actually send (no thumbnail =
-    // defer, then drop -- never a bare send). Model it landing so this
-    // real-chain test still exercises a genuine retention send.
+    var pendingRecord = await nudgeStore.getPending(fakeEvent({}), markCalls[0].operationName);
+    assert.ok(pendingRecord, 'the real mark-generation-completed.js call must have enqueued a pending nudge for this exact operationName');
+    // Seed the synced thumbnail this operationName's nudge is waiting on -- a
+    // real thumbnail is the only thing that makes the scan actually send
+    // (no thumbnail = defer, then drop -- never a bare send). Model it landing
+    // so this real-chain test still exercises a genuine retention send.
     var dreamStore = require('../netlify/functions/lib/dream-store');
     await dreamStore.upsertPrivateDream(fakeEvent({}), pendingRecord.username, {
       id: 'dream-' + markCalls[0].operationName, ownerHandle: '@' + pendingRecord.username,
@@ -363,6 +358,11 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
       videoUrl: 'https://example.com/v.mp4', imageUrl: 'https://img.example/funnel-thumb.jpg',
       sourceOperationName: markCalls[0].operationName
     });
+    // Force the pending nudge past the 7-minute unwatched floor so the scan
+    // sends it on this run (the user hasn't watched -- no viewed marker).
+    mockBlobs.seed(nudgeStore.PENDING_STORE_NAME, markCalls[0].operationName, Object.assign({}, pendingRecord, {
+      triggeredAt: Date.now() - (sendNudges.READY_AGE_MS + 5000)
+    }));
     // register-account-passwordless.js's new-account branch fires its own
     // fire-and-forget VERIFICATION email through the same Resend spy (see
     // that file's FIRE-AND-FORGET note) -- count only what the retention
@@ -370,12 +370,12 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
     // and can't be satisfied (or double-counted) by the signup path's own
     // unrelated send.
     var resendCountBeforeScan = resendCalls.length;
-    await sendPending.scanAndSend(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }));
+    await sendNudges.scanAndSend(fakeEvent({ headers: { host: 'dreamtube1.netlify.app' } }));
 
-    // THE ACTUAL ASSERTION THIS BUG IS ABOUT: the automatic retention email
-    // must have genuinely been attempted, through the real job-owners
-    // lookup, the real account-store lookup, and the real
-    // first-dream-email-sender send -- not a mocked stand-in.
+    // THE ACTUAL ASSERTION THIS BUG IS ABOUT: the retention email must have
+    // genuinely been attempted, through the real job-owners lookup, the real
+    // account-store lookup, and the real unwatched-dream-nudge send -- not a
+    // mocked stand-in.
     await settle(function () { return resendCalls.length >= resendCountBeforeScan + 1; });
     var retentionSends = resendCalls.slice(resendCountBeforeScan);
     assert.equal(retentionSends.length, 1, 'THE BUG: the real chain (wizard.html\'s actual client flow driving the real server handlers) must result in exactly one real Resend retention-send attempt for the funnel user');

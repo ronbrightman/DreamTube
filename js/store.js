@@ -216,9 +216,6 @@
 //   isOnlyCompletedDream(dreamId) -> local read-only query, same eligibility computation as
 //       markFirstVideoCreatedIfEligible minus its one-time flag — feeds the PostHog
 //       first_video_result_view sanity-check signal (see result.html's call site).
-//   sendFirstDreamEmailBestEffort(dream) -> fire-and-forget, POST /.netlify/functions/send-first-dream-email
-//       — the retention email ("your dream is ready") — see that function's own header comment.
-//       Callers must gate this on markFirstVideoCreatedIfEligible above having already returned true.
 //   saveThumbnailBestEffort(dreamId, imageDataUrl) -> fire-and-forget, POST
 //       /.netlify/functions/upload-dream-thumbnail — persists a client-captured video-frame-1
 //       still (result.html draws the <video> element to a <canvas>) as this dream's imageUrl,
@@ -1643,8 +1640,8 @@
           // "1 dream vanished, observed 10 times" from "10 dreams each
           // vanished once", which corrupts the exact "true vanish rate"
           // this instrumentation exists to produce. dream.id is already
-          // sent to the server elsewhere (see e.g. sendFirstDreamEmail's
-          // own dreamId field above), so this adds no new exposure.
+          // sent to the server elsewhere (e.g. publish-dream's own payload),
+          // so this adds no new exposure.
           dreamId: dream.id || null
         });
       }
@@ -3678,8 +3675,8 @@
    * password to cache here (unlike login(), which always has the real
    * typed password on hand to store for this device's own future local-
    * fallback login). This one property is why a session established this
-   * way can't opportunistically re-authenticate to password-gated,
-   * best-effort endpoints like sendFirstDreamEmailBestEffort below (that
+   * way can't opportunistically re-authenticate to any password-gated,
+   * best-effort endpoint that relies on the cached local password (such a
    * call simply no-ops server-side if the cached password doesn't match —
    * it never throws or blocks anything) — an accepted, narrow degrade,
    * not a bug: this session is real for everything else, it just never
@@ -6378,9 +6375,10 @@
     /**
      * Mints a session-transfer token (netlify/functions/create-session-
      * transfer.js) for the CURRENTLY signed-in account, using its own
-     * already-cached local password — same "no new re-auth prompt, the
-     * password is already on hand" shape as sendFirstDreamEmailBestEffort
-     * above. Resolves the raw token string on success, or null on
+     * already-cached local password — the "no new re-auth prompt, the
+     * password is already on hand" pattern (state.accounts[key].password,
+     * the same plaintext-local account model every other DreamStore method
+     * relies on). Resolves the raw token string on success, or null on
      * anything short of that (not signed in, no cached password for this
      * account — e.g. an account itself established via a session-transfer
      * token, see commitTransferredSession's own doc comment — network
@@ -6622,81 +6620,6 @@
     },
 
     /**
-     * Best-effort trigger for the "your dream is ready" RETENTION email
-     * (tracker.html's for-product-retention-email-send-user-th-eke9ra
-     * item — day-1 -> day-2+ return, distinct from the FirstVideoCreated
-     * KPI event above though fired from the exact same choke point — see
-     * result.html's/explore.html's call sites, right alongside their own
-     * markFirstVideoCreatedIfEligible(dream.id) guard). Callers must
-     * gate this on that SAME eligibility check already having returned
-     * true — this function does not re-check eligibility itself, it just
-     * fires the request. Fire-and-forget: never throws, never awaited,
-     * must never block rendering. The server
-     * (send-first-dream-email.js) does the actual security-sensitive
-     * work — a real password re-check (see that file's own header
-     * comment on why a bare username alone isn't enough here, unlike
-     * most of this codebase's other client-trusted-identity endpoints:
-     * this one has a real side effect on a third party's inbox plus a
-     * permanent per-account guard), resolving the account's real
-     * verified email, and the durable "exactly once per account" guard —
-     * this call only supplies proof of which account it's firing for; it
-     * is never trusted with the send decision itself. The password comes
-     * from THIS account's own already-cached local credential
-     * (state.accounts[key].password — the same plaintext-local account
-     * model every other DreamStore method already relies on), so this
-     * adds no new re-auth prompt for the user.
-     *
-     * Video-only, matching markFirstVideoCreatedIfEligible's own scope
-     * above (it only ever returns true for a videoUrl dream) — an image-
-     * type dream's completion never reaches this call in practice, but
-     * the explicit videoUrl check below keeps that scope decision visible
-     * here too rather than silently relying on the caller.
-     */
-    sendFirstDreamEmailBestEffort: function (dream) {
-      if (!state.user || !dream || !dream.videoUrl) return;
-      var key = state.user.username.toLowerCase();
-      var account = state.accounts[key];
-      if (!account) return;
-      try {
-        fetch('/.netlify/functions/send-first-dream-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: state.user.username,
-            password: account.password,
-            dreamId: dream.id,
-            // The dream's server-issued job id — lets the server suppress
-            // this "your dream is ready to watch" email if the user has
-            // already opened the fullscreen player for this dream (founder
-            // complaint 2026-08-10; same watched-aware marker the unwatched-
-            // dream nudge uses — see send-first-dream-email.js). Usually
-            // present on a real finished dream; null for a legacy dream with
-            // no sourceOperationName, in which case the server just can't
-            // viewed-check and behaves as before.
-            operationName: dream.sourceOperationName || null,
-            caption: dream.caption,
-            style: dream.style,
-            videoUrl: dream.videoUrl,
-            mediaType: dream.mediaType || 'video',
-            // imageUrl (tracker item for-product-dream-ready-email-real-
-            // first-qr9fbj) -- whatever this dream's OWN imageUrl already
-            // is at the moment this fires, which is usually still null
-            // (see saveThumbnailBestEffort below's own doc comment on the
-            // race this loses most of the time). As of the founder's
-            // 2026-08-08 thumbnail-gate rule the server now DEFERS rather
-            // than sends when this is null (see lib/first-dream-email-
-            // sender.js's "THUMBNAIL-GATED SEND" header note) -- so this
-            // client-triggered call is usually a no-op that leaves the
-            // real send to the thumbnail-waiting scheduled path, and only
-            // wins the send outright in the rarer case where the capture
-            // has already synced by the time this fires.
-            imageUrl: dream.imageUrl || null
-          })
-        }).catch(function () { /* best-effort, must never break the app */ });
-      } catch (e) { /* best-effort, must never break the app */ }
-    },
-
-    /**
      * Best-effort client-side "frame 1" thumbnail capture (tracker item
      * for-product-dream-ready-email-real-first-qr9fbj — founder request: a
      * real first-frame image in the "your dream is ready" retention email
@@ -6706,23 +6629,19 @@
      * a moment, avoiding a black pre-decode frame — see that file's own
      * capture IIFE for exactly when) — this function owns everything past
      * that: the upload, the local dream.imageUrl write, and the existing
-     * dream-sync upsert, mirroring sendFirstDreamEmailBestEffort's own
-     * split of responsibility above (HTML owns the DOM-specific bit,
-     * store.js owns the network/state bit).
+     * dream-sync upsert (HTML owns the DOM-specific bit, store.js owns the
+     * network/state bit).
      *
      * Server-side frame extraction was ruled out (impractical inside a
      * Netlify Function) and a second paid fal image-generation call per
      * video was ruled out (real ongoing spend not worth it for a cosmetic
-     * email detail) — see the tracker item's own investigation notes. This
-     * is inherently best-effort and RACY against the retention email
-     * itself: the automatic send (mark-generation-completed.js) fires
-     * server-side the instant generation completes, almost always well
-     * before any client has loaded this far into result.html to capture a
-     * frame — see lib/first-dream-email-sender.js's own buildHtml for the
-     * flat-color fallback that stays in place for exactly that case. Only
-     * the client-triggered send-first-dream-email.js fallback path (fired
-     * moments AFTER this same page has already had a chance to capture)
-     * realistically benefits from this in practice.
+     * email detail) — see the tracker item's own investigation notes. The
+     * synced imageUrl this captures is what the "unwatched dream" retention
+     * nudge (send-unwatched-dream-nudges.js) later reads by correlating the
+     * dream's sourceOperationName, so a captured thumbnail lands in that
+     * email; a dream whose thumbnail never syncs is simply dropped from the
+     * nudge rather than emailed thumbnail-less (see that scan's header
+     * comment).
      *
      * Every failure mode here (not signed in, dream not found/not this
      * account's own, imageUrl already set, upload-dream-thumbnail.js
@@ -6771,10 +6690,10 @@
      * for the full mechanism and why this needs a real password, not just
      * being logged in as an account whose email happens to match
      * OWNER_EMAIL). Reuses the CURRENTLY signed-in account's own already-
-     * cached local credential (state.accounts[key].password) — the exact
-     * same "no new re-auth prompt" pattern sendFirstDreamEmailBestEffort
-     * above already establishes — rather than asking for a password a
-     * second time in a form, since admin.html (this method's only
+     * cached local credential (state.accounts[key].password) — the same
+     * "no new re-auth prompt, the password is already on hand" pattern
+     * requestSessionTransferToken above uses — rather than asking for a
+     * password a second time in a form, since admin.html (this method's only
      * intended caller) is already gated on being signed in as an account
      * whose email matches OWNER_EMAIL before it even shows the control.
      *

@@ -10,16 +10,16 @@
 // watched the result within ~7 minutes AND they are a registered account
 // with an email on file. Exactly one nudge per dream, ever.
 //
-// This reuses, wholesale, the "store + scheduled scan" shape the automatic
-// first-dream email already established (mark-generation-completed.js
-// enqueues -> send-pending-first-dream-emails.js's scan drains), because
-// the enqueue side is literally the same choke point (see
-// mark-generation-completed.js's maybeEnqueueUnwatchedNudge) and the
-// deferred-decision half is the same problem: a Netlify Function can't
+// This uses the "store + scheduled scan" shape send-daily-claim-pushes.js
+// established as this repo's first scheduled function: the enqueue side is
+// mark-generation-completed.js's maybeEnqueueUnwatchedNudge, and the
+// deferred-decision half solves the same problem a Netlify Function can't
 // `await delay(7 minutes)` in one invocation, so the wait is modeled as a
-// re-checked-on-a-schedule state. Read send-pending-first-dream-emails.js's
-// header comment and lib/first-dream-email-pending-store.js's for the full
-// "why a scan, not an in-request wait" reasoning this shares.
+// re-checked-on-a-schedule state. As of the founder's 2026-08-11 decision
+// (retire the separate first-dream email; let this nudge be the single "your
+// dream is ready to watch" email per unwatched dream, including a user's
+// FIRST dream), this scan drives the ONLY such email the app now sends to a
+// signed-up user.
 //
 // ON EVERY RUN, for every operationName in lib/unwatched-dream-nudge-
 // store.js's pending queue:
@@ -33,15 +33,13 @@
 //      record's triggeredAt (≈ when the video became ready), leave it
 //      enqueued — the user still has time to watch before we'd nudge.
 //   3. THUMBNAIL?  Resolve the owner's private dream whose
-//      sourceOperationName matches (lib/dream-store.js — the SAME zero-new-
-//      client-contract correlation send-pending-first-dream-emails.js uses;
-//      see lib/first-dream-email-pending-store.js's header comment). If it
-//      has a real imageUrl, hand it to lib/unwatched-dream-nudge-sender.js
-//      (which owns suppression / first-dream-email overlap / the once-per-
-//      dream guard / the actual Resend send with the List-Unsubscribe
-//      headers). On a real send, dequeue. On a terminal skip (unsubscribed,
-//      first-dream email already covered this dream, already nudged),
-//      dequeue too — none of those change on a retry. On a transient skip
+//      sourceOperationName matches (lib/dream-store.js — a zero-new-client-
+//      contract correlation on the already-synced private-dream record). If
+//      it has a real imageUrl, hand it to lib/unwatched-dream-nudge-sender.js
+//      (which owns suppression / the once-per-dream guard / the actual Resend
+//      send with the List-Unsubscribe headers). On a real send, dequeue. On a
+//      terminal skip (unsubscribed, already nudged), dequeue too — none of
+//      those change on a retry. On a transient skip
 //      (no Resend key, a Resend failure, a guard-store blip), LEAVE it for
 //      a later scan, until the give-up window below.
 //   4. GIVE UP.  If GIVE_UP_AFTER_MS has elapsed and there's still no
@@ -55,19 +53,16 @@
 //      ask to include the thumbnail) — a dropped email is strictly better
 //      here than a thumbnail-less one. See this file's report notes.
 //
-// CADENCE: every 3 minutes (`*/3 * * * *`). Unlike send-pending-first-dream-
-// emails.js's every-MINUTE cadence — which exists to send the instant a
-// slow thumbnail lands, a sub-minute goal — this nudge's dominant bound is
+// CADENCE: every 3 minutes (`*/3 * * * *`). This nudge's dominant bound is
 // the 7-minute unwatched FLOOR, and the founder ask is to land the email
 // ~7-10 min after ready. Max delay ≈ floor + one interval = 7 + 3 = ~10 min,
 // which lands squarely in that window; a finer (every-minute) cadence would
 // just triple the invocation count for no benefit, since nothing here needs
 // to act in the first 7 minutes at all. The queue only ever holds records
-// still inside their short window, so it stays naturally small (same
-// reasoning as the first-dream pending store).
+// still inside their short window, so it stays naturally small.
 //
-// SAFE UNDER RE-SCAN / DOUBLE-FIRE: like send-pending-first-dream-emails.js,
-// this makes its send/wait/drop decision purely from what it reads; the ONE
+// SAFE UNDER RE-SCAN / DOUBLE-FIRE: this makes its send/wait/drop decision
+// purely from what it reads; the ONE
 // real correctness guarantee (exactly one nudge per dream) is owned by
 // lib/unwatched-dream-nudge-store.js's markNudgedOnce CAS claim inside the
 // sender, so two overlapping scans can only ever produce redundant no-op
@@ -96,7 +91,6 @@ var GIVE_UP_AFTER_MS = 30 * 60 * 1000;
 // record is dequeued rather than re-checked forever.
 var TERMINAL_SKIPS = {
   suppressed: true,
-  first_dream_email_already_sent: true,
   already_nudged: true,
   missing_identity: true,
   // The sender's own belt-and-suspenders viewed re-check (a viewed marker
@@ -107,7 +101,7 @@ var TERMINAL_SKIPS = {
   already_viewed: true
 };
 
-/** Finds the private dream (if any) whose sourceOperationName matches — same correlation as send-pending-first-dream-emails.js's findDreamForOperation. */
+/** Finds the private dream (if any) whose sourceOperationName matches — the zero-new-client-contract correlation on the already-synced private-dream record. */
 function findDreamForOperation(dreams, operationName) {
   for (var i = 0; i < dreams.length; i++) {
     if (dreams[i] && dreams[i].sourceOperationName === operationName) return dreams[i];
@@ -118,8 +112,8 @@ function findDreamForOperation(dreams, operationName) {
 /**
  * The scan + decide + send, exposed separately from exports.handler so
  * test/send-unwatched-dream-nudges.test.js can drive it directly with a
- * fake event / mocked stores — same precedent as send-pending-first-dream-
- * emails.js's scanAndSend and send-daily-claim-pushes.js's own.
+ * fake event / mocked stores — same precedent as send-daily-claim-pushes.js's
+ * own scanAndSend.
  */
 async function scanAndSend(event) {
   var operationNames = await nudgeStore.listPendingOperationNames(event);

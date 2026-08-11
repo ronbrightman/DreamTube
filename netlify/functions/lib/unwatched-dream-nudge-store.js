@@ -14,28 +14,24 @@
 //      record per operationName: { operationName, dreamId, sentAt, claimId }.
 //      This is the real "exactly one nudge per dream, ever" guarantee.
 //
-// This mirrors, almost exactly, the pair the automatic FIRST-dream email
-// already uses (lib/first-dream-email-pending-store.js +
-// lib/first-dream-email-store.js) — same "store + scheduled scan" shape
-// send-daily-claim-pushes.js first established in this codebase, same
-// `blobs10` compare-and-swap primitive (`setJSON(key, value, { onlyIfNew:
-// true })`) both of those use for their idempotent enqueue / once-ever
-// claim. The ONE deliberate difference: this feature's guard is keyed PER
-// DREAM (operationName), not per ACCOUNT — a user can be nudged about more
-// than one unwatched dream over time, so "have we nudged THIS dream" is the
-// right question, whereas the first-dream email is a genuinely once-ever-
-// per-account send. See lib/first-dream-email-store.js's own header comment
-// for the full "why CAS, why fail-closed" reasoning that applies verbatim
-// to markNudgedOnce below.
+// The "store + scheduled scan" shape send-daily-claim-pushes.js first
+// established in this codebase, using the `blobs10` compare-and-swap
+// primitive (`setJSON(key, value, { onlyIfNew: true })`) for both the
+// idempotent enqueue and the once-ever claim. This guard is keyed PER DREAM
+// (operationName), not per ACCOUNT — a user can be nudged about more than one
+// unwatched dream over time, so "have we nudged THIS dream" is the right
+// question. (This nudge is now the single "your dream is ready to watch"
+// email a signed-up user gets — the separate once-ever-per-account first-dream
+// email was retired on 2026-08-11 per the founder's decision.)
 //
 // WHY blobs10 (CAS), not @netlify/blobs: both an idempotent enqueue (a
 // retried mark-generation-completed call for the same operationName must
 // not reset triggeredAt and push the 7-minute clock forward) and a race-
 // safe once-per-dream claim (two overlapping scans must never both send)
-// need a real conditional write, exactly as lib/first-dream-email-pending-
-// store.js/lib/first-dream-email-store.js already established — see either
-// file's own header comment for why the old read-mutate-write-verify loop
-// wasn't sufficient for this class of guarantee.
+// need a real conditional write — a plain read-mutate-write-verify loop
+// under Blobs' default eventual consistency isn't sufficient for this class
+// of guarantee (see lib/push-dedup-store.js, the codebase's other blobs10 CAS
+// store, for the fuller reasoning).
 
 var { getStore, connectLambda } = require('blobs10');
 var crypto = require('crypto');
@@ -58,8 +54,7 @@ function sentStore() {
  * wins outright and every later duplicate call (a retried/duplicated
  * mark-generation-completed for the SAME operationName) is a harmless no-op
  * against the SAME already-ticking `triggeredAt`, never resetting the
- * 7-minute clock. Fails CLOSED (never assumes an unverified write landed),
- * same posture as lib/first-dream-email-pending-store.js's markPending.
+ * 7-minute clock. Fails CLOSED (never assumes an unverified write landed).
  * Returns { ok:true } first time, { ok:true, alreadyPending:true } on a
  * duplicate, or { ok:false, error } on invalid input / a genuinely failed
  * write.
@@ -81,7 +76,7 @@ async function markPending(event, operationName, username, email) {
   return { ok: false, error: 'exhausted' };
 }
 
-/** Every currently-pending operationName — enumerated by the scan on each run. Same whole-store list() as lib/first-dream-email-pending-store.js's own (this queue only ever holds records still inside their short window, so it stays naturally small). */
+/** Every currently-pending operationName — enumerated by the scan on each run. A whole-store list() (this queue only ever holds records still inside their short window, so it stays naturally small). */
 async function listPendingOperationNames(event) {
   connectLambda(event);
   var listResult = await pendingStore().list();
@@ -100,8 +95,7 @@ async function getPending(event, operationName) {
  * (sent, suppressed, or dropped), so it's never re-checked. Best-effort,
  * never throws — a failed removal is a harmless self-correcting leftover
  * (a future scan re-checks it, and markNudgedOnce's guard makes a repeat
- * send a safe no-op), same reasoning as lib/first-dream-email-pending-
- * store.js's removePending.
+ * send a safe no-op).
  */
 async function removePending(event, operationName) {
   if (!operationName) return { ok: false };
@@ -124,9 +118,8 @@ async function removePending(event, operationName) {
  * { ok:false, alreadyNudged:true } every time after, or
  * { ok:false, error } on a genuine transport/server failure (fails CLOSED:
  * refuse to send rather than risk a double-send). Callers MUST check `ok`
- * BEFORE sending. Same `blobs10` onlyIfNew CAS + fail-closed contract as
- * lib/first-dream-email-store.js's markSentOnce — see that file's header
- * comment for the full reasoning.
+ * BEFORE sending. A `blobs10` onlyIfNew CAS + fail-closed contract: a single
+ * conditional write settles the question with no read/verify race window.
  */
 async function markNudgedOnce(event, operationName, dreamId) {
   if (!operationName) return { ok: false, error: 'invalid_operation_name' };
@@ -151,8 +144,7 @@ async function markNudgedOnce(event, operationName, dreamId) {
  * then failed — without this a Resend rejection/network failure would
  * permanently burn this dream's one-and-only nudge with no way to retry.
  * Only deletes the record if it still matches `claimId` (can only ever undo
- * the caller's OWN just-won claim). Best-effort, never throws. Same
- * contract/reasoning as lib/first-dream-email-store.js's releaseFailedSend.
+ * the caller's OWN just-won claim). Best-effort, never throws.
  */
 async function releaseFailedNudge(event, operationName, claimId) {
   if (!operationName || !claimId) return { ok: false };

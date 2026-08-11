@@ -2,7 +2,7 @@
 //
 // Single-use, ~15-minute token that lets a user who is ALREADY validly
 // signed in (per this codebase's plaintext-local password-cache model —
-// see js/store.js's login()/sendFirstDreamEmailBestEffort) carry that
+// see js/store.js's login()/requestSessionTransferToken) carry that
 // same session into a different browser context — specifically, escaping
 // a Facebook/Instagram in-app webview via the host app's own "open in
 // browser" action, which drops localStorage and therefore drops the

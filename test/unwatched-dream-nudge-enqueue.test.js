@@ -6,8 +6,7 @@
 // mark-generation-completed.js, lib/job-owners.js, lib/account-store.js,
 // lib/pending-dreams.js, and lib/unwatched-dream-nudge-store.js —
 // deliberately separate from test/send-unwatched-dream-nudges.test.js (the
-// DOWNSTREAM decide-and-send half). Mirrors test/automatic-first-dream-
-// email.test.js's own enqueue-side coverage of the sibling first-dream email.
+// DOWNSTREAM decide-and-send half).
 //
 // Proves: a signed-up user's verified VIDEO completion enqueues a pending
 // nudge; a completion that resolves to NO registered account (a pre-signup

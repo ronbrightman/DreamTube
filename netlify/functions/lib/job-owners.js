@@ -146,10 +146,10 @@ function normalizeEmail(email) {
  * start-pending-generation.js, which already has its own lib/pending-
  * dreams.js record's id on hand at the exact moment it calls this (see
  * that file's own recordJobOwnerBestEffort). Lets mark-generation-
- * completed.js's maybeSendAutomaticFirstDreamEmail look the pending-dreams
+ * completed.js's maybeEnqueueUnwatchedNudge look the pending-dreams
  * record back up and check whether the SEPARATE abandonment-email path
  * (dream-webhook.js) already committed to sending its own email for this
- * SAME dream, before firing the automatic retention email too — see that
+ * SAME dream, before enqueuing the retention nudge too — see that
  * function's own doc comment for the full reasoning. Every non-funnel
  * caller (generate-video.js/generate-image.js) never has a pendingId at
  * all — a record with no `pendingId` field is exactly today's existing
@@ -213,7 +213,7 @@ function delay(ms) {
  * for-product-bug-founder-affects-all-funn-0efe7t, reopened round-3
  * hardening) as the job-owners-store counterpart to lib/pending-dreams.js's
  * getWithReadyRetry, used by mark-generation-completed.js's
- * maybeSendAutomaticFirstDreamEmail for THIS store's read specifically.
+ * maybeEnqueueUnwatchedNudge for THIS store's read specifically.
  *
  * WHY THIS EXISTS: a plain getJobOwnerRecord() reads under Blobs' default
  * eventual consistency, same as every other read in this codebase (see

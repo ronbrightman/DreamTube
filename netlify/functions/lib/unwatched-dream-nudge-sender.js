@@ -3,9 +3,11 @@
 // The guarded "actually send the unwatched-dream retention nudge via
 // Resend" core (founder-approved retention plan, piece 1 &mdash; see
 // send-unwatched-dream-nudges.js's header comment for the full feature and
-// the scan that calls this). Structured exactly like
-// lib/first-dream-email-sender.js (the automatic FIRST-dream email's own
-// guarded sender): a once-per-dream CAS guard claimed BEFORE any send, the
+// the scan that calls this). This is now THE single "your dream is ready to
+// watch" email this app sends to a signed-up user (founder decision
+// 2026-08-11: retire the separate first-dream email entirely and let this
+// nudge be the one email per unwatched dream, including a user's FIRST
+// dream). A once-per-dream CAS guard claimed BEFORE any send, the
 // suppression list honored, best-effort PostHog telemetry on send/skip, and
 // a provider-side Resend Idempotency-Key as belt-and-suspenders. The scan
 // (send-unwatched-dream-nudges.js) has already decided this dream is ready,
@@ -25,28 +27,23 @@
 // (promptText) is deliberately NOT used &mdash; it's machine-facing, not what the
 // dreamer wrote.
 //
-// NO OVERLAP WITH THE OTHER TWO "your dream is ready" EMAILS &mdash; a two-sided
-// guarantee, since three different sends could each say "your dream is
-// ready":
+// NO OVERLAP WITH THE OTHER "your dream is ready" EMAIL &mdash; a two-sided
+// guarantee, since two different sends could each say "your dream is ready":
 //   1. dream-webhook.js's PRE-SIGNUP abandoned-dream email &mdash; excluded
 //      upstream, at enqueue: mark-generation-completed.js only enqueues a
 //      nudge for a job that resolves to a real REGISTERED account, and skips
 //      any funnel-started job whose pre-signup email already sent (its
 //      pending-dreams `readyAt` is set) &mdash; the exact pendingId/readyAt guard
-//      maybeSendAutomaticFirstDreamEmail already uses. So a pre-signup
-//      recipient never reaches this sender at all.
-//   2. lib/first-dream-email-sender.js's automatic FIRST-dream email &mdash;
-//      excluded HERE, per dream: if the first-dream email has already been
-//      sent for THIS SAME dream (firstDreamEmailStore.getSentRecord's
-//      dreamId matches this dream's id), this nudge suppresses itself. The
-//      first-dream email is once-ever-per-account and fires on the first
-//      video whether or not it was watched; without this check, a user's
-//      unwatched FIRST dream would get BOTH emails. For a 2nd+ dream the
-//      first-dream email's stored dreamId is a DIFFERENT (earlier) dream, so
-//      this nudge is free to send &mdash; which is the whole point: the nudge
-//      covers every unwatched dream the once-ever first-dream email cannot.
-//   3. this nudge's OWN once-per-dream guard (lib/unwatched-dream-nudge-
+//      maybeEnqueueUnwatchedNudge uses. So a pre-signup recipient never
+//      reaches this sender at all.
+//   2. this nudge's OWN once-per-dream guard (lib/unwatched-dream-nudge-
 //      store.js's markNudgedOnce) &mdash; never two nudges for one dream.
+//
+// (There used to be a THIRD "your dream is ready" send &mdash; the once-ever-per-
+// account first-dream email &mdash; which this nudge had to suppress itself for on
+// a user's first dream. That email was retired entirely on 2026-08-11 per the
+// founder decision above, so this nudge now simply covers every unwatched
+// dream, first or later, with no first-dream-email overlap check needed.)
 //
 // DELIVERABILITY (founder-approved this round): this send carries the RFC
 // 8058 one-click `List-Unsubscribe` + `List-Unsubscribe-Post` headers
@@ -57,7 +54,6 @@
 // layout.js one, now rendered in its small/faint style.
 
 var nudgeStore = require('./unwatched-dream-nudge-store');
-var firstDreamEmailStore = require('./first-dream-email-store');
 var resultViewStore = require('./result-view-store');
 var posthogCapture = require('./posthog-capture');
 var emailSuppressionStore = require('./email-suppression-store');
@@ -66,9 +62,9 @@ var emailLayout = require('./email-layout');
 var siteOrigin = require('./site-origin');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
-// Deliberately duplicated per-file, this codebase's own convention for
-// small self-contained constants &mdash; see lib/first-dream-email-sender.js's
-// header comment.
+// Deliberately duplicated per-file (same address dream-webhook.js's own
+// sender uses), this codebase's own convention for small self-contained
+// per-file constants over one shared constants module.
 var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
 
 // How much of the dream's description goes in the SUBJECT line &mdash; long
@@ -105,9 +101,8 @@ function truncate(text, max) {
  * Resolves a dream's imageUrl (often a relative durable
  * `/.netlify/functions/image-file?key=...` url) to the absolute https:// url
  * an email client can load. Returns null only when there's no url at all.
- * Same helper/reasoning as lib/first-dream-email-sender.js's absoluteImageUrl
- * (a scheduled invocation has no inbound Host, so this must resolve against
- * lib/site-origin.js's canonical origin, never the request).
+ * A scheduled invocation has no inbound Host, so this must resolve against
+ * lib/site-origin.js's canonical origin, never the request.
  */
 function absoluteImageUrl(event, url) {
   if (typeof url !== 'string' || !url) return null;
@@ -126,8 +121,7 @@ function subjectLine(description) {
 
 function buildHtml(opts) {
   // A present, absolute https:// thumbnail is guaranteed by the scan's own
-  // thumbnail gate before this runs &mdash; same shape/style as the first-dream
-  // email's own banner.
+  // thumbnail gate before this runs.
   var media = '<img src="' + esc(opts.imageUrl) + '" width="480" alt="" style="display:block;width:100%;max-width:480px;height:160px;object-fit:cover;border-radius:14px;margin-bottom:18px;" />';
 
   var lead = opts.description
@@ -149,7 +143,7 @@ function buildHtml(opts) {
   });
 }
 
-/** Best-effort skip telemetry, mirroring lib/first-dream-email-sender.js's reportSkip &mdash; fires 'unwatched_dream_nudge_skipped', never throws, never affects the return value. */
+/** Best-effort skip telemetry &mdash; fires 'unwatched_dream_nudge_skipped', never throws, never affects the return value. */
 async function reportSkip(username, email, reason) {
   try {
     await posthogCapture.captureEvent({
@@ -171,9 +165,8 @@ async function reportSkip(username, email, reason) {
  *
  * Returns { ok:true, sent:true } only when Resend accepted the send, else
  * { ok:true, sent:false, skipped:<reason> } for every other case
- * (suppressed, first-dream-email already covered this dream, already
- * nudged, no thumbnail, no Resend key, Resend rejected/failed). Never
- * throws &mdash; best-effort, exactly like the first-dream sender.
+ * (suppressed, already nudged, no thumbnail, no Resend key, Resend
+ * rejected/failed). Never throws &mdash; best-effort.
  */
 async function sendIfEligible(event, opts) {
   opts = opts || {};
@@ -199,7 +192,7 @@ async function sendIfEligible(event, opts) {
   // once-per-dream guard, exactly like the gates below it, so a suppressed-
   // because-watched nudge never burns this dream's one-and-only marker.
   // Same lib/result-view-store.js marker (keyed by operationName) the scan
-  // and the first-dream email both consult.
+  // also consults at its step 1.
   var alreadyViewed = await resultViewStore.hasViewed(event, operationName);
   if (alreadyViewed) {
     await reportSkip(username, email, 'already_viewed');
@@ -221,26 +214,6 @@ async function sendIfEligible(event, opts) {
   if (suppressed) {
     await reportSkip(username, email, 'suppressed');
     return { ok: true, sent: false, skipped: 'suppressed' };
-  }
-
-  // OVERLAP with the automatic FIRST-dream email, per THIS dream (see header
-  // comment #2): if the first-dream email already went out for this exact
-  // dream, don't also nudge it. Checked BEFORE claiming the guard so a
-  // suppressed-by-overlap dream stays un-marked (harmless, but keeps the
-  // marker's meaning honest: "we actually nudged this dream").
-  try {
-    var firstDreamRecord = await firstDreamEmailStore.getSentRecord(event, username);
-    if (firstDreamRecord && dream && firstDreamRecord.dreamId && firstDreamRecord.dreamId === dream.id) {
-      await reportSkip(username, email, 'first_dream_email_already_sent');
-      return { ok: true, sent: false, skipped: 'first_dream_email_already_sent' };
-    }
-  } catch (e) {
-    // A read blip here must not double-send; fail toward NOT sending (the
-    // safer direction for an anti-double-send check), same fail-closed
-    // spirit as the guards around it.
-    console.error('unwatched-dream-nudge-sender: first-dream overlap check failed -- skipping this nudge to avoid a possible double-send', e);
-    await reportSkip(username, email, 'overlap_check_failed');
-    return { ok: true, sent: false, skipped: 'overlap_check_failed' };
   }
 
   // Once-per-dream claim &mdash; the real "exactly one nudge per dream" guarantee.
@@ -272,10 +245,9 @@ async function sendIfEligible(event, opts) {
     unsubscribeUrl: unsubscribeUrl
   });
 
-  // Provider-side idempotency (same belt-and-suspenders as lib/first-dream-
-  // email-sender.js &mdash; see its header comment): a stable key derived from the
-  // per-dream identity this nudge is scoped to, so even if the CAS guard
-  // above is ever fooled by a stale Blobs replica during a consistency
+  // Provider-side idempotency (belt-and-suspenders): a stable key derived
+  // from the per-dream identity this nudge is scoped to, so even if the CAS
+  // guard above is ever fooled by a stale Blobs replica during a consistency
   // degradation, Resend itself collapses the duplicate. Keyed by
   // operationName (the guard's own key), namespaced per Resend's documented
   // event-type + entity-id convention.
