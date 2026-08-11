@@ -132,19 +132,6 @@
   schedule = "0 7 * * *"
 
 # Same belt-and-suspenders reasoning as send-daily-claim-pushes above --
-# tracker item for-product-email-redesign-unsubscribe-l-16ysmp's founder-
-# approved follow-up (2026-08-03/04, thumbnail-gated send). Every minute,
-# not hourly/daily like every other scheduled function above -- the
-# founder's own bound here is MINUTES ("wait up to 3 MINUTES... SEND
-# ANYWAY at the 3-minute mark"), so this needs a cadence fine enough not
-# to blow past that bound by more than roughly one interval either way --
-# see send-pending-first-dream-emails.js's own header comment for the
-# full "why every minute" reasoning and why this store never accumulates
-# a real backlog at this app's current traffic.
-[functions."send-pending-first-dream-emails"]
-  schedule = "* * * * *"
-
-# Same belt-and-suspenders reasoning as send-daily-claim-pushes above --
 # the "unwatched dream" retention nudge (founder-approved retention plan,
 # piece 1). Every 3 minutes -- NOT every-minute like send-pending-first-
 # dream-emails above, because this nudge's dominant bound is its 7-minute

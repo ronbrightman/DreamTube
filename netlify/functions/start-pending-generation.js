@@ -127,13 +127,12 @@ function mockOperationName() {
 // its own spendTokens (see generate-video.js's/generate-image.js's own
 // identically-named function and lib/job-owners.js's header comment for the
 // full mechanism). Practical effect: NO funnel-started generation ever
-// wrote a job-owners record, so mark-generation-completed.js's
-// maybeSendAutomaticFirstDreamEmail (called once the SAME funnel user
-// finishes signup and their generation completes — see wizard.html's/
-// start.html's own handoff to processing.html) could never resolve an
-// owner for the operationName and silently no-opped for every single
-// funnel user, every time — this is the bug's actual root cause, not the
-// email/copy/telemetry issues layered on top of it.
+// wrote a job-owners record, so mark-generation-completed.js's completion
+// side-effects (today: maybeEnqueueUnwatchedNudge / maybeSendVideoReadyPush;
+// historically the automatic first-dream email too, since retired) could
+// never resolve an owner for the operationName and silently no-opped for
+// every single funnel user, every time — this is the bug's actual root
+// cause, not the email/copy/telemetry issues layered on top of it.
 //
 // Mirrors generate-video.js's/generate-image.js's own recordJobOwnerBestEffort
 // EXACTLY (same wrap-in-try/catch, same fail-open-on-write-failure

@@ -32,8 +32,7 @@
 // The end-to-end browser-driven proof that result.html actually fires (or
 // correctly doesn't fire) FirstVideoCreated using this mechanism lives in
 // test/first-video-created-behavioral.test.js -- this file is server-side
-// unit coverage only, same split as send-first-dream-email.js/
-// test/send-first-dream-email.test.js.
+// unit coverage only.
 //
 // Run with: node --test test/
 
@@ -63,7 +62,7 @@ function freshMockOpName(suffix) {
   return 'mock:' + Date.now() + ':' + (suffix || 'op');
 }
 
-/** Spies on global.fetch so a "fal:" operationName's verification check can be controlled without a real network call to fal.ai -- same convention as test/send-first-dream-email.test.js's installFetchSpy. */
+/** Spies on global.fetch so a "fal:" operationName's verification check can be controlled without a real network call to fal.ai. */
 function installFalStatusSpy(status) {
   global.fetch = async function () {
     return { ok: true, json: async function () { return { status: status }; } };
@@ -71,21 +70,17 @@ function installFalStatusSpy(status) {
 }
 
 /**
- * Baseline fetch stub installed before EVERY test in this file (tracker.html's
- * for-product-bug-founder-affects-all-funn-0efe7t item, round 4).
+ * Baseline fetch stub installed before EVERY test in this file.
  *
- * These tests drive the REAL mark-generation-completed handler, which runs
- * maybeSendAutomaticFirstDreamEmail -> reportAutoSkip ->
- * lib/posthog-capture.js for every genuinely-verified operationName. That
- * helper's POSTHOG_KEY comes from a checked-in file, not an env var, so
- * before this stub existed these tests POSTed 5 REAL
- * `first_dream_email_skipped { reason:'no_job_owner_record',
- * distinct_id:'unknown' }` events into the founder's REAL production PostHog
- * project on every `npm test` run -- indistinguishable in PostHog from real
- * users failing, and the direct cause of a reported production "skip storm"
- * that rounds of this tracker item were spent chasing.
+ * These tests drive the REAL mark-generation-completed handler, whose
+ * completion side-effects (maybeEnqueueUnwatchedNudge, maybeSendVideoReadyPush)
+ * resolve a job owner and may reach lib/posthog-capture.js. That helper's
+ * POSTHOG_KEY comes from a checked-in file, not an env var, so a fetch stub
+ * that blocks all real outbound calls keeps these tests from ever POSTing real
+ * events into the founder's production PostHog project on a plain `npm test`
+ * run.
  *
- * lib/posthog-capture.js now refuses to fire under a test runner at all (its
+ * lib/posthog-capture.js also refuses to fire under a test runner at all (its
  * own TEST-ENVIRONMENT GUARD), which is the durable fix; this is the belt to
  * that lib's braces, and keeps this file honest about the fact that its
  * subject makes outbound calls. installFalStatusSpy below still replaces it

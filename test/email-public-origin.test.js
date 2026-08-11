@@ -7,21 +7,17 @@
 //
 // THE BUG. Every absolute URL in this codebase's retention emails -- the
 // lib/email-layout.js shell's own logo <img src>, the real-thumbnail
-// <img src>, the profile/create CTA links, and the legally-required
-// unsubscribe link -- was derived straight from the INBOUND REQUEST's
-// `x-forwarded-host || host` header. That works for every sender driven by
-// a real public HTTP request (dream-webhook.js runs under fal's webhook
-// POST, send-first-dream-email.js under the browser's own call), and it is
-// this codebase's established convention for reconstructing its own origin
-// (request-password-reset.js, lib/dream-share-token.js, ...).
-//
-// But since commit de124a5 (2026-08-04) the ONLY path that actually sends
-// the automatic first-dream retention email is
-// send-pending-first-dream-emails.js -- a SCHEDULED function. A scheduled
-// invocation has no public inbound request behind it at all (Netlify's own
-// "Clockwork" scheduler calls it internally; there is no visitor-facing
-// Host to reconstruct), so `'https://' + host` collapsed to the literal
-// string `'https://'` and the shell emitted:
+// <img src>, the CTA links, and the legally-required unsubscribe link --
+// used to be derived straight from the INBOUND REQUEST's
+// `x-forwarded-host || host` header. That works for a sender driven by a
+// real public HTTP request (dream-webhook.js runs under fal's webhook POST),
+// but the retention email that reaches a signed-up user is sent by a
+// SCHEDULED function (send-unwatched-dream-nudges.js's scan, the sole such
+// email since the founder retired the separate first-dream email on
+// 2026-08-11). A scheduled invocation has no public inbound request behind
+// it at all (Netlify's own "Clockwork" scheduler calls it internally; there
+// is no visitor-facing Host to reconstruct), so `'https://' + host`
+// collapsed to the literal string `'https://'` and the shell emitted:
 //
 //     <img src="https:///assets/logo-v4.png" width="40" height="40" ... />
 //
@@ -33,16 +29,16 @@
 // (absoluteImageUrl returns null rather than emit a relative src, and
 // production imageUrls ARE relative durable
 // `/.netlify/functions/image-file?key=...` urls -- see
-// upload-dream-thumbnail.js), and emitted `https://profile.html/`,
-// `https://create.html/` and a `https://.netlify/...` unsubscribe link.
+// upload-dream-thumbnail.js), and emitted a `https://.netlify/...`
+// unsubscribe link.
 //
-// WHY THE EXISTING SUITE MISSED IT: every test in
-// test/send-pending-first-dream-emails.test.js calls
-// `scanAndSend(fakeEvent({}))` -- faithfully modelling a real header-less
-// scheduled invocation -- but none of them ever asserted on the URLs that
-// came out the other side, only on which template branch was chosen. This
-// file closes exactly that gap: it asserts on the resolved URLs
-// themselves.
+// FIXED at the resolver (lib/site-origin.js/lib/email-layout.js resolve
+// against a canonical origin, never the request host -- the 08-08 rule). This
+// file guards that fix by asserting on the resolved URLs a real header-less
+// scheduled invocation produces, exercised through the unwatched-dream nudge
+// (the sender that carries this email now). The nudge sender uses the same
+// email-layout shell, absoluteImageUrl, and unsubscribe token, so the exact
+// same URL-resolvability guarantee applies.
 //
 // Run with: node --test test/
 //
@@ -59,16 +55,16 @@ mockBlobs.install();
 var { fakeEvent } = require('./helpers/fake-event');
 var { markInstalledFetchAsTestDouble } = require('./helpers/fetch-double');
 
-var pendingStore = require('../netlify/functions/lib/first-dream-email-pending-store');
+var nudgeStore = require('../netlify/functions/lib/unwatched-dream-nudge-store');
 var dreamStore = require('../netlify/functions/lib/dream-store');
 var accountStore = require('../netlify/functions/lib/account-store');
-var sendPending = require('../netlify/functions/send-pending-first-dream-emails');
+var sendNudges = require('../netlify/functions/send-unwatched-dream-nudges');
 var emailLayout = require('../netlify/functions/lib/email-layout');
 var unsubscribeToken = require('../netlify/functions/lib/unsubscribe-token');
 
 var realFetch = global.fetch;
 
-/** Same split-by-URL fetch spy shape as test/send-pending-first-dream-emails.test.js's own. */
+/** Same split-by-URL fetch spy shape as the sibling email tests. */
 function installFetchSpy() {
   var resendCalls = [];
   global.fetch = async function (url, opts) {
@@ -113,6 +109,19 @@ async function seedSyncedDream(username, operationName, imageUrl) {
     videoUrl: 'https://example.com/v.mp4', imageUrl: imageUrl || null,
     sourceOperationName: operationName
   });
+}
+
+/**
+ * Enqueues a pending nudge and backdates its triggeredAt past the 7-minute
+ * unwatched floor so the scan sends it on this run (the nudge scan is what
+ * carries this email now — see this file's header comment).
+ */
+async function enqueueAged(operationName, username, email) {
+  await nudgeStore.markPending(fakeEvent({}), operationName, username, email);
+  var record = await nudgeStore.getPending(fakeEvent({}), operationName);
+  mockBlobs.seed(nudgeStore.PENDING_STORE_NAME, operationName, Object.assign({}, record, {
+    triggeredAt: Date.now() - (sendNudges.READY_AGE_MS + 5000)
+  }));
 }
 
 /**
@@ -163,20 +172,20 @@ function assertEveryUrlIsPublic(html, label) {
 // really invokes it (no public Host header anywhere on the event).
 // ---------------------------------------------------------------------------
 
-test('REGRESSION (blank square): the scheduled first-dream send with NO host header must still emit a loadable logo <img>, not https:///assets/logo-v4.png', async function () {
+test('REGRESSION (blank square): the scheduled nudge send with NO host header must still emit a loadable logo <img>, not https:///assets/logo-v4.png', async function () {
   await registerAccount('nohost', 'nohost@example.com');
-  // A synced thumbnail is the only thing that makes the scheduled scan send
-  // now (founder 08-08 thumbnail-gate rule) -- seed one so this URL-
-  // resolution regression still exercises a real send.
+  // A synced thumbnail is the only thing that makes the nudge scan send
+  // (thumbnail-gate) -- seed one so this URL-resolution regression still
+  // exercises a real send.
   await seedSyncedDream('nohost', 'mock:1:nohost', 'https://img.example/nohost-thumb.jpg');
-  await pendingStore.markPending(fakeEvent({}), 'mock:1:nohost', 'nohost', 'nohost@example.com');
+  await enqueueAged('mock:1:nohost', 'nohost', 'nohost@example.com');
 
   var spies = installFetchSpy();
   // fakeEvent({}) is exactly what a real Netlify scheduled invocation looks
   // like to this code -- no x-forwarded-host, no host.
-  await sendPending.scanAndSend(fakeEvent({}));
+  await sendNudges.scanAndSend(fakeEvent({}));
 
-  assert.equal(spies.resendCalls.length, 1, 'test setup: the deadline-passed record must actually have sent');
+  assert.equal(spies.resendCalls.length, 1, 'test setup: the past-floor record must actually have sent');
   var html = spies.resendCalls[0].body.html;
 
   assert.doesNotMatch(html, /src="https:\/\/\//, 'the empty-host url that renders as the founder\'s blank square must never be emitted');
@@ -185,24 +194,24 @@ test('REGRESSION (blank square): the scheduled first-dream send with NO host hea
   assertPubliclyResolvable(logoSrc, 'logo');
 });
 
-test('REGRESSION: EVERY url in a header-less scheduled send (logo, CTAs, unsubscribe) is publicly resolvable', async function () {
+test('REGRESSION: EVERY url in a header-less scheduled nudge send (logo, CTAs, unsubscribe) is publicly resolvable', async function () {
   await registerAccount('allurls', 'allurls@example.com');
   await seedSyncedDream('allurls', 'mock:1:allurls', 'https://img.example/allurls-thumb.jpg');
-  await pendingStore.markPending(fakeEvent({}), 'mock:1:allurls', 'allurls', 'allurls@example.com');
+  await enqueueAged('mock:1:allurls', 'allurls', 'allurls@example.com');
 
   var spies = installFetchSpy();
-  await sendPending.scanAndSend(fakeEvent({}));
+  await sendNudges.scanAndSend(fakeEvent({}));
 
   assertEveryUrlIsPublic(spies.resendCalls[0].body.html, 'header-less scheduled send');
 });
 
-test('REGRESSION: the legally-required unsubscribe link is a real, clickable url on a header-less scheduled send', async function () {
+test('REGRESSION: the legally-required unsubscribe link is a real, clickable url on a header-less scheduled nudge send', async function () {
   await registerAccount('unsub', 'unsub@example.com');
   await seedSyncedDream('unsub', 'mock:1:unsub', 'https://img.example/unsub-thumb.jpg');
-  await pendingStore.markPending(fakeEvent({}), 'mock:1:unsub', 'unsub', 'unsub@example.com');
+  await enqueueAged('mock:1:unsub', 'unsub', 'unsub@example.com');
 
   var spies = installFetchSpy();
-  await sendPending.scanAndSend(fakeEvent({}));
+  await sendNudges.scanAndSend(fakeEvent({}));
 
   var html = spies.resendCalls[0].body.html;
   var unsubHref = (html.match(/href="([^"]*unsubscribe-email[^"]*)"/) || [])[1];
@@ -210,21 +219,19 @@ test('REGRESSION: the legally-required unsubscribe link is a real, clickable url
   assertPubliclyResolvable(unsubHref, 'unsubscribe link');
 });
 
-test('REGRESSION: a REAL relative durable thumbnail url still becomes a real thumbnail <img> on a header-less scheduled send, not a silent downgrade to the flat-colour banner', async function () {
+test('REGRESSION: a REAL relative durable thumbnail url still becomes a real thumbnail <img> on a header-less scheduled nudge send, not a silent downgrade', async function () {
   // This is the shape production actually stores -- upload-dream-thumbnail.js
-  // returns lib/media-rehost.js's durableUrl(), which is RELATIVE. The
-  // existing suite only ever seeded an absolute `https://img.example/...`
-  // url, which is why this downgrade was invisible.
+  // returns lib/media-rehost.js's durableUrl(), which is RELATIVE.
   await registerAccount('relthumb', 'relthumb@example.com');
   await seedSyncedDream('relthumb', 'mock:1:relthumb', '/.netlify/functions/image-file?key=thumb%3Arelthumb%3Ad1');
-  await pendingStore.markPending(fakeEvent({}), 'mock:1:relthumb', 'relthumb', 'relthumb@example.com');
+  await enqueueAged('mock:1:relthumb', 'relthumb', 'relthumb@example.com');
 
   var spies = installFetchSpy();
-  var result = await sendPending.scanAndSend(fakeEvent({}));
+  var result = await sendNudges.scanAndSend(fakeEvent({}));
 
-  assert.equal(result.sentWithImage, 1);
+  assert.equal(result.sent, 1);
   var html = spies.resendCalls[0].body.html;
-  assert.match(html, /object-fit:cover/, 'a synced real thumbnail must render as the real <img>, not fall back to the flat-colour banner just because the scheduled event had no Host header');
+  assert.match(html, /object-fit:cover/, 'a synced real thumbnail must render as the real <img> even though the scheduled event had no Host header');
   var thumbSrc = (html.match(/<img[^>]*src="([^"]*image-file[^"]*)"/) || [])[1];
   assert.ok(thumbSrc, 'the real thumbnail <img> must carry the durable image-file url');
   assertPubliclyResolvable(thumbSrc, 'thumbnail');
@@ -241,10 +248,10 @@ test('REGRESSION: a REAL relative durable thumbnail url still becomes a real thu
 test('a request arriving on the Netlify alias still emails CANONICAL links -- the request host is ignored (08-08 rule)', async function () {
   await registerAccount('realhost', 'realhost@example.com');
   await seedSyncedDream('realhost', 'mock:1:realhost', 'https://img.example/realhost-thumb.jpg');
-  await pendingStore.markPending(fakeEvent({}), 'mock:1:realhost', 'realhost', 'realhost@example.com');
+  await enqueueAged('mock:1:realhost', 'realhost', 'realhost@example.com');
 
   var spies = installFetchSpy();
-  await sendPending.scanAndSend(fakeEvent({ headers: { 'x-forwarded-host': 'dreamtube1.netlify.app' } }));
+  await sendNudges.scanAndSend(fakeEvent({ headers: { 'x-forwarded-host': 'dreamtube1.netlify.app' } }));
 
   var html = spies.resendCalls[0].body.html;
   assert.match(html, /https:\/\/dreamtube\.life\/assets\/logo-v4\.png/, 'an alias-host request must still emit canonical links, never echo the alias back');

@@ -2,24 +2,25 @@
 //
 // Covers netlify/functions/send-unwatched-dream-nudges.js's scanAndSend —
 // the decide-and-send half of the "unwatched dream" retention nudge
-// (founder-approved retention plan, piece 1). The scan is what a real
-// Netlify scheduled trigger runs; there's no way to invoke a real scheduled
-// trigger from this sandbox, so this drives scanAndSend directly (exactly
-// what it's exported for), same precedent as
-// test/send-pending-first-dream-emails.test.js.
+// (founder-approved retention plan, piece 1). As of the founder's 2026-08-11
+// decision (retire the separate first-dream email; let this nudge be the
+// single "your dream is ready to watch" email per unwatched dream, INCLUDING
+// a user's first), this scan drives the only such email the app now sends a
+// signed-up user. The scan is what a real Netlify scheduled trigger runs;
+// there's no way to invoke a real scheduled trigger from this sandbox, so
+// this drives scanAndSend directly (exactly what it's exported for).
 //
 // Covers: a ready-but-UNVIEWED signed-up dream sends exactly one email
 // carrying the dream text (subject + body) + the real thumbnail + the RFC
-// 8058 List-Unsubscribe headers; a VIEWED dream is suppressed (no send); an
-// UNSUBSCRIBED recipient is suppressed; a double-scan sends only once
-// (idempotent, via the once-per-dream CAS guard); a dream the automatic
-// FIRST-dream email already covered is suppressed (no double "your dream is
-// ready"); a too-soon dream waits; a dream that never gets a thumbnail is
-// eventually dropped (never sent thumbnail-less).
+// 8058 List-Unsubscribe headers; a user's FIRST unwatched dream (nothing
+// else suppressing) is nudged, not skipped; a VIEWED dream is suppressed
+// (no send); an UNSUBSCRIBED recipient is suppressed; a double-scan sends
+// only once (idempotent, via the once-per-dream CAS guard); a too-soon dream
+// waits; a dream that never gets a thumbnail is eventually dropped (never
+// sent thumbnail-less).
 // Run with: node --test test/
 //
-// SANDBOX LIMITATION (same honest caveat as test/send-pending-first-dream-
-// emails.test.js): there is no real Resend or Netlify Blobs here —
+// SANDBOX LIMITATION: there is no real Resend or Netlify Blobs here —
 // global.fetch is spied and test/helpers/mock-blobs.js stands in for Blobs
 // — so this proves the scan's decision logic + the exact Resend request it
 // builds, NOT a real delivered email.
@@ -37,7 +38,6 @@ var nudgeStore = require('../netlify/functions/lib/unwatched-dream-nudge-store')
 var resultViewStore = require('../netlify/functions/lib/result-view-store');
 var dreamStore = require('../netlify/functions/lib/dream-store');
 var emailSuppressionStore = require('../netlify/functions/lib/email-suppression-store');
-var firstDreamEmailStore = require('../netlify/functions/lib/first-dream-email-store');
 var sendNudges = require('../netlify/functions/send-unwatched-dream-nudges');
 
 var realFetch = global.fetch;
@@ -181,35 +181,19 @@ test('a double-scan sends only ONCE (idempotent via the once-per-dream guard)', 
   assert.equal(r2.skippedTerminal, 1, 'the second scan sees already_nudged and dequeues');
 });
 
-test('a dream the automatic FIRST-dream email already covered is suppressed — no double "your dream is ready"', async function () {
-  var op = 'mock:1:overlap';
-  var dreamId = 'dream-overlap-1';
+test('a user\'s FIRST unwatched dream (nothing else suppressing) gets exactly one nudge — the nudge now covers the first dream (founder decision 2026-08-11: the separate first-dream email was retired, so nothing suppresses this anymore)', async function () {
+  var op = 'mock:1:firstDream';
   await enqueueAged(op, 'firsty', 'firsty@example.com');
-  await seedDream('firsty', op, { id: dreamId, storyText: 'my very first dream', imageUrl: 'https://img.example/1.jpg' });
-  // The first-dream email already sent for THIS SAME dream.
-  await firstDreamEmailStore.markSentOnce(fakeEvent({}), 'firsty', dreamId);
+  await seedDream('firsty', op, { id: 'dream-firsty-1', storyText: 'my very first dream', imageUrl: 'https://img.example/1.jpg' });
   var spies = installFetchSpy();
 
   var result = await sendNudges.scanAndSend(fakeEvent({}));
 
-  assert.equal(result.sent, 0);
-  assert.equal(result.skippedTerminal, 1);
-  assert.equal(spies.resendCalls.length, 0, 'must not send a second near-identical email for the same dream');
-  assert.equal(await nudgeStore.getPending(fakeEvent({}), op), null);
-});
-
-test('the first-dream email covering a DIFFERENT (earlier) dream does NOT suppress a nudge for a later unwatched dream', async function () {
-  var op = 'mock:1:secondDream';
-  await enqueueAged(op, 'repeat', 'repeat@example.com');
-  await seedDream('repeat', op, { id: 'dream-second', storyText: 'my second dream', imageUrl: 'https://img.example/2.jpg' });
-  // First-dream email was for the account's FIRST dream (a different id).
-  await firstDreamEmailStore.markSentOnce(fakeEvent({}), 'repeat', 'dream-first');
-  var spies = installFetchSpy();
-
-  var result = await sendNudges.scanAndSend(fakeEvent({}));
-
-  assert.equal(result.sent, 1, 'the nudge covers unwatched dreams the once-ever first-dream email cannot');
+  assert.equal(result.sent, 1, 'a first unwatched dream must be nudged — there is no longer a first-dream email to step aside for');
   assert.equal(spies.resendCalls.length, 1);
+  assert.deepEqual(spies.resendCalls[0].body.to, ['firsty@example.com']);
+  assert.match(spies.resendCalls[0].body.html, /my very first dream/, 'the first dream\'s own text rides the nudge');
+  assert.equal(await nudgeStore.getPending(fakeEvent({}), op), null, 'dequeued after send');
 });
 
 test('a dream still inside the 7-minute unwatched floor WAITS — no send, stays enqueued', async function () {

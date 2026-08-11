@@ -2498,10 +2498,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   // choke point) — result.html's own identical-purpose block stays fully
   // intact for a deep-link/direct visit to a dream's room, unchanged, and
   // simply no-ops (markFirstVideoCreatedIfEligible's own one-time account
-  // flag) if this function already fired first. Retention email logic
-  // itself is untouched — same sendFirstDreamEmailBestEffort call, same
-  // server-side eligibility/dedup — per this tracker item's own explicit
-  // "explicitly UNAFFECTED, don't touch that logic" instruction. =====
+  // flag) if this function already fired first. The "your dream is ready to
+  // watch" retention email is no longer client-triggered from any of these
+  // choke points — it's the server-side "unwatched dream" nudge
+  // (send-unwatched-dream-nudges.js), enqueued at the verified generation-
+  // complete choke point (founder decision 2026-08-11 retired the separate
+  // first-dream email). =====
   function fireFirstVideoCreatedIfEligible(dream){
     try {
       if(!dream || !DreamStore.markFirstVideoCreatedIfEligible(dream.id)) return;
@@ -2509,7 +2511,6 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       if(typeof window.fireMetaConversion === 'function'){
         fireMetaConversion('FirstVideoCreated', { email: DreamStore.getAccountEmail(), custom_data: { style: dream.style } }, true);
       }
-      DreamStore.sendFirstDreamEmailBestEffort(dream);
     } catch (e) { /* analytics must never break the app */ }
   }
 

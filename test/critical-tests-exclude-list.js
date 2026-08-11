@@ -115,7 +115,7 @@
 //      forming-veil-nebula-behavioral, home-webview-escape-behavioral,
 //      install-first-door-behavioral, profile-me-character-behavioral,
 //      result-play-intent-behavioral, result-scroll-lock-behavioral,
-//      retention-email-first-video-behavioral, scroll-lock-behavioral,
+//      scroll-lock-behavioral,
 //      sheet-dismiss-behavioral, a2hs-install-nudge-journey-behavioral,
 //      pwa-stage0-behavioral, pwa-sw-update-behavioral, pwa-version-
 //      fallback-behavioral, verify-email-settings-row-behavioral,
@@ -164,7 +164,7 @@
 //      (found independently, same pass -- a real duplicate-write bug in
 //      appendMessage's retry loop, a false-negative verify-read could
 //      double-land the same support message, same CAS-idempotency class
-//      as the already-critical first-dream-email-store.test.js);
+//      as the already-critical push-dedup-store.test.js);
 //      support-feedback-behavioral.test.js (same pass -- a stale
 //      abandoned-compose-session write must not clobber a new session
 //      the user has switched to, same class as the already-critical
@@ -280,7 +280,6 @@ module.exports = [
   "pwa-version-fallback-behavioral.test.js",
   "result-play-intent-behavioral.test.js",
   "result-scroll-lock-behavioral.test.js",
-  "retention-email-first-video-behavioral.test.js",
   "save-whatsapp-number.test.js",
   "scroll-lock-behavioral.test.js",
   "send-whatsapp-morning-capture.test.js",

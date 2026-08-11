@@ -1,10 +1,10 @@
 // test/video-ready-push.test.js
 //
-// Covers netlify/functions/mark-generation-completed.js's new
+// Covers netlify/functions/mark-generation-completed.js's
 // maybeSendVideoReadyPush -- tracker item for-product-build-stage-0-pwa-
 // web-push-f-jbutt5, part 4. Deliberately its own file, separate from
-// test/automatic-first-dream-email.test.js (the retention EMAIL's own
-// coverage of the same choke point) -- these are two independent
+// test/unwatched-dream-nudge-enqueue.test.js (the retention EMAIL side's
+// own coverage of the same choke point) -- these are two independent
 // channels with two independent dedup markers (see push-dedup-store.js's
 // own header comment), and this file exercises the push side in
 // isolation, calling maybeSendVideoReadyPush directly rather than the
