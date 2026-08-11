@@ -123,6 +123,23 @@ test('buildPrompt matches the founder\'s original Anime repro (for-product-found
   assert.ok(prompt.indexOf('vibrant Japanese anime animation style') !== -1);
 });
 
+test('buildPrompt includes the ethnicity-neutrality sentence with its explicit-specification carve-out (founder 2026-08-11)', function () {
+  // Neutral caption (no ethnicity stated) — the neutrality instruction fires.
+  var neutral = genVideo.buildPrompt('a woman walking through a market', 'Cinematic', [], null, null, null);
+  assert.ok(neutral.indexOf('do not assign the subject any specific ethnicity, skin tone, or racial appearance') !== -1,
+    'the ethnicity-neutrality sentence must be present in the assembled prompt');
+  assert.ok(neutral.indexOf('unless the dream text explicitly specifies one') !== -1,
+    'the carve-out ("unless explicitly specified") must be present so a stated ethnicity is never suppressed');
+
+  // A caption that DOES specify an ethnicity keeps that text verbatim — the
+  // carve-out means the neutrality clause coexists with, never strips, it.
+  var specified = genVideo.buildPrompt('a Korean woman walking through a market', 'Cinematic', [], null, null, null);
+  assert.ok(specified.indexOf('a Korean woman walking through a market') !== -1,
+    'a user-specified ethnicity in the dream text is preserved, not suppressed');
+  assert.ok(specified.indexOf('do not assign the subject any specific ethnicity') !== -1,
+    'the neutrality clause is still present alongside the explicit specification');
+});
+
 test('buildPrompt applies the style-integrity guardrail for every style, not just Anime/Cartoon', function () {
   ['Cartoon', 'Cinematic', 'Anime', 'Realistic', 'SomeFutureStyle'].forEach(function (style) {
     var prompt = genVideo.buildPrompt('a dream about the beach and the tide coming in', style, [], null, null, null);

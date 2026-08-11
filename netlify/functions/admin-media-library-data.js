@@ -95,30 +95,67 @@ async function verifyOwnerCredentials(event, usernameOrEmail, password) {
   return { ok: true, record: loginCheck.record };
 }
 
-/** Emits 0-2 items (one per present videoUrl/imageUrl) for one dream/feed record — see this file's header comment on shared classification. */
+/**
+ * Emits the media card(s) for one dream/feed record — see this file's header
+ * comment on shared classification.
+ *
+ * A VIDEO dream emits exactly ONE card (the video), carrying its auto-captured
+ * first-frame STILL (`record.imageUrl`, from upload-dream-thumbnail.js) as the
+ * card's display `thumbnailUrl`/poster. It must NOT also emit a separate
+ * "image" card for that still — the still is not a user-created image (founder
+ * 2026-08-11: "Don't show such images in media library unless created by the
+ * user"). A genuine USER-CREATED IMAGE dream (the flux image-generation
+ * feature, `mediaType:'image'`) still emits its own image card unchanged — the
+ * discriminator is `record.mediaType` (falling back to "has a videoUrl" for a
+ * legacy record with no mediaType), never a blind "every imageUrl is a card".
+ */
 function itemsForRecord(record, createdAt, isPublished) {
   var items = [];
-  ['video', 'image'].forEach(function (mediaType) {
-    var field = mediaType === 'image' ? 'imageUrl' : 'videoUrl';
-    var url = record[field];
-    if (!url) return;
-    var classified = mediaStatus.classifyMediaUrl(url, createdAt);
+  var storyText = record.storyText || record.caption || null; // header comment (storyText paragraph): fallback reasoning; promptText deliberately excluded
+
+  // Video dream if it declares mediaType 'video', or (legacy, no mediaType) it
+  // simply has a videoUrl.
+  var isVideoDream = record.mediaType === 'video' || (record.mediaType !== 'image' && !!record.videoUrl);
+
+  if (record.videoUrl) {
+    var vClassified = mediaStatus.classifyMediaUrl(record.videoUrl, createdAt);
     items.push({
-      id: record.id + ':' + mediaType,
+      id: record.id + ':video',
       dreamId: record.id,
       ownerHandle: record.ownerHandle || null,
-      mediaType: mediaType,
-      url: url,
+      mediaType: 'video',
+      url: record.videoUrl,
+      // The auto-captured first-frame still — shown as the card's poster so a
+      // lazy/preload=none <video> isn't a black rectangle (founder screenshot).
+      thumbnailUrl: record.imageUrl || null,
       createdAt: createdAt || null,
       isPublished: !!isPublished,
-      status: classified.status,
-      protectedByNoExpiryHeader: classified.protectedByNoExpiryHeader,
-      daysUntilExpiry: classified.daysUntilExpiry,
-      // See this file's header comment (storyText paragraph) for the
-      // fallback reasoning and why promptText is deliberately excluded.
-      storyText: record.storyText || record.caption || null
+      status: vClassified.status,
+      protectedByNoExpiryHeader: vClassified.protectedByNoExpiryHeader,
+      daysUntilExpiry: vClassified.daysUntilExpiry,
+      storyText: storyText
     });
-  });
+  }
+
+  // Genuine user-created image (flux) — never a video's own first-frame still.
+  if (record.imageUrl && !isVideoDream) {
+    var iClassified = mediaStatus.classifyMediaUrl(record.imageUrl, createdAt);
+    items.push({
+      id: record.id + ':image',
+      dreamId: record.id,
+      ownerHandle: record.ownerHandle || null,
+      mediaType: 'image',
+      url: record.imageUrl,
+      thumbnailUrl: record.imageUrl,
+      createdAt: createdAt || null,
+      isPublished: !!isPublished,
+      status: iClassified.status,
+      protectedByNoExpiryHeader: iClassified.protectedByNoExpiryHeader,
+      daysUntilExpiry: iClassified.daysUntilExpiry,
+      storyText: storyText
+    });
+  }
+
   return items;
 }
 

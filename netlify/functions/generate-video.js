@@ -252,6 +252,12 @@ function styleIntegrityClause(caption, style) {
       'render exactly as described, never as an animal, mythical creature, or any other non-human entity';
   }
 
+  // Ethnicity neutrality (founder 2026-08-11): the model was defaulting the
+  // subject to a specific ethnicity when the dream didn't ask for one. Keep it
+  // to ONE tight sentence, and preserve the "unless explicitly specified"
+  // carve-out so a dream that DOES describe an ethnicity is never suppressed.
+  clause += '; do not assign the subject any specific ethnicity, skin tone, or racial appearance unless the dream text explicitly specifies one';
+
   return clause;
 }
 

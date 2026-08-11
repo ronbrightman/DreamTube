@@ -76,6 +76,38 @@ var InterpreterPersonas = require('../../js/interpreter-personas');
 var DEFAULT_LIMIT = 10;
 var MAX_LIMIT = 50;
 
+// ── WALL-CLOCK TIME BUDGET (perf fix 2026-08-11) ──────────────────────────
+// The selection pass scans every account and, for every synced dream, does a
+// prefix list() (interp-read-store) + hasViewed + a sent-marker read — far
+// more per-account Blob round-trips than send-winback-batch, so over the full
+// user base it blew this sync function's platform execution limit (a real
+// send POST returned RemoteDisconnected — the function was killed with no
+// response). Fix: a wall-clock budget on the scan (stop scanning after
+// SELECTION_BUDGET_MS and send whatever eligible set was found so far) plus a
+// SECOND independent bound on the send loop (stop starting new sends past
+// SEND_DEADLINE_MS), so the function ALWAYS returns before the platform limit.
+//
+// OPERATING MODEL: this is a manual, owner-triggered drain. Because every send
+// is idempotent (the per-dream once-ever CAS markers in interp-email-store),
+// repeated owner-triggered calls safely drain the queue in bounded chunks —
+// each call sends up to `limit` (default 10, max 50) of whatever it found
+// within the budget, marks them sent, and the next call skips those and picks
+// up the rest. `limit` is the SEND cap; the time budget is the independent
+// safety bound that keeps the function under its platform timeout. The summary
+// reports `timeBudgetHit`/`sendBudgetHit`/`accountsScanned` so the caller knows
+// whether more remains to drain. Both budgets are env-overridable
+// (INTERP_BATCH_SELECT_BUDGET_MS / INTERP_BATCH_SEND_DEADLINE_MS) without a
+// redeploy. Defaults are conservative for a 10s platform limit; raise them if
+// this function runs on a higher-limit plan.
+function selectionBudgetMs() {
+  var n = parseInt(process.env.INTERP_BATCH_SELECT_BUDGET_MS, 10);
+  return (n && n > 0) ? n : 6000;
+}
+function sendDeadlineMs() {
+  var n = parseInt(process.env.INTERP_BATCH_SEND_DEADLINE_MS, 10);
+  return (n && n > 0) ? n : 9000;
+}
+
 // The full set of persona keys (single source of truth), used to name an
 // UNREAD persona for the flagship email's copy.
 var ALL_PERSONA_KEYS = (InterpreterPersonas.ALL || []).map(function (p) { return p.key; });
@@ -99,6 +131,9 @@ function firstUnreadPersona(readSet) {
 async function selectAndSend(event, opts) {
   var limit = opts.limit;
   var ownerEmail = opts.ownerEmail;
+  var startedAt = Date.now();
+  var selBudget = (typeof opts.selectionBudgetMs === 'number') ? opts.selectionBudgetMs : selectionBudgetMs();
+  var sendDeadline = (typeof opts.sendDeadlineMs === 'number') ? opts.sendDeadlineMs : sendDeadlineMs();
 
   var accounts = await accountStore.listAccounts(event);
 
@@ -106,6 +141,9 @@ async function selectAndSend(event, opts) {
     ok: true,
     limit: limit,
     totalAccounts: accounts.length,
+    accountsScanned: 0,
+    timeBudgetHit: false, // selection scan was cut short by SELECTION_BUDGET_MS
+    sendBudgetHit: false, // send loop was cut short by SEND_DEADLINE_MS
     selected: { unread: 0, none: 0 },
     sent: { unread: 0, none: 0, push: 0 },
     skipped: {
@@ -122,9 +160,14 @@ async function selectAndSend(event, opts) {
   };
 
   // ── Selection pass (cheap filters first; per-dream async reads only for
-  //    accounts that survive the account-level filters) ──
+  //    accounts that survive the account-level filters). Bounded by both the
+  //    send cap (`limit`) AND the wall-clock budget (see header) so it can
+  //    never blow the platform timeout on a large user base. ──
   var eligible = [];
   for (var i = 0; i < accounts.length && eligible.length < limit; i++) {
+    // Time budget — stop scanning and send whatever we've found so far.
+    if (Date.now() - startedAt > selBudget) { summary.timeBudgetHit = true; break; }
+    summary.accountsScanned++;
     var record = accounts[i];
     var email = record && record.email;
     var username = record && record.username;
@@ -147,6 +190,7 @@ async function selectAndSend(event, opts) {
     var unreadCandidate = null;
     var noneCandidate = null;
     for (var d = 0; d < dreams.length; d++) {
+      if (Date.now() - startedAt > selBudget) { summary.timeBudgetHit = true; break; }
       var dream = dreams[d];
       var operationName = dream && dream.sourceOperationName;
       if (!operationName) { summary.skipped.no_operation_name++; continue; }
@@ -188,13 +232,18 @@ async function selectAndSend(event, opts) {
     // One email per user this run — flagship "unread" wins over "none".
     var chosen = unreadCandidate || noneCandidate;
     if (chosen) eligible.push(chosen);
+    if (summary.timeBudgetHit) break; // budget hit mid-account — stop after finishing this one
   }
 
   summary.selected.unread = eligible.filter(function (e) { return e.type === 'unread'; }).length;
   summary.selected.none = eligible.filter(function (e) { return e.type === 'none'; }).length;
 
-  // ── Send pass (the choke point re-applies every guard + the CAS claim) ──
+  // ── Send pass (the choke point re-applies every guard + the CAS claim).
+  //    Independently wall-clock-bounded: stop STARTING new sends past the send
+  //    deadline so the function returns before its platform limit; anything not
+  //    sent this call is re-found (idempotently) by the next drain call. ──
   for (var j = 0; j < eligible.length; j++) {
+    if (Date.now() - startedAt > sendDeadline) { summary.sendBudgetHit = true; break; }
     var item = eligible[j];
     var result;
     if (item.type === 'unread') {
@@ -218,6 +267,70 @@ async function selectAndSend(event, opts) {
   }
 
   return summary;
+}
+
+/**
+ * countOnly / dryRun diagnostic — SENDS NOTHING. Returns:
+ *   alreadySent: { unread, none } — EXACT counts of dreams already emailed
+ *     (interp-email-store.countSent, two cheap whole-store list()s; the source
+ *     of truth for "did any real send leak"). A `null` for a kind means its
+ *     count couldn't be read (not "zero").
+ *   eligible: { unread, none } — how many dreams currently qualify, tallied by
+ *     a wall-clock-bounded scan (same per-dream classification as the send
+ *     path, minus the per-user cap and the `limit`). If `timeBudgetHit` is
+ *     true this is a LOWER BOUND (the scan stopped early), not the full total.
+ *   accountsScanned / totalAccounts / timeBudgetHit — scan coverage.
+ * Bounded by the same SELECTION_BUDGET_MS as the send scan, so it also fits the
+ * platform timeout.
+ */
+async function scanCounts(event, opts) {
+  var ownerEmail = opts.ownerEmail;
+  var startedAt = Date.now();
+  var selBudget = (typeof opts.selectionBudgetMs === 'number') ? opts.selectionBudgetMs : selectionBudgetMs();
+
+  var alreadySent = await interpEmailStore.countSent(event);
+  var accounts = await accountStore.listAccounts(event);
+
+  var res = {
+    ok: true,
+    mode: 'countOnly',
+    totalAccounts: accounts.length,
+    accountsScanned: 0,
+    timeBudgetHit: false,
+    alreadySent: alreadySent,
+    eligible: { unread: 0, none: 0 }
+  };
+
+  for (var i = 0; i < accounts.length; i++) {
+    if (Date.now() - startedAt > selBudget) { res.timeBudgetHit = true; break; }
+    res.accountsScanned++;
+    var record = accounts[i];
+    var email = record && record.email;
+    var username = record && record.username;
+    if (!email || winbackSender.isExcludedEmail(email, ownerEmail)) continue;
+    if (await emailSuppressionStore.isSuppressed(event, email)) continue;
+
+    var dreams = await dreamStore.getPrivateDreams(event, username);
+    if (!dreams || !dreams.length) continue;
+
+    for (var d = 0; d < dreams.length; d++) {
+      if (Date.now() - startedAt > selBudget) { res.timeBudgetHit = true; break; }
+      var dream = dreams[d];
+      var operationName = dream && dream.sourceOperationName;
+      if (!operationName) continue;
+
+      var readSet = await interpReadStore.listPersonasRead(event, operationName);
+      var readCount = readSet.length;
+      if (readCount >= 1 && readCount <= 4) {
+        if (!(await interpEmailStore.hasSentUnread(event, operationName))) res.eligible.unread++;
+      } else if (readCount === 0) {
+        if ((await resultViewStore.hasViewed(event, operationName)) && !(await interpEmailStore.hasSentNone(event, operationName))) res.eligible.none++;
+      }
+    }
+    if (res.timeBudgetHit) break;
+  }
+
+  return res;
 }
 
 exports.handler = async function (event) {
@@ -283,12 +396,20 @@ exports.handler = async function (event) {
     return { statusCode: allOk ? 200 : 502, body: JSON.stringify({ preview: true, to: to, which: which, results: results }) };
   }
 
+  // Owner-gated COUNT-ONLY / DRY-RUN diagnostic — scans and reports counts,
+  // SENDS NOTHING (see scanCounts). Reachable only past the owner check above.
+  if (payload.countOnly === true || payload.dryRun === true) {
+    var counts = await scanCounts(event, { ownerEmail: ownerEmail });
+    return { statusCode: 200, body: JSON.stringify(counts) };
+  }
+
   var summary = await selectAndSend(event, { limit: limit, ownerEmail: ownerEmail });
   return { statusCode: 200, body: JSON.stringify(summary) };
 };
 
 // Exposed for direct unit testing.
 exports.selectAndSend = selectAndSend;
+exports.scanCounts = scanCounts;
 exports.firstUnreadPersona = firstUnreadPersona;
 exports.DEFAULT_LIMIT = DEFAULT_LIMIT;
 exports.MAX_LIMIT = MAX_LIMIT;

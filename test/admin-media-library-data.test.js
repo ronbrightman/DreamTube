@@ -103,7 +103,7 @@ test('returns one item per media field, correctly classified, for both private a
   });
 });
 
-test('a dream with both imageUrl and videoUrl emits two separate items', function () {
+test('a VIDEO dream with both videoUrl+imageUrl emits ONE video card carrying the still as its thumbnail (no separate image card)', function () {
   return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
     var event = fakeEvent({ method: 'POST' });
     await seedOwnerAccount(event);
@@ -116,9 +116,34 @@ test('a dream with both imageUrl and videoUrl emits two separate items', functio
     var handler = require('../netlify/functions/admin-media-library-data').handler;
     var res = await handler(fakeEvent(dataRequest()));
     var body = JSON.parse(res.body);
-    assert.equal(body.items.length, 2);
-    assert.ok(body.items.some(function (it) { return it.id === 'dream-2:video'; }));
-    assert.ok(body.items.some(function (it) { return it.id === 'dream-2:image'; }));
+    // Founder 2026-08-11: a video's auto-captured first-frame still is NOT a
+    // user-created image, so it never appears as its own image card — only the
+    // ONE video card, which carries that still as its display thumbnail/poster.
+    assert.equal(body.items.length, 1, 'exactly one card for a video dream, not two');
+    var videoItem = body.items.find(function (it) { return it.id === 'dream-2:video'; });
+    assert.ok(videoItem, 'the video card is present');
+    assert.equal(videoItem.mediaType, 'video');
+    assert.equal(videoItem.thumbnailUrl, '/.netlify/functions/image-file?key=i2', 'the video card carries the still as its thumbnail');
+    assert.ok(!body.items.some(function (it) { return it.id === 'dream-2:image'; }), 'no separate image card for the video\'s own still');
+  });
+});
+
+test('a genuine USER-CREATED image dream (mediaType image) still emits its image card', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    await seedPrivateDream('imgdreamer', {
+      id: 'img-1', ownerHandle: '@imgdreamer', caption: 'x', style: 'y',
+      imageUrl: '/.netlify/functions/image-file?key=real-flux', mediaType: 'image', createdAt: Date.now()
+    });
+
+    var handler = require('../netlify/functions/admin-media-library-data').handler;
+    var res = await handler(fakeEvent(dataRequest()));
+    var body = JSON.parse(res.body);
+    var imageItem = body.items.find(function (it) { return it.id === 'img-1:image'; });
+    assert.ok(imageItem, 'a real image dream still yields its image card');
+    assert.equal(imageItem.mediaType, 'image');
+    assert.ok(!body.items.some(function (it) { return it.id === 'img-1:video'; }), 'no phantom video card');
   });
 });
 

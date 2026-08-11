@@ -140,6 +140,7 @@ test('unread trigger: a dream read on 1-4 personas is selected and sent with the
   assert.ok(body.html.indexOf('The Depth Analyst') !== -1, 'names a persona the user DID read');
   assert.ok(body.html.indexOf('The Analyst') !== -1, 'names a persona the user did NOT read');
   assert.ok(body.html.indexOf('saw something very different') !== -1, 'approved sentence tail present');
+  assert.ok(body.html.indexOf('a glass city') !== -1, 'includes the recipient\'s OWN dream text so they know which dream (founder fix)');
   assert.ok(body.html.indexOf('<img') !== -1 && body.html.indexOf('/img/x.png') !== -1, 'renders the dream\'s own synced still as the media banner');
   assert.ok(body.html.indexOf('result.html?id=d1') !== -1 && body.html.indexOf('interp=1') !== -1, 'CTA deep-links to this dream\'s interpretation view');
   assert.ok(body.headers && body.headers['List-Unsubscribe'], 'one-click unsubscribe header present');
@@ -382,4 +383,54 @@ test('previewTo with which:"unread" sends only the flagship preview', async func
   assert.equal(res.statusCode, 200);
   assert.equal(spy.resendCalls.length, 1);
   assert.equal(spy.resendCalls[0].body.subject, 'One reading you haven\'t seen 🌙');
+});
+
+// ===== PERF: wall-clock time budget + countOnly diagnostic =====
+
+test('time budget: the selection scan stops early (timeBudgetHit) and sends nothing when the budget is exhausted', async function () {
+  var spy = installFetchSpy();
+  for (var i = 0; i < 4; i++) {
+    await seedAccount('tb' + i, 'tb' + i + '@real-user.com');
+    await seedDream('tb' + i, { id: 'd' + i, sourceOperationName: 'fal:veo3:tb' + i, storyText: 'x' });
+    await seedWatched('fal:veo3:tb' + i); // all none-eligible
+  }
+  // A zero-ms budget trips on the very first account, before any per-dream scan.
+  var summary = await sendInterp.selectAndSend(fakeEvent({ method: 'POST' }), { limit: 10, ownerEmail: OWNER, selectionBudgetMs: -1 });
+  assert.equal(summary.timeBudgetHit, true, 'the scan reports it was time-bounded');
+  assert.ok(summary.accountsScanned < summary.totalAccounts, 'it did NOT scan every account');
+  assert.equal(summary.sent.none, 0);
+  assert.equal(spy.resendCalls.length, 0, 'nothing sent when the budget trips immediately');
+});
+
+test('time budget: with a generous budget it scans and sends normally (bound is a ceiling, not a floor)', async function () {
+  var spy = installFetchSpy();
+  await seedAccount('tbok', 'tbok@real-user.com');
+  await seedDream('tbok', { id: 'd', sourceOperationName: 'fal:veo3:tbok', storyText: 'x' });
+  await seedWatched('fal:veo3:tbok');
+  var summary = await sendInterp.selectAndSend(fakeEvent({ method: 'POST' }), { limit: 10, ownerEmail: OWNER, selectionBudgetMs: 60000 });
+  assert.equal(summary.timeBudgetHit, false);
+  assert.equal(summary.sent.none, 1);
+  assert.equal(spy.resendCalls.length, 1);
+});
+
+test('countOnly: reports exact already-sent counts + eligible counts and SENDS NOTHING', async function () {
+  var spy = installFetchSpy();
+  var ev = fakeEvent({ method: 'POST' });
+  // One currently-eligible "none" dream (watched, zero read).
+  await seedAccount('cu', 'cu@real-user.com');
+  await seedDream('cu', { id: 'de', sourceOperationName: 'fal:veo3:elig', storyText: 'x' });
+  await seedWatched('fal:veo3:elig');
+  // Two dreams already emailed (the source of truth for "did anything leak").
+  await interpEmailStore.markNoneSentOnce(ev, 'fal:veo3:sent-none-1');
+  await interpEmailStore.markUnreadSentOnce(ev, 'fal:veo3:sent-unread-1');
+
+  var res = await sendInterp.handler(fakeEvent({ method: 'POST', body: { email: OWNER, countOnly: true } }));
+  assert.equal(res.statusCode, 200);
+  var out = JSON.parse(res.body);
+  assert.equal(out.mode, 'countOnly');
+  assert.equal(out.alreadySent.none, 1, 'exact already-sent none count from the marker store');
+  assert.equal(out.alreadySent.unread, 1, 'exact already-sent unread count from the marker store');
+  assert.equal(out.eligible.none, 1, 'the one eligible none dream is counted');
+  assert.equal(out.eligible.unread, 0);
+  assert.equal(spy.resendCalls.length, 0, 'countOnly never sends');
 });

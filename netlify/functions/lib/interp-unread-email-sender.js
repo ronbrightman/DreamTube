@@ -39,6 +39,13 @@ var siteOrigin = require('./site-origin');
 var pushSender = require('./push-sender');
 var pushDedupStore = require('./push-dedup-store');
 var winbackSender = require('./winback-email-sender');
+// Reused for the recipient's-own-dream-text line (founder fix 2026-08-11:
+// "add the original dream text into these emails"). Deliberately the SAME
+// helper + SAME character limit the "No meaning yet" email uses
+// (noneSender.dreamDescription / noneSender.truncate / noneSender.BODY_TEXT_MAX),
+// so the dream text reads identically across both emails. No require cycle:
+// the none sender does not require this one.
+var noneSender = require('./interp-none-email-sender');
 var InterpreterPersonas = require('../../../js/interpreter-personas');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
@@ -81,10 +88,18 @@ function resolveMediaUrl(event, dream) {
 function buildHtml(opts) {
   var media = emailLayout.mediaImage(opts.imageUrl, 'Your dream');
 
+  // The recipient's OWN dream text, so they know WHICH dream this is about —
+  // same bold-quoted treatment + same truncation the "No meaning yet" email
+  // uses, kept as a lead line so the founder-approved sentence stays intact.
+  var dreamLine = opts.dreamText
+    ? '<p style="font-size:15px;line-height:1.5;color:' + emailLayout.COLORS.textMuted + ';margin:0 0 12px;">Your dream: &ldquo;<b style="color:' + emailLayout.COLORS.textPrimary + ';">' + esc(noneSender.truncate(opts.dreamText, noneSender.BODY_TEXT_MAX)) + '</b>&rdquo;</p>'
+    : '';
+
   var sentence = 'You read what <b>' + esc(opts.readName) + '</b> saw. <b>' + esc(opts.unreadName) + '</b> saw something very different. Check it out.';
 
   var inner = (
     media +
+    dreamLine +
     '<p style="font-size:16px;line-height:1.5;color:' + emailLayout.COLORS.textPrimary + ';margin:0 0 18px;">' + sentence + '</p>' +
     '<p style="margin:0;">' + emailLayout.ctaButton(opts.interpUrl, 'Check it out →') + '</p>'
   );
@@ -191,6 +206,7 @@ async function sendIfEligible(event, opts) {
     event: event,
     readName: readName,
     unreadName: unreadName,
+    dreamText: noneSender.dreamDescription(dream),
     imageUrl: resolveMediaUrl(event, dream),
     interpUrl: interpUrl(event, dream.id),
     unsubscribeUrl: unsubscribeUrl
@@ -264,6 +280,7 @@ async function sendPreview(event, previewEmail) {
     event: event,
     readName: personaName('jung'),   // "The Depth Analyst"
     unreadName: personaName('freud'), // "The Analyst"
+    dreamText: 'I was standing in a field of mirrors that each reflected a different version of me',
     // A real, reachable sample still so the founder actually sees the media
     // banner render (no per-recipient dream exists in a preview).
     imageUrl: emailLayout.brandedFallbackImageUrl(event),

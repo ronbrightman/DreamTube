@@ -86,6 +86,31 @@ async function releaseFailed(event, storeName, operationName, claimId) {
   }
 }
 
+/**
+ * Exact counts of dreams already emailed, of each kind — one blob per
+ * dream in each sent-store, so a whole-store `list()` length IS the count.
+ * Cheap (two list() calls, no per-account scan), and the SOURCE OF TRUTH for
+ * "did any real interp email go out" (used by the batch endpoint's countOnly/
+ * dryRun diagnostic). Never throws — a failed list degrades to a `null` count
+ * for that kind so a caller can tell "0 sent" from "couldn't read".
+ */
+async function countSent(event) {
+  var out = { unread: null, none: null };
+  try {
+    connectLambda(event);
+    out.unread = ((await storeFor(UNREAD_STORE_NAME).list()).blobs || []).length;
+  } catch (e) {
+    console.error('interp-email-store: countSent list failed for ' + UNREAD_STORE_NAME, e);
+  }
+  try {
+    connectLambda(event);
+    out.none = ((await storeFor(NONE_STORE_NAME).list()).blobs || []).length;
+  } catch (e) {
+    console.error('interp-email-store: countSent list failed for ' + NONE_STORE_NAME, e);
+  }
+  return out;
+}
+
 /** True if this dream's email (of `storeName`'s kind) has already been sent — the cheap selection-pass check (the real guarantee is markSentOnce's CAS at the send choke point). */
 async function hasSent(event, storeName, operationName) {
   if (!operationName) return false;
@@ -105,6 +130,7 @@ module.exports = {
   markSentOnce,
   releaseFailed,
   hasSent,
+  countSent,
 
   markUnreadSentOnce: function (event, operationName) { return markSentOnce(event, UNREAD_STORE_NAME, operationName); },
   releaseUnread: function (event, operationName, claimId) { return releaseFailed(event, UNREAD_STORE_NAME, operationName, claimId); },

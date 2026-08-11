@@ -285,9 +285,13 @@
       ? new Date(item.createdAt).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
       : 'unknown date';
     var expiry = expiryText(item);
+    // A video card shows its own first-frame STILL as the poster (item.thumbnailUrl,
+    // the auto-captured dream.imageUrl) so a lazy/preload=none <video> renders
+    // the real frame instead of a black rectangle (founder 2026-08-11) — the
+    // still no longer appears as its own separate "image" card.
     var mediaEl = item.mediaType === 'image'
       ? '<img class="vcard-image" loading="lazy" src="' + esc(item.url) + '" alt="">'
-      : '<video class="vcard-video" muted playsinline preload="none" data-src="' + esc(item.url) + '"></video>';
+      : '<video class="vcard-video" muted playsinline preload="none"' + (item.thumbnailUrl ? ' poster="' + esc(item.thumbnailUrl) + '"' : '') + ' data-src="' + esc(item.url) + '"></video>';
     // data-media-url/-type carry the REAL source for the lightbox (tracker
     // for-product-media-library-clicking-a-vid-bnlcus) — the in-grid
     // <video> itself is muted/preload=none/lazily-src'd (thumbnail-safe by

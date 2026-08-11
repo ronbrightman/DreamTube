@@ -110,7 +110,11 @@ function buildImagePrompt(caption, style, characters, cameraView, sceneryTime, s
   if (sceneryBits.length) parts.push('Setting: ' + sceneryBits.join(', '));
 
   parts.push(modifier);
-  return parts.join(', ') + '.';
+  // Ethnicity neutrality (founder 2026-08-11) — parity with generate-video.js's
+  // styleIntegrityClause: stop the model defaulting the subject to a specific
+  // ethnicity when the description didn't ask for one, while preserving any it
+  // DOES specify. One tight sentence, appended after the assembled prompt.
+  return parts.join(', ') + '. Do not assign the subject any specific ethnicity, skin tone, or racial appearance unless the description explicitly specifies one.';
 }
 
 /**

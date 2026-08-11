@@ -320,6 +320,15 @@ test('buildImagePrompt includes a text-described character (non-photo)', functio
   assert.ok(prompt.indexOf('tall with a red hat') !== -1);
 });
 
+test('buildImagePrompt appends the ethnicity-neutrality sentence with its explicit-specification carve-out (parity with generate-video, founder 2026-08-11)', function () {
+  var genImage = require('../netlify/functions/generate-image');
+  var prompt = genImage.buildImagePrompt('a woman in a garden', 'Cartoon', [], null, null, null);
+  assert.ok(prompt.indexOf('Do not assign the subject any specific ethnicity, skin tone, or racial appearance') !== -1,
+    'the ethnicity-neutrality sentence must be present');
+  assert.ok(prompt.indexOf('unless the description explicitly specifies one') !== -1,
+    'the carve-out must be present so a stated ethnicity is never suppressed');
+});
+
 test('IMAGE_TOKEN_COST is exported as 10', function () {
   var genImage = require('../netlify/functions/generate-image');
   assert.equal(genImage.IMAGE_TOKEN_COST, 10);
