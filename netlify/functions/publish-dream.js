@@ -63,6 +63,30 @@
 // real owner's republish-license consent, with nothing server-side to
 // notice or stop it.
 //
+// createdAt (tracker item for-product-media-library-stamp-durable--u4oju3):
+// until this fix the shared feed record carried no createdAt at all, only
+// publishedAt — the owner media-library page (admin-media-library-data.js)
+// had to approximate "when was this made" with publishedAt, which can be
+// well after the dream was actually generated if it sat unpublished for a
+// while. Now stamped durably at the moment a record is FIRST created in
+// this feed (idx === -1): prefers the client's own real generation-time
+// dream.createdAt (js/store.js's syncPublishedDreamToFeed) when it sends
+// one, falling back to Date.now() only when it doesn't (an older client, or
+// a dream that predates the createdAt field client-side) — the same
+// "Date.now() at record-creation-time" fallback publishedAt already uses,
+// so this is never a regression from today's behavior, only ever an
+// improvement when a real value is available. On every SUBSEQUENT
+// republish/edit of the SAME id (idx !== -1) the value is preserved
+// immutably, exactly like publishedAt already is — a dream's "when was it
+// actually made" must never move just because its caption/style changed —
+// with one deliberate exception: a record that predates this fix and has
+// no createdAt of its own yet opportunistically backfills from whatever the
+// client sends THIS time (a real, cheap, safe backfill — the owning
+// account's own client is the one place that still has the true value),
+// falling back further to that record's own publishedAt (preserving
+// exactly what admin-media-library-data.js already approximated before
+// this fix) if the client doesn't send one either.
+//
 // avatar (tracker item for-product-ui-founder-directed-2026-07--djgjn0):
 // a small avatar thumbnail (see js/store.js's syncPublishedDreamToFeed —
 // resized client-side to a low-quality, ~48px JPEG data URL, "few KB" per
@@ -245,6 +269,10 @@ exports.handler = async function (event) {
   // this deploy doesn't know, or any other value a caller might send.
   var mood = KNOWN_MOODS.indexOf(payload.mood) === -1 ? null : payload.mood;
   var authToken = (payload.authToken || '').trim();
+  // See this file's header comment ("createdAt" paragraph). Only a real
+  // finite number is trusted — anything else (missing, a string, NaN) is
+  // treated as "the client didn't send one," never stored as a bad value.
+  var clientCreatedAt = (typeof payload.createdAt === 'number' && isFinite(payload.createdAt)) ? payload.createdAt : null;
 
   if (!id || !ownerHandle || !caption || !style || (!videoUrl && !imageUrl)) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E3: missing_fields' }) };
@@ -307,6 +335,12 @@ exports.handler = async function (event) {
       avatar: avatar,
       likes: idx === -1 ? 0 : (feed[idx].likes || 0),
       publishedAt: idx === -1 ? Date.now() : feed[idx].publishedAt,
+      // See this file's header comment ("createdAt" paragraph) for the full
+      // "stamp at first-create, preserve immutably after, opportunistically
+      // backfill a pre-fix record" reasoning.
+      createdAt: idx === -1
+        ? (clientCreatedAt || Date.now())
+        : (feed[idx].createdAt || clientCreatedAt || feed[idx].publishedAt || Date.now()),
       channelLicenseGrantedAt: channelLicenseGrantedAt,
       channelLicenseRevokedAt: channelLicenseRevokedAt,
       okToFeatureOnChannels: okToFeatureOnChannels,

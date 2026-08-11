@@ -177,3 +177,83 @@ test('an upsert can flip okToFeatureOnChannels on an already-published dream (th
   assert.equal(feed.length, 1);
   assert.equal(feed[0].okToFeatureOnChannels, false);
 });
+
+// ===== createdAt (tracker item for-product-media-library-stamp-durable--
+// u4oju3, root-cause fix): the shared feed record now carries a real,
+// durably-stamped createdAt instead of no createdAt at all -- see this
+// file's own header comment ("createdAt" paragraph) for the full "stamp at
+// first-create, preserve immutably, opportunistically backfill" design. =====
+
+test('createdAt: a client-supplied real generation-time value is stamped on first publish', async function () {
+  var realCreatedAt = 1780000000000;
+  var res = await handler(await postEvent({ id: 'd-createdat-1', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4', createdAt: realCreatedAt }));
+  var body = JSON.parse(res.body);
+  assert.equal(body.dream.createdAt, realCreatedAt);
+
+  var feed = await feedIndex();
+  assert.equal(feed[0].createdAt, realCreatedAt);
+});
+
+test('createdAt: omitted on first publish falls back to Date.now() (never left null/missing the way publishedAt never was either)', async function () {
+  var before = Date.now();
+  var res = await handler(await postEvent({ id: 'd-createdat-2', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4' }));
+  var after = Date.now();
+  var body = JSON.parse(res.body);
+  assert.ok(typeof body.dream.createdAt === 'number' && body.dream.createdAt >= before && body.dream.createdAt <= after, 'createdAt must be a real, current timestamp, never null, on a fresh publish with no client value');
+});
+
+test('createdAt: a malformed value (a string, NaN) is dropped, not stored -- falls back to Date.now() exactly like omitting it', async function () {
+  var before = Date.now();
+  var res = await handler(await postEvent({ id: 'd-createdat-bad', ownerHandle: '@x', caption: 'c', style: 'Cartoon', videoUrl: 'https://x/v.mp4', createdAt: 'not-a-timestamp' }));
+  var after = Date.now();
+  var body = JSON.parse(res.body);
+  assert.ok(typeof body.dream.createdAt === 'number' && body.dream.createdAt >= before && body.dream.createdAt <= after);
+});
+
+test('createdAt: preserved immutably across a republish/edit -- a dream\'s real creation time never moves just because its content changed', async function () {
+  var realCreatedAt = 1780000000000;
+  var first = await handler(await postEvent({ id: 'd-createdat-3', ownerHandle: '@x', caption: 'v1', style: 'Cartoon', videoUrl: 'https://x/v1.mp4', createdAt: realCreatedAt }));
+  assert.equal(JSON.parse(first.body).dream.createdAt, realCreatedAt);
+
+  // Republish with a DIFFERENT client-supplied createdAt -- must be ignored;
+  // the original stamped value is the true one.
+  var second = await handler(await postEvent({ id: 'd-createdat-3', ownerHandle: '@x', caption: 'v2', style: 'Cinematic', videoUrl: 'https://x/v2.mp4', createdAt: realCreatedAt + 999999 }));
+  var secondBody = JSON.parse(second.body);
+  assert.equal(secondBody.dream.createdAt, realCreatedAt, 'createdAt must survive an upsert unchanged, exactly like publishedAt');
+
+  var feed = await feedIndex();
+  assert.equal(feed.length, 1);
+  assert.equal(feed[0].createdAt, realCreatedAt);
+});
+
+test('createdAt: a pre-fix legacy record with no createdAt of its own opportunistically backfills from the client on its next republish', async function () {
+  // Seed a feed record shaped exactly like one written before this fix --
+  // publishedAt but no createdAt at all.
+  var store = getStore('dreamtube-feed');
+  var legacyPublishedAt = 1750000000000;
+  await store.setJSON('feed-index', [{
+    id: 'd-legacy', ownerHandle: '@x', caption: 'old', style: 'Cartoon', videoUrl: 'https://x/old.mp4',
+    mediaType: 'video', likes: 0, publishedAt: legacyPublishedAt,
+    channelLicenseGrantedAt: null, channelLicenseRevokedAt: null, okToFeatureOnChannels: true, mood: null
+  }]);
+
+  var realCreatedAt = 1751111111111;
+  var res = await handler(await postEvent({ id: 'd-legacy', ownerHandle: '@x', caption: 'new', style: 'Cartoon', videoUrl: 'https://x/new.mp4', createdAt: realCreatedAt }));
+  var body = JSON.parse(res.body);
+  assert.equal(body.dream.createdAt, realCreatedAt, 'a legacy record with no createdAt of its own must backfill from a real client-supplied value on its next republish');
+  assert.equal(body.dream.publishedAt, legacyPublishedAt, 'publishedAt itself must stay untouched by this backfill');
+});
+
+test('createdAt: a pre-fix legacy record republished with NO client createdAt falls back to its own publishedAt (the same approximation used before this fix, not Date.now())', async function () {
+  var store = getStore('dreamtube-feed');
+  var legacyPublishedAt = 1750000000000;
+  await store.setJSON('feed-index', [{
+    id: 'd-legacy-2', ownerHandle: '@x', caption: 'old', style: 'Cartoon', videoUrl: 'https://x/old.mp4',
+    mediaType: 'video', likes: 0, publishedAt: legacyPublishedAt,
+    channelLicenseGrantedAt: null, channelLicenseRevokedAt: null, okToFeatureOnChannels: true, mood: null
+  }]);
+
+  var res = await handler(await postEvent({ id: 'd-legacy-2', ownerHandle: '@x', caption: 'new', style: 'Cartoon', videoUrl: 'https://x/new.mp4' }));
+  var body = JSON.parse(res.body);
+  assert.equal(body.dream.createdAt, legacyPublishedAt, 'with no client value to backfill from, publishedAt is the correct honest stand-in, not a fresh Date.now()');
+});

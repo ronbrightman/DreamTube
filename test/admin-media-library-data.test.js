@@ -244,6 +244,58 @@ test('a published feed record with no createdAt falls back to publishedAt for it
   });
 });
 
+// ===== createdAt stamping (tracker item for-product-media-library-stamp-
+// durable--u4oju3, root-cause fix): the actual founder-reported bug -- both
+// private and published records now carry a real, durably-stamped
+// createdAt going forward. =====
+
+test('a published feed record WITH a real createdAt (post-fix publish-dream.js) uses it, never falling back to publishedAt', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    var realCreatedAt = 1780000000000;
+    var muchLaterPublishedAt = realCreatedAt + 5 * 24 * 60 * 60 * 1000; // published 5 days after it was actually made
+    seedFeed([{ id: 'feed-4', ownerHandle: '@pubowner3', caption: 'x', style: 'y', videoUrl: 'https://fal.media/z.mp4', createdAt: realCreatedAt, publishedAt: muchLaterPublishedAt }]);
+
+    var handler = require('../netlify/functions/admin-media-library-data').handler;
+    var res = await handler(fakeEvent(dataRequest()));
+    var body = JSON.parse(res.body);
+    var item = body.items.find(function (it) { return it.dreamId === 'feed-4'; });
+    assert.equal(item.createdAt, realCreatedAt, 'the real stamped createdAt must win over the later publishedAt approximation');
+  });
+});
+
+test('a private dream synced with no createdAt (the pre-fix gap) shows unknown time and sinks to the end of a newest-first sort -- exactly the founder-reported symptom, still reproduced for a record this fix genuinely cannot repair', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    // No createdAt at all -- simulates a private dream synced before the
+    // dream-sync.js/js/store.js whitelist fix.
+    await seedPrivateDream('dreamer8', { id: 'dream-8', ownerHandle: '@dreamer8', caption: 'x', style: 'y', videoUrl: 'https://fal.media/nine.mp4', mediaType: 'video' });
+
+    var handler = require('../netlify/functions/admin-media-library-data').handler;
+    var res = await handler(fakeEvent(dataRequest()));
+    var body = JSON.parse(res.body);
+    var item = body.items.find(function (it) { return it.dreamId === 'dream-8'; });
+    assert.equal(item.createdAt, null, 'a genuinely un-derivable pre-fix record must stay unknown, never a fabricated value');
+  });
+});
+
+test('a private dream synced WITH a real createdAt (post-fix js/store.js + dream-sync.js) carries it through to the media library data feed', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    var realCreatedAt = 1781000000000;
+    await seedPrivateDream('dreamer9', { id: 'dream-9', ownerHandle: '@dreamer9', caption: 'x', style: 'y', videoUrl: 'https://fal.media/ten.mp4', mediaType: 'video', createdAt: realCreatedAt });
+
+    var handler = require('../netlify/functions/admin-media-library-data').handler;
+    var res = await handler(fakeEvent(dataRequest()));
+    var body = JSON.parse(res.body);
+    var item = body.items.find(function (it) { return it.dreamId === 'dream-9'; });
+    assert.equal(item.createdAt, realCreatedAt);
+  });
+});
+
 // ===== auth / request shape =====
 
 test('POST rejects missing fields, invalid JSON, and non-POST methods', function () {

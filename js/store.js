@@ -1393,6 +1393,19 @@
           style: dream.style, dur: dream.dur, videoUrl: dream.videoUrl,
           imageUrl: dream.imageUrl, mediaType: dream.mediaType || 'video',
           avatar: avatar,
+          // createdAt (tracker item for-product-media-library-stamp-durable--
+          // u4oju3) — this dream's real generation-time timestamp (stamped
+          // once, at finalizeDream, see that assignment's own doc comment),
+          // carried into the SHARED feed-index record so the owner media-
+          // library page has a genuine "when was this actually made" value
+          // instead of only ever approximating with publishedAt (which can be
+          // well after actual generation if a dream sits unpublished for a
+          // while — see publish-dream.js's own header comment on that
+          // imprecision). Only ever sent as a real finite number or null —
+          // never fabricated for a dream that predates this field (see
+          // js/store.js's createdAt assignment comment on why a missing
+          // value stays missing rather than getting a guessed one).
+          createdAt: (typeof dream.createdAt === 'number' && isFinite(dream.createdAt)) ? dream.createdAt : null,
           // Republish-license consent state (tracker item for-product-terms-
           // republish-license-per--fhpcxk) — carried into the SHARED feed-
           // index record (not just this browser's local copy) since that's
@@ -1574,6 +1587,19 @@
           videoUrl: dream.videoUrl || null, imageUrl: dream.imageUrl || null, dur: dream.dur || null,
           sourceOperationName: dream.sourceOperationName || null,
           interpretationText: dream.interpretationText || null, interpretationAt: dream.interpretationAt || null,
+          // createdAt (tracker item for-product-media-library-stamp-durable--
+          // u4oju3) — same "this list is an explicit, hand-maintained
+          // whitelist" caveat the mood field's own comment below already
+          // documents: this dream object HAS carried a real createdAt since
+          // finalizeDream stamped it (see that assignment's own doc comment),
+          // but omitting it here meant it was silently dropped before ever
+          // reaching dream-sync.js — the owner media-library page (which
+          // only reads server-side records) then saw every synced private
+          // dream as having no timestamp at all, sinking to "unknown time"
+          // and to the end of its newest-first sort regardless of when it
+          // was actually made. Sent as a real finite number or null, never
+          // fabricated for a dream that predates this field.
+          createdAt: (typeof dream.createdAt === 'number' && isFinite(dream.createdAt)) ? dream.createdAt : null,
           // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
           // — the dream-builder wizard's Mood step answer, which
           // js/music-bed.js keys the ambient bed off. This list is an
@@ -5046,6 +5072,19 @@
         caption: resolvedStoryText, promptText: caption, storyText: resolvedStoryText, style: style, mediaType: 'video',
         likes: 0, likedByMe: false, dur: '0:08', isPublished: false,
         videoUrl: videoUrl,
+        // createdAt (tracker item for-product-media-library-stamp-durable--
+        // u4oju3) — this function previously stamped NO createdAt at all
+        // (unlike finalizeDream's own real-generation path), so every
+        // claimed dream (claim-dream.html's abandoned-dream re-engagement
+        // landing page) had no timestamp anywhere, client or server. The
+        // actual generation happened earlier, before the account existed to
+        // own it, and that original moment isn't available here — Date.now()
+        // at claim time is the best real signal this function has (the
+        // moment this browser first materializes a real local record for
+        // it), same "honest, non-fabricated stand-in" reasoning
+        // publish-dream.js's own publishedAt-as-createdAt-fallback already
+        // documents for an equivalent gap.
+        createdAt: Date.now(),
         updatedAt: Date.now()
       };
       state.dreams.unshift(dream);

@@ -47,13 +47,21 @@
 // own guarantee (see js/store.js), so the same `|| record.caption`
 // fallback resolves it correctly without any FEED-specific branch.
 //
-// createdAt for a FEED (published) record: the shared feed store carries no
-// createdAt at all, only publishedAt (see get-feed.js/publish-dream.js) —
-// used here as the best available stand-in, per lib/media-status.js's own
-// header comment on exactly this approximation. A dream published well
-// after it was actually generated will show a slightly later "created"
-// date and a slightly more optimistic still-on-fal estimate than reality;
-// an accepted, documented imprecision, not a silent guess.
+// createdAt for a FEED (published) record: publish-dream.js now stamps a
+// real createdAt on every feed record going forward (tracker item
+// for-product-media-library-stamp-durable--u4oju3 — see that file's own
+// header comment for the full "stamp at first-create, preserve immutably,
+// opportunistically backfill a pre-fix record" design). A record written
+// before that fix shipped (or one whose owning client never sent a real
+// generation-time value even after the fix, e.g. a very old app version)
+// simply has no createdAt of its own — collectFeedItems below falls back to
+// publishedAt for exactly that case, the same approximation this file used
+// unconditionally before the fix (per lib/media-status.js's own header
+// comment). A dream published well after it was actually generated will,
+// in that fallback case only, show a slightly later "created" date and a
+// slightly more optimistic still-on-fal estimate than reality — an
+// accepted, documented imprecision for un-derivable legacy records, not a
+// silent guess for anything this fix can actually stamp correctly.
 //
 // Error codes (same small-number scheme as every sibling admin-*.js file):
 //   E1 method_not_allowed
@@ -141,7 +149,10 @@ async function collectFeedItems(event) {
 
   var items = [];
   for (var i = 0; i < feed.length; i++) {
-    items = items.concat(itemsForRecord(feed[i], feed[i].publishedAt || null, true));
+    // Prefer the real stamped createdAt (see this file's own header comment
+    // on the "createdAt for a FEED record" fix); fall back to publishedAt
+    // only for a record this fix can't retroactively repair.
+    items = items.concat(itemsForRecord(feed[i], feed[i].createdAt || feed[i].publishedAt || null, true));
   }
   return items;
 }

@@ -343,3 +343,66 @@ test('a dream with NO mood syncs exactly as it always did -- the new field is ad
   assert.equal(dreams.length, 1);
   assert.ok(dreams[0].mood === undefined || dreams[0].mood === null, 'no mood must stay no mood, never a guessed default');
 });
+
+// ===== createdAt (tracker item for-product-media-library-stamp-durable--
+// u4oju3, root-cause fix): a real, finite-number createdAt off the client's
+// dream object round-trips through this private-dream sync -- before this
+// fix DREAM_FIELDS silently dropped it, so the owner media-library page
+// (admin-media-library-data.js) saw no timestamp at all for any private
+// dream and it sank to "unknown time" at the end of the newest-first sort,
+// regardless of when it was actually made. =====
+
+test('a dream\'s real createdAt round-trips through the private-dream sync -- the actual root-cause fix', async function () {
+  var token = await registerAndGetToken('createdatsyncer', 'realpassword1', 'createdatsyncer@example.com');
+  var realCreatedAt = 1780000000000;
+  var res = await dreamSyncHandler(fakeEvent({
+    method: 'POST',
+    body: { authToken: token, action: 'upsert', dream: dreamPayload('d-created', { caption: 'a timestamped dream', createdAt: realCreatedAt }) }
+  }));
+  assert.equal(JSON.parse(res.body).ok, true);
+
+  var getRes = await dreamSyncHandler(fakeEvent({ method: 'GET', query: { authToken: token } }));
+  var dreams = JSON.parse(getRes.body).dreams;
+  assert.equal(dreams.length, 1);
+  assert.equal(dreams[0].createdAt, realCreatedAt, 'createdAt must survive the upsert/GET round trip, not be silently dropped');
+});
+
+test('a dream with NO createdAt (a legacy dream from before the field existed) syncs with no createdAt at all -- never a fabricated value', async function () {
+  var token = await registerAndGetToken('nocreatedatsyncer', 'realpassword1', 'nocreatedatsyncer@example.com');
+  await dreamSyncHandler(fakeEvent({
+    method: 'POST',
+    body: { authToken: token, action: 'upsert', dream: dreamPayload('d-nocreated', { caption: 'an untimestamped dream' }) }
+  }));
+  var getRes = await dreamSyncHandler(fakeEvent({ method: 'GET', query: { authToken: token } }));
+  var dreams = JSON.parse(getRes.body).dreams;
+  assert.equal(dreams.length, 1);
+  assert.ok(dreams[0].createdAt === undefined || dreams[0].createdAt === null, 'no createdAt must stay no createdAt, never a guessed Date.now() default');
+});
+
+test('a malformed createdAt (a string, NaN) is silently dropped, never stored as a bad value that would corrupt the media library\'s newest-first sort', async function () {
+  var token = await registerAndGetToken('badcreatedatsyncer', 'realpassword1', 'badcreatedatsyncer@example.com');
+  await dreamSyncHandler(fakeEvent({
+    method: 'POST',
+    body: { authToken: token, action: 'upsert', dream: dreamPayload('d-badcreated', { caption: 'x', createdAt: 'not-a-real-timestamp' }) }
+  }));
+  var getRes = await dreamSyncHandler(fakeEvent({ method: 'GET', query: { authToken: token } }));
+  var dreams = JSON.parse(getRes.body).dreams;
+  assert.equal(dreams.length, 1);
+  assert.ok(dreams[0].createdAt === undefined || dreams[0].createdAt === null, 'a non-numeric createdAt must be dropped, not stored verbatim');
+});
+
+test('re-upserting the same dream with a NEW createdAt updates it (this store is not a special case -- upsert-by-id updates every whitelisted field)', async function () {
+  var token = await registerAndGetToken('updatedatsyncer', 'realpassword1', 'updatedatsyncer@example.com');
+  await dreamSyncHandler(fakeEvent({
+    method: 'POST',
+    body: { authToken: token, action: 'upsert', dream: dreamPayload('d-update-created', { createdAt: 1000 }) }
+  }));
+  await dreamSyncHandler(fakeEvent({
+    method: 'POST',
+    body: { authToken: token, action: 'upsert', dream: dreamPayload('d-update-created', { createdAt: 2000 }) }
+  }));
+  var getRes = await dreamSyncHandler(fakeEvent({ method: 'GET', query: { authToken: token } }));
+  var dreams = JSON.parse(getRes.body).dreams;
+  assert.equal(dreams.length, 1);
+  assert.equal(dreams[0].createdAt, 2000);
+});
