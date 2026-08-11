@@ -41,7 +41,12 @@ var VAPID_PUBLIC_KEY = require('../../../js/push-config').VAPID_PUBLIC_KEY;
 
 var PUSH_TYPES = {
   VIDEO_READY: 'video-ready',
-  DAILY_CLAIM_AVAILABLE: 'daily-claim-available'
+  DAILY_CLAIM_AVAILABLE: 'daily-claim-available',
+  // The two interpretation retention pushes (founder-approved retention
+  // plan) — the push half of lib/interp-unread-email-sender.js /
+  // lib/interp-none-email-sender.js.
+  INTERP_UNREAD: 'interp-unread',
+  INTERP_NONE: 'interp-none'
 };
 
 /**

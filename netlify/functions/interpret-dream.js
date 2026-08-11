@@ -58,6 +58,7 @@
 //   E409 invalid_mode              — personaKey was valid but `mode` isn't "questions" or "reading"
 
 var InterpreterPersonas = require('../../js/interpreter-personas');
+var interpReadStore = require('./lib/interp-read-store');
 
 // The crisis/safety instruction block every persona's prompt is built on
 // top of — layered LAST in every prompt this file builds (both modes), so
@@ -324,6 +325,32 @@ exports.handler = async function (event) {
     if (interpretation.length < MIN_VALID_LENGTH) {
       return { statusCode: 502, body: JSON.stringify({ error: 'E407: empty_or_invalid_response' }) };
     }
+
+    // DURABLE SERVER-SIDE INTERPRETATION-READ MARKER (founder-approved
+    // retention plan — see send-interp-emails-batch.js's header comment for
+    // the full feature). A generated reading IS the "the user read this
+    // persona on this dream" signal the two interpretation retention emails
+    // need; the pre-existing signal (`interp_reading_shown` PostHog + local-
+    // Storage) is client-only and unreadable by a server-side sender. The
+    // client passes the dream's server-issued `operationName` (js/store.js's
+    // generateInterpretationReading -> dream.sourceOperationName) so this
+    // marker is keyed by the SAME id lib/result-view-store.js's watched-marker
+    // uses, letting a dream's watched-state and interpretation-read-set line
+    // up. Best-effort, awaited (a serverless invocation may freeze after
+    // returning, so a fire-and-forget write could be lost), and never allowed
+    // to affect the reading response — a marker failure just means a sender
+    // may not yet see this read (bounded by each email's once-per-dream guard
+    // + unsubscribe). Only accepts operationName as a string; a client-invented
+    // dreamId is deliberately NOT keyable here (see interp-read-store.js's
+    // header comment on why operationName is the safe key).
+    if (payload.operationName && typeof payload.operationName === 'string') {
+      try {
+        await interpReadStore.markRead(event, payload.operationName, payload.personaKey);
+      } catch (markErr) {
+        console.error('interpret-dream: failed to record interpretation-read marker (non-fatal)', markErr);
+      }
+    }
+
     return { statusCode: 200, body: JSON.stringify({ interpretation: interpretation }) };
   } catch (e) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E405: llm_request_failed' + (e && e.message ? ' (' + e.message + ')' : '') }) };

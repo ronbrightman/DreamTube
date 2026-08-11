@@ -2130,6 +2130,26 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         document.addEventListener('click', kickBedOnce, true);
       }
     }
+
+    // ?interp=1 -- deep-link that auto-opens the Interpreter's Chamber for
+    // THIS dream, the target of the two interpretation retention emails/
+    // pushes (send-interp-emails-batch.js). Mirrors the ?play=1 handler just
+    // above: strip the param immediately (so refresh/back doesn't re-open it
+    // uninvited), and open only for the owner's own dream that actually
+    // exists -- InterpretExperience.open() is the exact same entry point the
+    // hero pill uses (see the hero handler below), so the linked dream is
+    // unambiguous (resolved from this page's own ?id= param). A non-owner /
+    // missing dream simply lands on the normal result page, no auto-open.
+    if(new URLSearchParams(location.search).get('interp') === '1'){
+      if(history.replaceState){
+        var cleanedInterp = new URL(location.href);
+        cleanedInterp.searchParams.delete('interp');
+        history.replaceState(null, '', cleanedInterp.pathname + cleanedInterp.search + cleanedInterp.hash);
+      }
+      if(dream && isMyDream && window.InterpretExperience && typeof InterpretExperience.open === 'function'){
+        InterpretExperience.open(dream.id);
+      }
+    }
   })();
 
   function openSheet(id){ document.getElementById('sheet-'+id+'-overlay').classList.add('open'); }

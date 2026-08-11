@@ -5401,7 +5401,16 @@
       return fetch('/.netlify/functions/interpret-dream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caption: d.storyText || d.caption, personaKey: personaKey, mode: 'reading', qa: qa || [] })
+        // operationName (the dream's server-issued job id) lets interpret-
+        // dream.js record a durable server-side "this persona was read on
+        // this dream" marker (lib/interp-read-store.js), the signal the two
+        // interpretation retention emails need — keyed by the SAME id
+        // result.html's watched-marker uses, so a dream's watched-state and
+        // its interpretation-read-set line up. Null for a dream with no
+        // sourceOperationName yet (a legacy/edge record); the server simply
+        // skips the marker then. Sent ONLY on the reading call (a generated
+        // reading is the "read" signal), never the questions call.
+        body: JSON.stringify({ caption: d.storyText || d.caption, personaKey: personaKey, mode: 'reading', qa: qa || [], operationName: d.sourceOperationName || null })
       }).then(function (res) {
         return res.json().then(function (data) {
           if (!res.ok) throw new Error(data.error || 'E407: empty_or_invalid_response');
