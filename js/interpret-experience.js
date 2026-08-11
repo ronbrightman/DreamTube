@@ -43,8 +43,18 @@
 //     produce a reading either.
 //   - r_loading failure (non-429) shows a persona-neutral error + Retry +
 //     Close.
-//   - A dream that already has >=1 saved reading opens straight on
-//     `reading` (most recent), skipping the picker (spec §3.0).
+//   - A fresh open() lands on `picker` by default now, regardless of
+//     whether the dream already has one or more saved REAL-persona
+//     readings (founder-directed fix, tracker item
+//     for-product-bug-founder-see-meaning-from-tecvrs, 2026-08-11 —
+//     supersedes spec §3.0's original "revisit opens straight to the most
+//     recent saved reading" default). A persona with a saved reading still
+//     shows its ✓ "Read" badge in the picker grid, and tapping that card
+//     still jumps straight to the saved text with no network call. One
+//     narrow exception: a dream whose ONLY saved reading is the legacy
+//     pre-Wave-1 `classic` migration key (no matching persona, so no
+//     picker tile at all) still opens straight on `reading` — open()'s own
+//     doc comment has the full reasoning for both.
 //
 // ── qa is kept in-session AND (deliberately, beyond the spec's own
 //    getInterpretations() read-shape note) persisted per-reading ──
@@ -267,10 +277,11 @@
   // The lazy-migration synthetic `classic` key (see js/store.js's
   // ensureInterpretationsMigrated) has NO matching real persona in
   // js/interpreter-personas.js by design (it never appears in the picker
-  // — spec §3.0's revisit-without-network path is the only way to reach
-  // it). A generic, neutral display fallback so the topbar/reading views
-  // still have SOMETHING coherent to render for it, rather than crashing
-  // on a null persona lookup.
+  // — open()'s own `classicOnly` fast path, the one narrow survivor of
+  // spec §3.0's original revisit-without-network default, is the only way
+  // to reach it). A generic, neutral display fallback so the topbar/reading
+  // views still have SOMETHING coherent to render for it, rather than
+  // crashing on a null persona lookup.
   var CLASSIC_FALLBACK_PERSONA = {
     key: 'classic', name: 'Your Reflection', inspiredBy: 'an earlier reading',
     tagline: '', asksAbout: '', accent: '#8a8a8a', portrait: '',
@@ -1666,21 +1677,61 @@
     gen += 1;
     var existing = window.DreamStore.getInterpretations(dreamId) || {};
     var existingKeys = Object.keys(existing).filter(function (k) { return existing[k] && existing[k].text; });
-    // Most-recent-first among saved readings — the revisit case opens
-    // straight on whichever persona's reading is newest (spec §3.0).
-    existingKeys.sort(function (a, b) { return (existing[b].at || 0) - (existing[a].at || 0); });
     var hasExisting = existingKeys.length > 0;
+
+    // Founder-directed fix (tracker item
+    // for-product-bug-founder-see-meaning-from-tecvrs, founder repro
+    // 2026-08-11): the picker is now the DEFAULT entry point for a fresh
+    // open() — regardless of whether the dream already has one or more
+    // saved readings under a REAL, pickable persona. This supersedes spec
+    // §3.0's original "revisit opens straight to the most recent saved
+    // reading" default (the founder's own words: "show the chooser...
+    // rather than silently re-using the last-selected method"). The
+    // no-network revisit path ITSELF is unchanged and still fully
+    // reachable from the picker — a persona with a saved reading renders
+    // with its ✓ "Read" badge (see renderPicker), and tapping that card
+    // still jumps straight to the saved text via onPersonaPicked's own
+    // `entry && entry.text` branch, no network call.
+    //
+    // ── One narrow, deliberate exception: the legacy `classic` migration
+    //    key (js/store.js's ensureInterpretationsMigrated) ──
+    // `classic` has NO matching entry in js/interpreter-personas.js by
+    // design (a pre-Wave-1 blended reading predates the persona concept
+    // entirely) — renderPicker's grid is built from InterpreterPersonas.ALL
+    // and therefore NEVER renders a tile for it, "read" badge or otherwise.
+    // If open() defaulted such a dream to the picker too, a user whose
+    // ONLY saved content is a migrated classic reading would land on 5
+    // fresh persona tiles with no way back to their existing reading at
+    // all — a real, silent data-access regression, not the "silently
+    // re-using the last-selected method" complaint this fix targets (there
+    // IS no method to re-choose for pre-Wave-1 data). So: a dream whose
+    // saved readings are ALL non-persona keys (in practice, just
+    // `classic`) keeps the old direct-to-reading fast path; a dream with
+    // at least one REAL persona reading (the founder's actual repro) always
+    // gets the picker, exactly as directed above.
+    var hasRealPersonaReading = existingKeys.some(function (k) {
+      return !!(window.InterpreterPersonas && window.InterpreterPersonas.get(k));
+    });
+    var classicOnly = hasExisting && !hasRealPersonaReading;
+    var classicKey = null;
+    if (classicOnly) {
+      // Most-recent-first — mirrors spec §3.0's original tie-break, kept
+      // only for this narrow legacy branch (there's normally exactly one
+      // such key, `classic`, but this stays generic on principle).
+      existingKeys.sort(function (a, b) { return (existing[b].at || 0) - (existing[a].at || 0); });
+      classicKey = existingKeys[0];
+    }
 
     session = {
       dreamId: dreamId,
-      phase: hasExisting ? 'reading' : 'picker',
-      personaKey: hasExisting ? existingKeys[0] : null,
+      phase: classicOnly ? 'reading' : 'picker',
+      personaKey: classicOnly ? classicKey : null,
       questions: null,
       questionIndex: 0,
       transcript: [],
-      qa: hasExisting ? (existing[existingKeys[0]].qa || []) : [],
-      readingText: hasExisting ? existing[existingKeys[0]].text : null,
-      readingAt: hasExisting ? existing[existingKeys[0]].at : null,
+      qa: classicOnly ? (existing[classicKey].qa || []) : [],
+      readingText: classicOnly ? existing[classicKey].text : null,
+      readingAt: classicOnly ? existing[classicKey].at : null,
       // Set only by notifyDreamResolved (see its own doc comment) — always
       // null on a fresh open, including the re-open switchDream performs,
       // so an id alias can never leak from one session into the next.
@@ -1688,6 +1739,12 @@
       openedAt: Date.now()
     };
 
+    // `has_existing` keeps its original meaning ("does this dream have ANY
+    // saved reading, real persona or legacy classic") even though it no
+    // longer alone drives which phase open() lands on — it's real signal
+    // for "how many opens hit a dream with prior readings" that downstream
+    // analytics may still read; only its effect on phase choice for a REAL
+    // persona reading was the founder's actual complaint.
     trackLocal('interp_surface_opened', { has_existing: hasExisting });
 
     document.getElementById(ROOT_ID).classList.add('open');
