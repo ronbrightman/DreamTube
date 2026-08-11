@@ -933,11 +933,13 @@
    *
    * `classic` is a synthetic persona key with NO matching entry in
    * js/interpreter-personas.js — js/interpret-experience.js's picker never
-   * shows a "classic" card; a migrated `classic` reading only ever
-   * surfaces via the revisit-without-network path (spec §3.0: "If the
-   * dream already has ≥1 saved interpretation, open on reading phase
-   * showing the most recent one"), same as any other already-saved
-   * persona reading would.
+   * shows a "classic" card. As of the founder-directed picker-always-first
+   * fix (tracker item for-product-bug-founder-see-meaning-from-tecvrs,
+   * 2026-08-11), open() defaults to the picker even for a dream with saved
+   * REAL-persona readings — but a dream whose ONLY saved reading is this
+   * `classic` key keeps the old direct-to-reading fast path (open()'s own
+   * `classicOnly` branch), since there is no persona tile the picker could
+   * ever show for it and no other way to reach this data at all.
    *
    * Returns the dream's `interpretations` map directly (not a copy) —
    * every call site here already holds a real dream record it's allowed

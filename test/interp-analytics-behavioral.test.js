@@ -373,7 +373,7 @@ test('result.html: a reading-call failure (non-429) shows Retry, which re-succee
   }
 });
 
-test('result.html: revisiting an already-interpreted dream opens straight to the reading (no network), and Another Take returns to the picker with the persona badged Read', async function (t) {
+test('result.html: opening an already-interpreted dream shows the picker first (founder fix, tracker item for-product-bug-founder-see-meaning-from-tecvrs) -- the jung persona card is badged Read, and tapping it opens straight to the saved reading with no network', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -388,20 +388,57 @@ test('result.html: revisiting an already-interpreted dream opens straight to the
     });
 
     await page.click('#interp-cta-btn');
-    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
-    var text = await page.locator('#itp-reading-text').textContent();
-    assert.equal(text, 'Already-saved Jung reading.');
+    // Founder-directed default: the picker, not the saved reading, is the
+    // very first thing shown -- even though this dream already has a
+    // saved jung reading.
+    await page.waitForSelector('.itp-persona-card[data-key="jung"]', { state: 'visible', timeout: 5000 });
+    var readingVisibleBeforeTap = await page.locator('#itp-reading-text').count();
+    assert.equal(readingVisibleBeforeTap, 0, 'open() must land on the picker, not silently jump straight to the saved reading');
+    var isBadgedRead = await page.locator('.itp-persona-card[data-key="jung"]').evaluate(function (el) { return el.classList.contains('read'); });
+    assert.equal(isBadgedRead, true, 'the jung card must carry the ✓ "Read" badge for a dream with a saved jung reading');
 
     var phCalls = await readPostHogCalls(page);
     var opened = captures(phCalls, 'interp_surface_opened');
     assert.equal(opened.length, 1);
+    // has_existing keeps reporting the real "does this dream have ANY
+    // saved reading" signal even though it no longer drives which phase
+    // open() lands on.
     assert.deepEqual(opened[0][2], { has_existing: true });
+
+    // Tapping the ✓-badged card is the no-network revisit mechanism --
+    // spec §3.1 -- unchanged by this fix, just no longer the DEFAULT.
+    await page.click('.itp-persona-card[data-key="jung"]');
+    await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
+    var text = await page.locator('#itp-reading-text').textContent();
+    assert.equal(text, 'Already-saved Jung reading.');
 
     await page.click('#itp-another-take-link');
     await page.waitForSelector('.itp-persona-card.read[data-key="jung"]', { state: 'visible', timeout: 5000 });
     var anotherTake = captures(await readPostHogCalls(page), 'interp_another_take');
     assert.equal(anotherTake.length, 1);
     assert.deepEqual(anotherTake[0][2], { from_persona: 'jung' });
+  } finally {
+    await context.close();
+  }
+});
+
+test('result.html: a fresh, never-interpreted dream still opens straight on the picker (unchanged case)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedResultPage(page, 'd-interp-fresh-open');
+
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('.itp-persona-card[data-key="jung"]', { state: 'visible', timeout: 5000 });
+    var isBadgedRead = await page.locator('.itp-persona-card[data-key="jung"]').evaluate(function (el) { return el.classList.contains('read'); });
+    assert.equal(isBadgedRead, false, 'a never-interpreted dream must show no "Read" badges at all');
+
+    var phCalls = await readPostHogCalls(page);
+    var opened = captures(phCalls, 'interp_surface_opened');
+    assert.equal(opened.length, 1);
+    assert.deepEqual(opened[0][2], { has_existing: false });
   } finally {
     await context.close();
   }

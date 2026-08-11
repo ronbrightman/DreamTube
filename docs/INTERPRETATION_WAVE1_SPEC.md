@@ -67,9 +67,27 @@ plus error/fallback branches. The surface is opened for exactly one dream (`drea
 ### 3.0 Open
 - Input: a dream id whose record has `storyText || caption` (same source the current
   `generateInterpretation` POSTs — human dream text, never promptText).
-- If the dream already has ≥1 saved interpretation: open on **reading** phase showing the most
-  recent one (persona header + text), with "Another take" leading to the picker — mirrors
-  today's revisit-without-network behavior. Otherwise open on **picker**.
+- **Superseded 2026-08-11 (founder-directed fix, tracker item
+  for-product-bug-founder-see-meaning-from-tecvrs, founder repro: choosing a specific
+  method, then reopening that dream's interpretation, silently re-showed the SAME method's
+  saved reading instead of the chooser).** Open now always lands on **picker** by default,
+  regardless of whether the dream already has one or more saved readings under a real,
+  pickable persona. The original "revisit opens straight to the most recent saved reading"
+  behavior described below is gone for that case — the founder's own words: "show the
+  chooser (let the user pick a method) when entering interpretation from the dream/result,
+  rather than silently re-using the last-selected method." The no-network revisit path
+  itself is unchanged and still fully reachable *from* the picker — §3.1's ✓-badged
+  "already read" persona cards still reopen their saved reading with no network call; only
+  the *default landing phase* changed, not that mechanism.
+- One narrow exception, preserved as-is: a dream whose **only** saved reading is the legacy
+  pre-Wave-1 `classic` migration key (js/store.js's `ensureInterpretationsMigrated`) still
+  opens straight on **reading**. `classic` has no matching persona and therefore no tile in
+  §3.1's picker at all — defaulting such a dream to the picker would make that reading
+  permanently unreachable rather than just re-orderable, which is a data-access regression,
+  not the "silently re-using the last method" complaint this fix targets (there is no method
+  to re-choose for pre-Wave-1 data in the first place). A dream with at least one saved
+  reading under a real persona always gets the picker, exactly as directed above, even if it
+  also happens to carry a legacy `classic` entry.
 
 ### 3.1 Picker (no network; persona data is local)
 - Title: "Who should read this dream?"
