@@ -139,26 +139,13 @@ it** (agent vs. requires a human with dashboard access).
   for `og:url`/`og:image`/`canonical` across every `.html` file, zero
   hits outside the dynamically-generated share-dream.js page.
 
-## 7. Facebook (Meta) App dashboard — OAuth redirect allow-list
+## 7. Facebook Login — REMOVED (2026-08-11)
 
-Not explicitly asked for in the prep task, but directly load-bearing for
-the in-flight Facebook Login feature (tracker
-`for-ron-social-login-research-done-decis-b0ye72`), so flagging here
-rather than letting it surface as a surprise at cutover:
-
-- `js/facebook-config.js`'s `facebookRedirectUri()` and
-  `netlify/functions/facebook-oauth-callback.js`'s `redirectUri()` both
-  derive the redirect URI from `location.origin`/the request host
-  dynamically — no code change needed. **But** Meta's own App dashboard
-  requires the exact redirect URI to be pre-registered under "Valid OAuth
-  Redirect URIs" (Facebook Login product settings) and the domain under
-  "App Domains" (Basic Settings). Add
-  `https://dreamtube.life/.netlify/functions/facebook-oauth-callback` (and
-  `dreamtube.life` to App Domains) at cutover, alongside whatever
-  `dreamtube1.netlify.app` entry already exists there — don't remove the
-  old one until the flip is confirmed working, in case of rollback.
-  - Requires: human/Manager with Meta Business/App dashboard access (same
-    track already driving Meta Business Verification for this domain).
+Facebook Login was removed entirely (the Meta app was stuck in
+Development mode and the button saw ~zero real completions), so there is
+no OAuth redirect allow-list to update at cutover anymore. The Netlify
+env vars `FACEBOOK_APP_ID`/`FACEBOOK_APP_SECRET` are now unused and can be
+deleted from the dashboard.
 
 ## 8. Cloudflare Turnstile — allowed domains
 

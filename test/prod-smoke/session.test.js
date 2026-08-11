@@ -198,12 +198,10 @@ test('journey 2 (organic): index.html -> wizard.html\'s documented step sequence
   // passwordless email submit fires the mocked start-pending-generation.js
   // AND the real, unmocked register-account-passwordless.js signup in
   // parallel -- there is no username/password step anymore. The wall's
-  // own screen-13-parity beats (forming veil, Facebook button + divider)
-  // are asserted before submitting.
+  // own forming-veil beat is asserted before submitting. (The Facebook
+  // button + divider this used to assert were removed 2026-08-11.)
   await page.waitForSelector('#contact-email', { timeout: 10000 });
   assert.ok(await page.locator('#fn-forming-frame').count() > 0, 'the wall must show the forming veil');
-  assert.ok(await page.locator('#fn-fb-continue').count() > 0, 'the wall must show the Facebook button (real App ID is configured in production)');
-  assert.ok(await page.locator('#fn-fb-or-divider').count() > 0, 'the wall must show the "or" divider under the Facebook button');
   await page.fill('#contact-email', probe.email);
   await page.click('#fn-contact-continue');
 

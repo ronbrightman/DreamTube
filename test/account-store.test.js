@@ -139,33 +139,20 @@ test('account-store: applyPasswordReset overwrites the password on an existing a
 // this spread-existing-first pattern would be the actual class of bug the
 // tracker item was worried about; this guards the pattern staying correct
 // here, and documents it as the template to copy.
-test('account-store: applyPasswordReset preserves every pre-existing field it does not itself touch (e.g. fbUserId) -- proves the upsert pattern never silently drops fields', async function () {
+test('account-store: applyPasswordReset preserves every pre-existing field it does not itself touch (e.g. whatsappNumber) -- proves the upsert pattern never silently drops fields', async function () {
   var accountStore = require('../netlify/functions/lib/account-store');
   var event = fakeEvent({ method: 'POST' });
-  await accountStore.createAccount(event, { username: 'gina', password: 'oldpassword1', email: 'gina@example.com', fbUserId: '1234567890' });
+  await accountStore.createAccount(event, { username: 'gina', password: 'oldpassword1', email: 'gina@example.com' });
+  await accountStore.setWhatsappNumber(event, 'gina', '+15551234567');
 
   var before = await accountStore.getByUsername(event, 'gina');
-  assert.equal(before.fbUserId, '1234567890');
+  assert.equal(before.whatsappNumber, '+15551234567');
 
   await accountStore.applyPasswordReset(event, { username: 'gina', email: 'gina@example.com', password: 'newpassword2' });
 
   var after = await accountStore.getByUsername(event, 'gina');
   assert.equal(after.password, 'newpassword2');
-  assert.equal(after.fbUserId, '1234567890', 'a field applyPasswordReset never touches must survive its upsert untouched');
-});
-
-test('account-store: linkFacebookUserId preserves the account\'s email/password while only adding fbUserId', async function () {
-  var accountStore = require('../netlify/functions/lib/account-store');
-  var event = fakeEvent({ method: 'POST' });
-  await accountStore.createAccount(event, { username: 'harold', password: 'somepassword1', email: 'harold@example.com' });
-
-  var result = await accountStore.linkFacebookUserId(event, 'harold', '9876543210');
-  assert.equal(result.ok, true);
-
-  var after = await accountStore.getByUsername(event, 'harold');
-  assert.equal(after.email, 'harold@example.com', 'linking a Facebook id must never touch the existing email field');
-  assert.equal(after.password, 'somepassword1', 'linking a Facebook id must never touch the existing password field');
-  assert.equal(after.fbUserId, '9876543210');
+  assert.equal(after.whatsappNumber, '+15551234567', 'a field applyPasswordReset never touches must survive its upsert untouched');
 });
 
 // ===== orphaned "e:" index (real production bug, 2026-07-23) =====
@@ -631,14 +618,14 @@ test('account-store: setWhatsappNumber with an empty value CLEARS the field enti
   assert.equal(reread.whatsappNumber, undefined);
 });
 
-test('account-store: setWhatsappNumber preserves every other pre-existing field (e.g. fbUserId) it doesn\'t itself touch', async function () {
+test('account-store: setWhatsappNumber preserves every other pre-existing field (e.g. emailVerified) it doesn\'t itself touch', async function () {
   var accountStore = require('../netlify/functions/lib/account-store');
   var event = fakeEvent({ method: 'POST' });
-  await accountStore.createAccount(event, { username: 'quinn', password: 'hunter22', email: 'quinn@example.com', fbUserId: '9988776655' });
+  await accountStore.createAccount(event, { username: 'quinn', password: 'hunter22', email: 'quinn@example.com', emailVerified: false });
 
   await accountStore.setWhatsappNumber(event, 'quinn', '+15551234567');
 
   var reread = await accountStore.getByUsername(event, 'quinn');
-  assert.equal(reread.fbUserId, '9988776655');
+  assert.equal(reread.emailVerified, false);
   assert.equal(reread.email, 'quinn@example.com');
 });

@@ -9,8 +9,7 @@
 // live 50/50 signup_email_first_variant A/B test ('a' = email+password
 // shown together, 'b' = email-first). That test CONCLUDED as part of the
 // 2026-07-30 CRO rebuild -- 'b' (email-first sequencing) is now the sole,
-// permanent design, landed together with Facebook Login as one coherent
-// screen rather than two competing changes. Renamed (not just edited) to
+// permanent design. Renamed (not just edited) to
 // stop implying a variant choice that no longer exists; every test below
 // that used to say "variant b" now just says "the signup screen" (variant
 // 'a's own dedicated tests, and the assignment/persistence tests for the
@@ -1252,35 +1251,6 @@ test('an already-signed-in visitor hitting screen 13 via ?resume=1 is redirected
     await context.close();
   }
 });
-
-test('the Facebook Login return leg is never blocked by the already-signed-in guard -- an active identity exchange in progress must still land on screen 13, even if this browser also holds an unrelated older session', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await page.route('**/.netlify/functions/register-account', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
-    });
-
-    await reachScreen13(page, 'Flying over the ocean at sunset');
-    var signupResult = await page.evaluate(function () {
-      return window.DreamStore.signup('olderaccount', 'password123', 'olderaccount@example.com');
-    });
-    assert.equal(signupResult.ok, true);
-
-    // A Facebook return leg that failed closed (?fb_error=) is one of the
-    // three return-leg markers the already-signed-in guard must defer to --
-    // the visitor needs to see the inline Facebook error and the ordinary
-    // email/password fallback, not get silently bounced to home.html.
-    await safeGoto(page, resumeUrl('A different dream this time') + '&fb_error=denied');
-    await page.waitForSelector('#fn-email', { timeout: 5000 });
-    assert.ok(/start\.html/.test(page.url()), 'must have stayed on start.html to show the Facebook error + fallback, not been redirected away');
-  } finally {
-    await context.close();
-  }
-});
-
 
 test('default wall (no variant param) is PASSWORDLESS: email field + Send-me-my-dream, no password input (founder flip, tracker at2fko)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }

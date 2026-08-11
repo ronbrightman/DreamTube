@@ -1,14 +1,14 @@
 // test/signup-screen-layout-spacing-behavioral.test.js
 //
-// Real browser-driven coverage for the vertical-distribution + "or"
-// divider fix (tracker item for-product-signup-screen-layout-fixes-f-
-// 3hclmj, founder mobile walk 08-03): "SPREAD IT OUT -- everything is
-// crammed at the very top of the mobile viewport again" + "ADD AN 'or'
-// DIVIDER" between the Facebook button and the email field.
+// Real browser-driven coverage for the vertical-distribution fix
+// (tracker item for-product-signup-screen-layout-fixes-f-3hclmj, founder
+// mobile walk 08-03): "SPREAD IT OUT -- everything is crammed at the very
+// top of the mobile viewport again". (The "or" divider this file also
+// used to cover was part of the since-removed Facebook Login button;
+// those tests were dropped with that feature, 2026-08-11.)
 //
 // What this file specifically proves, at a real FB/IG in-app-webview-
-// sized mobile viewport (390x844, the same convention
-// test/facebook-login-signup-behavioral.test.js uses):
+// sized mobile viewport (390x844):
 //   - .fn-signup-stage's distributed-spacer layout is actually doing
 //     something real -- the leftover vertical space is spread as
 //     .fn-stage-spacer gaps BETWEEN content blocks, not hoarded below
@@ -17,10 +17,6 @@
 //     three arms this tracker item names: 'unified', 'reveal', and the
 //     passwordless wall (including its own "code" step, the "passwordless-
 //     code wall" the item explicitly calls out).
-//   - the "or" divider (#fn-fb-or-divider) renders between the Facebook
-//     button and the email field on 'unified' and 'reveal' (the two arms
-//     that render the button at all), and is absent on the passwordless
-//     arm, which never renders the Facebook button in the first place.
 //
 // Playwright itself is NOT a project dependency -- see CLAUDE.md's "No
 // test framework is wired in..." section. Every test below skips itself
@@ -91,19 +87,6 @@ function mockGetFeed(page, feed) {
   });
 }
 
-/** Turns the Facebook Login feature flag ON deterministically, regardless of whatever App ID js/facebook-config.js currently ships with (see test/facebook-login-signup-behavioral.test.js's own identical helper doc comment -- kept as its own copy here rather than a cross-file require, matching this codebase's page-local-helper precedent). */
-function configureFacebookApp(page) {
-  return page.route('**/js/facebook-config.js', async function (route) {
-    var response = await route.fetch();
-    var body = await response.text();
-    route.fulfill({
-      status: 200,
-      contentType: 'text/javascript; charset=utf-8',
-      body: body.replace(/var FACEBOOK_APP_ID = '[^']*';/, "var FACEBOOK_APP_ID = '1234509876';")
-    });
-  });
-}
-
 /**
  * Measures the .fn-signup-stage layout's real effect: returns the
  * viewport height, the screen element's scrollHeight (so a caller can
@@ -142,9 +125,9 @@ function measureStage(page) {
 // ===========================================================================
 
 [
-  { variant: 'unified', configureFb: true, waitSelector: '#fn-email' },
-  { variant: 'reveal', configureFb: true, waitSelector: '#fn-email' },
-  { variant: 'passwordless', configureFb: false, waitSelector: '#fn-email' }
+  { variant: 'unified', waitSelector: '#fn-email' },
+  { variant: 'reveal', waitSelector: '#fn-email' },
+  { variant: 'passwordless', waitSelector: '#fn-email' }
 ].forEach(function (scenario) {
   test('screen 13 (' + scenario.variant + ' arm, email step): content is distributed across the real viewport height via .fn-signup-stage, not clustered at the top with dead space below the CTA', async function (t) {
     if (unavailableReason) { t.skip(unavailableReason); return; }
@@ -152,7 +135,6 @@ function measureStage(page) {
     try {
       var page = await context.newPage();
       await blockThirdParty(page);
-      if (scenario.configureFb) await configureFacebookApp(page);
       // A real, non-empty feed so the proof strip renders too -- the
       // richer, more realistic content case (a few groups, not just
       // headline + field + button), which is also the harder case for a
@@ -226,66 +208,6 @@ test('screen 13 (passwordless arm, code step): the same distributed-stage layout
       var grownSpacers = m.spacerHeights.filter(function (h) { return h > 20; });
       assert.ok(grownSpacers.length >= 1, 'expected real distributed spacing on the code step too, got heights: ' + JSON.stringify(m.spacerHeights));
     }
-  } finally {
-    await context.close();
-  }
-});
-
-// ===========================================================================
-// The "or" divider -- the second half of the tracker item. 'unified' and
-// 'reveal' both render the Facebook button; the divider must sit directly
-// between it and the email field. The passwordless arm never renders the
-// Facebook button at all, so no divider either (already covered from the
-// Facebook-flag angle in test/facebook-login-signup-behavioral.test.js --
-// this is the passwordless-specific negative case named directly by the
-// tracker item: "the divider only applies where the Facebook button and
-// email field are adjacent").
-// ===========================================================================
-
-['unified', 'reveal'].forEach(function (variant) {
-  test('screen 13 (' + variant + ' arm): the "or" divider renders between the Facebook button and the email field', async function (t) {
-    if (unavailableReason) { t.skip(unavailableReason); return; }
-    var context = await browser.newContext({ viewport: MOBILE_WEBVIEW_VIEWPORT });
-    try {
-      var page = await context.newPage();
-      await blockThirdParty(page);
-      await configureFacebookApp(page);
-      await mockGetFeed(page, []);
-
-      await safeGoto(page, resumeUrl(variant));
-      await page.waitForSelector('#fn-fb-continue', { timeout: 8000 });
-
-      var divider = await page.$('#fn-fb-or-divider');
-      assert.ok(divider, 'the "or" divider must render on the ' + variant + ' arm once the Facebook button is configured');
-      assert.equal((await divider.textContent()).trim().toLowerCase(), 'or');
-
-      var order = await page.evaluate(function () {
-        var b = document.getElementById('fn-fb-continue').getBoundingClientRect();
-        var d = document.getElementById('fn-fb-or-divider').getBoundingClientRect();
-        var e = document.getElementById('fn-email').getBoundingClientRect();
-        return b.bottom <= d.top && d.bottom <= e.top;
-      });
-      assert.equal(order, true, 'the divider must sit strictly between the Facebook button and the email field');
-    } finally {
-      await context.close();
-    }
-  });
-});
-
-test('screen 13 (passwordless arm): no "or" divider anywhere -- this arm never renders the Facebook button at all', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await browser.newContext({ viewport: MOBILE_WEBVIEW_VIEWPORT });
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await configureFacebookApp(page); // even with the flag ON, this arm's own renderer never calls facebookSignupButtonHtml()
-    await mockGetFeed(page, []);
-
-    await safeGoto(page, resumeUrl('passwordless'));
-    await page.waitForSelector('#fn-email', { timeout: 8000 });
-
-    assert.equal(await page.$('#fn-fb-continue'), null, 'the passwordless arm must never render the Facebook button');
-    assert.equal(await page.$('#fn-fb-or-divider'), null, 'the passwordless arm must never render the "or" divider either');
   } finally {
     await context.close();
   }

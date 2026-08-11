@@ -6,8 +6,8 @@
 // password field ever, no inbox check at the wall"). A genuinely NEW
 // signup path, NOT a variant of register-account.js — no password is ever
 // accepted, required, or stored (the account record's `password` field is
-// `null`, the same already-accepted shape a Facebook-Login-only account
-// uses — see lib/account-store.js's header comment).
+// `null`, an already-accepted shape in this codebase — a session-transfer
+// account materializes the same — see lib/account-store.js's header comment).
 //
 // SECURITY FIX (round-2 review finding, real, fixed 2026-08-02 — read
 // before changing anything below): an earlier version of this file
@@ -18,14 +18,14 @@
 // email is not itself public, but this endpoint doesn't check anything
 // AT ALL, so it doesn't matter) gets a real session for that account.
 //
-// The header comment this file shipped with actually said the quiet part
-// out loud and got it wrong: "mirrors facebook-oauth-callback.js's
-// resolveIdentity" — that comparison does NOT hold. Facebook's OAuth
-// handshake proves email ownership via Facebook's own servers (a
-// server-to-server code exchange + Graph API call, see that file's own
-// SECURITY BOUNDARY comment) BEFORE resolveIdentity ever runs. This
-// endpoint has no equivalent proof step — it trusted the raw client-
-// supplied email string directly, which is not proof of anything.
+// SECURITY BOUNDARY: this endpoint has NO step that proves the caller
+// actually owns the email they submit — it starts from the raw client-
+// supplied email string directly, which is not proof of anything. That is
+// why an EXISTING account is never handed a session from here: an existing
+// account is protected data, so branch 1 below routes it through the
+// email-code verification (real ownership proof) before any session is
+// issued. Only a brand-new account (branch 2) — which has nothing to
+// protect yet — gets an immediate session.
 //
 // The founder's own "instantly in, no inbox check at the wall" spec
 // describes a genuinely NEW signup (branch 2 below) — there is nothing to
@@ -51,9 +51,9 @@
 //      deferred verification — reused here as the actual access-control
 //      gate for an existing account, not invented fresh.
 //   2. getByEmail miss -> CREATE a brand-new account: username derived via
-//      lib/derive-username.js (the same server-side derivation
-//      facebook-oauth-callback.js already uses for "we have an email but
-//      need a username"), password:null, emailVerified:false. THIS branch
+//      lib/derive-username.js (the shared server-side derivation for "we
+//      have an email but need a username"), password:null,
+//      emailVerified:false. THIS branch
 //      alone mints a real authToken immediately and sends the
 //      verification email fire-and-forget (see the FIRE-AND-FORGET note
 //      below) — "instantly in" applies here, and only here, because
@@ -122,11 +122,10 @@ var verificationEmailSender = require('./lib/verification-email-sender');
 var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * The "brand-new account" branch — mirrors facebook-oauth-callback.js's
- * createFacebookAccount shape exactly (derive an available username,
- * create with password:null), just with emailVerified:false instead of
- * true (see account-store.js's GATE LIST header comment for why the two
- * differ) and no fbUserId at all.
+ * The "brand-new account" branch — derive an available username and create
+ * the account with password:null and emailVerified:false (see
+ * account-store.js's GATE LIST header comment for why a passwordless
+ * signup starts unverified).
  */
 async function createPasswordlessAccount(event, email) {
   var derived = await deriveUsername.deriveAvailableUsername(email, async function (candidate) {

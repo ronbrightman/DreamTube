@@ -4,8 +4,8 @@
 // item for-product-build-passwordless-signup-fo-at2fko, founder's own
 // words: "Any click on a link in our emails counts as implicit
 // verification — mark verified, never ask for the code"). A BROWSER
-// REDIRECT TARGET, not a JSON API — same shape as facebook-oauth-
-// callback.js/create-session-transfer.js: the visitor's browser lands here
+// REDIRECT TARGET, not a JSON API — same shape as
+// create-session-transfer.js: the visitor's browser lands here
 // directly from the link in the email, this verifies + marks the account,
 // and always 302s onward into the app, on every outcome, success or
 // failure alike (a human clicking an email link should never see a raw
@@ -27,10 +27,9 @@
 // SESSION ON SUCCESS (added alongside the register-account-passwordless.js
 // security fix — tracker item for-product-build-passwordless-signup-fo-
 // at2fko): a successful verify now ALSO mints a lib/session-transfer-
-// token.js token and appends it to the redirect as `?bt=`, exactly the
-// mechanism facebook-oauth-callback.js already uses once IT has confirmed
-// a real identity via Facebook's own servers (see that file's own
-// resolveIdentity + redirect call). Trusted here for the exact same
+// token.js token and appends it to the redirect as `?bt=`, the same
+// session-transfer mechanism create-session-transfer.js uses. Trusted
+// here for the exact same
 // reason: verifyLinkToken above is itself the proof of ownership (the
 // browser could only have reached this handler at all by dereferencing a
 // token that was mailed to the real inbox) — this is not a new, weaker

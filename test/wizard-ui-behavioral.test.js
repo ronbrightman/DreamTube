@@ -397,8 +397,7 @@ test('wizard.html Subject step: ALL selections (Me with a photo, "Someone I know
 // for-product-wizard-signup-wall-is-the-ol-lt1l9j), replacing the former
 // Contact-capture + username/password Signup pair. Passwordless-first
 // (DreamStore.signupPasswordless — no password field exists on this page
-// at all anymore), with the forming veil on top and the (flag-gated)
-// Facebook button + "or" divider above the email field.
+// at all anymore), with the forming veil on top, above the email field.
 //
 // DreamStore.signupPasswordless is left UNMOCKED in the tests that only
 // need a signup to complete — its POST to register-account-passwordless
@@ -488,7 +487,7 @@ test('wizard.html signup wall: the wall_subtext_arm A/B is assigned (persisted, 
   }
 });
 
-test('wizard.html signup wall: renders the forming veil on top, the Facebook button with the "or" divider above the email field (screen-13 order), a "Send me my dream" CTA, the story recap card — and NO username/password fields anywhere', async function (t) {
+test('wizard.html signup wall: renders the forming veil on top, above the email field, a "Send me my dream" CTA, the story recap card — and NO username/password fields anywhere', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -501,25 +500,15 @@ test('wizard.html signup wall: renders the forming veil on top, the Facebook but
     assert.equal(await page.locator('#fn-forming-frame .fn-form-nebula').count(), 1, 'the veil must carry the live nebula layer, not a flat fill');
     assert.match(await page.locator('#fn-forming-frame .fn-form-caption').textContent(), /forming/i);
 
-    // (c) Facebook button + "or" divider — present because
-    // js/facebook-config.js carries the real App ID (the shared
-    // isFacebookLoginConfigured guard), and ordered exactly like
-    // screen 13: button, then divider, then the email field.
-    assert.equal(await page.locator('#fn-fb-continue').count(), 1, 'the Facebook button must render on the wall');
-    assert.equal(await page.locator('#fn-fb-or-divider').count(), 1, 'the "or" divider must render with the Facebook button');
+    // (c) The forming veil sits above the email field (email-only wall —
+    // Facebook Login was removed 2026-08-11).
     var order = await page.evaluate(function () {
-      var btn = document.getElementById('fn-fb-continue');
-      var div = document.getElementById('fn-fb-or-divider');
       var email = document.getElementById('contact-email');
       return {
-        btnBeforeDivider: !!(btn.compareDocumentPosition(div) & Node.DOCUMENT_POSITION_FOLLOWING),
-        dividerBeforeEmail: !!(div.compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING),
-        frameBeforeBtn: !!(document.getElementById('fn-forming-frame').compareDocumentPosition(btn) & Node.DOCUMENT_POSITION_FOLLOWING)
+        frameBeforeEmail: !!(document.getElementById('fn-forming-frame').compareDocumentPosition(email) & Node.DOCUMENT_POSITION_FOLLOWING)
       };
     });
-    assert.equal(order.frameBeforeBtn, true, 'the forming veil must sit above the Facebook button');
-    assert.equal(order.btnBeforeDivider, true, 'the Facebook button must sit above the divider');
-    assert.equal(order.dividerBeforeEmail, true, 'the divider must sit between the Facebook button and the email field');
+    assert.equal(order.frameBeforeEmail, true, 'the forming veil must sit above the email field');
 
     // (b) Passwordless email entry — screen 13's CTA copy (never "Sign
     // up"), and no trace of the old username+password wall.
@@ -1162,170 +1151,6 @@ test('wizard.html signup wall: if the pre-account generation call fails, signup 
     await page.waitForFunction(function () {
       return !!(window.DreamStore && window.DreamStore.getPendingJob());
     }, null, { timeout: 10000 });
-  } finally {
-    await page.close();
-  }
-});
-
-// ===========================================================================
-// Facebook Login on the wall — the outbound leg (state carries the
-// allowlisted rp=wizard return-page selector; the full wizard snapshot is
-// persisted for the round trip) and the return legs (?fb_error= inline
-// error; ?bt= consume → generation for the confirmed account email →
-// claim → home.html). The callback function's own rp allowlisting is
-// covered server-side in test/facebook-oauth-callback.test.js.
-// ===========================================================================
-
-test('wizard.html signup wall: tapping Continue with Facebook navigates to the OAuth dialog with rp=wizard packed into the state\'s resume params, and persists the full wizard snapshot for the round trip', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    var fbNavUrls = [];
-    await page.route('https://www.facebook.com/**', function (route) {
-      fbNavUrls.push(route.request().url());
-      route.abort();
-    });
-
-    await reachWall(page);
-    await page.click('#fn-fb-continue');
-    await settle(function () { return fbNavUrls.length >= 1; });
-
-    var url = new URL(fbNavUrls[0]);
-    assert.match(url.pathname, /\/dialog\/oauth$/);
-    var state = url.searchParams.get('state');
-    assert.ok(state, 'the OAuth URL must carry a state param');
-    var decoded = JSON.parse(Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
-    var resumeParams = new URLSearchParams(decoded.r);
-    assert.equal(resumeParams.get('rp'), 'wizard', 'the state\'s resume params must carry rp=wizard so the callback returns HERE, not to start.html');
-    assert.equal(resumeParams.get('resume'), '1');
-    assert.ok(decoded.n, 'the state must carry the CSRF nonce');
-
-    // The snapshot was written synchronously BEFORE the (aborted)
-    // navigation started. The aborted top-level navigation leaves THIS
-    // page on an error document whose localStorage is inaccessible, so
-    // navigate to a same-origin page that doesn't run the wizard's own
-    // snapshot-clearing boot (terms.html — any plain page works) and
-    // read it back from there.
-    await safeGoto(page, baseUrl + '/terms.html');
-    var snapshot = await page.evaluate(function () {
-      return JSON.parse(localStorage.getItem('dreamtube_wizard_fb_state'));
-    });
-    assert.ok(snapshot && snapshot.savedAt, 'the wizard snapshot must be persisted before leaving for facebook.com');
-    assert.equal(snapshot.actionKey, 'flying', 'the snapshot must carry the built dream\'s chip state');
-    assert.ok(snapshot.staged && Array.isArray(snapshot.staged.characters), 'the snapshot must carry the staged characters');
-  } finally {
-    await page.close();
-  }
-});
-
-test('wizard.html: the ?fb_error= return leg lands on the wall with an inline Facebook error and the email path fully usable', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    await safeGoto(page, baseUrl + '/wizard.html?fb_error=denied');
-    await page.waitForSelector('#contact-email');
-    assert.match(await page.locator('#contact-error').textContent(), /Facebook sign-in was cancelled/, 'the denied slug must surface as its inline message');
-    assert.equal(await page.locator('#fn-contact-continue').isDisabled(), false, 'the email path must remain fully usable as the fallback');
-  } finally {
-    await page.close();
-  }
-});
-
-test('wizard.html: the ?bt= Facebook return leg consumes the session transfer, restores the snapshot, fires the real generation for the CONFIRMED account email, claims it, and lands on home.html', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    var startPendingCalls = [];
-    var claimCalls = [];
-    await page.route('**/.netlify/functions/verify-session-transfer', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'fbwizarduser', email: 'fb-wizard@example.com', authToken: 'tok-fb-wizard-1' }) });
-    });
-    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
-      startPendingCalls.push(JSON.parse(route.request().postData()));
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-fb-return-1', operationName: 'fal:fake-model:req-fb-return-1' }) });
-    });
-    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
-      claimCalls.push(JSON.parse(route.request().postData()));
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true, claimed: true }) });
-    });
-    await page.route('**/.netlify/functions/video-status*', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: false }) });
-    });
-
-    // Seed the pre-redirect snapshot the same way startFacebookLogin
-    // persists it — addInitScript runs before the page's own scripts, so
-    // the return-leg boot finds it exactly as a real round trip would.
-    // Seeded exactly ONCE (sessionStorage guard) — addInitScript re-runs
-    // on every navigation in this page, and re-seeding on the home.html
-    // landing would make the consumed-snapshot assertion below read its
-    // own test scaffolding back.
-    await page.addInitScript(function () {
-      if (sessionStorage.getItem('dt_test_seeded')) return;
-      sessionStorage.setItem('dt_test_seeded', '1');
-      localStorage.setItem('dreamtube_wizard_fb_state', JSON.stringify({
-        savedAt: Date.now(),
-        staged: { characters: [], subjectCharacterIds: [] },
-        subjectOtherKind: 'none', subjectOtherText: '',
-        settingPlaceKey: null, settingOtherText: '', sceneryTime: null,
-        actionKey: 'flying', actionOtherText: '', povOn: false,
-        moodKey: 'epic', moodOtherText: '',
-        chosenStyle: 'Anime', freeText: '',
-        storyText: 'I was flying through an epic dream.'
-      }));
-    });
-    await safeGoto(page, baseUrl + '/wizard.html?bt=fake-transfer-token&fb=signup');
-
-    await dismissMomentIfPresent(page); // fb=signup is a fresh signup -> the monetization moment shows after the generation fires; dismiss to reach home
-    await page.waitForURL(/home\.html/, { timeout: 15000 });
-    await settle(function () { return startPendingCalls.length >= 1; });
-    assert.equal(startPendingCalls.length, 1, 'the generation must fire exactly once, on the return leg, for the confirmed account');
-    assert.equal(startPendingCalls[0].email, 'fb-wizard@example.com', 'the generation must be keyed on the server-verified account email, never anything client-typed');
-    assert.equal(startPendingCalls[0].style, 'Anime', 'the restored snapshot\'s style must ride the generation call');
-    assert.match(startPendingCalls[0].caption, /flying/i, 'the restored snapshot\'s assembled caption must ride the generation call');
-    await settle(function () { return claimCalls.length >= 1; });
-    assert.equal(claimCalls.length, 1);
-    assert.equal(claimCalls[0].pendingId, 'pd-fb-return-1');
-    assert.equal(claimCalls[0].email, 'fb-wizard@example.com');
-
-    // The snapshot is single-use — consumed by the return leg.
-    var leftover = await page.evaluate(function () { return localStorage.getItem('dreamtube_wizard_fb_state'); });
-    assert.equal(leftover, null, 'the snapshot must be cleared once consumed');
-  } finally {
-    await page.close();
-  }
-});
-
-test('wizard.html: the ?bt= return leg with a LOST snapshot (webview localStorage wipe) still keeps the signed-in session and lands on home.html without a broken generation attempt', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    var startPendingCalls = [];
-    await page.route('**/.netlify/functions/verify-session-transfer', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, username: 'fbnosnapuser', email: 'fb-nosnap@example.com', authToken: 'tok-fb-nosnap-1' }) });
-    });
-    await page.route('**/.netlify/functions/start-pending-generation', function (route) {
-      startPendingCalls.push(1);
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-x', operationName: 'op-x' }) });
-    });
-
-    // No snapshot seeded — the wipe case.
-    await safeGoto(page, baseUrl + '/wizard.html?bt=fake-transfer-token&fb=signup');
-
-    await page.waitForFunction(function () {
-      return window.location.pathname.indexOf('home.html') !== -1 && !!window.DreamStore;
-    }, null, { timeout: 15000 });
-    // ?generate=1 must NOT be carried — there is no draft to submit.
-    assert.ok(page.url().indexOf('generate=1') === -1, 'a lost snapshot must not trigger a draftless ?generate=1 submission');
-    var username = await page.evaluate(function () {
-      var u = window.DreamStore.getCurrentUser();
-      return u && u.username;
-    });
-    assert.equal(username, 'fbnosnapuser', 'the signed-in session must survive even though the dream snapshot did not');
-    assert.equal(startPendingCalls.length, 0, 'no generation may fire with no dream content to submit');
   } finally {
     await page.close();
   }
@@ -2023,7 +1848,7 @@ test('wizard.html question-first screen 1: the Speak-it secondary link routes to
   }
 });
 
-test('wizard.html question-first screen 1: NOT shown to non-fresh arrivals — a ?resume=1 arrival goes straight to the step flow, and a Facebook ?fb_error return leg lands on the wall (both tile-grid-free)', async function (t) {
+test('wizard.html question-first screen 1: NOT shown to a ?resume=1 arrival — it goes straight to the step flow (tile-grid-free)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -2032,11 +1857,6 @@ test('wizard.html question-first screen 1: NOT shown to non-fresh arrivals — a
     await safeGoto(page, baseUrl + '/wizard.html?resume=1');
     await page.waitForSelector('#subject-chip-row');
     assert.ok((await page.$('#fn-q-grid')) === null, 'a resume arrival must never see the question grid — funnel users already chose their scenario funnel-side');
-
-    // Facebook error return leg: straight to the wall, no question grid.
-    await safeGoto(page, baseUrl + '/wizard.html?fb_error=denied');
-    await page.waitForSelector('#contact-email');
-    assert.ok((await page.$('#fn-q-grid')) === null, 'a Facebook return leg must never see the question grid');
   } finally {
     await page.close();
   }
