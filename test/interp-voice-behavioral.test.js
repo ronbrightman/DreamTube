@@ -443,9 +443,12 @@ test('preview link persists to localStorage — a later navigation to the SAME p
     // convention as start.html's `signup` override).
     await page.goto(baseUrl + '/result.html?id=d-voice-sticky', { waitUntil: 'domcontentloaded' });
     await page.click('#interp-cta-btn');
-    // This dream already has a saved talmudic reading from the first
-    // visit above, so it opens straight on the reading phase (spec §3.0) —
-    // no picker tap needed.
+    // This dream already has a saved talmudic reading from the first visit
+    // above, but open() now always lands on the picker first (founder fix,
+    // tracker item for-product-bug-founder-see-meaning-from-tecvrs) — the
+    // ✓-badged talmudic card still reopens it with no network call.
+    await page.waitForSelector('.itp-persona-card[data-key="talmudic"]', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="talmudic"]');
     await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
     var stage = await page.locator('#itp-voice-stage').count();
     assert.equal(stage, 1);
@@ -500,8 +503,11 @@ test('reopening the Chamber for the same dream+persona after the intro already p
     });
     await page.goto(baseUrl + '/result.html?id=d-voice-no-replay&sagevoice=1', { waitUntil: 'domcontentloaded' });
     await page.click('#interp-cta-btn');
-    // Opens straight on the reading (spec §3.0's revisit fast path) — no
-    // picker tap needed at all.
+    // Opens on the picker first now (founder fix, tracker item
+    // for-product-bug-founder-see-meaning-from-tecvrs) — tapping the
+    // ✓-badged talmudic card is the no-network revisit path.
+    await page.waitForSelector('.itp-persona-card[data-key="talmudic"]', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="talmudic"]');
     await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
     var introPresent = await page.locator('#itp-voice-intro').count();
     assert.equal(introPresent, 0, 'the intro element must not even be mounted once it has already played for this dream+persona');
@@ -870,8 +876,11 @@ test('revisit with a GOOD saved audioUrl: the voice stage mounts and offers real
     });
     await page.goto(baseUrl + '/result.html?id=d-voice-revisit-good&sagevoice=1', { waitUntil: 'domcontentloaded' });
     await page.click('#interp-cta-btn');
-    // Opens straight on the reading (spec §3.0's revisit fast path) — no
-    // picker tap needed.
+    // Opens on the picker first now (founder fix, tracker item
+    // for-product-bug-founder-see-meaning-from-tecvrs) — the ✓-badged
+    // talmudic card is the no-network revisit path.
+    await page.waitForSelector('.itp-persona-card[data-key="talmudic"]', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="talmudic"]');
     await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
     var stage = await page.locator('#itp-voice-stage').count();
     assert.equal(stage, 1, 'the voice stage must mount for a revisit with a good saved audioUrl');
@@ -927,6 +936,11 @@ test('revisit with a DEAD saved audioUrl (a real 404): exactly one regenerate-vi
     });
     await page.goto(baseUrl + '/result.html?id=d-voice-revisit-dead&sagevoice=1', { waitUntil: 'domcontentloaded' });
     await page.click('#interp-cta-btn');
+    // Opens on the picker first now (founder fix, tracker item
+    // for-product-bug-founder-see-meaning-from-tecvrs) — the ✓-badged
+    // talmudic card is the no-network revisit path.
+    await page.waitForSelector('.itp-persona-card[data-key="talmudic"]', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="talmudic"]');
     await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
 
     // The dead URL's real 'error' event must have been caught and a real
@@ -1039,6 +1053,11 @@ test('after a dead-audio regenerate cycle, ONE real tap on the overlay produces 
     });
     await page.goto(baseUrl + '/result.html?id=d-voice-regen-tap-once&sagevoice=1', { waitUntil: 'domcontentloaded' });
     await page.click('#interp-cta-btn');
+    // Opens on the picker first now (founder fix, tracker item
+    // for-product-bug-founder-see-meaning-from-tecvrs) — the ✓-badged
+    // talmudic card is the no-network revisit path.
+    await page.waitForSelector('.itp-persona-card[data-key="talmudic"]', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="talmudic"]');
     await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
 
     // Regenerate cycle completes: the dead URL errored, exactly one
@@ -1140,6 +1159,11 @@ test('once a dead saved audioUrl has been given up on, its stale listeners can n
     });
     await page.goto(baseUrl + '/result.html?id=d-voice-stale-caption&sagevoice=1', { waitUntil: 'domcontentloaded' });
     await page.click('#interp-cta-btn');
+    // Opens on the picker first now (founder fix, tracker item
+    // for-product-bug-founder-see-meaning-from-tecvrs) — the ✓-badged
+    // talmudic card is the no-network revisit path.
+    await page.waitForSelector('.itp-persona-card[data-key="talmudic"]', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="talmudic"]');
     await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
 
     // Regenerate has started and the preparing copy is up.
@@ -1224,6 +1248,11 @@ test('after a regenerate whose playback succeeds, the tap overlay is hidden — 
     });
     await page.goto(baseUrl + '/result.html?id=d-voice-regen-overlay&sagevoice=1', { waitUntil: 'domcontentloaded' });
     await page.click('#interp-cta-btn');
+    // Opens on the picker first now (founder fix, tracker item
+    // for-product-bug-founder-see-meaning-from-tecvrs) — the ✓-badged
+    // talmudic card is the no-network revisit path.
+    await page.waitForSelector('.itp-persona-card[data-key="talmudic"]', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="talmudic"]');
     await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
 
     // Regenerate is in flight (held) after the dead track's real 404.
@@ -1304,6 +1333,11 @@ test('a dead saved audioUrl whose REGENERATED audio ALSO errors degrades to the 
     });
     await page.goto(baseUrl + '/result.html?id=d-voice-revisit-dead-twice&sagevoice=1', { waitUntil: 'domcontentloaded' });
     await page.click('#interp-cta-btn');
+    // Opens on the picker first now (founder fix, tracker item
+    // for-product-bug-founder-see-meaning-from-tecvrs) — the ✓-badged
+    // talmudic card is the no-network revisit path.
+    await page.waitForSelector('.itp-persona-card[data-key="talmudic"]', { state: 'visible', timeout: 5000 });
+    await page.click('.itp-persona-card[data-key="talmudic"]');
     await page.waitForSelector('#itp-reading-text', { state: 'visible', timeout: 5000 });
 
     await page.waitForFunction(function () {

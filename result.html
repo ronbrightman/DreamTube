@@ -2185,6 +2185,20 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var firstVideo = false;
     try { firstVideo = !!DreamStore.isOnlyCompletedDream(dream.id); } catch(e){ /* analytics must never break the app */ }
     track('result_hero_interpret', { first_video: firstVideo });
+    // Stop the ambient card preview BEFORE handing off to the Chamber
+    // (tracker item for-product-bug-founder-result-page-audi-zrjy48,
+    // founder repro: with sound on, opening "Dream meaning" left it
+    // audibly playing underneath, with no way to stop it). Pausing
+    // #result-video is the same call the tab-visibility handler above
+    // already uses to silence playback -- that handler's own 'pause'
+    // listener (registered once, at page load) is what stops the music
+    // bed in lockstep, so there's nothing bed-specific to duplicate here.
+    // InterpretExperience owns its own separate video/audio elements
+    // entirely (js/interpret-experience.js never touches #result-video or
+    // #result-music-bed), so there's no hand-off state for it to manage --
+    // pausing here is independent of, and complete before, .open() below.
+    var resultVideo = document.getElementById('result-video');
+    if(resultVideo && !resultVideo.paused) resultVideo.pause();
     InterpretExperience.open(dream.id);
   });
 

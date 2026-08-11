@@ -40,6 +40,23 @@
 // removed here because it just got published calls the `delete` action
 // instead (see js/store.js's publishDream).
 //
+// createdAt (tracker item for-product-media-library-stamp-durable--u4oju3):
+// handled OUTSIDE the plain DREAM_FIELDS pass-through below, in
+// sanitizeDream itself, not because it's less trusted (this is the owner's
+// own private record, same trust level as everything else here) but
+// because it feeds directly into the owner media-library page's newest-
+// first sort (see media-library-x7q4.html's own ml-sort-order) — a
+// malformed/non-numeric value landing there would silently corrupt that
+// ordering. Only a real finite number survives; anything else (missing, a
+// string, NaN) is dropped entirely, same "never fabricate, stay genuinely
+// unknown" posture js/store.js's own createdAt doc comment already applies
+// to a dream that predates the field. This was the actual root cause of
+// the founder's "media library has no timestamps" report: js/store.js's
+// dream object has carried a real createdAt since finalizeDream stamped it,
+// but neither this whitelist NOR js/store.js's own POST payload builder
+// ever forwarded it — so every private dream synced to this server-side
+// store had no createdAt at all, regardless of when it was actually made.
+//
 // Error codes (local to this function, same small-number-scheme reasoning
 // as block-user.js/admin-paywall-toggle.js):
 //   E1 method_not_allowed       — verb other than GET/POST
@@ -137,6 +154,11 @@ function sanitizeDream(rawDream, verifiedUsername) {
     if (rawDream[field] !== undefined) out[field] = rawDream[field];
   });
   if (typeof out.updatedAt !== 'number') out.updatedAt = Date.now();
+  // See this file's own "createdAt" header-comment paragraph for why this
+  // is validated here rather than just added to DREAM_FIELDS above.
+  if (typeof rawDream.createdAt === 'number' && isFinite(rawDream.createdAt)) {
+    out.createdAt = rawDream.createdAt;
+  }
   return out;
 }
 
