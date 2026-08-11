@@ -73,18 +73,23 @@ var winbackSender = require('./lib/winback-email-sender');
 var DEFAULT_LIMIT = 10;
 var MAX_LIMIT = 50;
 
-function lapsedDays() {
+function lapsedDays(override) {
+  // Optional per-request override (POST `lapsedDays`), else env, else default.
+  // Default lowered to 7 (founder 2026-08-11): the product is only ~3 weeks
+  // old, so a 30-day window matched NOBODY — "lapsed" for a young product means
+  // "signed up a week+ ago and didn't stick".
+  if (typeof override === 'number' && isFinite(override) && override > 0) return override;
   var n = parseInt(process.env.WINBACK_LAPSED_DAYS, 10);
-  if (!n || n <= 0) n = 30;
+  if (!n || n <= 0) n = 7;
   return n;
 }
 
 /** True when this account's `updatedAt` is at least the lapsed window old. A missing/invalid `updatedAt` returns false (unknown age — not lapsed). */
-function isLapsed(record) {
+function isLapsed(record, override) {
   var updatedAt = record && record.updatedAt;
   if (typeof updatedAt !== 'number' || !isFinite(updatedAt) || updatedAt <= 0) return false;
   var ageMs = Date.now() - updatedAt;
-  return ageMs >= lapsedDays() * 24 * 60 * 60 * 1000;
+  return ageMs >= lapsedDays(override) * 24 * 60 * 60 * 1000;
 }
 
 /**
@@ -134,7 +139,7 @@ async function selectAndSend(event, opts) {
       summary.skipped.unknown_age++;
       continue;
     }
-    if (!isLapsed(record)) { summary.skipped.not_lapsed++; continue; }
+    if (!isLapsed(record, opts.lapsedDays)) { summary.skipped.not_lapsed++; continue; }
 
     if (await emailSuppressionStore.isSuppressed(event, email)) { summary.skipped.suppressed++; continue; }
     if (await winbackStore.hasSentWinback(event, record.username)) { summary.skipped.already_sent++; continue; }
@@ -190,12 +195,21 @@ exports.handler = async function (event) {
     limit = Math.min(payload.limit, MAX_LIMIT); // absolute safety ceiling
   }
 
+  // Optional lapsedDays override (positive integer, clamped to <= 365).
+  var lapsedOverride = null;
+  if (Object.prototype.hasOwnProperty.call(payload, 'lapsedDays') && payload.lapsedDays !== null && payload.lapsedDays !== undefined) {
+    if (typeof payload.lapsedDays !== 'number' || !Number.isInteger(payload.lapsedDays) || payload.lapsedDays < 1) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'E6: invalid_lapsed_days' }) };
+    }
+    lapsedOverride = Math.min(payload.lapsedDays, 365);
+  }
+
   var requestEmail = normalizeEmail(payload.email);
   if (!requestEmail || requestEmail !== ownerEmail) {
     return { statusCode: 403, body: JSON.stringify({ error: 'E5: forbidden' }) };
   }
 
-  var summary = await selectAndSend(event, { limit: limit, ownerEmail: ownerEmail });
+  var summary = await selectAndSend(event, { limit: limit, ownerEmail: ownerEmail, lapsedDays: lapsedOverride });
   return { statusCode: 200, body: JSON.stringify(summary) };
 };
 
