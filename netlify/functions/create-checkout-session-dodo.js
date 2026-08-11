@@ -279,10 +279,13 @@ var PACK_PRODUCT_ENV = {
 // monthly grant + trial handling are entirely Dodo's/dodo-webhook.js's
 // concern — the price/trial differences never reach the grant, which is a
 // fixed server-side constant (entitlements.DREAMER_PASS_MONTHLY_TOKENS).
+// trial50 ($1 one-time paid trial) RETIRED 2026-08-11 — Dodo couldn't deliver
+// a clean one-time-$1 trial, so the trial is always the free trial. Only
+// freetrial + notrial reach here now; DODO_PRODUCT_DREAMER_PASS_TRIAL50 is
+// unused (founder can remove that Netlify env var).
 var PASS_VARIANT_ENV = {
   freetrial: 'DODO_PRODUCT_DREAMER_PASS',
-  notrial: 'DODO_PRODUCT_DREAMER_PASS_NOTRIAL',
-  trial50: 'DODO_PRODUCT_DREAMER_PASS_TRIAL50'
+  notrial: 'DODO_PRODUCT_DREAMER_PASS_NOTRIAL'
 };
 var DEFAULT_PASS_VARIANT = 'freetrial';
 

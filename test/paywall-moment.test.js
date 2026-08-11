@@ -72,47 +72,27 @@ test('both arms are reachable across accounts (the split is not degenerate)', fu
   assert.ok(seen.subscription && seen.tokens, 'both subscription and tokens occur across a population');
 });
 
-test('assignTrialArm persists a raw free/fifty arm, stable per account, override wins', function () {
+// ───────────────────── $1 ("fifty"/trial50) trial RETIRED 2026-08-11 ─────────────────────
+// The trial is always the 3-day FREE trial now; no override or flag can bring
+// the $1 paid trial back.
+
+test('assignTrialArm always resolves to free (the $1 arm is retired)', function () {
   var st = fakeStorage();
   var hash = PM.hashAccount('trialuser@example.com');
-  var arm = PM.assignTrialArm(hash, st, {});
-  assert.ok(arm === 'free' || arm === 'fifty');
-  assert.equal(PM.assignTrialArm(hash, st, {}), arm, 'stable per account');
-  assert.equal(PM.assignTrialArm(hash, st, { forced: 'fifty' }), 'fifty', 'forced fifty wins');
-  assert.equal(PM.assignTrialArm(hash, st, { forced: 'free' }), 'free', 'forced free wins');
+  assert.equal(PM.assignTrialArm(hash, st, {}), 'free');
+  assert.equal(PM.assignTrialArm(hash, st, { forced: 'fifty' }), 'free', 'even a forced fifty resolves to free');
 });
 
-// ───────────────────────── trial50 gate ─────────────────────────
-
-test('GATE: a raw fifty assignment collapses to free for real users while trial50 is disabled', function () {
-  assert.equal(PM.effectiveTrialArm('fifty', { trial50Enabled: false }), 'free', 'real user never sees trial50 when gated');
-  assert.equal(PM.effectiveTrialArm('free', { trial50Enabled: false }), 'free', 'free stays free');
+test('effectiveTrialArm always returns free — no flag or override revives trial50', function () {
+  assert.equal(PM.effectiveTrialArm(), 'free');
+  assert.equal(PM.effectiveTrialArm('free'), 'free');
+  assert.equal(PM.effectiveTrialArm('fifty', { trial50Enabled: true, forced: 'fifty' }), 'free');
 });
 
-test('GATE: the ?trialarm=fifty founder override force-reveals trial50 even while gated off', function () {
-  assert.equal(PM.effectiveTrialArm('free', { trial50Enabled: false, forced: 'fifty' }), 'fifty', 'founder override reveals trial50');
-  assert.equal(PM.effectiveTrialArm('fifty', { trial50Enabled: false, forced: 'fifty' }), 'fifty');
-});
-
-test('GATE: when trial50 is enabled globally, a raw fifty stays fifty', function () {
-  assert.equal(PM.effectiveTrialArm('fifty', { trial50Enabled: true }), 'fifty');
-});
-
-test('GATE (end to end): a real user assigned raw fifty checks out as freetrial, NEVER trial50', function () {
-  // Find an account hash that raw-assigns to 'fifty' so this exercises the
-  // real collapse path (not just a coincidental 'free').
-  var fiftyHash = null;
-  for (var i = 0; i < 500 && !fiftyHash; i++) {
-    var h = PM.hashAccount('gate' + i + '@example.com');
-    if (PM.pickTrialArm(h) === 'fifty') fiftyHash = h;
-  }
-  assert.ok(fiftyHash, 'found an account that raw-assigns to fifty');
-  var st = fakeStorage();
-  var raw = PM.assignTrialArm(fiftyHash, st, {});
-  assert.equal(raw, 'fifty', 'raw assignment is fifty');
-  var effective = PM.effectiveTrialArm(raw, { trial50Enabled: false }); // real user, gate closed
-  assert.equal(effective, 'free', 'the real user is shown free, not fifty');
-  assert.equal(PM.passVariantFor(true, effective), 'freetrial', 'toggle-ON checks out as freetrial, never trial50');
+test('checkout never selects trial50: a would-be fifty user checks out as freetrial', function () {
+  var effective = PM.effectiveTrialArm('fifty');
+  assert.equal(effective, 'free');
+  assert.equal(PM.passVariantFor(true, effective), 'freetrial', 'toggle-ON is always freetrial, never trial50');
 });
 
 // ───────────────────────── passVariant mapping (toggle × trial-arm) ─────────────────────────
@@ -126,8 +106,9 @@ test('passVariant mapping table: toggle ON + free -> freetrial', function () {
   assert.equal(PM.passVariantFor(true, 'free'), 'freetrial');
 });
 
-test('passVariant mapping table: toggle ON + fifty -> trial50', function () {
-  assert.equal(PM.passVariantFor(true, 'fifty'), 'trial50');
+test('passVariant is always freetrial for toggle-ON (the $1/trial50 arm is retired)', function () {
+  assert.equal(PM.passVariantFor(true, 'fifty'), 'freetrial');
+  assert.equal(PM.passVariantFor(true, 'free'), 'freetrial');
 });
 
 test('hashAccount normalizes email casing (same account hash regardless of case)', function () {

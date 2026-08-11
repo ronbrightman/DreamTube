@@ -603,16 +603,9 @@ test('passVariant "notrial" selects DODO_PRODUCT_DREAMER_PASS_NOTRIAL', async fu
   assert.equal(sentBody.feature_flags.allow_tax_id, false);
 });
 
-test('passVariant "trial50" selects DODO_PRODUCT_DREAMER_PASS_TRIAL50', async function () {
-  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
-  process.env.DODO_PRODUCT_DREAMER_PASS_TRIAL50 = 'pdt_pass_trial50';
-  var captured = stubFetchCapture();
-  var res = await handler(reqEvent({ body: { email: 't50@example.com', plan: 'dreamer_pass', passVariant: 'trial50' } }));
-  assert.equal(res.statusCode, 200);
-  var sentBody = JSON.parse(captured.calls[0].init.body);
-  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pass_trial50');
-  assert.equal(sentBody.metadata.dreamtube_pass_variant, 'trial50');
-});
+// (The $1 "trial50" variant was RETIRED 2026-08-11 — it's no longer in
+// PASS_VARIANT_ENV, so a stray trial50 request now safely falls back to the
+// freetrial default, same as any unknown variant, per the test below.)
 
 test('a subscription request with NO passVariant defaults to freetrial (DODO_PRODUCT_DREAMER_PASS), byte-for-byte the existing behavior', async function () {
   process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
@@ -668,12 +661,14 @@ test('a requested variant whose env var is unset -> 500 E6 naming THAT variant\'
   assert.equal(captured.calls.length, 0, 'must not create a Dodo checkout when the requested variant is unconfigured');
 });
 
-test('trial50 unset -> 500 E6 names DODO_PRODUCT_DREAMER_PASS_TRIAL50 specifically', async function () {
+test('a retired/unknown variant (e.g. trial50) falls back to the freetrial default, never E6', async function () {
   process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_pass_freetrial';
-  delete process.env.DODO_PRODUCT_DREAMER_PASS_TRIAL50;
-  var res = await handler(reqEvent({ body: { email: 'missing50@example.com', plan: 'dreamer_pass', passVariant: 'trial50' } }));
-  assert.equal(res.statusCode, 500);
-  assert.match(JSON.parse(res.body).error, /^E6: missing_product_id: DODO_PRODUCT_DREAMER_PASS_TRIAL50/);
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'retired50@example.com', plan: 'dreamer_pass', passVariant: 'trial50' } }));
+  assert.equal(res.statusCode, 200, 'retired trial50 is now an unknown variant -> safe freetrial default');
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.product_cart[0].product_id, 'pdt_pass_freetrial');
+  assert.equal(sentBody.metadata.dreamtube_pass_variant, 'freetrial');
 });
 
 test('requesting a NEW variant does not fall back to the default product even when the default IS configured', async function () {
