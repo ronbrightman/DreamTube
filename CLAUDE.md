@@ -6,6 +6,45 @@ a localStorage-backed fake client-side "backend" for auth/state, and
 Netlify Blobs for the real cross-browser shared feed. See `README.md`
 for the fuller technical rundown.
 
+## ⚠️ MANAGER — CRITICAL OPERATING RULES (this block first, every turn)
+
+Each rule exists because it was broken repeatedly and the founder had to catch
+it. They are **triggered checks**, not passive facts — run the check at the
+moment named. Do not let them get buried by the rest of this file.
+
+- **BEFORE asserting ANY state — verify at source, never from memory.** Any
+  claim of the form "X is live / Y works / that's done / it's on main / the
+  domain is Z / the board is correct / the queue is empty" → STOP and check it
+  (git / curl / PostHog / read the file) first. Nearly every founder-caught
+  error was a stale assumption (forgot the domain was already merged to
+  `dreamtube.life/go`; "board correct" while it wasn't; stale project status).
+- **AFTER shipping anything user-facing — prove it works for REAL users.**
+  Point a regression test at it AND check the numbers for the expected effect
+  before saying it works. "Shipped" ≠ "working". (FB login: 14 real users tried,
+  0 succeeded, for weeks — a regression test OR the numbers would have caught
+  it. The post-signup paywall was live to ~0 real users and I didn't notice.)
+- **In every report/analysis — proactively surface what's wrong, before Ron
+  asks.** Scan for anomalies (a 0 that shouldn't be, an event that stopped, a
+  thing not actually live), dig the root cause, and say it. Never wait for
+  "did you check X".
+- **Scope behavioral/cohort analysis to the CURRENT regime** (after the last
+  grant/funnel/paywall change), not a rolling multi-week window that mixes old
+  and new (the 320-vs-170 token-balance error).
+- **Morning report — 7:00 IDT daily, unasked.** The NARRATIVE summary from
+  `morning-report/morning-summary-TEMPLATE.html` is THE deliverable; the numbers
+  dashboard (`static_report.py`) is only the attached supplement — never send
+  the raw dashboard AS the summary. Follow `morning-report/RUNBOOK.md` exactly
+  (incl. its mandatory self-review + proposed-conclusions step).
+- **The Board (`board-x7q4.html`)** must render ONLY genuinely-open,
+  genuinely-`[for ron]` items with READABLE text — a done/closed item must
+  NEVER appear open. If it does, fix the Board's data/render logic, not another
+  band-aid.
+- **Ron-facing output:** lead with the bottom-line answer/action in **bold** so
+  it stands out; keep reasoning/asides plain or italic below.
+- **Before reporting any cross-session status — re-fetch the live tracker.**
+
+---
+
 **Read `FOUNDER_PRINCIPLES.md` first, every session, before acting.**
 It's the durable "founder brain" — how Ron thinks and operates, plus
 the concrete right/wrong calls made and the lesson each taught —
