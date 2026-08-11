@@ -238,8 +238,34 @@ async function sendIfEligible(event, opts) {
   return { ok: true, sent: true };
 }
 
+/**
+ * PREVIEW send (owner-gated at the handler): composes the SAME win-back email
+ * and sends it to an explicit address, bypassing selection, the founder/test
+ * exclusion, the suppression list, AND the once-ever CAS marker — so the
+ * founder can see (and re-see) the real email in his own inbox. Only reachable
+ * via send-winback-batch.js's owner-gated `previewTo`.
+ */
+async function sendPreview(event, previewEmail) {
+  var resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) return { ok: false, error: 'no_resend_key' };
+  var unsubscribeUrl = unsubscribeToken.buildUnsubscribeUrl(event, previewEmail);
+  var html = buildHtml({ event: event, createUrl: createUrl(event), unsubscribeUrl: unsubscribeUrl });
+  try {
+    var res = await fetch(RESEND_API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + resendKey },
+      body: JSON.stringify({
+        from: FROM_ADDRESS, to: [previewEmail], subject: SUBJECT_LINE, html: html,
+        headers: { 'List-Unsubscribe': '<' + unsubscribeUrl + '>', 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' }
+      })
+    });
+    return res.ok ? { ok: true, sent: true } : { ok: false, error: 'resend_' + res.status };
+  } catch (e) { return { ok: false, error: 'send_failed' }; }
+}
+
 module.exports = {
   sendIfEligible,
+  sendPreview,
   buildHtml,
   isExcludedEmail,
   SUBJECT_LINE,

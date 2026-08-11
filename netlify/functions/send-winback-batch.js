@@ -209,6 +209,19 @@ exports.handler = async function (event) {
     return { statusCode: 403, body: JSON.stringify({ error: 'E5: forbidden' }) };
   }
 
+  // Owner-gated PREVIEW: send ONE win-back email to an explicit address (the
+  // founder's own test inbox) so he can see the real rendered email. Bypasses
+  // selection, the founder/test exclusion, the suppression list, and the
+  // once-ever marker (so he can re-preview). Only reachable past the owner
+  // check above.
+  if (Object.prototype.hasOwnProperty.call(payload, 'previewTo') && payload.previewTo) {
+    if (typeof payload.previewTo !== 'string' || payload.previewTo.indexOf('@') < 1) {
+      return { statusCode: 400, body: JSON.stringify({ error: 'E7: invalid_preview_to' }) };
+    }
+    var previewResult = await winbackSender.sendPreview(event, payload.previewTo.trim());
+    return { statusCode: previewResult.ok ? 200 : 502, body: JSON.stringify({ preview: true, to: payload.previewTo.trim(), result: previewResult }) };
+  }
+
   var summary = await selectAndSend(event, { limit: limit, ownerEmail: ownerEmail, lapsedDays: lapsedOverride });
   return { statusCode: 200, body: JSON.stringify(summary) };
 };
