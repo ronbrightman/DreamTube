@@ -69,12 +69,26 @@ function truncate(text, max) {
   return slice.replace(/[\s.,;:!?-]+$/, '') + '…';
 }
 
+/** Resolves a dream's imageUrl to an absolute https:// url an email client can load, against the canonical origin. Returns null when there's no url. */
+function absoluteImageUrl(event, url) {
+  if (typeof url !== 'string' || !url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  return siteOrigin.emailOrigin(event) + (url.charAt(0) === '/' ? url : '/' + url);
+}
+
+/** The media banner: the recipient's OWN dream still where synced, else the branded interpretation-themed fallback — so this email ALWAYS shows an image (founder fix 2026-08-11: this email previously rendered no image at all). */
+function resolveMediaUrl(event, dream) {
+  return absoluteImageUrl(event, dream && dream.imageUrl) || emailLayout.brandedFallbackImageUrl(event);
+}
+
 /** The deep link to THIS dream's interpretation view — result.html?id=<dreamId>&interp=1 auto-opens the Chamber (see result.html's `interp=1` handler). */
 function interpUrl(event, dreamId) {
   return siteOrigin.emailOrigin(event) + '/result.html?id=' + encodeURIComponent(String(dreamId || '')) + '&interp=1';
 }
 
 function buildHtml(opts) {
+  var media = emailLayout.mediaImage(opts.imageUrl, 'Your dream');
+
   var quoted = opts.dreamText ? esc(truncate(opts.dreamText, BODY_TEXT_MAX)) : esc(GENERIC_DREAM_TEXT);
 
   var sentence = opts.dreamText
@@ -82,6 +96,7 @@ function buildHtml(opts) {
     : 'There&rsquo;s a hidden meaning in ' + quoted + '. See what Jung would say.';
 
   var inner = (
+    media +
     '<p style="font-size:16px;line-height:1.5;color:' + emailLayout.COLORS.textPrimary + ';margin:0 0 18px;">' + sentence + '</p>' +
     '<p style="margin:0;">' + emailLayout.ctaButton(opts.interpUrl, 'See what Jung would say →') + '</p>'
   );
@@ -197,6 +212,7 @@ async function sendIfEligible(event, opts) {
   var html = buildHtml({
     event: event,
     dreamText: dreamText,
+    imageUrl: resolveMediaUrl(event, dream),
     interpUrl: interpUrl(event, dream.id),
     unsubscribeUrl: unsubscribeUrl
   });
@@ -263,7 +279,14 @@ async function sendPreview(event, previewEmail) {
   var html = buildHtml({
     event: event,
     dreamText: 'I was flying over a city made of glass and the streets kept rearranging beneath me',
-    interpUrl: interpUrl(event, 'sample-dream-id'),
+    // A real, reachable sample still so the founder actually sees the media
+    // banner render (no per-recipient dream exists in a preview).
+    imageUrl: emailLayout.brandedFallbackImageUrl(event),
+    // A PREVIEW has no real recipient dream, so a per-dream result.html?id=…
+    // link would dead-end to explore (the exact thing the founder flagged).
+    // Point the preview CTA at the reachable Dream Meaning entry (home.html)
+    // instead — never explore. REAL sends use the per-dream deep link above.
+    interpUrl: siteOrigin.emailOrigin(event) + '/home.html',
     unsubscribeUrl: unsubscribeUrl
   });
   try {

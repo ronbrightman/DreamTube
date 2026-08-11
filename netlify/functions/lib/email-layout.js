@@ -129,6 +129,17 @@ function logoUrl(event) {
   return selfOrigin(event) + '/assets/logo-v4.png';
 }
 
+// A tasteful, on-brand interpretation-themed still (the committed
+// `assets/chamber-sage.jpg`, served on the canonical origin) used as the
+// media-banner FALLBACK when a specific email has no per-recipient dream
+// thumbnail to show (e.g. a dream whose first-frame still never synced, or
+// a preview send with no real recipient dream). Absolute-origin resolved so
+// it loads from any inbox, never a broken relative src.
+var BRANDED_FALLBACK_IMAGE_PATH = '/assets/chamber-sage.jpg';
+function brandedFallbackImageUrl(event) {
+  return selfOrigin(event) + BRANDED_FALLBACK_IMAGE_PATH;
+}
+
 /**
  * Wraps `bodyHtml` (the sender's own per-email content &mdash; already-built
  * HTML, e.g. the media banner/thumbnail + CTA button + copy) in the
@@ -184,4 +195,20 @@ function ctaButton(url, label) {
   return '<a href="' + esc(url) + '" style="display:inline-block;padding:14px 26px;background:' + COLORS.ctaBg + ';color:' + COLORS.ctaText + ';border-radius:100px;text-decoration:none;font-weight:700;font-size:14.5px;">' + esc(label) + '</a>';
 }
 
-module.exports = { COLORS, ADDRESS_COLOR, MAILING_ADDRESS, UNSUBSCRIBE_FONT_SIZE, UNSUBSCRIBE_LINK_COLOR, esc, selfOrigin, logoUrl, renderShell, ctaButton };
+/**
+ * A rounded, full-width media banner `<img>` for the top of a retention/
+ * marketing email body -- the recipient's own dream still where one exists,
+ * else a branded fallback (see each sender's own image resolution). Same
+ * inline-style shape lib/unwatched-dream-nudge-sender.js already used inline;
+ * centralized here so every sender's thumbnail renders identically and an
+ * email client that blocks images still degrades to the alt text, never a
+ * broken layout. Requires an ABSOLUTE https:// url (an email client can't
+ * load a relative one) -- returns '' for a missing/relative url rather than
+ * ever emitting a broken <img>.
+ */
+function mediaImage(absoluteUrl, alt) {
+  if (typeof absoluteUrl !== 'string' || !/^https?:\/\//i.test(absoluteUrl)) return '';
+  return '<img src="' + esc(absoluteUrl) + '" width="480" alt="' + esc(alt || '') + '" style="display:block;width:100%;max-width:480px;height:180px;object-fit:cover;border-radius:14px;margin-bottom:18px;" />';
+}
+
+module.exports = { COLORS, ADDRESS_COLOR, MAILING_ADDRESS, UNSUBSCRIBE_FONT_SIZE, UNSUBSCRIBE_LINK_COLOR, esc, selfOrigin, logoUrl, brandedFallbackImageUrl, renderShell, ctaButton, mediaImage };

@@ -1189,8 +1189,36 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
   var dreamId = getParam('id');
+  // Captured NOW, before the intent-param handlers below (?play=1/?interp=1)
+  // strip anything from the URL — so the cross-device recovery reload can
+  // restore the ORIGINAL deep-link intent verbatim.
+  var originalDeepLinkSearch = location.search;
   var dream = dreamId ? DreamStore.getDream(dreamId) : null;
-  if(!dream){ location.href = 'explore.html'; }
+  if(!dream){
+    // CROSS-DEVICE / CLEARED-STORAGE RECOVERY (founder fix 2026-08-11): this
+    // page resolves the dream ONLY from local state, so an emailed
+    // result.html?id=...&interp=1 link opened on a NEW device (or after an
+    // in-app-webview localStorage wipe — DreamTube's single biggest channel)
+    // used to dead-end straight to explore, never reaching the dream's
+    // interpretation view. A signed-in owner's private dreams live server-side
+    // (dream-sync); pull them and re-resolve BEFORE giving up. On success,
+    // reload to the original URL (via location.replace, which reloads even for
+    // an identical URL) so &interp=1/&play=1 still fire with the dream now
+    // present. Only a signed-out visitor, a missing id, or a genuinely-
+    // unrestorable dream falls through to explore — same destination as before,
+    // just no longer the FIRST resort for an owner's own not-yet-synced dream.
+    if(dreamId && DreamStore.getCurrentUser() && typeof DreamStore.reconcilePrivateDreamsFromServer === 'function'){
+      DreamStore.reconcilePrivateDreamsFromServer().then(function(){
+        if(DreamStore.getDream(dreamId)){
+          location.replace(location.pathname + originalDeepLinkSearch + location.hash);
+        } else {
+          location.href = 'explore.html';
+        }
+      }, function(){ location.href = 'explore.html'; });
+    } else {
+      location.href = 'explore.html';
+    }
+  }
 
   // ===== Ownership gate (review finding on tracker item for-product-terms-
   // republish-license-per--fhpcxk) =====

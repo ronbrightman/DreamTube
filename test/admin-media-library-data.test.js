@@ -281,6 +281,41 @@ test('a private dream synced with no createdAt (the pre-fix gap) shows unknown t
   });
 });
 
+test('a HISTORICAL private dream with no createdAt but a real updatedAt falls back to updatedAt (never blank/last in the newest-sort)', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    var realUpdatedAt = 1781500000000;
+    // No createdAt (predates createdAt stamping), but a real updatedAt — the
+    // exact shape dream-sync.js guarantees for every synced private dream
+    // (`out.updatedAt = Date.now()` if missing). Founder report: these old
+    // videos showed a blank timestamp and sank to the bottom.
+    await seedPrivateDream('dreamer10', { id: 'dream-10', ownerHandle: '@dreamer10', caption: 'x', style: 'y', videoUrl: 'https://fal.media/eleven.mp4', mediaType: 'video', updatedAt: realUpdatedAt });
+
+    var handler = require('../netlify/functions/admin-media-library-data').handler;
+    var res = await handler(fakeEvent(dataRequest()));
+    var body = JSON.parse(res.body);
+    var item = body.items.find(function (it) { return it.dreamId === 'dream-10'; });
+    assert.equal(item.createdAt, realUpdatedAt, 'the historical-backfill fallback surfaces updatedAt as the displayable/sortable timestamp');
+  });
+});
+
+test('a private dream WITH a real createdAt still prefers it over updatedAt', function () {
+  return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
+    var event = fakeEvent({ method: 'POST' });
+    await seedOwnerAccount(event);
+    var realCreatedAt = 1781000000000;
+    var laterUpdatedAt = realCreatedAt + 3 * 24 * 60 * 60 * 1000;
+    await seedPrivateDream('dreamer11', { id: 'dream-11', ownerHandle: '@dreamer11', caption: 'x', style: 'y', videoUrl: 'https://fal.media/twelve.mp4', mediaType: 'video', createdAt: realCreatedAt, updatedAt: laterUpdatedAt });
+
+    var handler = require('../netlify/functions/admin-media-library-data').handler;
+    var res = await handler(fakeEvent(dataRequest()));
+    var body = JSON.parse(res.body);
+    var item = body.items.find(function (it) { return it.dreamId === 'dream-11'; });
+    assert.equal(item.createdAt, realCreatedAt, 'the real createdAt wins; updatedAt is only the historical fallback');
+  });
+});
+
 test('a private dream synced WITH a real createdAt (post-fix js/store.js + dream-sync.js) carries it through to the media library data feed', function () {
   return withEnv({ OWNER_EMAIL: OWNER_EMAIL }, async function () {
     var event = fakeEvent({ method: 'POST' });

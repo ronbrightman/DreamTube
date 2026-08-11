@@ -4754,6 +4754,19 @@
     },
 
     getDream: function (id) { return findDream(id); },
+
+    /**
+     * Publicly-exposed cross-device hydrate (founder fix 2026-08-11): pulls
+     * this signed-in account's server-synced private dreams (dream-sync GET)
+     * and merges them into local state, so a page reached by a DEEP LINK to a
+     * dream that isn't in THIS browser's localStorage yet (e.g. an emailed
+     * result.html?id=...&interp=1 link opened on a new device, or after an
+     * in-app-webview storage wipe) can re-resolve it instead of dead-ending.
+     * Thin pass-through to the internal reconcile (already used on login/init)
+     * — same MERGE-not-clobber semantics, same best-effort never-throws
+     * contract; resolves once the merge (or its failure) has settled.
+     */
+    reconcilePrivateDreamsFromServer: function () { return reconcilePrivateDreamsFromServer(); },
     gradientFor: gradientFor,
 
     toggleLike: function (id) {

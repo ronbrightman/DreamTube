@@ -73,10 +73,13 @@ function bodySentence(readName, unreadName) {
   return 'You read what ' + readName + ' saw. ' + unreadName + ' saw something very different. Check it out.';
 }
 
+/** The media banner: the recipient's OWN dream still where synced, else the branded interpretation-themed fallback — so this email ALWAYS shows an image, never an empty slot (founder fix 2026-08-11). */
+function resolveMediaUrl(event, dream) {
+  return absoluteImageUrl(event, dream && dream.imageUrl) || emailLayout.brandedFallbackImageUrl(event);
+}
+
 function buildHtml(opts) {
-  var media = opts.imageUrl
-    ? '<img src="' + esc(opts.imageUrl) + '" width="480" alt="" style="display:block;width:100%;max-width:480px;height:160px;object-fit:cover;border-radius:14px;margin-bottom:18px;" />'
-    : '';
+  var media = emailLayout.mediaImage(opts.imageUrl, 'Your dream');
 
   var sentence = 'You read what <b>' + esc(opts.readName) + '</b> saw. <b>' + esc(opts.unreadName) + '</b> saw something very different. Check it out.';
 
@@ -188,7 +191,7 @@ async function sendIfEligible(event, opts) {
     event: event,
     readName: readName,
     unreadName: unreadName,
-    imageUrl: absoluteImageUrl(event, dream.imageUrl),
+    imageUrl: resolveMediaUrl(event, dream),
     interpUrl: interpUrl(event, dream.id),
     unsubscribeUrl: unsubscribeUrl
   });
@@ -261,8 +264,14 @@ async function sendPreview(event, previewEmail) {
     event: event,
     readName: personaName('jung'),   // "The Depth Analyst"
     unreadName: personaName('freud'), // "The Analyst"
-    imageUrl: null,
-    interpUrl: interpUrl(event, 'sample-dream-id'),
+    // A real, reachable sample still so the founder actually sees the media
+    // banner render (no per-recipient dream exists in a preview).
+    imageUrl: emailLayout.brandedFallbackImageUrl(event),
+    // A PREVIEW has no real recipient dream, so a per-dream result.html?id=…
+    // link would dead-end to explore (the exact thing the founder flagged).
+    // Point the preview CTA at the reachable Dream Meaning entry (home.html)
+    // instead — never explore. REAL sends use the per-dream deep link above.
+    interpUrl: siteOrigin.emailOrigin(event) + '/home.html',
     unsubscribeUrl: unsubscribeUrl
   });
   try {

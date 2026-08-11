@@ -136,7 +136,17 @@ async function selectAndSend(event, opts) {
     var dreams = await dreamStore.getPrivateDreams(event, username);
     if (!dreams || !dreams.length) { summary.skipped.no_dreams++; continue; }
 
-    for (var d = 0; d < dreams.length && eligible.length < limit; d++) {
+    // PER-USER CAP (founder hygiene ask 2026-08-11): a single user gets AT
+    // MOST ONE interpretation email per batch run, even if they qualify for
+    // both triggers or have several eligible dreams — never blasted with
+    // multiple at once (a different hook on a different dream can still reach
+    // them on a LATER run, gated only by the per-dream once-ever markers). We
+    // scan ALL of this account's dreams to find the best single candidate,
+    // PREFERRING the flagship "unread" over "none", then push exactly one.
+    // Per-dream skip reasons are still counted for the summary.
+    var unreadCandidate = null;
+    var noneCandidate = null;
+    for (var d = 0; d < dreams.length; d++) {
       var dream = dreams[d];
       var operationName = dream && dream.sourceOperationName;
       if (!operationName) { summary.skipped.no_operation_name++; continue; }
@@ -149,10 +159,12 @@ async function selectAndSend(event, opts) {
         if (await interpEmailStore.hasSentUnread(event, operationName)) { summary.skipped.already_sent_unread++; continue; }
         var unreadKey = firstUnreadPersona(readSet);
         if (!unreadKey) { summary.skipped.not_eligible++; continue; } // defensive — a 1-4 count always has an unread
-        eligible.push({
-          type: 'unread', username: username, email: email, dream: dream, operationName: operationName,
-          readPersonaKey: readSet[0], unreadPersonaKey: unreadKey
-        });
+        if (!unreadCandidate) {
+          unreadCandidate = {
+            type: 'unread', username: username, email: email, dream: dream, operationName: operationName,
+            readPersonaKey: readSet[0], unreadPersonaKey: unreadKey
+          };
+        }
         continue;
       }
 
@@ -161,15 +173,21 @@ async function selectAndSend(event, opts) {
         var watched = await resultViewStore.hasViewed(event, operationName);
         if (!watched) { summary.skipped.not_eligible++; continue; }
         if (await interpEmailStore.hasSentNone(event, operationName)) { summary.skipped.already_sent_none++; continue; }
-        eligible.push({
-          type: 'none', username: username, email: email, dream: dream, operationName: operationName
-        });
+        if (!noneCandidate) {
+          noneCandidate = {
+            type: 'none', username: username, email: email, dream: dream, operationName: operationName
+          };
+        }
         continue;
       }
 
       // read all 5 (or some impossible count) — nothing to send
       summary.skipped.not_eligible++;
     }
+
+    // One email per user this run — flagship "unread" wins over "none".
+    var chosen = unreadCandidate || noneCandidate;
+    if (chosen) eligible.push(chosen);
   }
 
   summary.selected.unread = eligible.filter(function (e) { return e.type === 'unread'; }).length;

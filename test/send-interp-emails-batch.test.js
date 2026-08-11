@@ -140,6 +140,7 @@ test('unread trigger: a dream read on 1-4 personas is selected and sent with the
   assert.ok(body.html.indexOf('The Depth Analyst') !== -1, 'names a persona the user DID read');
   assert.ok(body.html.indexOf('The Analyst') !== -1, 'names a persona the user did NOT read');
   assert.ok(body.html.indexOf('saw something very different') !== -1, 'approved sentence tail present');
+  assert.ok(body.html.indexOf('<img') !== -1 && body.html.indexOf('/img/x.png') !== -1, 'renders the dream\'s own synced still as the media banner');
   assert.ok(body.html.indexOf('result.html?id=d1') !== -1 && body.html.indexOf('interp=1') !== -1, 'CTA deep-links to this dream\'s interpretation view');
   assert.ok(body.headers && body.headers['List-Unsubscribe'], 'one-click unsubscribe header present');
   assert.ok(body.html.indexOf('Unsubscribe') !== -1, 'visible unsubscribe footer present');
@@ -174,6 +175,8 @@ test('none trigger: a WATCHED dream with zero reads is selected and sent with th
   assert.ok(body.html.indexOf('hidden meaning') !== -1, 'approved lead present');
   assert.ok(body.html.indexOf('I was flying over the sea') !== -1, 'embeds the user\'s own dream text');
   assert.ok(body.html.indexOf('See what Jung would say') !== -1, 'approved Jung hook present');
+  // This dream has no synced still, so the email falls back to the branded image (never an empty slot).
+  assert.ok(body.html.indexOf('<img') !== -1 && body.html.indexOf('/assets/chamber-sage.jpg') !== -1, 'renders the branded fallback image when no dream still exists');
   assert.ok(body.html.indexOf('result.html?id=d2') !== -1 && body.html.indexOf('interp=1') !== -1, 'CTA deep-links to this dream');
 });
 
@@ -191,12 +194,13 @@ test('none trigger: a dream with zero reads that was NOT watched is skipped', as
 
 // ===== DEDUP (once-per-dream marker across runs) =====
 
-test('dedup: the same dream is never sent twice across two batch runs (both triggers)', async function () {
+test('dedup: a dream is never sent twice across two batch runs (both triggers, distinct users)', async function () {
   var spy = installFetchSpy();
-  await seedAccount('once', 'once@real-user.com');
-  await seedDream('once', { id: 'du', sourceOperationName: 'fal:veo3:opU', storyText: 'x', imageUrl: '/i.png' });
+  await seedAccount('userU', 'userU@real-user.com');
+  await seedDream('userU', { id: 'du', sourceOperationName: 'fal:veo3:opU', storyText: 'x', imageUrl: '/i.png' });
   await seedReads('fal:veo3:opU', ['jung']);
-  await seedDream('once', { id: 'dn', sourceOperationName: 'fal:veo3:opN', storyText: 'y' });
+  await seedAccount('userN', 'userN@real-user.com');
+  await seedDream('userN', { id: 'dn', sourceOperationName: 'fal:veo3:opN', storyText: 'y' });
   await seedWatched('fal:veo3:opN');
 
   var first = await sendInterp.selectAndSend(fakeEvent({ method: 'POST' }), { limit: 10, ownerEmail: OWNER });
@@ -210,6 +214,37 @@ test('dedup: the same dream is never sent twice across two batch runs (both trig
   assert.equal(second.skipped.already_sent_unread, 1);
   assert.equal(second.skipped.already_sent_none, 1);
   assert.equal(spy.resendCalls.length, 2, 'no new Resend calls on the second run');
+});
+
+test('per-user cap: a user eligible on MULTIPLE dreams gets exactly ONE email per run, flagship "unread" preferred', async function () {
+  var spy = installFetchSpy();
+  await seedAccount('multi', 'multi@real-user.com');
+  // One dream qualifies for "none" (watched, 0 read)...
+  await seedDream('multi', { id: 'dn', sourceOperationName: 'fal:veo3:mN', storyText: 'the none one' });
+  await seedWatched('fal:veo3:mN');
+  // ...and another qualifies for the flagship "unread" (read 1 of 5).
+  await seedDream('multi', { id: 'du', sourceOperationName: 'fal:veo3:mU', storyText: 'the unread one', imageUrl: '/i.png' });
+  await seedReads('fal:veo3:mU', ['jung']);
+
+  var summary = await sendInterp.selectAndSend(fakeEvent({ method: 'POST' }), { limit: 10, ownerEmail: OWNER });
+
+  assert.equal(spy.resendCalls.length, 1, 'exactly one interpretation email to this user in the run');
+  assert.equal(summary.sent.unread, 1, 'the flagship unread email is the one sent');
+  assert.equal(summary.sent.none, 0, 'the none email is NOT also sent to the same user');
+  assert.equal(spy.resendCalls[0].body.subject, 'One reading you haven\'t seen 🌙');
+});
+
+test('per-user cap: two eligible unread dreams for one user still send only ONE email', async function () {
+  var spy = installFetchSpy();
+  await seedAccount('twoU', 'twoU@real-user.com');
+  await seedDream('twoU', { id: 'a', sourceOperationName: 'fal:veo3:a', storyText: 'a', imageUrl: '/i.png' });
+  await seedReads('fal:veo3:a', ['jung']);
+  await seedDream('twoU', { id: 'b', sourceOperationName: 'fal:veo3:b', storyText: 'b', imageUrl: '/i.png' });
+  await seedReads('fal:veo3:b', ['freud', 'jung']);
+
+  var summary = await sendInterp.selectAndSend(fakeEvent({ method: 'POST' }), { limit: 10, ownerEmail: OWNER });
+  assert.equal(spy.resendCalls.length, 1);
+  assert.equal(summary.sent.unread, 1);
 });
 
 test('dedup at the send choke point: the CAS marker blocks a second unread send even if selection is bypassed', async function () {
@@ -335,6 +370,10 @@ test('previewTo sends BOTH interpretation email previews by default', async func
   assert.equal(spy.resendCalls.length, 2, 'both previews sent in one call');
   var subjects = spy.resendCalls.map(function (c) { return c.body.subject; }).sort();
   assert.deepEqual(subjects, ['One reading you haven\'t seen 🌙', 'There\'s a hidden meaning in your dream 🌙']);
+  // Both previews render a real (branded sample) image so the founder sees the thumbnail slot.
+  spy.resendCalls.forEach(function (c) {
+    assert.ok(c.body.html.indexOf('<img') !== -1 && c.body.html.indexOf('/assets/chamber-sage.jpg') !== -1, 'preview email shows a real sample image');
+  });
 });
 
 test('previewTo with which:"unread" sends only the flagship preview', async function () {

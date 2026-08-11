@@ -135,7 +135,14 @@ async function collectPrivateItems(event) {
     scannedAccounts++;
     var dreams = await dreamStore.getPrivateDreams(event, username);
     for (var d = 0; d < dreams.length; d++) {
-      items = items.concat(itemsForRecord(dreams[d], dreams[d].createdAt || null, false));
+      // Prefer the real stamped createdAt; fall back to the dream's own
+      // updatedAt for a HISTORICAL record that predates createdAt stamping
+      // (every private dream carries a real updatedAt — dream-sync.js sets
+      // `out.updatedAt = Date.now()` on sync if missing). Without this, an old
+      // private video rendered a BLANK timestamp and sank to the bottom of the
+      // newest-first sort (founder report). Mirrors the feed side's own
+      // publishedAt fallback in collectFeedItems below.
+      items = items.concat(itemsForRecord(dreams[d], dreams[d].createdAt || dreams[d].updatedAt || null, false));
     }
   }
   return { items: items, scannedAccounts: scannedAccounts };
