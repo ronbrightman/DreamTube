@@ -176,7 +176,7 @@ test('none trigger: a WATCHED dream with zero reads is selected and sent with th
   assert.ok(body.html.indexOf('I was flying over the sea') !== -1, 'embeds the user\'s own dream text');
   assert.ok(body.html.indexOf('See what Jung would say') !== -1, 'approved Jung hook present');
   // This dream has no synced still, so the email falls back to the branded image (never an empty slot).
-  assert.ok(body.html.indexOf('<img') !== -1 && body.html.indexOf('/assets/chamber-sage.jpg') !== -1, 'renders the branded fallback image when no dream still exists');
+  assert.ok(body.html.indexOf('<img') !== -1 && body.html.indexOf('/assets/store/dream-neon.webp') !== -1, 'renders the branded fallback image when no dream still exists');
   assert.ok(body.html.indexOf('result.html?id=d2') !== -1 && body.html.indexOf('interp=1') !== -1, 'CTA deep-links to this dream');
 });
 
@@ -372,7 +372,7 @@ test('previewTo sends BOTH interpretation email previews by default', async func
   assert.deepEqual(subjects, ['One reading you haven\'t seen 🌙', 'There\'s a hidden meaning in your dream 🌙']);
   // Both previews render a real (branded sample) image so the founder sees the thumbnail slot.
   spy.resendCalls.forEach(function (c) {
-    assert.ok(c.body.html.indexOf('<img') !== -1 && c.body.html.indexOf('/assets/chamber-sage.jpg') !== -1, 'preview email shows a real sample image');
+    assert.ok(c.body.html.indexOf('<img') !== -1 && c.body.html.indexOf('/assets/store/dream-neon.webp') !== -1, 'preview email shows a real sample image');
   });
 });
 

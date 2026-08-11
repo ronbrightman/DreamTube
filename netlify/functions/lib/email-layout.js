@@ -129,13 +129,16 @@ function logoUrl(event) {
   return selfOrigin(event) + '/assets/logo-v4.png';
 }
 
-// A tasteful, on-brand interpretation-themed still (the committed
-// `assets/chamber-sage.jpg`, served on the canonical origin) used as the
-// media-banner FALLBACK when a specific email has no per-recipient dream
-// thumbnail to show (e.g. a dream whose first-frame still never synced, or
-// a preview send with no real recipient dream). Absolute-origin resolved so
-// it loads from any inbox, never a broken relative src.
-var BRANDED_FALLBACK_IMAGE_PATH = '/assets/chamber-sage.jpg';
+// A tasteful, on-brand DREAM still (the committed `assets/store/dream-neon.webp`,
+// served on the canonical origin) used as the media-banner FALLBACK when a
+// specific email has no per-recipient dream thumbnail to show (e.g. a dream
+// whose first-frame still never synced, or a preview send with no real
+// recipient dream). Deliberately a generic DREAMSCAPE, not an interpreter's
+// portrait: the banner represents the recipient's DREAM, so a character face
+// (the old `chamber-sage.jpg`) read as wrong/misleading — especially beside
+// copy like "See what Jung would say." Absolute-origin resolved so it loads
+// from any inbox, never a broken relative src.
+var BRANDED_FALLBACK_IMAGE_PATH = '/assets/store/dream-neon.webp';
 function brandedFallbackImageUrl(event) {
   return selfOrigin(event) + BRANDED_FALLBACK_IMAGE_PATH;
 }
