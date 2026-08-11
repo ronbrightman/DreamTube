@@ -2632,6 +2632,63 @@
     document.head.appendChild(s);
   }
 
+  // ===================================================================
+  // FUNNEL-ARRIVAL REE INSTRUMENTATION (tracking regression fix,
+  // 2026-08-11). When the growth funnel pinned its flo arm to 100% of
+  // traffic (2026-08-10), every caption-carrying (Build/Write) paid
+  // handoff started landing on THIS wall instead of start.html's screen
+  // 13 (see the funnel's own redirectToApp wall-routing, and
+  // isFunnelHandoffArrival above). start.html's screen 13 fired the ad
+  // funnel's own funnel_step_viewed(email_capture) / ReachedEmailEntry /
+  // signup_email_entered / signup_email_first_variant_shown on the way
+  // through; this wall never did (it was built when it only ever served
+  // ORGANIC traffic — see the big "deliberately does NOT fire" comment
+  // near boot). So on the first full day at 100% flo those four metrics
+  // read ZERO even though real signups kept landing (signed_up fires from
+  // js/store.js's commitLocalSignup regardless of which page drove it).
+  //
+  // Fix: fire the SAME events, with the SAME names and property shapes
+  // start.html used, but ONLY for genuine funnel arrivals
+  // (isFunnelHandoffArrival) — organic wizard traffic still fires none of
+  // them, so the "don't pollute the paid REE metric with organic traffic"
+  // intent of the original comment is preserved. variant:'wizard' marks
+  // the wall these came from (matching this file's own signup_facebook_*
+  // variant convention) and cleanly marks the cutover in the data,
+  // without inventing any new event name. Fired from render() at
+  // WALL_STEP (the arrival hook, same place wizard_step_viewed fires) so
+  // it re-fires once per fresh arrival and never on the wall's internal
+  // email<->code sub-swaps — 1:1 with start.html's own per-arrival
+  // semantics.
+  var funnelEmailEnteredTracked = false;
+  function maybeTrackFunnelEmailEntered(email){
+    if(!isFunnelHandoffArrival) return;
+    if(funnelEmailEnteredTracked) return;
+    if(!email) return;
+    funnelEmailEnteredTracked = true;
+    track('signup_email_entered', { variant: 'wizard' });
+  }
+  function fireFunnelWallReachedEvents(){
+    if(!isFunnelHandoffArrival || resumedFromFacebook) return;
+    // Reset per fresh arrival at the wall — NOT on the internal
+    // email->code DOM swap (which never re-enters render()), matching
+    // start.html's emailEnteredTracked reset placement.
+    funnelEmailEnteredTracked = false;
+    if(window.posthog && typeof window.posthog.register === 'function'){
+      try{ posthog.register({ signup_email_first_variant: 'wizard' }); }catch(e){ /* analytics must never break the funnel */ }
+    }
+    track('signup_email_first_variant_shown', { variant: 'wizard' });
+    // REE (Reached-Email-Entry) — the metric this whole fix restores.
+    // step:1/screen:'email_capture' is byte-identical to start.html's own
+    // emission so any dashboard keyed on funnel_step_viewed
+    // screen='email_capture' reads straight across the page cutover.
+    track('funnel_step_viewed', { step: 1, screen: 'email_capture' });
+    // Meta CAPI mid-funnel optimization target, same call start.html made
+    // (custom event, event_id/CAPI-paired). fbc/fbp were already
+    // reconstructed from the handoff URL params in the funnel-arrival wall
+    // leg above, so this reaches Meta attributed to the ad.
+    fireMetaConversion('ReachedEmailEntry', {}, true);
+  }
+
   function renderSignupWall(el){
     // Facebook confirmed who this visitor is but gave us no email — ask
     // for exactly one field instead of the normal wall (same half-step as
@@ -2678,6 +2735,10 @@
 
     function trySubmit(){
       contactEmail = emailInput.value.trim();
+      // "Entered email" micro-step — fired on the first non-empty submit
+      // attempt (paired with the blur handler below), funnel arrivals
+      // only. See maybeTrackFunnelEmailEntered / fireFunnelWallReachedEvents.
+      maybeTrackFunnelEmailEntered(contactEmail);
       errEl.textContent = '';
       if(!contactEmail || contactEmail.indexOf('@') === -1){
         errEl.textContent = 'Enter a valid email address.';
@@ -2799,6 +2860,11 @@
 
     continueBtn.addEventListener('click', trySubmit);
     emailInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); trySubmit(); } });
+    // "Entered email" micro-step — first non-empty blur (funnel arrivals
+    // only; no-op otherwise). Paired with the submit-time fire in
+    // trySubmit; whichever comes first wins. Mirrors start.html's screen
+    // 13 blur wiring exactly.
+    emailInput.addEventListener('blur', function(){ maybeTrackFunnelEmailEntered(emailInput.value.trim()); });
     wireFacebookSignupButton();
     applyPendingFacebookError();
     // Round 9, fix #6 (founder iPhone screenshot): NO auto-focus here.
@@ -3200,6 +3266,10 @@
     var stepNo = STEP_ANALYTICS[cur];
     if(stepNo !== null) track('wizard_step_viewed', { step: stepNo });
     else track('wizard_recap_viewed', {});
+    // Ad-funnel REE instrumentation for paid arrivals landing on this wall
+    // (the flo-arm handoff, 2026-08-10). No-op for organic traffic and for
+    // every non-wall step — see fireFunnelWallReachedEvents' own comment.
+    if(cur === WALL_STEP) fireFunnelWallReachedEvents();
   }
   function goToStep(n){
     if(n < 0 || n >= SCREEN_RENDERERS.length) return;
