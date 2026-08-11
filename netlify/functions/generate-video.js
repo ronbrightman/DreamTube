@@ -151,49 +151,108 @@ var SCENERY_PLACE_MODIFIERS = {
   'Inside a house': 'inside a house'
 };
 
+// Word-count threshold used by styleIntegrityClause's short-caption
+// reinforcement below. STYLE_MODIFIERS' own entries run about 6-9 words
+// of vivid, specific, sensory language each (e.g. "vibrant Japanese anime
+// animation style" is 5 content words; "moody, cinematic film style with
+// dramatic lighting" is 7). A caption at or under roughly that same
+// length has too little competing descriptive content of its own to
+// naturally outweigh the style modifier's vividness in the model's
+// attention — that imbalance, not just the wording of the guardrail
+// clause itself, is part of what let a 2-word caption ("a woman") lose
+// its subject to a strongly-worded style. 10 gives a small margin above
+// the longest style modifier's word count.
+var SHORT_CAPTION_MAX_WORDS = 10;
+
 /**
  * Style-integrity guardrail — a clause asserting that the chosen style is
  * an AESTHETIC choice only (rendering, palette, line work, atmosphere) and
- * must never change who/what the dreamer IS. Placed as the second clause
- * in the prompt, immediately after the caption and before every other
- * clause (characters/camera/scenery/style itself) — deliberately early
- * and prominent rather than tacked on at the end, since these models
- * weight earlier instructions more heavily in practice, and this is
- * exactly what the style modifier further down would otherwise have
+ * must never change who/what the dream's subject IS. Placed as the second
+ * clause in the prompt, immediately after the caption and before every
+ * other clause (characters/camera/scenery/style itself) — deliberately
+ * early and prominent rather than tacked on at the end, since these
+ * models weight earlier instructions more heavily in practice, and this
+ * is exactly what the style modifier further down would otherwise have
  * unchecked license to override.
  *
- * Root cause this addresses (tracker item
- * for-product-founder-ask-08-04-style-must-ezz8uf): the founder's caption
- * "I am running back and forth to bring some important things for my
- * family" with style Anime produced a video where the dreamer himself was
- * rendered AS a flying dragon. Nothing in the prompt previously told the
- * model that a strongly stylized style descriptor (e.g. "vibrant Japanese
- * anime animation style") governs rendering only — so the model had
- * latitude to reinterpret the dreamer's species/identity along with the
- * art style. Applies to every style (not just Anime/Cartoon — the
- * founder's ask explicitly included sweeping non-stylized styles too),
- * phrased generically enough to read naturally whether the style is
- * strongly transformative (Anime, Cartoon) or not (Cinematic, Realistic).
+ * Root cause this ORIGINALLY addressed (tracker item
+ * for-product-founder-ask-08-04-style-must-ezz8uf, commit 0500852): the
+ * founder's caption "I am running back and forth to bring some important
+ * things for my family" with style Anime produced a video where the
+ * dreamer himself was rendered AS a flying dragon. Nothing in the prompt
+ * previously told the model that a strongly stylized style descriptor
+ * (e.g. "vibrant Japanese anime animation style") governs rendering
+ * only — so the model had latitude to reinterpret the dreamer's
+ * species/identity along with the art style. That first fix phrased the
+ * guardrail around "the dreamer" specifically.
  *
- * Deliberately ends with "...unless the dream itself explicitly describes
- * a transformation" — this constrains the STYLE CHOICE only, not genuine
- * dream content. buildPrompt's philosophy is to narrate what the dream
- * text already says; if a dream's own caption literally describes the
- * dreamer turning into something else, that must still come through. This
- * clause only closes the loophole where the style modifier alone was
- * introducing a transformation the dream text never asked for.
+ * GENERALIZATION (2026-08-11, tracker item
+ * for-product-bug-founder-recurring-style--srehi9, SAME underlying bug,
+ * BROADER trigger): founder repro — a wizard free-text caption whose
+ * ONLY content was the two words "a woman" (no "I", no first-person
+ * framing at all), combined with an anime/specific style, again produced
+ * a flying dragon with no woman in the video. "The dreamer" reads
+ * naturally as a stand-in for a first-person "I" — against a caption
+ * that never says "I", there is no explicit signal that "the dreamer"
+ * IS "a woman" rather than some separate, unstated narrator, so the
+ * clause could be satisfied (in the model's reading) by a scene that
+ * still has *a* human dreamer somewhere off-screen while the described
+ * subject itself is freely reinterpreted. Fixed by widening the bound
+ * referent from "the dreamer" to "the subject this dream describes",
+ * with the clause spelling out explicitly that this covers first-person
+ * ("I") AND third-person/generic phrasing ("a woman", "a man", "a
+ * child") alike — so it resolves onto the actual described subject
+ * regardless of which framing the caption happens to use.
+ *
+ * That rewording addresses the referent-binding half of the bug. The
+ * other half is caption length: "a woman" supplies almost no competing
+ * descriptive content next to a comparatively vivid, specific style
+ * descriptor, so even a correctly-bound guardrail clause has less text
+ * of its own to hold its ground. For captions at/under
+ * SHORT_CAPTION_MAX_WORDS words (see that constant's own comment), the
+ * clause below appends one further sentence that quotes the caption back
+ * verbatim and states plainly that its brevity is not license to invent
+ * a different subject. This is a targeted response to that specific
+ * mechanism (weak vs. strong competing text), not blanket "make the
+ * guardrail longer" — a caption with enough of its own descriptive
+ * content (like the original 14-word founder repro) does not get it,
+ * and doesn't need it.
+ *
+ * Deliberately still ends with "...unless the dream itself explicitly
+ * describes a transformation" — this constrains the STYLE CHOICE only,
+ * not genuine dream content. buildPrompt's philosophy is to narrate what
+ * the dream text already says; if a dream's own caption literally
+ * describes its subject turning into something else, that must still
+ * come through. This clause only closes the loophole where the style
+ * modifier alone was introducing a transformation the dream text never
+ * asked for.
  *
  * Complements, rather than duplicates or contradicts, the existing
  * self-character text below (charTextParts/photoSelf) — that logic
- * establishes exactly who "the dreamer" is (optionally tied to a
- * reference photo); this clause separately establishes that whoever that
- * is, they stay human and stay themselves regardless of style.
+ * establishes exactly who "the dreamer" is when a character/photo is
+ * attached (optionally tied to a reference photo); this clause covers
+ * the general case (including when there are no characters at all, as
+ * with a bare "a woman" caption and no character entries) that whoever
+ * or whatever the dream's subject is, they stay human and stay
+ * themselves regardless of style.
  */
-function styleIntegrityClause(style) {
-  return 'the dreamer remains a real human being throughout, doing exactly what the dream describes — the ' +
-    style + ' treatment applied below governs only the visual rendering, color palette, line work, and ' +
-    'atmosphere, and must never change the subject\'s species, identity, or actions, unless the dream itself ' +
-    'explicitly describes a transformation';
+function styleIntegrityClause(caption, style) {
+  var trimmedCaption = (caption || '').trim();
+  var wordCount = trimmedCaption ? trimmedCaption.split(/\s+/).filter(Boolean).length : 0;
+
+  var clause = 'the subject this dream describes — whether the caption phrases it in first person ("I") or as ' +
+    'a third-person/generic description like "a woman", "a man", or "a child" — remains a real human being ' +
+    'throughout, doing exactly what the dream describes; the ' + style + ' treatment applied below governs ' +
+    'only the visual rendering, color palette, line work, and atmosphere, and must never change the subject\'s ' +
+    'species, identity, or actions, unless the dream itself explicitly describes a transformation';
+
+  if (wordCount > 0 && wordCount <= SHORT_CAPTION_MAX_WORDS) {
+    clause += '; this dream\'s caption is short — "' + trimmedCaption + '" — and that brevity is not license ' +
+      'to invent a different subject: it still names one real human being, whom the ' + style + ' style must ' +
+      'render exactly as described, never as an animal, mythical creature, or any other non-human entity';
+  }
+
+  return clause;
 }
 
 /**
@@ -212,9 +271,11 @@ function styleIntegrityClause(style) {
  * self character (no description) still gets just the plain pointer line,
  * unchanged from before.
  *
- * The second clause of the prompt is always styleIntegrityClause(style) —
- * see that function's own doc comment for why it's there and why it's
- * placed this early.
+ * The second clause of the prompt is always styleIntegrityClause(caption,
+ * style) — see that function's own doc comment for why it's there, why
+ * it's placed this early, and why it also needs the caption itself (to
+ * bind its guardrail onto the actual described subject and to detect
+ * when a short-caption reinforcement sentence is warranted).
  *
  * musicStyle (optional 7th arg) — see MUSIC_STYLE_MODIFIERS above; the
  * caller (the handler below) only ever passes one when the request's
@@ -223,7 +284,7 @@ function styleIntegrityClause(style) {
  */
 function buildPrompt(caption, style, characters, cameraView, sceneryTime, sceneryPlace, musicStyle) {
   var modifier = STYLE_MODIFIERS[style] || ('in a ' + style + ' animation style');
-  var parts = [caption, styleIntegrityClause(style)];
+  var parts = [caption, styleIntegrityClause(caption, style)];
 
   var photoSelf = (characters || []).filter(function (c) { return c && c.isSelf && c.photoDataUrl; })[0];
   var charTextParts = (characters || [])
