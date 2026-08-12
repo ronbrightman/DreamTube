@@ -98,6 +98,30 @@ async function seedUser(page, username) {
   }, username);
 }
 
+/**
+ * Forces `window.matchMedia('(display-mode: standalone)').matches` to true
+ * BEFORE any page script runs — the exact check PwaInstall.isStandalone()
+ * reads (js/pwa.js), so this simulates "already installed, launched from the
+ * home-screen icon" without a real installed PWA. As of the 2026-08-12 push-
+ * gating fix, js/push-subscribe.js's real "Notify me" soft-ask ONLY renders in
+ * the installed/standalone app (the native prompt must never fire in a plain
+ * tab, where an iOS deny permanently burns the origin), so every test that
+ * exercises the real ask must run standalone. (Same helper as the one in
+ * test/a2hs-install-nudge-journey-behavioral.test.js / test/install-first-
+ * door-behavioral.test.js.)
+ */
+function forceStandalone(page) {
+  return page.addInitScript(function () {
+    var real = window.matchMedia ? window.matchMedia.bind(window) : null;
+    window.matchMedia = function (q) {
+      if (String(q).indexOf('display-mode') !== -1) {
+        return { matches: true, media: q, addListener: function () {}, removeListener: function () {}, addEventListener: function () {}, removeEventListener: function () {} };
+      }
+      return real ? real(q) : { matches: false, media: q };
+    };
+  });
+}
+
 test('manifest.json links + sw.js registration do not break an ordinary page load (home.html)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
@@ -465,6 +489,9 @@ test('push-subscribe ask: shown on a real browser right after generation starts,
         Object.defineProperty(window.Notification, 'permission', { value: 'default', configurable: true });
         window.Notification.requestPermission = function () { return Promise.resolve(outcome); };
       }, permissionOutcome);
+      // The real "Notify me" soft-ask now only renders in the installed/
+      // standalone app (2026-08-12 push-gating fix) — simulate that.
+      await forceStandalone(page);
       var username = 'pushask' + Math.random().toString(36).slice(2, 8);
       await seedUser(page, username);
 
@@ -502,6 +529,8 @@ test('push-subscribe ask: never re-shown once dismissed, in the same browser', a
     var page = await context.newPage();
     await blockThirdParty(page);
     await mockNeverFinishingGeneration(page);
+    // The real ask now only renders in the installed/standalone app.
+    await forceStandalone(page);
     var username = 'pushdismiss' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);
 

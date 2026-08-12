@@ -558,6 +558,10 @@ test('push wait-screen: real support still shows the normal "Notify me" ask, nev
       Object.defineProperty(window.Notification, 'permission', { value: 'default', configurable: true });
       window.Notification.requestPermission = function () { return Promise.resolve('denied'); };
     });
+    // The real "Notify me" ask now only renders in the installed/standalone app
+    // (2026-08-12 push-gating fix: the native prompt must never fire in a plain
+    // tab, where an iOS deny permanently burns the origin's permission).
+    await forceStandalone(page);
     await mockNeverFinishingGeneration(page);
     var username = 'pushrealask' + Math.random().toString(36).slice(2, 8);
     await seedUser(page, username);

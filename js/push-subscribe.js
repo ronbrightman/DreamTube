@@ -33,6 +33,29 @@
 // shared source of truth every other in-app-browser-aware feature in
 // this codebase already uses.
 //
+// ===== 2026-08-12 addition: INSTALLED-ONLY native-prompt gate (founder-
+// approved push-gating fix) =====
+// The founder's flow is deliberately install-first: entice users to INSTALL
+// the app to the home screen (the install nudge / A2HS enticement, KEPT
+// intact — see js/install-nudge.js and shouldShowIOSFallback below), and push
+// is the payoff ONCE INSTALLED. So the native permission prompt
+// (Notification.requestPermission / pushManager.subscribe) must fire ONLY when
+// this page is actually running as the INSTALLED, standalone app AND push is
+// genuinely supported here — never in a plain browser tab and never in an
+// in-app webview. This is the core of the fix: on iOS especially, a "deny" in
+// a context where the user can't subscribe anyway PERMANENTLY burns that
+// origin's notification permission (it can't be re-asked without the user
+// editing browser settings), so we must not spend that one shot anywhere it
+// can't succeed. shouldShowAsk() below now additionally requires
+// isInstalledStandalone() (delegating to PwaInstall.isStandalone(), the shared
+// source of truth: matchMedia('(display-mode: standalone)') OR iOS's
+// navigator.standalone). NON-installed users keep the install enticement —
+// the iOS-tab fallback here (push_fallback_shown) and js/install-nudge.js's
+// own A2HS nudge — unchanged. The card the installed user sees is a SOFT-ASK
+// (our own "Notify me" card): the native OS prompt only fires when they tap it
+// (renderRealAsk below), so a decline on our card never burns the native
+// permission and they can be re-asked.
+//
 // ===== 2026-07-29 addition: iOS-browser-tab push fallback chaining
 // (tracker item for-product-a2hs-install-nudge-3-founder-vcofk7's later
 // comment) =====
@@ -120,8 +143,29 @@ window.PushSubscribe = (function () {
     });
   }
 
+  /**
+   * True ONLY when this page is running as the INSTALLED app (standalone
+   * display mode) — the single environment where firing the native push
+   * permission prompt is safe and useful (founder-approved 2026-08-12 push-
+   * gating fix, see header comment). Delegates to PwaInstall.isStandalone()
+   * (js/pwa.js), the shared source of truth, which checks BOTH
+   * window.matchMedia('(display-mode: standalone)').matches (Android/desktop
+   * installed PWA) AND iOS Safari's navigator.standalone flag (an installed
+   * iOS home-screen app). FAILS CLOSED: if PwaInstall isn't available we can't
+   * prove we're installed, so we treat it as not-installed and never fire the
+   * native prompt.
+   */
+  function isInstalledStandalone() {
+    if (!window.PwaInstall || typeof PwaInstall.isStandalone !== 'function') return false;
+    try { return !!PwaInstall.isStandalone(); } catch (e) { return false; }
+  }
+
   function shouldShowAsk() {
     if (!isSupported()) return false;
+    // INSTALLED-ONLY: never fire the native prompt in a plain browser tab (an
+    // iOS deny there permanently burns the origin's permission) — only in the
+    // installed/standalone app. See header comment's 2026-08-12 note.
+    if (!isInstalledStandalone()) return false;
     if (!window.DreamStore) return false;
     if (DreamStore.detectInAppWebviewHost()) return false; // see header comment -- standing rule
     if (Notification.permission !== 'default') return false; // already answered, one way or the other
@@ -182,6 +226,11 @@ window.PushSubscribe = (function () {
     });
 
     document.getElementById('push-ask-enable').addEventListener('click', function () {
+      // The soft-ask was accepted (they tapped "Notify me" on OUR card) — the
+      // native OS prompt fires next. Distinct from push_prompt_shown (the card
+      // rendering) and push_prompt_granted/denied (the native answer), so the
+      // funnel can see how many who saw the card actually opted in.
+      track('push_softask_accepted', {});
       Notification.requestPermission().then(function (permission) {
         DreamStore.dismissPushAsk(); // asked-and-answered either way -- never ask again in this browser
         if (permission === 'granted') {
@@ -255,6 +304,7 @@ window.PushSubscribe = (function () {
     isSupported: isSupported,
     subscribe: subscribe,
     maybeShowAsk: maybeShowAsk,
+    isInstalledStandalone: isInstalledStandalone,
     isIOSBrowserTabUnsupported: isIOSBrowserTabUnsupported
   };
 })();
