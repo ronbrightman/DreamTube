@@ -89,6 +89,14 @@ function buildVerifyLinkUrl(event, linkToken) {
 }
 
 function buildHtml(code, verifyUrl) {
+  // TRANSACTIONAL FIRST, welcome SECOND. This is a code email — the 6-digit
+  // code + the verify link stay the most prominent thing at the top,
+  // unmissable, so the email lands reliably and does its one job (a founder
+  // ask 2026-08-12 layered ON TOP of that: add a short, warm product-intro
+  // welcome, kept tasteful/light so deliverability/inbox placement isn't
+  // hurt — a code email that also greets, not a promo). The welcome block
+  // below is plain text (no competing CTA button) so nothing outweighs the
+  // code as the visual priority.
   return (
     '<div style="max-width:480px;margin:0 auto;font-family:sans-serif;">' +
     '<p style="font-size:16px;">Your DreamTube verification code:</p>' +
@@ -99,6 +107,11 @@ function buildHtml(code, verifyUrl) {
     // email backgrounds; white text keeps AA contrast on it.
     '<p><a href="' + verifyUrl + '" style="display:inline-block;padding:12px 22px;background:#7c5cff;color:#ffffff;border-radius:24px;text-decoration:none;font-weight:700;">Or click here to verify instantly</a></p>' +
     '<p style="color:#666;font-size:13px;margin-top:16px;">You\'re already signed in — this just confirms this is really your email address. No need to do anything right now if you\'d rather wait.</p>' +
+    // ── Warm welcome (light, below the transactional content) ──
+    '<div style="border-top:1px solid #e6e2f2;margin-top:24px;padding-top:16px;">' +
+    '<p style="font-size:15px;font-weight:700;margin:0 0 6px;">Welcome to DreamTube 🌙</p>' +
+    '<p style="font-size:14px;line-height:1.5;color:#555;margin:0;">Turn your dreams into short AI videos — and see what they might mean. Whenever you\'re ready, describe a dream and watch it come to life.</p>' +
+    '</div>' +
     '</div>'
   );
 }
