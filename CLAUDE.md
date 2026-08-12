@@ -39,8 +39,11 @@ moment named. Do not let them get buried by the rest of this file.
   genuinely-`[for ron]` items with READABLE text — a done/closed item must
   NEVER appear open. If it does, fix the Board's data/render logic, not another
   band-aid.
-- **Ron-facing output:** lead with the bottom-line answer/action in **bold** so
-  it stands out; keep reasoning/asides plain or italic below.
+- **Ron-facing output:** **bold EVERY line/point Ron actually needs to read** —
+  the bottom-line answer, each key finding, and every action/decision — not just
+  the opening line; keep reasoning, caveats, and asides plain or italic. (Founder
+  standing rule, reinforced 2026-08-12: "bold whatever you want me to actually
+  read.")
 - **Before reporting any cross-session status — re-fetch the live tracker.**
 
 ---
