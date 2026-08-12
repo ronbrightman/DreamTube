@@ -31,6 +31,19 @@
 // openFullscreenVideo for the call site and this codebase's own thumbnail-
 // capture IIFE for why the render and the capture are the same moment.
 //
+// AUTOMATIC "No meaning yet" ENQUEUE (founder-approved 2026-08-12: "add the
+// no interpretation email to also be automatically sent like not watched
+// video"): the WATCH this endpoint records IS the enqueue trigger for the
+// "No meaning yet" interpretation retention email. Right after writing the
+// viewed marker, this best-effort enqueues a candidate into lib/interp-none-
+// queue-store.js (keyed by the SAME operationName), which send-interp-none-
+// nudges.js's scheduled scan drains ~10 min later — sending the email only if
+// the user has STILL read zero interpretations by then. This mirrors exactly
+// how mark-generation-completed.js enqueues the "unwatched dream" nudge on a
+// verified completion: its own independent try/catch, resolving WHO owns the
+// operationName via lib/job-owners.js's submission-time binding (never client-
+// claimed), and never affecting the 200 this endpoint always returns.
+//
 // SECURITY: keyed by `operationName` (the server-issued generation job id),
 // never a client-invented dreamId — the exact same reasoning
 // mark-generation-completed.js's own header comment lays out for why it
@@ -55,6 +68,9 @@
 
 var resultViewStore = require('./lib/result-view-store');
 var rateLimit = require('./lib/rate-limit');
+var jobOwners = require('./lib/job-owners');
+var accountStore = require('./lib/account-store');
+var interpNoneQueueStore = require('./lib/interp-none-queue-store');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -89,5 +105,57 @@ exports.handler = async function (event) {
     console.error('mark-result-viewed: unexpected error', e);
   }
 
+  // AUTOMATIC "No meaning yet" retention-email ENQUEUE — its own independent
+  // try/catch, the exact "a side-write must never affect the response or the
+  // primary marker" discipline mark-generation-completed.js's completion
+  // side-effects use. Enqueues a pending candidate; send-interp-none-nudges.js's
+  // scheduled scan decides, ~10 min later, whether the user read an
+  // interpretation in the meantime (self-suppress) or not (send).
+  try {
+    await maybeEnqueueInterpNoneCandidate(event, operationName);
+  } catch (noneErr) {
+    console.error('mark-result-viewed: interp-none enqueue step failed (non-fatal)', noneErr);
+  }
+
   return { statusCode: 200, body: JSON.stringify({ ok: true }) };
 };
+
+/**
+ * Enqueues a pending "No meaning yet" candidate for THIS just-watched dream,
+ * if it belongs to a real registered account. send-interp-none-nudges.js's
+ * scheduled scan is what actually decides, ~10 min later, whether the user
+ * has read any interpretation yet (read-count still 0 -> send; >=1 ->
+ * self-suppress). See lib/interp-none-queue-store.js's header comment for the
+ * full mechanism.
+ *
+ * Resolves identity via lib/job-owners.js's submission-time operationName ->
+ * owner binding — never anything this request itself claims — exactly like
+ * mark-generation-completed.js's maybeEnqueueUnwatchedNudge. Every branch is a
+ * silent no-op (never an error, never a distinguishable HTTP response), the
+ * same posture as this endpoint's viewed marker.
+ *
+ * Video-only scope: an unrecorded/unrecognized mediaType (a job predating that
+ * field, or a write that failed) fails CLOSED here, never assumed to be
+ * 'video' — same reasoning as the unwatched nudge (see lib/job-owners.js's
+ * header comment on why mediaType can't be derived from operationName alone).
+ * Interpretations are only ever offered on a dream VIDEO, so this scope is
+ * also the natural one for the trigger.
+ */
+async function maybeEnqueueInterpNoneCandidate(event, operationName) {
+  var ownerRecord = await jobOwners.getJobOwnerRecordWithRetry(event, operationName);
+  if (!ownerRecord || !ownerRecord.email) return;
+  if (ownerRecord.mediaType !== 'video') return;
+
+  var account = await accountStore.getByEmail(event, ownerRecord.email);
+  if (!account || !account.username) return;
+
+  // Idempotent + best-effort — a duplicate call for the SAME operationName (a
+  // re-watch of the same dream) is a harmless no-op against the already-ticking
+  // window (onlyIfNew CAS), and a failed enqueue is a silent miss for this one
+  // candidate (no failure ever surfaces to the caller).
+  await interpNoneQueueStore.markPending(event, operationName, account.username, account.email);
+}
+
+// Exposed for direct unit testing of the enqueue branch in isolation
+// (test/interp-none-nudge-enqueue.test.js).
+exports.maybeEnqueueInterpNoneCandidate = maybeEnqueueInterpNoneCandidate;

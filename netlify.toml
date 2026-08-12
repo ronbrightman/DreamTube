@@ -143,6 +143,19 @@
 [functions."send-unwatched-dream-nudges"]
   schedule = "*/3 * * * *"
 
+# Same belt-and-suspenders reasoning as send-daily-claim-pushes above --
+# the AUTOMATIC "No meaning yet" interpretation retention email (founder-
+# approved 2026-08-12: "add the no interpretation email to also be
+# automatically sent like not watched video"). Every 3 minutes, mirroring
+# send-unwatched-dream-nudges above: this scan's dominant bound is its
+# ~10-minute delay FLOOR (email a watched-but-read-nothing dream ~10 min
+# later), so max delay is floor + one interval = ~13 min, and a finer cadence
+# would just multiply invocations for no benefit since nothing here acts in
+# the first 10 minutes. See send-interp-none-nudges.js's own header comment
+# for the full cadence reasoning.
+[functions."send-interp-none-nudges"]
+  schedule = "*/3 * * * *"
+
 # ==========================================================================
 # /go/* -- serve the marketing ads funnel under this site's own domain
 # (https://dreamtube.life/go/), so paid-ad visitors can land and stay on
