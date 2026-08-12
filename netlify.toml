@@ -156,6 +156,19 @@
 [functions."send-interp-none-nudges"]
   schedule = "*/3 * * * *"
 
+# Same belt-and-suspenders reasoning as send-interp-none-nudges above -- the
+# AUTOMATIC flagship "Unread meanings" interpretation retention email (founder-
+# approved 2026-08-12: auto-send the interpretation emails "like not watched
+# video"). Every 3 minutes, mirroring the sibling scans: this scan's dominant
+# bound is its ~NEXT-DAY delay FLOOR (email a read-some-but-not-all dream ~20h
+# after the first reading, per the retention plan's "next day" timing), so the
+# +3-min interval granularity is immaterial -- a finer cadence would just
+# multiply invocations for no benefit since nothing here acts in the first ~20
+# hours. See send-interp-unread-nudges.js's own header comment for the full
+# cadence/delay/expiry reasoning.
+[functions."send-interp-unread-nudges"]
+  schedule = "*/3 * * * *"
+
 # ==========================================================================
 # /go/* -- serve the marketing ads funnel under this site's own domain
 # (https://dreamtube.life/go/), so paid-ad visitors can land and stay on

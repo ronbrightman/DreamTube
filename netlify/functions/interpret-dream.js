@@ -59,6 +59,9 @@
 
 var InterpreterPersonas = require('../../js/interpreter-personas');
 var interpReadStore = require('./lib/interp-read-store');
+var jobOwners = require('./lib/job-owners');
+var accountStore = require('./lib/account-store');
+var interpUnreadQueueStore = require('./lib/interp-unread-queue-store');
 
 // The crisis/safety instruction block every persona's prompt is built on
 // top of — layered LAST in every prompt this file builds (both modes), so
@@ -349,6 +352,23 @@ exports.handler = async function (event) {
       } catch (markErr) {
         console.error('interpret-dream: failed to record interpretation-read marker (non-fatal)', markErr);
       }
+
+      // AUTOMATIC "Unread meanings" retention-email ENQUEUE (founder-approved
+      // 2026-08-12: auto-send the interpretation emails "like not watched
+      // video"): the FIRST reading a signed-up user opens on a dream IS the
+      // enqueue trigger for the flagship "Unread meanings" email. Its own
+      // independent try/catch — the exact "a side-write must never affect the
+      // reading response or the read marker" discipline mark-result-viewed.js's
+      // interp-none enqueue uses. Enqueues a pending candidate;
+      // send-interp-unread-nudges.js's scheduled scan decides, ~next day,
+      // whether the user has read 1-4 of the 5 by then (send) or read all 5 /
+      // none (self-suppress). Idempotent (onlyIfNew CAS), so a second/third
+      // reading opened on the SAME dream never resets the ~next-day clock.
+      try {
+        await maybeEnqueueInterpUnreadCandidate(event, payload.operationName);
+      } catch (unreadErr) {
+        console.error('interpret-dream: interp-unread enqueue step failed (non-fatal)', unreadErr);
+      }
     }
 
     return { statusCode: 200, body: JSON.stringify({ interpretation: interpretation }) };
@@ -365,3 +385,40 @@ exports.handler = async function (event) {
 // testability" precedent as generate-video.js's own FAL_MODEL/buildPrompt
 // exports.
 exports.SAFETY_BLOCK = SAFETY_BLOCK;
+
+/**
+ * Enqueues a pending "Unread meanings" candidate for THIS dream, if it belongs
+ * to a real registered account. send-interp-unread-nudges.js's scheduled scan
+ * is what actually decides, ~next day, whether the user has read 1-4 of the 5
+ * interpretations by then (send) or read all 5 / read none (self-suppress).
+ * See lib/interp-unread-queue-store.js's header comment for the full mechanism.
+ *
+ * Resolves identity via lib/job-owners.js's submission-time operationName ->
+ * owner binding — never anything this request itself claims — exactly like
+ * mark-result-viewed.js's maybeEnqueueInterpNoneCandidate. Every branch is a
+ * silent no-op (never an error, never affecting the reading response), the same
+ * best-effort posture as the read marker itself.
+ *
+ * Video-only scope: an unrecorded/unrecognized mediaType (a job predating that
+ * field, or a write that failed) fails CLOSED here, never assumed to be
+ * 'video' — same reasoning as the interp-none enqueue (interpretations are only
+ * ever offered on a dream VIDEO, so this scope is also the natural one).
+ */
+async function maybeEnqueueInterpUnreadCandidate(event, operationName) {
+  var ownerRecord = await jobOwners.getJobOwnerRecordWithRetry(event, operationName);
+  if (!ownerRecord || !ownerRecord.email) return;
+  if (ownerRecord.mediaType !== 'video') return;
+
+  var account = await accountStore.getByEmail(event, ownerRecord.email);
+  if (!account || !account.username) return;
+
+  // Idempotent + best-effort — a duplicate call for the SAME operationName
+  // (another reading opened on the same dream) is a harmless no-op against the
+  // already-ticking window (onlyIfNew CAS), and a failed enqueue is a silent
+  // miss for this one candidate (no failure ever surfaces to the caller).
+  await interpUnreadQueueStore.markPending(event, operationName, account.username, account.email);
+}
+
+// Exposed for direct unit testing of the enqueue branch in isolation
+// (test/interp-unread-nudge-enqueue.test.js).
+exports.maybeEnqueueInterpUnreadCandidate = maybeEnqueueInterpUnreadCandidate;
