@@ -1564,14 +1564,70 @@
     attemptPrivateDreamSync(dream, 0);
   }
 
-  // Two retries beyond the first attempt (three attempts total), short
-  // fixed backoff — long enough to ride out a momentary blip, short
-  // enough this never meaningfully delays confirmation for a user who
-  // stays on the page. Any attempt still unconfirmed after these gives up
-  // for THIS page load — retryUnconfirmedPrivateDreamSyncs on a later
-  // load (or reconcilePrivateDreamsFromServer's catch-up on a later real
-  // login) picks it back up, per this function's own doc comment above.
-  var PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS = [800, 2500];
+  // Retry-with-backoff budget for confirming ONE dream's server-side sync
+  // while a page stays open. Originally just [800, 2500] (three attempts,
+  // all within ~3.3s). Extended (tracker item for-product-track-avg-video-
+  // generation-t-2ci8ue / E304 dream_sync_unconfirmed investigation): the
+  // three-attempt/3.3s burst gave up server-side persistence for the whole
+  // page load after only ~3 seconds, then relied ENTIRELY on
+  // retryUnconfirmedPrivateDreamSyncs running on a LATER page load to
+  // recover. That recovery model is exactly wrong for this codebase's
+  // single biggest cohort — FB/IG in-app-webview users (see
+  // lib/dream-store.js's own header comment), whose localStorage is wiped
+  // BETWEEN sessions and who routinely do one short session: if dream-sync
+  // is failing (a real transient E8/5xx, a proxy 502, a dropped
+  // connection) for the ~3.3s of that burst, and they close the webview
+  // before any later page load, the just-generated dream is written to a
+  // localStorage that gets wiped and never reached the server — a silent
+  // vanish (the observable E304 shape). Keeping the same first two fast
+  // attempts (a momentary blip still confirms in well under a second) but
+  // adding a few longer-spaced ones lets an OPEN page ride out a much
+  // longer transient window within the single session the user actually
+  // gives us — home.html while the dream generates, then result.html while
+  // they watch it — so it confirms properly (flips syncConfirmed, stops
+  // re-firing E304) instead of banking on a second visit that a wiped-
+  // storage webview user may never make. Still bounded and still gives up
+  // eventually (firing E304 for a genuinely stuck sync), just over ~76s of
+  // an open page rather than ~3s. Belt-and-suspenders: a pagehide/hidden
+  // beacon flush (see flushUnconfirmedPrivateDreamsBeacon below) is the
+  // final last-chance push as the tab actually goes away.
+  var PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS = [800, 2500, 8000, 20000, 45000];
+
+  // The exact upsert payload dream-sync.js persists off a client-supplied
+  // `dream` — an explicit, hand-maintained whitelist (dream-sync.js's own
+  // DREAM_FIELDS mirrors it server-side; a new dream field is NOT carried
+  // automatically and omitting one fails silently, so both halves must be
+  // kept in sync). Extracted so the retrying fetch path
+  // (attemptPrivateDreamSync) and the pagehide beacon flush
+  // (flushUnconfirmedPrivateDreamsBeacon) build byte-identical bodies from
+  // one place rather than drifting apart.
+  //   createdAt — HAS been carried since finalizeDream stamped it, but was
+  //     once dropped here, so the owner media-library page (server-records
+  //     only) saw every synced dream as timeless; sent as a real finite
+  //     number or null, never fabricated (tracker for-product-media-
+  //     library-stamp-durable--u4oju3).
+  //   mood — the dream-builder Mood step answer js/music-bed.js keys the
+  //     ambient bed off; without it a dream RESTORED onto a new device or
+  //     after a webview storage wipe (the whole reason this sync exists)
+  //     comes back moodless and falls back to its visual-style bed (tracker
+  //     for-product-founder-08-04-evening-music--jfjco0).
+  function buildDreamSyncUpsertBody(dream, authToken) {
+    return {
+      authToken: authToken,
+      action: 'upsert',
+      dream: {
+        id: dream.id, ownerHandle: dream.ownerHandle,
+        caption: dream.caption, promptText: dream.promptText || null, storyText: dream.storyText || null,
+        style: dream.style, mediaType: dream.mediaType || 'video',
+        videoUrl: dream.videoUrl || null, imageUrl: dream.imageUrl || null, dur: dream.dur || null,
+        sourceOperationName: dream.sourceOperationName || null,
+        interpretationText: dream.interpretationText || null, interpretationAt: dream.interpretationAt || null,
+        createdAt: (typeof dream.createdAt === 'number' && isFinite(dream.createdAt)) ? dream.createdAt : null,
+        mood: dream.mood || null,
+        updatedAt: dream.updatedAt || Date.now()
+      }
+    };
+  }
 
   function attemptPrivateDreamSync(dream, attemptIndex) {
     var authToken = state.user && state.user.authToken;
@@ -1579,49 +1635,7 @@
     fetch('/.netlify/functions/dream-sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        authToken: authToken,
-        action: 'upsert',
-        dream: {
-          id: dream.id, ownerHandle: dream.ownerHandle,
-          caption: dream.caption, promptText: dream.promptText || null, storyText: dream.storyText || null,
-          style: dream.style, mediaType: dream.mediaType || 'video',
-          videoUrl: dream.videoUrl || null, imageUrl: dream.imageUrl || null, dur: dream.dur || null,
-          sourceOperationName: dream.sourceOperationName || null,
-          interpretationText: dream.interpretationText || null, interpretationAt: dream.interpretationAt || null,
-          // createdAt (tracker item for-product-media-library-stamp-durable--
-          // u4oju3) — same "this list is an explicit, hand-maintained
-          // whitelist" caveat the mood field's own comment below already
-          // documents: this dream object HAS carried a real createdAt since
-          // finalizeDream stamped it (see that assignment's own doc comment),
-          // but omitting it here meant it was silently dropped before ever
-          // reaching dream-sync.js — the owner media-library page (which
-          // only reads server-side records) then saw every synced private
-          // dream as having no timestamp at all, sinking to "unknown time"
-          // and to the end of its newest-first sort regardless of when it
-          // was actually made. Sent as a real finite number or null, never
-          // fabricated for a dream that predates this field.
-          createdAt: (typeof dream.createdAt === 'number' && isFinite(dream.createdAt)) ? dream.createdAt : null,
-          // mood (tracker item for-product-founder-08-04-evening-music--jfjco0)
-          // — the dream-builder wizard's Mood step answer, which
-          // js/music-bed.js keys the ambient bed off. This list is an
-          // explicit, hand-maintained whitelist (see this function's own doc
-          // comment above): a new dream field is NOT carried automatically,
-          // and omitting one fails silently rather than loudly. dream-sync.js's
-          // server-side DREAM_FIELDS allowlist having 'mood' is necessary but
-          // NOT sufficient — without it here too, the server never receives
-          // the field to store in the first place, so a dream RESTORED onto a
-          // new device or after a webview storage wipe (the entire reason this
-          // sync exists) comes back permanently moodless and quietly falls
-          // back to its visual-style bed. Null-coalesced like every optional
-          // field beside it, so "no mood" (a skipped Mood step, a free-text
-          // "+ Something else", or a creation path with no mood step at all —
-          // Write it / Record it / claim-dream) travels as a real explicit
-          // answer rather than an absent key.
-          mood: dream.mood || null,
-          updatedAt: dream.updatedAt || Date.now()
-        }
-      })
+      body: JSON.stringify(buildDreamSyncUpsertBody(dream, authToken))
     }).then(function (res) {
       return res.json().then(function (data) { return res.ok && !!(data && data.ok); }, function () { return false; });
     }).then(function (confirmed) {
@@ -1703,6 +1717,53 @@
     state.dreams.forEach(function (d) {
       if (d.ownerHandle === myHandle && !d.isPublished && d.syncConfirmed !== true) {
         syncPrivateDreamBestEffort(d);
+      }
+    });
+  }
+
+  /**
+   * Last-chance flush of every still-unconfirmed private dream to the
+   * server as this page is actually going away — fired from `pagehide` and
+   * `visibilitychange`→hidden (see the wiring near this file's init). The
+   * E304 dream_sync_unconfirmed / P0-vanish investigation (tracker item
+   * for-product-p0-data-loss-founder-repro-0-6bzvv1) confirmed the residual
+   * loss shape: the fetch-based retry above only recovers a sync that keeps
+   * failing by running again on a LATER page load
+   * (retryUnconfirmedPrivateDreamSyncs) — but this app's single biggest
+   * cohort is FB/IG in-app-webview users (see lib/dream-store.js's header)
+   * whose localStorage is wiped BETWEEN sessions and who often do exactly
+   * one short session. If dream-sync was failing for the whole time their
+   * page(s) were open and they then close the webview, that later page load
+   * never happens before the wipe, and the dream is gone.
+   *
+   * `navigator.sendBeacon` is the correct tool here specifically because a
+   * normal `fetch` started during unload/hide is routinely cancelled by the
+   * browser, whereas a beacon is guaranteed-delivery, queued by the browser
+   * to complete even after the page is gone. It is fire-and-forget by
+   * design — there is no response to read — so this deliberately does NOT
+   * flip `dream.syncConfirmed` (only a real observed 200/ok does that, see
+   * attemptPrivateDreamSync); its whole job is to get the dream's DATA onto
+   * the server so it can be pulled back by reconcilePrivateDreamsFromServer
+   * on any future load/device, NOT to confirm. dream-sync.js parses
+   * event.body as JSON, so the beacon is sent as an application/json Blob
+   * carrying the exact same upsert body the fetch path builds
+   * (buildDreamSyncUpsertBody). Idempotent by dream id server-side, so
+   * beaconing a dream that a still-in-flight fetch also lands is a harmless
+   * double-write, never a corruption. Purely additive insurance on top of
+   * the retry/​sweep above — it changes none of their behavior.
+   */
+  function flushUnconfirmedPrivateDreamsBeacon() {
+    if (!PRIVATE_DREAM_SYNC_ENABLED) return;
+    if (typeof navigator === 'undefined' || typeof navigator.sendBeacon !== 'function') return;
+    if (!state.user || !state.user.authToken) return;
+    var authToken = state.user.authToken;
+    var myHandle = state.user.handle;
+    state.dreams.forEach(function (d) {
+      if (d.ownerHandle === myHandle && !d.isPublished && d.syncConfirmed !== true) {
+        try {
+          var body = new Blob([JSON.stringify(buildDreamSyncUpsertBody(d, authToken))], { type: 'application/json' });
+          navigator.sendBeacon('/.netlify/functions/dream-sync', body);
+        } catch (e) { /* best-effort last chance — must never throw during unload */ }
       }
     });
   }
@@ -2835,6 +2896,25 @@
   // tracker item for-product-p0-data-loss-founder-repro-0-6bzvv1 — see
   // retryUnconfirmedPrivateDreamSyncs' own doc comment.
   retryUnconfirmedPrivateDreamSyncs();
+
+  // Last-chance private-dream sync flush as the page goes away (tracker
+  // item for-product-p0-data-loss-founder-repro-0-6bzvv1 / E304 vanish
+  // investigation — see flushUnconfirmedPrivateDreamsBeacon's own doc
+  // comment). `pagehide` covers the tab/webview actually closing or
+  // navigating; `visibilitychange`→hidden covers a mobile webview being
+  // backgrounded (which on iOS/Android is frequently the last event a page
+  // reliably gets before it's frozen/discarded — `pagehide`/`unload` are
+  // not guaranteed to fire there, so both are wired). Guarded to never
+  // throw during unload. Both listeners are safe to run repeatedly (the
+  // flush is a no-op once nothing is left unconfirmed).
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('pagehide', flushUnconfirmedPrivateDreamsBeacon);
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') flushUnconfirmedPrivateDreamsBeacon();
+      });
+    }
+  }
 
   // Set by getSharedFeed on every fetch, read by explore.html right after
   // via getLastDreamOfDayId — a side-channel rather than changing
