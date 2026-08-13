@@ -1076,7 +1076,7 @@
     topbar.innerHTML = html;
     var backBtn = document.getElementById('itp-back-btn');
     if (backBtn) backBtn.addEventListener('click', onBackTap);
-    document.getElementById('itp-close-btn').addEventListener('click', function () { close(); });
+    document.getElementById('itp-close-btn').addEventListener('click', function () { userDismiss(); });
   }
 
   function onBackTap() {
@@ -1468,7 +1468,7 @@
     document.getElementById('itp-regenerate-link').addEventListener('click', function () {
       goToReadingLoading({ regenerated: true });
     });
-    document.getElementById('itp-close-link').addEventListener('click', function () { close(); });
+    document.getElementById('itp-close-link').addEventListener('click', function () { userDismiss(); });
 
     if (voiceEligible) setupVoiceStage(persona); else resetVoiceState();
   }
@@ -1517,7 +1517,7 @@
     body.innerHTML = html;
     var retryBtn = document.getElementById('itp-retry-btn');
     if (retryBtn) retryBtn.addEventListener('click', opts.retry);
-    document.getElementById('itp-error-close-link').addEventListener('click', function () { close(); });
+    document.getElementById('itp-error-close-link').addEventListener('click', function () { userDismiss(); });
   }
 
   // ==========================================================================
@@ -1655,13 +1655,23 @@
    * property — see js/purchase-sheet.js's header for the equivalent
    * per-host-page convention this file follows elsewhere).
    */
-  function open(dreamId) {
+  function open(dreamId, opts) {
     var dream = window.DreamStore.getDream(dreamId);
     var captionText = dream && (dream.storyText || dream.caption);
     if (!dream || !captionText) {
       if (typeof window.showToast === 'function') window.showToast('Couldn\'t open this dream\'s reflection right now.');
       return;
     }
+    // returnTo (founder 08-13): when the Chamber is opened from the terminal
+    // result page (result.html — only actions there are "make another" or
+    // "interpret"), closing it should REDIRECT to home.html rather than dump
+    // the user back onto the dead-end result screen where they drop off. The
+    // result.html entry points pass {returnTo:'home.html'}; home.html's own
+    // opens pass nothing (they're already home → plain dismiss). Preserved
+    // across switchDream's re-open (which calls open() with no opts) so a
+    // dream-strip tap inside the overlay doesn't lose the redirect context.
+    var prevReturnTo = session && session.returnTo;
+    var returnTo = (opts && opts.returnTo) || prevReturnTo || null;
 
     ensureMounted();
     discardPrimedAudioEl(); // a still-open session's primed element (see onPersonaPicked) has no home in the brand-new `session` object about to replace it below (switchDream's own re-open-for-a-different-dream path)
@@ -1736,6 +1746,7 @@
       // null on a fresh open, including the re-open switchDream performs,
       // so an id alias can never leak from one session into the next.
       resolvedFrom: null,
+      returnTo: returnTo,
       openedAt: Date.now()
     };
 
@@ -1790,6 +1801,21 @@
     discardPrimedAudioEl();
     session = null;
     gen += 1;
+  }
+
+  // User-gesture dismiss (the topbar X and the phase close-links). Distinct
+  // from the bare close() lifecycle teardown (which pagehide/bfcache and the
+  // test harness also call): when the Chamber was opened from the terminal
+  // result page (open({returnTo:'home.html'})), an EXPLICIT user close should
+  // send them to the home hub — daily claim / streak / explore / make-another
+  // — instead of dropping them back onto the dead-end result screen where they
+  // drop off (founder 08-13). close() fires interp_closed synchronously first,
+  // so PostHog captures + flushes (pagehide beacon) before the navigation.
+  // Opened from home.html (no returnTo) this is a plain dismiss, unchanged.
+  function userDismiss() {
+    var returnTo = session && session.returnTo;
+    close();
+    if (returnTo) { window.location.href = returnTo; }
   }
 
   var InterpretExperience = { open: open, close: close, notifyDreamResolved: notifyDreamResolved };

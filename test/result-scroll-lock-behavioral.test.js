@@ -170,11 +170,17 @@ test('result.html: opening the interpretation overlay engages the shared scroll 
     assert.ok(whileOpen.bodyOverflow === '' || whileOpen.bodyPosition === 'fixed',
       'body overflow is never toggled alone (the freeze cause) — only ever as part of the position:fixed technique');
 
-    await page.click('#itp-close-btn');
+    // Release via a direct close(): the topbar X on result.html now redirects
+    // to home.html (founder 08-13), so reading the lock state after a real
+    // X-tap races with that navigation. ScrollLock.unlock() runs inside close()
+    // — the exact path the X's userDismiss() calls — so a direct close()
+    // verifies the release cleanly. (The X→home redirect itself is covered in
+    // interp-analytics-behavioral.test.js.)
+    await page.evaluate(function () { window.InterpretExperience.close(); });
     await page.waitForTimeout(50);
 
     var afterClose = await readLockState(page);
-    assert.equal(afterClose.refCount, 0, 'the topbar Close button releases the lock');
+    assert.equal(afterClose.refCount, 0, 'closing releases the lock');
     assert.equal(afterClose.isLocked, false);
     assert.equal(afterClose.itpOpen, false);
     assert.equal(afterClose.scrollerOverflow, '', 'the inner-scroller lock is cleared on close');

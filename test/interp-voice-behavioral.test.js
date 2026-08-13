@@ -529,7 +529,13 @@ test('closing the Chamber mid-intro fires interp_voice_intro_skipped{via:"closed
     await openAndPickSage(page);
     await page.waitForSelector('#itp-voice-intro', { state: 'attached', timeout: 5000 });
 
-    await page.click('#itp-close-btn');
+    // Close programmatically (not via the topbar X): opened from result.html,
+    // the X now redirects to home.html (founder 08-13), which unloads the page
+    // and wipes the in-page window.posthog queue before we can read it. The
+    // voice-lifecycle teardown we assert here fires inside close() itself —
+    // the same code path the X's userDismiss() calls — so a direct close()
+    // exercises it faithfully without the navigation.
+    await page.evaluate(function () { window.InterpretExperience.close(); });
 
     var phCalls = await readPostHogCalls(page);
     var skipped = captures(phCalls, 'interp_voice_intro_skipped');
@@ -626,7 +632,11 @@ test('reading audio "ended" fires interp_voice_complete with a duration, and clo
     var overlayVisible = await page.locator('#itp-voice-tap-overlay').evaluate(function (el) { return !el.classList.contains('off'); });
     assert.equal(overlayVisible, true);
 
-    await page.click('#itp-close-btn');
+    // Close programmatically (not via the topbar X): the X now redirects to
+    // home.html (founder 08-13) and unloads the page, wiping window.posthog
+    // before we can read it. interp_voice_listen_time fires inside close() —
+    // the same path the X's userDismiss() runs — so a direct close() covers it.
+    await page.evaluate(function () { window.InterpretExperience.close(); });
     var phCallsAfterClose = await readPostHogCalls(page);
     var listenTime = captures(phCallsAfterClose, 'interp_voice_listen_time');
     assert.equal(listenTime.length, 1);

@@ -2175,7 +2175,9 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         history.replaceState(null, '', cleanedInterp.pathname + cleanedInterp.search + cleanedInterp.hash);
       }
       if(dream && isMyDream && window.InterpretExperience && typeof InterpretExperience.open === 'function'){
-        InterpretExperience.open(dream.id);
+        // returnTo home (founder 08-13): closing the Chamber from this
+        // terminal result page redirects to the home hub, not back here.
+        InterpretExperience.open(dream.id, { returnTo: 'home.html' });
       }
     }
   })();
@@ -2227,7 +2229,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // pausing here is independent of, and complete before, .open() below.
     var resultVideo = document.getElementById('result-video');
     if(resultVideo && !resultVideo.paused) resultVideo.pause();
-    InterpretExperience.open(dream.id);
+    // returnTo home (founder 08-13): closing the Chamber from this terminal
+    // result page redirects to the home hub (daily claim / streak / explore /
+    // make-another), not back onto this dead-end screen where users drop off.
+    InterpretExperience.open(dream.id, { returnTo: 'home.html' });
   });
 
   // Whenever the dream text refers to the dreamer in first person, make sure

@@ -557,7 +557,7 @@ test('result.html: a persona portrait that actually loads successfully hides its
   }
 });
 
-test('result.html: closing via the topbar X fires interp_closed with the current phase, at every phase (picker, questions, reading)', async function (t) {
+test('result.html: closing fires interp_closed with the current phase (picker, questions); the topbar X redirects to the home hub (founder 08-13)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -566,9 +566,15 @@ test('result.html: closing via the topbar X fires interp_closed with the current
     await mockInterpretDream(page, { reading: 'A reading.' });
     await seedResultPage(page, 'd-interp-close-phases');
 
+    // Phase analytics via a direct close(): the topbar X on result.html now
+    // redirects to home.html (asserted at the end), which unloads the page and
+    // wipes the in-page window.posthog queue before we could read it.
+    // interp_closed fires inside close() itself — the same path the X's
+    // userDismiss() runs — so a direct close() asserts the phase faithfully
+    // without navigating.
     await page.click('#interp-cta-btn');
     await page.waitForSelector('.itp-persona-card', { timeout: 5000 });
-    await page.click('#itp-close-btn');
+    await page.evaluate(function () { window.InterpretExperience.close(); });
     await page.waitForFunction(function () { return !document.getElementById('itp-root').classList.contains('open'); }, null, { timeout: 5000 });
     var phCalls1 = await readPostHogCalls(page);
     assert.deepEqual(captures(phCalls1, 'interp_closed')[0][2], { phase: 'picker' });
@@ -576,11 +582,20 @@ test('result.html: closing via the topbar X fires interp_closed with the current
     await page.click('#interp-cta-btn');
     await page.click('.itp-persona-card[data-key="jung"]');
     await page.waitForSelector('.itp-chip', { timeout: 5000 });
-    await page.click('#itp-close-btn');
+    await page.evaluate(function () { window.InterpretExperience.close(); });
     await page.waitForFunction(function () { return !document.getElementById('itp-root').classList.contains('open'); }, null, { timeout: 5000 });
     var phCalls2 = await readPostHogCalls(page);
     var closes2 = captures(phCalls2, 'interp_closed');
     assert.equal(closes2[closes2.length - 1][2].phase, 'questions');
+
+    // New contract (founder 08-13): tapping the REAL topbar X on the terminal
+    // result page redirects to the home hub (daily claim / streak / explore /
+    // make-another) instead of dropping the user back onto the dead-end result
+    // screen where they were bouncing.
+    await page.click('#interp-cta-btn');
+    await page.waitForSelector('.itp-persona-card', { timeout: 5000 });
+    await page.click('#itp-close-btn');
+    await page.waitForURL(/home\.html/, { timeout: 5000 });
   } finally {
     await context.close();
   }
