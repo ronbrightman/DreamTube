@@ -1307,6 +1307,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
+<!-- Pure, side-effect-free module (attaches window.WizardChips only). Loaded
+     here so js/store.js's startGeneration can infer a dream's mood from its
+     own text when the 3-question flow left no mood chosen — see that
+     function's own doc comment. home.html is where the Build flow's fresh
+     generateVideo AND the wizard/funnel resumePendingJob actually fire. -->
+<script src="js/wizard-chips.js"></script>
 <script src="js/content-block-panel.js"></script>
 <script src="js/dream-cards.js"></script>
 <script src="js/bottom-nav.js"></script>

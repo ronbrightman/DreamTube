@@ -212,6 +212,77 @@
     return known ? known.key : null;
   }
 
+  // ── Deterministic, no-network mood inference from a dream's own text ──
+  // (founder standing rule 08-13, the follow-on to tracker item
+  // for-product-founder-08-04-evening-music--jfjco0): the 3-question
+  // Build-flow trim removed the Mood step from create.html, wizard.html AND
+  // the growth funnel, so every Build/wizard dream now arrives moodless and
+  // every mood-keyed music bed (js/music-bed.js keys the bed off dream.mood)
+  // collapses to the single 'dreamy' default — mood-music VARIETY died.
+  // Rather than re-add a question, derive the mood from the dream's own
+  // words. Pure, synchronous, offline — safe to call anywhere.
+  //
+  // Returns exactly one of the six real MOOD_CHIPS keys, NEVER null: music
+  // always needs a mood, and DEFAULT_MOOD ('dreamy') is the deliberate
+  // fallback both for empty text and for text that matches no keyword — the
+  // most genre-neutral of the six beds (same choice js/music-bed.js's tier-3
+  // default already makes for an otherwise-unresolvable dream).
+  //
+  // Scoring: lowercase the text, then for each mood count how many of its
+  // keyword STEMS appear, word-boundary-anchored at the FRONT only so a stem
+  // matches its inflections (`chas` catches chase/chased/chasing) while the
+  // leading \b stops it firing mid-word (`rest` never triggers inside
+  // 'restaurant'). Each keyword contributes at most once (presence, not
+  // frequency, so one repeated word can't dominate). Highest score wins.
+  //
+  // Tie-break — including the all-zero case, which lands on the fallback — is
+  // a FIXED priority order, iterated below so the first mood to reach a score
+  // holds it against a strict '>' :
+  //   tense > epic > mysterious > joyful > peaceful > dreamy
+  // Most acoustically/emotionally salient signal first: danger/anxiety
+  // (tense) so a chase or nightmare is never softened, then grandeur (epic),
+  // intrigue (mysterious), the positive-calm moods (joyful, peaceful), and
+  // dreamy last precisely because it is also the neutral fallback — it only
+  // wins when it genuinely outscores everything else, or nothing matched.
+  //
+  // The lists are meaningful-but-not-exhaustive on purpose (founder's
+  // simplicity doctrine) — this is a music-bed hint, not a psycholinguistic
+  // classifier. Stems are deliberately chosen to avoid double-counting one
+  // concept (e.g. dreamy carries 'dream', not also 'dreamy', since 'dream'
+  // already matches 'dreamy'/'dreamlike'; epic carries 'fly', not also
+  // 'flying', for the same reason).
+  var MOOD_KEYWORDS = {
+    tense: ['chas', 'running from', 'run from', 'ran from', 'falling', 'fell', 'scared', 'afraid', 'fear', 'terrif', 'terror', 'monster', 'dark', 'trapped', 'panic', 'nightmare', 'danger', 'attack', 'death', 'dying', 'drown', 'threat', 'scream', 'kill', 'blood', 'exam'],
+    epic: ['fly', 'flew', 'soar', 'sky', 'mountain', 'ocean', 'vast', 'cosmic', 'cosmos', 'battle', 'hero', 'giant', 'universe', 'galax', 'storm', 'powerful', 'awe', 'majest', 'infinite', 'endless', 'stars', 'starry', 'thunder', 'dragon', 'triumph', 'victory', 'summit', 'epic'],
+    joyful: ['happy', 'happi', 'laugh', 'joy', 'danc', 'celebrat', 'friend', 'play', 'bright', 'sunshine', 'sunny', 'love', 'wedding', 'party', 'smile', 'delight', 'cheer', 'reunion', 'birthday', 'giggl', 'festive'],
+    peaceful: ['calm', 'still', 'quiet', 'float', 'garden', 'meadow', 'gentle', 'warm', 'safe', 'home', 'resting', 'restful', 'serene', 'peace', 'tranquil', 'soft', 'soothing', 'lake', 'sunset', 'breeze', 'meditat', 'cozy', 'cosy', 'harmon'],
+    mysterious: ['strange', 'myster', 'unknown', 'shadow', 'whisper', 'hidden', 'fog', 'misty', 'secret', 'door', 'maze', 'search', 'labyrinth', 'unfamiliar', 'eerie', 'veil', 'clue', 'puzzle', 'corridor', 'unseen', 'lost', 'vanish', 'disappear', 'cryptic'],
+    dreamy: ['dream', 'surreal', 'shift', 'melt', 'impossible', 'color', 'colour', 'weird', 'bizarre', 'kaleidoscope', 'morph', 'shimmer', 'glow', 'trippy', 'unreal', 'liquid', 'psychedelic', 'swirl', 'distort']
+  };
+  // Tie-break / fallback priority — see inferMoodFromText's doc comment.
+  var MOOD_PRIORITY = ['tense', 'epic', 'mysterious', 'joyful', 'peaceful', 'dreamy'];
+
+  function inferMoodFromText(text) {
+    var s = (typeof text === 'string' ? text : '').toLowerCase();
+    if (!s.trim()) return DEFAULT_MOOD;
+    var best = null;
+    var bestScore = 0;
+    // Iterated in priority order so the FIRST mood to reach a given score is
+    // the higher-priority one; a strict '>' then never lets a lower-priority
+    // mood overtake it on an exact tie.
+    MOOD_PRIORITY.forEach(function (mood) {
+      var kws = MOOD_KEYWORDS[mood] || [];
+      var score = 0;
+      for (var i = 0; i < kws.length; i++) {
+        // Front \b only (see doc comment). Keywords are static, hand-authored
+        // and contain no regex metacharacters, so no escaping is needed.
+        if (new RegExp('\\b' + kws[i]).test(s)) score++;
+      }
+      if (score > bestScore) { bestScore = score; best = mood; }
+    });
+    return best || DEFAULT_MOOD;
+  }
+
   function chipLabel(list, key) {
     var found = list.filter(function (c) { return c.key === key; })[0];
     return found ? found.label : null;
@@ -619,6 +690,7 @@
     DEFAULT_ACTION: DEFAULT_ACTION,
     chipLabel: chipLabel,
     persistedMood: persistedMood,
+    inferMoodFromText: inferMoodFromText,
     inferCamera: inferCamera,
     inferLighting: inferLighting,
     inferFallbackPlaceKey: inferFallbackPlaceKey,

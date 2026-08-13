@@ -2642,6 +2642,52 @@
     // and finalizeDream (so the finished dream record carries it), exactly
     // the same route storyText above already takes.
     var mood = opts.mood || null;
+    // ── Infer the mood from the dream's own text when none was chosen ──
+    // (founder standing rule 08-13). The 3-question Build-flow trim removed
+    // the Mood step from create.html, wizard.html and the growth funnel, so
+    // every chip/Build/Write dream now reaches here with mood null or the
+    // untouched DEFAULT_MOOD ('dreamy'), which killed mood-music variety
+    // (js/music-bed.js keys the bed off dream.mood). Rather than re-add a
+    // question, derive the mood deterministically from the dream's own text —
+    // storyText (the human sentence) preferred, else the engineered caption.
+    // This is a CLIENT-SIDE PLAYBACK HINT ONLY: it reassigns the local `mood`
+    // var that flows to savePendingJob/finalizeDream, and NEVER touches
+    // `caption`/promptText (the generation prompt is unchanged — inference
+    // drives MUSIC/mood selection, not the prompt).
+    //
+    // This is THE single hookpoint that covers all three surfaces without
+    // duplicating logic, because every creation path converges here:
+    // create.html's "Build it" and Write-it (home.html -> generateVideo ->
+    // startGeneration), wizard.html's pre-signup funnel + the growth handoff
+    // (adoptPendingGeneration -> resumePendingJob -> startGeneration with the
+    // job's own mood/storyText), and every edit/regenerate (also here, but
+    // gated out below).
+    //
+    // Three gates, so it only ever ADDS variety, never overrides a real
+    // signal:
+    //   - sourceDreamId: a regenerate / Try-Again / edit re-runs an EXISTING
+    //     dream that has no mood picker of its own; finalizeDream already
+    //     preserves that dream's stored mood, so inferring here would wrongly
+    //     clobber it. Skip.
+    //   - explicit-pick: only null/absent OR the untouched DEFAULT_MOOD is
+    //     treated as "infer". A real non-default user pick (should the Mood
+    //     step ever be restored) is left exactly as chosen. No surface sets a
+    //     non-default mood today, so treating null/'dreamy' as "infer" is
+    //     correct now and forward-safe.
+    //   - availability: WizardChips is a browser global, loaded by every real
+    //     generation-start page (create/wizard/result/style.html, and — added
+    //     for this — home/explore.html). Reached via the same
+    //     `typeof window`/window.X pattern store.js already uses for posthog;
+    //     if it is somehow absent, mood simply stays as-is (no crash), and
+    //     the dream falls back to its style/default bed exactly as before.
+    if (!sourceDreamId && (!mood || mood === 'dreamy') &&
+        typeof window !== 'undefined' && window.WizardChips &&
+        typeof window.WizardChips.inferMoodFromText === 'function') {
+      var moodInferSource = opts.storyText || caption;
+      if (moodInferSource && String(moodInferSource).trim()) {
+        mood = window.WizardChips.inferMoodFromText(moodInferSource);
+      }
+    }
     var submitUrl = mediaType === 'image' ? '/.netlify/functions/generate-image' : '/.netlify/functions/generate-video';
     // Captured once, up front, so the SAME value is used both on the
     // submission request below and later on every status poll (see

@@ -384,6 +384,42 @@ test('js/store.js: a mood on the draft reaches the FINISHED dream record through
   }
 });
 
+test('js/store.js: with NO explicit mood, the mood is INFERRED from the dream text and that inferred mood reaches the FINISHED dream record and drives its bed on result.html -- the 3-question-trim mood-variety restore (founder 08-13), mirroring the explicit-mood test above', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedLoggedInUser(page, 'moodinferer');
+    await mockGeneration(page, '/assets/music-beds/anime.wav');
+    await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
+    // explore.html now loads js/wizard-chips.js, so startGeneration can reach
+    // WizardChips.inferMoodFromText -- exactly as every real generation-start
+    // page (home/create/wizard/result/style.html) can.
+    await page.waitForFunction(function () { return !!(window.WizardChips && window.WizardChips.inferMoodFromText); }, { timeout: 5000 });
+
+    var dream = await page.evaluate(async function () {
+      // No mood opt at all. The caption carries the DEFAULT 'dreamy' language
+      // (as create.html's Build flow assembles), but the storyText clearly
+      // implies 'tense' (monster / chasing / dark / terrified) -- proving
+      // storyText is the preferred inference source and beats both the
+      // caption's default dreamy words and the Cartoon visual style.
+      return await DreamStore.generateVideo(
+        'a prompt, dreamy surreal mood, Cartoon style, dreamlike.',
+        'Cartoon',
+        { storyText: 'A monster was chasing me through the dark and I was terrified.' }
+      );
+    });
+    assert.equal(dream.mood, 'tense', 'the mood inferred from the dream text must be stamped onto the finished dream record');
+
+    await page.goto(baseUrl + '/result.html?id=' + dream.id, { waitUntil: 'domcontentloaded' });
+    var bedSrc = await page.locator('#result-music-bed').evaluate(function (a) { return a.getAttribute('src'); });
+    assert.equal(bedSrc, 'assets/music-beds/moods/tense.wav', 'result.html must play the bed for the INFERRED mood, not the Cartoon style bed');
+  } finally {
+    await context.close();
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // 1b. mood has to reach the WIRE, not just local state
 //
@@ -444,20 +480,34 @@ test('js/store.js (regression): a real generation\'s mood actually reaches the W
   }
 });
 
-test('js/store.js (regression): a generation with NO mood still sends an explicit `mood: null` on the wire -- matching how every other optional field in that same upsert body is shaped, so "no mood" is transmitted as a real answer rather than an absent key', async function (t) {
+// BEHAVIOR CHANGE (3-question-trim mood-variety restore, founder 08-13): a
+// generation with no EXPLICITLY-chosen mood no longer stores/sends a bare
+// null — js/store.js's startGeneration now infers the mood from the dream's
+// own text (WizardChips.inferMoodFromText), so a chase dream sounds tense, a
+// calm dream peaceful, etc., without re-adding a Mood question. explore.html
+// now loads js/wizard-chips.js (as every real generation-start page does), so
+// the inference is live here. The two tests below used to assert the OLD
+// "no mood -> null -> style bed" contract; they now assert the inferred mood
+// instead. The inference reassigns only the client-side `mood`/bed hint — it
+// never alters the generation caption/promptText (test/split-prompttext-
+// storytext-behavioral.test.js still guards the caption for the default case).
+test('js/store.js: with NO explicit mood, the mood INFERRED from the dream text rides the SAME hand-maintained dream-sync wire field an explicit mood does -- so cross-device restore keeps the inferred mood, never a bare null', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await seedLoggedInUser(page, 'moodlesswiresyncer');
+    await seedLoggedInUser(page, 'moodinferwiresyncer');
     var syncCalls = mockDreamSync(page);
     await mockGeneration(page, '/assets/music-beds/anime.wav');
     await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(function () { return !!(window.WizardChips && window.WizardChips.inferMoodFromText); }, { timeout: 5000 });
 
     await page.evaluate(async function () {
-      // No mood opt at all -- exactly what Write-it / Record-it produce.
-      return await DreamStore.generateVideo('a prompt, Cartoon style, dreamlike.', 'Cartoon', {});
+      // No mood opt, but a storyText whose words clearly imply 'peaceful'
+      // (floating / calm / quiet / garden / serene / safe). This is the
+      // common case now that the Mood step is gone.
+      return await DreamStore.generateVideo('a prompt, Cartoon style, dreamlike.', 'Cartoon', { storyText: 'I was floating in a calm, quiet garden feeling serene and safe.' });
     });
 
     var sawUpsert = await waitFor(function () { return !!firstUpsert(syncCalls); });
@@ -466,33 +516,35 @@ test('js/store.js (regression): a generation with NO mood still sends an explici
     var upsert = firstUpsert(syncCalls);
     assert.equal(
       upsert.body.dream.mood,
-      null,
-      'the no-mood path must send an explicit null (same null-coalesced shape as promptText/storyText/videoUrl right beside it), never a fabricated default and never an absent key'
+      'peaceful',
+      'the INFERRED mood must ride the outgoing dream-sync upsert body -- the same hand-maintained wire field list the explicit-mood regression above exercises. Without it, a restore onto a new device / after a webview wipe would lose the inferred mood and silently fall back to the visual-style bed.'
     );
   } finally {
     await context.close();
   }
 });
 
-test('js/store.js: a generation with NO mood still produces exactly today\'s dream record and today\'s style-matched bed -- the no-mood path is unchanged, not merely tolerated', async function (t) {
+test('js/store.js: a generation whose text carries NO mood keyword infers the neutral fallback (DEFAULT_MOOD \'dreamy\') and that drives the bed -- inference never leaves a real video dream moodless', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await seedLoggedInUser(page, 'moodlessgenerator');
+    await seedLoggedInUser(page, 'moodfallbackgenerator');
     await mockGeneration(page, '/assets/music-beds/anime.wav');
     await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(function () { return !!(window.WizardChips && window.WizardChips.inferMoodFromText); }, { timeout: 5000 });
 
     var dream = await page.evaluate(async function () {
-      // No `mood` opt at all -- exactly what Write-it / Record-it produce.
+      // No mood opt and a keyword-light caption (only 'dreamlike' -> the
+      // dreamy stem), so inference lands on the neutral fallback 'dreamy'.
       return await DreamStore.generateVideo('a prompt, Cartoon style, dreamlike.', 'Cartoon', {});
     });
-    assert.equal(dream.mood, null, 'no mood chosen must store null, never a guessed default');
+    assert.equal(dream.mood, 'dreamy', 'keyword-light text infers the neutral DEFAULT_MOOD fallback, not null');
 
     await page.goto(baseUrl + '/result.html?id=' + dream.id, { waitUntil: 'domcontentloaded' });
     var bedSrc = await page.locator('#result-music-bed').evaluate(function (a) { return a.getAttribute('src'); });
-    assert.equal(bedSrc, 'assets/music-beds/cartoon.wav', 'unchanged from before this feature existed');
+    assert.equal(bedSrc, 'assets/music-beds/moods/dreamy.wav', 'the inferred fallback mood drives the mood bed, beating the Cartoon style bed');
   } finally {
     await context.close();
   }

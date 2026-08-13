@@ -515,3 +515,54 @@ joinCases.forEach(function (c) {
     assert.equal(WizardChips.joinStorySentences(c[0], c[1]), c[2]);
   });
 });
+
+// ── inferMoodFromText — deterministic, no-network mood inference ──────────
+// Restores mood-music variety after the 3-question Build-flow trim removed
+// the Mood step (founder standing rule 08-13). Pure keyword scoring, returns
+// one of the six real MOOD_CHIPS keys, NEVER null (music always needs a
+// mood; DEFAULT_MOOD 'dreamy' is the deliberate fallback). See the function's
+// own doc comment for the scoring + fixed tie-break priority.
+
+test('inferMoodFromText: a representative dream text resolves to the expected mood — one clean case per mood, plus the keyword-free fallback', function () {
+  var cases = [
+    ['A monster was chasing me through the dark and I was scared and terrified', 'tense'],
+    ['I was soaring over a vast ocean toward a giant mountain, it felt powerful', 'epic'],
+    ['We were laughing and dancing at a wedding, everyone was so happy', 'joyful'],
+    ['I was floating in a calm, quiet garden feeling serene and safe', 'peaceful'],
+    ['A strange shadow whispered behind a hidden door in the fog', 'mysterious'],
+    ['The walls were melting into shifting colors, everything felt surreal and weird', 'dreamy'],
+    // No keyword from any list -> falls back to the neutral DEFAULT_MOOD.
+    ['I bought some groceries and paid the electricity bill at the store', 'dreamy']
+  ];
+  cases.forEach(function (c) {
+    assert.equal(WizardChips.inferMoodFromText(c[0]), c[1], 'text "' + c[0] + '" should infer "' + c[1] + '"');
+  });
+});
+
+test('inferMoodFromText: never returns null/undefined — empty, whitespace, and non-string inputs all resolve to DEFAULT_MOOD', function () {
+  [undefined, null, '', '   ', 0, {}, []].forEach(function (v) {
+    assert.equal(WizardChips.inferMoodFromText(v), WizardChips.DEFAULT_MOOD, JSON.stringify(v) + ' must fall back to DEFAULT_MOOD, never null');
+  });
+  assert.equal(WizardChips.DEFAULT_MOOD, 'dreamy');
+});
+
+test('inferMoodFromText: case-insensitive and matches inflections via word-boundary stems (chase/chased/chasing), without firing mid-word (restaurant does not read as peaceful)', function () {
+  assert.equal(WizardChips.inferMoodFromText('A MONSTER WAS CHASING ME'), 'tense');
+  assert.equal(WizardChips.inferMoodFromText('being chased'), 'tense');
+  assert.equal(WizardChips.inferMoodFromText('the chase never ended'), 'tense');
+  // 'rest' must not fire inside 'restaurant'; this text has no real keyword.
+  assert.equal(WizardChips.inferMoodFromText('we sat in a restaurant'), WizardChips.DEFAULT_MOOD);
+});
+
+test('inferMoodFromText: on an exact score tie the fixed priority order (tense > epic > mysterious > joyful > peaceful > dreamy) decides — a chase word ties nothing but a lone tense+dreamy tie resolves to tense', function () {
+  // 'falling' (tense, 1) vs 'dreamy and surreal' (dreamy: dream + surreal, 2)
+  // -> dreamy genuinely outscores, so dreamy wins (not a tie).
+  assert.equal(WizardChips.inferMoodFromText('I was falling, feeling dreamy and surreal'), 'dreamy');
+  // A true 1-1 tie: 'nightmare' (tense) + 'surreal' (dreamy) -> tense wins on priority.
+  assert.equal(WizardChips.inferMoodFromText('a surreal nightmare'), 'tense');
+  // Every returned value is always one of the six real keys.
+  var keys = WizardChips.MOOD_CHIPS.map(function (c) { return c.key; }).filter(function (k) { return k !== 'other'; });
+  ['whatever', 'flying over the mountains', 'a party with friends'].forEach(function (t) {
+    assert.ok(keys.indexOf(WizardChips.inferMoodFromText(t)) !== -1, 'must return a real mood key for: ' + t);
+  });
+});

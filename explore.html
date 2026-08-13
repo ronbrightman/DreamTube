@@ -127,6 +127,13 @@
 <script src="js/icons.js"></script>
 <script src="js/store.js"></script>
 <script src="js/music-bed.js"></script>
+<!-- Pure, side-effect-free module (attaches window.WizardChips only). Loaded
+     so js/store.js's startGeneration can infer a mood from the dream's text
+     for the resumePendingJob path this page also drives (a pending wizard/
+     funnel job resumed after the user navigated to Explore) — see that
+     function's doc comment. Keeps mood inference identical on every
+     generation-start surface, not page-dependent. -->
+<script src="js/wizard-chips.js"></script>
 <script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
