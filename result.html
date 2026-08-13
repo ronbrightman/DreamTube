@@ -1699,6 +1699,70 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     }).catch(function () { /* analytics must never break the app -- network failure here is a no-op */ });
   })();
 
+  // ===== Passive-bounce catch: idle on the result page -> home hub =====
+  // Founder 08-13. The data: ~40% of visitors who reach this terminal result
+  // page watch their finished (looping) dream and then leave the app without
+  // doing anything — it's a dead end once the video's been watched. Mirroring
+  // the Chamber-close -> home redirect, if the OWNER sits here with ZERO
+  // interaction for a grace window WHILE the dream is actually watchable, send
+  // them to the home hub (daily claim / streak / explore / make-another)
+  // rather than let them bounce. ANY interaction — a tap, scroll, key, opening
+  // the fullscreen player / any sheet / the Chamber — means they're engaged,
+  // so we permanently disarm and NEVER yank an active user away. Never fires
+  // while the dream is still (re)generating, while the tab is backgrounded, or
+  // for a shared dream a non-owner is viewing.
+  (function idleHomeRedirect(){
+    if(!isMyDream) return; // only the dream's owner; a shared-link viewer stays put
+    // Overridable ONLY for tests (e.g. result.html?idlems=400); real users get 30s.
+    var IDLE_MS = parseInt(getParam('idlems'), 10) || 30000;
+    var armed = true, timer = null, rechecks = 0;
+    // Only genuine user gestures cancel (NOT a programmatic 'scroll', which
+    // can fire on load from layout/scroll-restore and would falsely disarm):
+    // touchstart/wheel already cover real user scrolling on touch/desktop.
+    var EVENTS = ['pointerdown','touchstart','keydown','wheel'];
+    function dreamWatchable(){
+      // A finished dream on this page has its media src set; the only "not
+      // ready" states are an in-flight (re)generation (guarded here) and the
+      // initial generating state (no src yet). A src therefore means done.
+      if(regeneratingThisDream()) return false;
+      var v = document.getElementById('result-video');
+      if(v && v.getAttribute('src')) return true;
+      var img = document.getElementById('result-image');
+      if(img && img.getAttribute('src')) return true;
+      return false;
+    }
+    function anyOverlayOpen(){
+      return !!document.querySelector('#itp-root.open, [id$="-overlay"].open');
+    }
+    function disarm(){
+      armed = false;
+      if(timer){ clearTimeout(timer); timer = null; }
+      EVENTS.forEach(function(e){ window.removeEventListener(e, onInteract, true); });
+      document.removeEventListener('visibilitychange', onVis);
+    }
+    function onInteract(){ disarm(); } // one real interaction => engaged, leave them be
+    function fire(){
+      if(!armed) return;
+      if(document.hidden){ return; } // onVis reschedules a fresh window on refocus
+      if(anyOverlayOpen()){ disarm(); return; } // engaged (interaction should already have cancelled)
+      if(!dreamWatchable()){
+        if(rechecks++ < 4){ timer = setTimeout(fire, Math.min(IDLE_MS, 15000)); return; } // still generating — wait, then give up
+        disarm(); return;
+      }
+      disarm();
+      try { track('result_idle_home_redirect', { idle_ms: IDLE_MS }); } catch(e){}
+      window.location.href = 'home.html';
+    }
+    function onVis(){
+      if(!armed) return;
+      if(document.hidden){ if(timer){ clearTimeout(timer); timer = null; } }
+      else if(!timer){ timer = setTimeout(fire, IDLE_MS); }
+    }
+    EVENTS.forEach(function(e){ window.addEventListener(e, onInteract, { capture:true, passive:true }); });
+    document.addEventListener('visibilitychange', onVis);
+    timer = setTimeout(fire, IDLE_MS);
+  })();
+
   // ===== In-card ambient preview: error retry + tab-visibility pause =====
   // The video autoplays muted/looped as soon as it has a src, purely as an
   // ambient preview inside the card -- tapping it (or the play badge, or
