@@ -1957,7 +1957,16 @@
     location.href = 'style.html';
   }
 
-  var BUILD_RENDERERS = [renderBuildSubject, renderBuildSetting, renderBuildAction, renderBuildMood, renderBuildFreeText];
+  // 3-QUESTION WIZARD TRIM — must stay IDENTICAL to the paid funnel's active
+  // flow (dreamtube-growth index.html: build_who -> build_what -> style ->
+  // recap; build_where/Setting and build_mood/Mood PARKED + inferred). Founder
+  // standing rule 08-13 "keep both entry flows identical". renderBuildSetting
+  // and renderBuildMood stay defined below but are OUT of the active array:
+  // Setting is inferred from the action by WizardChips.buildDeterministicStory
+  // (shared with the funnel); Mood defaults to 'dreamy' (WizardChips.DEFAULT_MOOD,
+  // buildMoodSkipped=false) exactly as the funnel persists it. To restore the
+  // longer flow, add them back here.
+  var BUILD_RENDERERS = [renderBuildSubject, renderBuildAction, renderBuildFreeText];
   function renderBuild(){
     renderBuildDots();
     BUILD_RENDERERS[buildCur](buildStepBody);
