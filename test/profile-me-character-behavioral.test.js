@@ -179,7 +179,7 @@ test('profile.html: editing name + photo creates/updates the Me character, visib
 
     // Same account, create.html's own Advanced > Characters chip row -- no separate identity table.
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#create-q-grid [data-tile="5"]');
+    await page.click('#choice-write');
     await page.click('#adv-toggle');
     var chipTexts = await page.locator('#char-chip-row .char-chip span').allTextContents();
     assert.ok(chipTexts.indexOf('Sarah Chen') !== -1, 'expected a "Sarah Chen" character chip, got: ' + JSON.stringify(chipTexts));
@@ -197,7 +197,7 @@ test('create.html: editing the Me character\'s photo is reflected on profile.htm
   try {
     await seedUser(page, { id: 'cself1', name: 'Jordan', isSelf: true, description: 'tall with short dark hair' });
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#create-q-grid [data-tile="5"]');
+    await page.click('#choice-write');
     await page.click('#adv-toggle');
 
     // Open the existing self character's edit sheet via its chip's edit icon.
@@ -275,7 +275,7 @@ test('create.html: typing the Me character\'s own name (not "I"/"me") into the d
   try {
     await seedUser(page, { id: 'cself2', name: 'Priya Kapoor', isSelf: true, description: 'wears glasses' });
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#create-q-grid [data-tile="5"]');
+    await page.click('#choice-write');
     await page.click('#adv-toggle');
 
     // Not yet selected before typing anything.
@@ -319,7 +319,7 @@ test('create.html: a common word matching part of the Me character\'s name auto-
     // no attach, no crash".
     await seedUser(page, { id: 'cself3', name: 'Amber', isSelf: true, description: 'red hair' });
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#create-q-grid [data-tile="5"]');
+    await page.click('#choice-write');
     await page.click('#adv-toggle');
 
     await page.fill('#dream-text', 'I was walking through an amber-lit forest at dusk.');
@@ -345,7 +345,7 @@ test('create.html: a common word matching part of the Me character\'s name auto-
   try {
     await seedUser(page2, null);
     await safeGoto(page2, baseUrl + '/create.html');
-    await page2.click('#create-q-grid [data-tile="5"]');
+    await page2.click('#choice-write');
     await page2.click('#adv-toggle');
 
     await page2.fill('#dream-text', 'I walked through an amber forest and saw my friend Amber waving.');
@@ -366,7 +366,7 @@ test('profile.html: a Me character created via create.html\'s actual "Add yourse
   try {
     await seedUser(page, null); // no self character yet -- must go through the real "Add yourself" sheet
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#create-q-grid [data-tile="5"]');
+    await page.click('#choice-write');
     await page.click('#adv-toggle');
 
     // The only first-party path to a Me character before this branch existed:

@@ -93,18 +93,12 @@ async function reachBuildActionStep(page) {
     localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
   });
   await safeGoto(page, baseUrl + '/create.html');
-  // Question-first trim: the "Someone specific" tile is the one entry that
-  // still ASKS the Action step (it doesn't pre-seed the beat); every scenario
-  // tile seeds+skips it. It opens the character sheet on arrival -- dismiss
-  // it for a clean Subject step. Setting is gone (inferred), so the flow is
-  // Subject -> Action directly.
-  await page.waitForSelector('#create-q-grid');
-  await page.click('#create-q-grid [data-tile="2"]'); // Someone specific
-  await page.waitForSelector('#build-sheet-character-overlay.open');
-  await page.click('#build-char-cancel');
+  await page.click('#choice-build');
   await page.waitForSelector('#build-subject-chip-row');
   await page.click('[data-build-subj-other="none"]');
   await page.click('#build-subject-continue');
+  await page.waitForSelector('#build-place-row');
+  await page.click('#build-setting-skip');
   await page.waitForSelector('#build-action-row');
 }
 
@@ -356,8 +350,8 @@ test('create.html "Build it": Action step shows the same curated default view + 
     await page.click('[data-build-action="calm"]'); // a hidden chip
     await page.click('#build-action-continue');
 
-    // Question-first trim: Action is followed directly by free text now
-    // (the Mood step is gone -- inferred).
+    await page.waitForSelector('#build-mood-row');
+    await page.click('#build-mood-skip');
     await page.waitForSelector('#build-freetext-input');
     await page.click('#build-freetext-skip');
 

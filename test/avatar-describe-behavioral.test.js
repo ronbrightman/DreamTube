@@ -182,7 +182,7 @@ test('profile.html: Describe mode calls generate-avatar.js and stores the return
     // Bidirectional sync: create.html's self-mode sheet reads the exact
     // same DreamStore.saveCharacter record, no separate storage path.
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#create-q-grid [data-tile="5"]');
+    await page.click('#choice-write');
     await page.click('#adv-toggle');
     await page.click('[data-char-edit="' + me.id + '"]');
     await page.waitForSelector('#sheet-character-overlay.open');
@@ -209,7 +209,7 @@ test('create.html: self-mode sheet\'s Describe option also generates a real avat
     await seedUser(page, null);
     await mockGenerateAvatar(page);
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#create-q-grid [data-tile="5"]');
+    await page.click('#choice-write');
     await page.click('#adv-toggle');
 
     await page.click('#char-add-self');
@@ -244,7 +244,7 @@ test('a non-self character\'s Describe option is unaffected -- never calls gener
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ photoDataUrl: GENERATED_AVATAR }) });
     });
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#create-q-grid [data-tile="5"]');
+    await page.click('#choice-write');
     await page.click('#adv-toggle');
 
     await page.click('#char-add-other');
@@ -356,7 +356,7 @@ test('create.html: clicking Cancel while a generate-avatar.js call is still pend
     await seedUser(page, null);
     await mockGenerateAvatar(page);
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#create-q-grid [data-tile="5"]');
+    await page.click('#choice-write');
     await page.click('#adv-toggle');
 
     await page.click('#char-add-self');
@@ -543,7 +543,7 @@ test('create.html: cancelling a photo pick on the self sheet, then reopening for
       localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
     });
     await safeGoto(page, baseUrl + '/create.html');
-    await page.click('#create-q-grid [data-tile="5"]');
+    await page.click('#choice-write');
     await page.click('#adv-toggle');
 
     // Open the self character's sheet (opens straight into Photo mode) and pick a new photo.

@@ -2,15 +2,18 @@
 //
 // Coverage for two founder-reported app-funnel fixes:
 //
-//   FIX A — create.html (the logged-in "New Dream" builder) was unified to
-//   the question-first entry + trimmed flow that wizard.html already uses:
-//   it opens with the six-tile "What was your dream about?" grid (replacing
-//   the old Build/Write/Record chooser), each build tile seeds the chip
-//   wizard and jumps to the first unanswered step, and the standalone
-//   Setting (Where) and Mood (feel) steps are gone -- inferred now
-//   (inferFallbackPlaceKey per action; default 'dreamy' mood). Every build
-//   tile path must still reach generation (style.html) with a valid,
-//   non-empty caption, and neither Setting nor Mood must ever render.
+//   FIX A — REVERTED 2026-08-13 (founder standing rule "keep the two
+//   dream-creation entry flows identical"). create.html's question-first
+//   entry (the six-tile "What was your dream about?" grid + Setting/Mood
+//   trim, commit 6ae72c2) was surgically reverted after the paid funnel's
+//   matching question-first screen tanked step1->2 conversion (56%->26%)
+//   and was itself reverted on the growth side. create.html now once again
+//   opens on its pre-Aug-10 Build/Write/Record chooser, and the Build flow
+//   asks the Setting (Where) and Mood (feel) steps again — matching the
+//   reverted funnel's dream-creation UX. The FIX-A tests below now assert
+//   that RESTORED screen; the question-first assertions they replaced are
+//   gone with the screen they covered. (FIX B, the handoff, is unchanged
+//   and still fully covered below.)
 //
 //   FIX B — a LOGGED-IN funnel arrival (dreamtube.life/go -> redirectToApp
 //   -> /start.html?resume=1&caption=..., and the wizard.html handoff leg)
@@ -115,148 +118,79 @@ function mockGeneration(page) {
 }
 
 // ===========================================================================
-// FIX A — create.html question-first entry + trim
+// FIX A (REVERTED) — create.html opens on the pre-Aug-10 Build/Write/Record
+// chooser again, and the Build flow asks Setting + Mood again. The
+// question-first tile grid + Setting/Mood trim of commit 6ae72c2 are gone.
 // ===========================================================================
 
-// [tileIndex, needsAction] for the five build tiles. A scenario tile seeds
-// the Action beat and skips that step; "Someone specific" (index 2) opens the
-// character sheet and DOES ask the Action step.
-var BUILD_TILES = [
-  { i: 0, label: 'Flying', someone: false },
-  { i: 1, label: 'Being chased', someone: false },
-  { i: 2, label: 'Someone specific', someone: true },
-  { i: 3, label: 'A place', someone: false },
-  { i: 4, label: 'Something surreal', someone: false }
-];
-
-test('create.html question-first entry: the default screen is the six-tile grid over a static portrait triptych (no "surprise me", no beta footnote), with the old Build/Write/Record chooser hidden', async function (t) {
+test('create.html reverted entry: the default screen is the Build/Write/Record chooser (#create-select visible), NOT the question-first tile grid', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await seedLoggedInUserAt(page, 'qfentry', '/create.html');
+    await seedLoggedInUserAt(page, 'revEntry', '/create.html');
 
-    await page.waitForSelector('#create-q-grid', { timeout: 5000 });
-    assert.equal(await page.locator('#create-question').isVisible(), true, 'the question-first screen is the default entry');
-    assert.equal(await page.locator('#create-select').isVisible(), false, 'the old Build/Write/Record chooser must be hidden');
+    await page.waitForSelector('#create-select', { state: 'visible', timeout: 5000 });
+    assert.equal(await page.locator('#create-select').isVisible(), true, 'the Build/Write/Record chooser is the default entry');
 
-    var tiles = await page.locator('#create-q-grid .fn-q-tile').allTextContents();
-    assert.equal(tiles.length, 6, 'exactly six tiles');
-    var joined = tiles.join(' | ');
-    assert.match(joined, /Flying/);
-    assert.match(joined, /Being chased/);
-    assert.match(joined, /Someone specific/);
-    assert.match(joined, /A place/);
-    assert.match(joined, /Something surreal/);
-    assert.match(joined, /I'll describe it/);
-    assert.doesNotMatch(joined, /surprise me/i, 'no "surprise me" tile');
+    // The three original choice cards are present and readable.
+    assert.equal(await page.locator('#choice-build').count(), 1, 'Build-it card present');
+    assert.equal(await page.locator('#choice-write').count(), 1, 'Write-it card present');
+    // Record-it card is present in the DOM (may be hidden in an in-app
+    // webview by the detectInAppHost guard, but this is a normal context).
+    assert.equal(await page.locator('#choice-record').count(), 1, 'Record-it card present');
+    var chooserText = await page.locator('#create-select').textContent();
+    assert.match(chooserText, /Build it/, 'chooser reads "Build it"');
+    assert.match(chooserText, /Write it/, 'chooser reads "Write it"');
 
-    // Static portrait triptych hero -- three <img> stills, never a <video>.
-    assert.equal(await page.locator('#create-question .fn-q-collage img').count(), 3, 'three portrait store-image stills in the hero');
-    assert.equal(await page.locator('#create-question video').count(), 0, 'the hero is static -- no <video>');
-    // No beta/no-card footnote.
-    assert.equal(await page.locator('#create-question').evaluate(function (el) { return /no card|beta|free/i.test(el.textContent); }), false, 'no beta/no-card footnote');
+    // The question-first screen is fully gone — no tile grid, no hero, no
+    // Speak-it link, no question-active screen at all.
+    assert.equal(await page.locator('#create-question').count(), 0, 'no question-first screen element');
+    assert.equal(await page.locator('#create-q-grid').count(), 0, 'no question-first tile grid');
+    assert.equal(await page.locator('#create-q-speak').count(), 0, 'no Speak-it link');
   } finally {
     await context.close();
   }
 });
 
-test('create.html question-first entry: EVERY build tile path reaches generation (style.html) with a valid non-empty caption, and neither the Setting nor the Mood step ever renders', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  for (var k = 0; k < BUILD_TILES.length; k++) {
-    var tile = BUILD_TILES[k];
-    var context = await newMobileContext();
-    try {
-      var page = await context.newPage();
-      await blockThirdParty(page);
-      await seedLoggedInUserAt(page, 'qftile' + tile.i, '/create.html');
-
-      await page.waitForSelector('#create-q-grid', { timeout: 5000 });
-      await page.click('#create-q-grid [data-tile="' + tile.i + '"]');
-
-      if (tile.someone) {
-        // "Someone specific" opens the character sheet on the Subject step.
-        await page.waitForSelector('#build-sheet-character-overlay.open', { timeout: 5000 });
-        await page.click('#build-char-cancel');
-      }
-      await page.waitForSelector('#build-subject-chip-row', { timeout: 5000 });
-
-      // Setting/Mood must never render, on any step of the walk.
-      assert.equal(await page.locator('#build-place-row').count(), 0, tile.label + ': no Setting step on Subject');
-      assert.equal(await page.locator('#build-mood-row').count(), 0, tile.label + ': no Mood step on Subject');
-
-      await page.click('#build-subject-skip');
-
-      if (tile.someone) {
-        // Action IS asked for this tile (not pre-seeded) -- answer it.
-        await page.waitForSelector('#build-action-row', { timeout: 5000 });
-        assert.equal(await page.locator('#build-place-row').count(), 0, tile.label + ': no Setting step on Action');
-        assert.equal(await page.locator('#build-mood-row').count(), 0, tile.label + ': no Mood step on Action');
-        await page.click('#build-action-continue');
-      }
-
-      // Free text follows directly (no Setting/Mood in between).
-      await page.waitForSelector('#build-freetext-input', { timeout: 5000 });
-      assert.equal(await page.locator('#build-mood-row').count(), 0, tile.label + ': no Mood step before free text');
-      await page.click('#build-freetext-skip');
-
-      await page.waitForURL(/style\.html/, { timeout: 5000 });
-      await page.waitForFunction(function () { return !!window.DreamStore; }, null, { timeout: 5000 });
-      var draft = await page.evaluate(function () { return window.DreamStore.getDraft(); });
-      assert.ok(draft.caption && draft.caption.trim().length > 0, tile.label + ': reaches style.html with a non-empty caption');
-      assert.match(draft.caption, /dreamlike\.$/, tile.label + ': the assembled caption ends with the inferred dreamlike clause');
-      // Mood is inferred (never asked) -> persisted null (visual-style bed).
-      assert.equal(draft.mood, null, tile.label + ': mood is inferred, so persisted null');
-    } finally {
-      await context.close();
-    }
-  }
-});
-
-test('create.html question-first entry: the "I\'ll describe it" tile routes to Write mode, and the Speak-it link routes to the Record flow', async function (t) {
+test('create.html reverted entry: choosing "Build it" restores the Setting (Where) and Mood (feel) steps that the question-first trim had removed', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await seedLoggedInUserAt(page, 'qfwrite', '/create.html');
-    await page.waitForSelector('#create-q-grid', { timeout: 5000 });
-    await page.click('#create-q-grid [data-tile="5"]');
-    await page.waitForSelector('#create-write[style*="display: flex"]', { timeout: 5000 });
-    assert.equal(await page.locator('#dream-text').isVisible(), true, 'the "I\'ll describe it" tile lands in Write mode');
+    await seedLoggedInUserAt(page, 'revBuild', '/create.html');
+
+    await page.waitForSelector('#choice-build', { state: 'visible', timeout: 5000 });
+    await page.click('#choice-build');
+
+    // Build flow order is Subject -> Setting -> Action -> Mood -> Free text.
+    // Step 1: Subject. Skip it.
+    await page.waitForSelector('#build-subject-chip-row', { timeout: 5000 });
+    await page.click('#build-subject-skip');
+
+    // Step 2: Setting (Where) — RESTORED (question-first had inferred it away).
+    await page.waitForSelector('#build-place-row', { timeout: 5000 });
+    assert.equal(await page.locator('#build-place-row').isVisible(), true, 'the Setting (Where) step renders again');
+    await page.click('#build-setting-skip');
+
+    // Step 3: Action. Continue.
+    await page.waitForSelector('#build-action-row', { timeout: 5000 });
+    await page.click('#build-action-continue');
+
+    // Step 4: Mood (feel) — RESTORED (question-first had inferred it away).
+    await page.waitForSelector('#build-mood-row', { timeout: 5000 });
+    assert.equal(await page.locator('#build-mood-row').isVisible(), true, 'the Mood (feel) step renders again');
   } finally {
     await context.close();
-  }
-
-  // Speak-it -> record flow (mock getUserMedia so startRecordingUI runs).
-  var context2 = await newMobileContext();
-  try {
-    await context2.addInitScript(function () {
-      var fakeStream = { getTracks: function () { return []; } };
-      if (!navigator.mediaDevices) navigator.mediaDevices = {};
-      navigator.mediaDevices.getUserMedia = function () { return Promise.resolve(fakeStream); };
-      function FakeMediaRecorder(stream, opts) { this.stream = stream; this.state = 'inactive'; this.mimeType = (opts && opts.mimeType) || 'audio/webm'; this._l = {}; }
-      FakeMediaRecorder.prototype.addEventListener = function (e, cb) { (this._l[e] = this._l[e] || []).push(cb); };
-      FakeMediaRecorder.prototype.start = function () { this.state = 'recording'; };
-      FakeMediaRecorder.prototype.stop = function () { this.state = 'inactive'; (this._l.stop || []).forEach(function (cb) { cb(); }); };
-      FakeMediaRecorder.isTypeSupported = function () { return true; };
-      window.MediaRecorder = FakeMediaRecorder;
-    });
-    var page2 = await context2.newPage();
-    await blockThirdParty(page2);
-    await seedLoggedInUserAt(page2, 'qfspeak', '/create.html');
-    await page2.waitForSelector('#create-q-speak', { timeout: 5000 });
-    await page2.click('#create-q-speak');
-    await page2.waitForSelector('#create-record[style*="display: flex"]', { timeout: 5000 });
-    assert.equal(await page2.locator('#create-record').isVisible(), true, 'the Speak-it link lands in the Record flow');
-  } finally {
-    await context2.close();
   }
 });
 
 // ===========================================================================
 // FIX B — logged-in funnel handoff GENERATES the dream (never loses it)
+//   UNCHANGED by the FIX-A revert above — the handoff lives in start.html /
+//   wizard.html, not create.html, and must stay green.
 // ===========================================================================
 
 var FUNNEL_CAPTION = 'a lucid dream of flying over a city made of glass, dreamlike.';

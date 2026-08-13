@@ -125,16 +125,29 @@ async function seedLoggedInUserAt(page, username, path) {
 
 /** Drives create.html's "Build it" chip flow through every step, tapping only chips (no typing unless freeText is given), landing on style.html. */
 async function reachStyleScreenViaChips(page, freeText) {
-  // Question-first trim: the "A place" scenario tile seeds the Action beat
-  // ('exploring') and skips that step, so the flow is Subject -> free text.
-  // The standalone Setting and Mood steps are gone -- the place is inferred
-  // per action and the mood defaults to 'dreamy', both baked into the
-  // caption exactly as an accepted-default/skip always produced.
-  await page.waitForSelector('#create-q-grid');
-  await page.click('#create-q-grid [data-tile="3"]'); // A place -> seeds 'exploring', skips What
+  await page.click('#choice-build');
   await page.waitForSelector('#build-subject-skip');
   await page.click('[data-build-subj-other="stranger"]');
   await page.click('#build-subject-continue');
+
+  await page.waitForSelector('#build-setting-skip');
+  await page.click('[data-build-time="Night"]');
+  await page.click('[data-build-place="nature"]');
+  await page.click('#build-setting-continue');
+
+  await page.waitForSelector('#build-action-continue');
+  // "exploring" lives behind the "+N more" expander (tracker item
+  // for-product-wizard-step-3-has-too-many-c-lrg1ct curated the default-
+  // visible action chips down to a shorter list) -- expand it first.
+  await page.click('#build-action-more-toggle');
+  await page.click('[data-build-action="exploring"]');
+  await page.click('#build-action-continue');
+
+  await page.waitForSelector('#build-mood-skip');
+  // Layout-B: a Mood chip tap AUTO-advances (~260ms) to Free text -- no
+  // Continue tap needed (Mood is the single-select step with no secondary
+  // field). Tapping the chip still records it as the answer.
+  await page.click('[data-build-mood="mysterious"]');
 
   await page.waitForSelector('#build-freetext-skip');
   if (freeText) {
@@ -274,7 +287,7 @@ test('chips-only (no free text): style.html preview shows a human story (never p
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
     assert.match(generateVideoCalls[0].caption, /of a stranger,/, 'the wire caption sent to generation must still be the engineered promptText');
-    assert.match(generateVideoCalls[0].caption, /dreamy surreal mood/);
+    assert.match(generateVideoCalls[0].caption, /mysterious mood/);
     assert.doesNotMatch(generateVideoCalls[0].caption, new RegExp(MOCK_LLM_STORY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the human story text must never leak into the generation prompt');
 
     // ----- (b) the saved dream's displayed caption/story is the human-readable version -----
@@ -438,9 +451,7 @@ test('Write-it: unchanged/no-op -- storyText === promptText === the user\'s own 
 
     var WRITE_TEXT = 'I was walking through my childhood home and every room was a different color.';
     await seedLoggedInUserAt(page, 'writeittester', '/create.html');
-    await page.waitForSelector('#create-q-grid');
-    await page.click('#create-q-grid [data-tile="5"]'); // I'll describe it -> Write
-    await page.waitForSelector('#dream-text', { timeout: 8000 });
+    await page.click('#choice-write');
     await page.fill('#dream-text', WRITE_TEXT);
     await page.click('#write-continue');
     await page.waitForSelector('.style-card[data-style="Cartoon"]', { timeout: 5000 });

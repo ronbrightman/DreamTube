@@ -324,17 +324,13 @@ test('create.html?record=1: on iOS, the button is a real "Copy link for your bro
 });
 
 // ===========================================================================
-// Record on-ramp visibility on the question-first entry (visiting create.html
-// directly, no ?record=1). The old Build/Write/Record chooser was replaced by
-// the six-tile question grid; the record on-ramp is now the "Speak it"
-// secondary link (#create-q-speak). Per the founder's 2026-07-27 follow-up
-// decision, that on-ramp must not be offered at all in a detected in-app
-// webview (getUserMedia is blocked there), rather than shown-then-blocked --
-// so showQuestionScreen() omits the Speak-it link entirely for FB/IG UAs,
-// exactly as the old #choice-record card was hidden.
+// Choice-screen card visibility (visiting create.html directly, no
+// ?record=1) -- per the founder's 2026-07-27 follow-up decision, the
+// #choice-record card itself must not be offered at all in a detected
+// in-app webview, rather than being shown and blocking on click.
 // ===========================================================================
 
-test('create.html: without ?record=1, a normal browser UA shows the Speak-it link, and tapping it calls getUserMedia unchanged', async function (t) {
+test('create.html: without ?record=1, a normal browser UA still shows #choice-record, and clicking it calls getUserMedia unchanged', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: NORMAL_ANDROID_CHROME_UA });
   try {
@@ -343,19 +339,21 @@ test('create.html: without ?record=1, a normal browser UA shows the Speak-it lin
     await blockThirdParty(page);
 
     await seedLoggedInUserAt(page, 'normalclickguard', '/create.html');
-    await page.waitForSelector('#create-q-speak', { timeout: 5000 });
-    assert.equal(await page.locator('#create-q-speak').isVisible(), true, 'a normal browser UA must show the Speak-it record link');
+    await page.waitForSelector('#choice-record', { timeout: 5000 });
 
-    await page.click('#create-q-speak');
+    var recordDisplay = await page.locator('#choice-record').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.notEqual(recordDisplay, 'none', 'a normal browser UA must still show the Record it card');
+
+    await page.click('#choice-record');
     await page.waitForSelector('#create-record[style*="display: flex"]', { timeout: 5000 });
     var getUserMediaCalls = await page.evaluate(function () { return window.__getUserMediaCalls; });
-    assert.equal(getUserMediaCalls, 1, 'a manual Speak-it tap on a normal browser UA must still call getUserMedia, unchanged');
+    assert.equal(getUserMediaCalls, 1, 'a manual Record-it tap on a normal browser UA must still call getUserMedia, unchanged');
   } finally {
     await context.close();
   }
 });
 
-test('create.html: without ?record=1, an Instagram in-app webview UA never renders the Speak-it link -- the six question tiles (Build/Write paths) remain', async function (t) {
+test('create.html: without ?record=1, an Instagram in-app webview UA never renders #choice-record at all -- Build it and Write it remain', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: IG_ANDROID_UA });
   try {
@@ -364,14 +362,18 @@ test('create.html: without ?record=1, an Instagram in-app webview UA never rende
     await blockThirdParty(page);
 
     await seedLoggedInUserAt(page, 'igclickguard', '/create.html');
-    await page.waitForSelector('#create-q-grid', { timeout: 5000 });
+    await page.waitForSelector('#create-select', { timeout: 5000 });
 
-    assert.equal(await page.locator('#create-q-speak').count(), 0, 'the Speak-it record link must be omitted entirely inside a detected in-app webview -- not shown-then-blocked');
+    var recordDisplay = await page.locator('#choice-record').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(recordDisplay, 'none', 'the Record it card must be hidden entirely inside a detected in-app webview -- not shown-then-blocked');
 
-    assert.equal(await page.locator('#create-q-grid .fn-q-tile').count(), 6, 'the six question tiles (the Build + Write paths) remain -- real, working alternatives');
+    var buildDisplay = await page.locator('#choice-build').evaluate(function (el) { return getComputedStyle(el).display; });
+    var writeDisplay = await page.locator('#choice-write').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.notEqual(buildDisplay, 'none', 'Build it must remain -- it is a real, working alternative');
+    assert.notEqual(writeDisplay, 'none', 'Write it must remain -- it is a real, working alternative');
 
     var getUserMediaCalls = await page.evaluate(function () { return window.__getUserMediaCalls; });
-    assert.equal(getUserMediaCalls, 0, 'with the Speak-it link omitted, there is no way to trigger getUserMedia from the entry screen at all');
+    assert.equal(getUserMediaCalls, 0, 'with the card hidden, there is no way to trigger getUserMedia from the choice screen at all');
 
     var blockedDisplay = await page.locator('#create-record-blocked').evaluate(function (el) { return getComputedStyle(el).display; });
     assert.equal(blockedDisplay, 'none', 'the blocked-state panel must not show on its own -- it only ever shows in response to an actual record attempt (the ?record=1 auto-trigger)');
@@ -380,7 +382,7 @@ test('create.html: without ?record=1, an Instagram in-app webview UA never rende
   }
 });
 
-test('create.html: without ?record=1, a Facebook in-app webview UA (iOS) also never renders the Speak-it link', async function (t) {
+test('create.html: without ?record=1, a Facebook in-app webview UA (iOS) also never renders #choice-record', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: FB_IOS_UA });
   try {
@@ -389,15 +391,16 @@ test('create.html: without ?record=1, a Facebook in-app webview UA (iOS) also ne
     await blockThirdParty(page);
 
     await seedLoggedInUserAt(page, 'fbclickguard', '/create.html');
-    await page.waitForSelector('#create-q-grid', { timeout: 5000 });
+    await page.waitForSelector('#create-select', { timeout: 5000 });
 
-    assert.equal(await page.locator('#create-q-speak').count(), 0, 'the Speak-it link must be omitted for Facebook\'s in-app webview too, not just Instagram\'s');
+    var recordDisplay = await page.locator('#choice-record').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(recordDisplay, 'none', 'the Record it card must be hidden for Facebook\'s in-app webview too, not just Instagram\'s');
   } finally {
     await context.close();
   }
 });
 
-test('create.html?record=1: the guard panel (auto-triggered path) is still reachable, and topbar Back returns to the question-first entry with the Speak-it link omitted for this webview UA', async function (t) {
+test('create.html?record=1: the guard panel (auto-triggered path) is still reachable via the topbar Back button, returning to the Build/Write choice screen with Record it hidden', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext({ userAgent: IG_ANDROID_UA });
   try {
@@ -405,21 +408,23 @@ test('create.html?record=1: the guard panel (auto-triggered path) is still reach
     var page = await context.newPage();
     await blockThirdParty(page);
 
-    // The only path into the guard panel is the ?record=1 deep-link
-    // auto-trigger, which calls startRecordingUI() directly and hits the same
-    // unchanged guard (the Speak-it on-ramp is omitted for this UA, so there's
-    // nothing to tap into it).
+    // The card-hiding fix means the guard panel can no longer be reached by
+    // clicking #choice-record (it's not there to click) -- the only path
+    // left into it is the ?record=1 deep-link auto-trigger, which still
+    // calls startRecordingUI() directly and hits the same unchanged guard.
     await seedLoggedInUserAt(page, 'backfromguard', '/create.html?record=1');
     await page.waitForSelector('#create-record-blocked[style*="display: flex"]', { timeout: 5000 });
 
     await page.click('#create-back');
-    await page.waitForSelector('#create-question', { state: 'visible', timeout: 5000 });
+    var selectDisplay = await page.locator('#create-select').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.notEqual(selectDisplay, 'none', 'Back from the guard panel must return to the choice screen');
     var blockedDisplay = await page.locator('#create-record-blocked').evaluate(function (el) { return getComputedStyle(el).display; });
     assert.equal(blockedDisplay, 'none', 'Back must hide the guard panel');
     var heading = await page.textContent('#create-heading');
     assert.equal(heading, 'New Dream');
 
-    assert.equal(await page.locator('#create-q-speak').count(), 0, 'back on the question-first entry, the Speak-it link is still correctly omitted for this in-app webview UA');
+    var recordDisplay = await page.locator('#choice-record').evaluate(function (el) { return getComputedStyle(el).display; });
+    assert.equal(recordDisplay, 'none', 'back on the choice screen, the Record it card is still correctly hidden for this in-app webview UA');
   } finally {
     await context.close();
   }
