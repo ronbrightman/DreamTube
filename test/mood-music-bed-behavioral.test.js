@@ -420,6 +420,49 @@ test('js/store.js: with NO explicit mood, the mood is INFERRED from the dream te
   }
 });
 
+test('js/wizard-chips.js + js/store.js: a tense-implying Build dream ends with BOTH a tense PROMPT (caption "tense mood" + "harsh high-contrast light") AND dream.mood === "tense" -- video mood and music mood agree, driven by the SAME inferred mood (founder 08-13)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await newMobileContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedLoggedInUser(page, 'moodagreer');
+    await mockGeneration(page, '/assets/music-beds/anime.wav');
+    await page.goto(baseUrl + '/explore.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(function () { return !!(window.WizardChips && window.WizardChips.assembleCaption); }, { timeout: 5000 });
+
+    var out = await page.evaluate(async function () {
+      // Exactly what create.html's finishBuildWizard now does: pass the
+      // visitor's own dream text as moodInferText, use the returned effective
+      // moodKey as the persisted dream mood, and generate from the caption.
+      var moodText = 'being chased through a dark forest, terrified';
+      var assembled = WizardChips.assembleCaption({
+        subjectKey: 'none', actionKey: 'running', style: 'Cinematic', moodInferText: moodText
+      });
+      var dream = await DreamStore.generateVideo(assembled.caption, 'Cartoon', {
+        storyText: WizardChips.buildDeterministicStory({ subjectKey: 'none', actionKey: 'running', moodInferText: moodText }),
+        mood: assembled.moodKey
+      });
+      return { caption: assembled.caption, assembledMood: assembled.moodKey, dreamMood: dream.mood, dreamId: dream.id };
+    });
+
+    // VIDEO mood: the generation PROMPT carries the tense language, not the dreamy default.
+    assert.match(out.caption, /tense mood,/, 'the prompt sent to generation must carry the inferred tense mood label');
+    assert.match(out.caption, /harsh high-contrast light,/, 'the prompt lighting must follow the inferred tense mood');
+    assert.doesNotMatch(out.caption, /dreamy surreal mood|hazy ethereal light/, 'the default dreamy prompt language must be gone');
+    // MUSIC mood: the finished dream record carries the SAME inferred mood.
+    assert.equal(out.assembledMood, 'tense');
+    assert.equal(out.dreamMood, 'tense', 'the finished dream mood (music bed key) must equal the caption\'s inferred mood -- video and music agree');
+
+    // And result.html plays the tense bed for it, end-to-end.
+    await page.goto(baseUrl + '/result.html?id=' + out.dreamId, { waitUntil: 'domcontentloaded' });
+    var bedSrc = await page.locator('#result-music-bed').evaluate(function (a) { return a.getAttribute('src'); });
+    assert.equal(bedSrc, 'assets/music-beds/moods/tense.wav', 'result.html must play the tense bed for the inferred mood');
+  } finally {
+    await context.close();
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // 1b. mood has to reach the WIRE, not just local state
 //

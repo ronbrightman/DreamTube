@@ -283,6 +283,38 @@
     return best || DEFAULT_MOOD;
   }
 
+  // ── Effective moodKey resolution (shared by assembleCaption AND
+  //    buildDeterministicStory) — founder standing rule 08-13 follow-on ──
+  // The 3-question Build trim removed the Mood step, so every dream reaches
+  // these two functions with moodKey defaulting to 'dreamy' and the prompt
+  // ALWAYS said "dreamy surreal mood, hazy ethereal light" (and the story
+  // "feeling dreamy and surreal") no matter what the dream was about. The
+  // MUSIC bed already follows an inferred mood (js/store.js's inferMoodFromText
+  // hookpoint); this lets the VIDEO prompt (and the human story) follow the
+  // SAME inferred mood so all three agree.
+  //
+  // OPT-IN, so no existing caller changes byte-for-byte: the new
+  // `input.moodInferText` string is the only trigger. Resolution order:
+  //   1. An EXPLICIT non-default moodKey pick (a real key other than
+  //      falsy/DEFAULT_MOOD) wins outright — a future restored Mood step, or
+  //      a "+ Something else" ('other') free-text mood, is honored as-is,
+  //      exactly as before this existed.
+  //   2. ELSE, if moodInferText is a non-empty string, infer the mood from it
+  //      (inferMoodFromText) — this is how the wizard callers pass the user's
+  //      own dream text in.
+  //   3. ELSE fall back to DEFAULT_MOOD.
+  // When moodInferText is absent/empty, steps 1+3 reduce to exactly the old
+  // `input.moodKey || DEFAULT_MOOD`, so output is byte-identical for every
+  // caller that doesn't opt in.
+  function resolveEffectiveMoodKey(input) {
+    var explicit = (input.moodKey && input.moodKey !== DEFAULT_MOOD) ? input.moodKey : null;
+    if (explicit) return explicit;
+    if (typeof input.moodInferText === 'string' && input.moodInferText.trim()) {
+      return inferMoodFromText(input.moodInferText);
+    }
+    return DEFAULT_MOOD;
+  }
+
   function chipLabel(list, key) {
     var found = list.filter(function (c) { return c.key === key; })[0];
     return found ? found.label : null;
@@ -434,7 +466,11 @@
   function assembleCaption(input) {
     input = input || {};
     var actionKey = input.actionKey || DEFAULT_ACTION;
-    var moodKey = input.moodKey || DEFAULT_MOOD;
+    // Effective mood: an explicit non-default pick wins, else infer from the
+    // opt-in input.moodInferText, else DEFAULT_MOOD — byte-identical to the
+    // old `input.moodKey || DEFAULT_MOOD` when moodInferText isn't supplied.
+    // See resolveEffectiveMoodKey's own doc comment.
+    var moodKey = resolveEffectiveMoodKey(input);
     // `style: null` EXPLICITLY (not just omitted/undefined) means "the
     // real style choice hasn't happened yet" — used by create.html's
     // "Build it" retrofit, whose Subject/Setting/Action/Mood steps hand
@@ -511,6 +547,12 @@
 
     return {
       caption: caption,
+      // The effective mood the caption's camera/lighting/mood-label were
+      // built from — returned so callers can persist the SAME mood onto the
+      // dream record (its MUSIC bed), keeping the video mood and the music
+      // mood identical. For a non-opt-in caller this is just the resolved
+      // default/explicit key, harmless to ignore.
+      moodKey: moodKey,
       characterIdsForGeneration: subjectResult.characterIds || (subjectResult.characterId ? [subjectResult.characterId] : [])
     };
   }
@@ -574,6 +616,13 @@
   function buildDeterministicStory(input) {
     input = input || {};
     var actionKey = input.actionKey || DEFAULT_ACTION;
+    // The HUMAN story/recap keeps its historical mood word (default 'dreamy'
+    // unless a real Mood step ever supplies one) — deliberately NOT the
+    // inferred mood. Founder 08-13 asked for the VIDEO (the assembleCaption
+    // PROMPT) to follow the dream text, not the human recap text; keeping this
+    // unchanged means the recap screen reads exactly as it did before the
+    // mood-inference work, and any moodInferText a caller passes is ignored
+    // here (assembleCaption is the one that applies it).
     var moodKey = input.moodKey || DEFAULT_MOOD;
 
     // 'me'/'none' (and an empty 'other') carry no separate descriptor —

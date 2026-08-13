@@ -1925,7 +1925,20 @@
       actionKey: buildActionKey, actionOtherText: buildActionOtherText, pov: buildPovOn,
       moodKey: buildMoodKey, moodOtherText: buildMoodOtherText
     };
-    var assembled = WizardChips.assembleCaption(Object.assign({}, chipFields, { style: null, freeText: buildFreeText }));
+    // Mood inference source (founder standing rule 08-13, follow-on to the
+    // 3-question trim that removed the Mood step): the video PROMPT and the
+    // human story should follow the dream's own mood, not a hardcoded
+    // 'dreamy'. Prefer the user's own free text; if they typed none, fall
+    // back to a text built from the chosen subject + action phrase so an
+    // action-only dream ('running/chasing' → tense, 'flying' → epic) still
+    // infers. Deliberately NOT the assembled caption or the deterministic
+    // story — both bake the default "dreamy/surreal" mood language in, which
+    // would bias every inference back to 'dreamy'.
+    var moodInferText = (buildFreeText && buildFreeText.trim()) ? buildFreeText : buildMoodInferFallback();
+    // Pass moodInferText into BOTH assembleCaption (prompt) and
+    // buildDeterministicStory (story) so the two agree on the mood.
+    var assembled = WizardChips.assembleCaption(Object.assign({}, chipFields, { style: null, freeText: buildFreeText, moodInferText: moodInferText }));
+    var storyChipFields = Object.assign({}, chipFields, { moodInferText: moodInferText });
 
     var hasFreeText = !!(buildFreeText && buildFreeText.trim());
     // Sentence-cased join (round 9) — shared with wizard.html, see
@@ -1933,8 +1946,8 @@
     // space-glue shipped uncapitalized run-ons whenever the rewrite was
     // slow or failed).
     var storyText = hasFreeText
-      ? WizardChips.joinStorySentences(WizardChips.buildDeterministicStory(chipFields), buildFreeText)
-      : WizardChips.buildDeterministicStory(chipFields);
+      ? WizardChips.joinStorySentences(WizardChips.buildDeterministicStory(storyChipFields), buildFreeText)
+      : WizardChips.buildDeterministicStory(storyChipFields);
 
     DreamStore.setDraft({
       caption: assembled.caption,
@@ -1950,11 +1963,34 @@
       // dream record and nothing downstream could ever key off it. It now
       // rides the draft -> home.html's startFreshGenerationFromDraft ->
       // DreamStore.generateVideo -> startGeneration -> finalizeDream route
-      // all the way to `dream.mood`. See WizardChips.persistedMood for what
-      // null means here (skipped / free-text / unknown).
-      mood: WizardChips.persistedMood(buildMoodKey, buildMoodSkipped)
+      // all the way to `dream.mood`.
+      //
+      // Persist the SAME effective mood the caption's camera/lighting/mood
+      // label were built from (assembled.moodKey) — so the MUSIC bed and the
+      // VIDEO prompt agree on the mood (founder 08-13). With the Mood step
+      // trimmed this is the mood inferred from moodInferText above (or
+      // 'dreamy' when nothing moodful was typed/implied). js/store.js's own
+      // inference backstop still runs as a safety net, but only re-infers
+      // when this is null/'dreamy', so a real inferred mood here is kept.
+      mood: assembled.moodKey
     });
     location.href = 'style.html';
+  }
+
+  /**
+   * Builds a minimal, mood-neutral text (subject + action, NO baked-in
+   * "dreamy/surreal" mood language) used ONLY as the WizardChips mood
+   * inference source when the user typed no free text. Keeps an action-only
+   * dream inferring correctly ('running/chasing' → tense, 'flying' → epic)
+   * without the default mood clause biasing everything back to 'dreamy'.
+   */
+  function buildMoodInferFallback(){
+    var actionChip = WizardChips.ACTION_CHIPS.filter(function(a){ return a.key === buildActionKey; })[0];
+    var actionText = buildActionKey === 'other'
+      ? (buildActionOtherText || '')
+      : (actionChip ? actionChip.phrase : '');
+    var subjText = (buildSubjectOtherText || '');
+    return (subjText + ' ' + actionText).trim();
   }
 
   // 3-QUESTION WIZARD TRIM — kept IDENTICAL to the paid funnel's active flow

@@ -1311,11 +1311,17 @@
 
   /**
    * The value to persist as this dream's `mood` — read LIVE at the moment
-   * it's needed (see WizardChips.persistedMood). With the Mood step gone
-   * this always returns null (moodSkipped is true), matching create.html's
-   * buildMoodSkipped contract for a declined mood.
+   * it's needed. With the Mood step gone (3-question trim), we persist the
+   * SAME effective mood the caption was built from (assembled.moodKey, the
+   * mood inferred from the visitor's own dream text) so the MUSIC bed and
+   * the VIDEO prompt agree (founder 08-13). Falls back to the old
+   * persistedMood(null) only when there's no assembled mood to read — the
+   * verbatim Write-mode / funnel-arrival caption paths, which set no moodKey;
+   * js/store.js's own inference backstop then derives the music mood from the
+   * storyText for those, so nothing goes moodless.
    */
   function currentMoodForDream(){
+    if(assembled && assembled.moodKey) return assembled.moodKey;
     return WizardChips.persistedMood(moodKey, moodSkipped);
   }
 
@@ -1489,8 +1495,24 @@
       subjectKey: 'none', character: null, subjectOtherText: subjectOtherText,
       placeKey: placeKey, placeOtherText: settingOtherText, sceneryTime: DreamStore.getDraft().sceneryTime,
       actionKey: actionKey, actionOtherText: actionOtherText, pov: povOn,
-      moodKey: moodKey, moodOtherText: moodOtherText
+      moodKey: moodKey, moodOtherText: moodOtherText,
+      // Mood inference source (founder standing rule 08-13): with the Mood
+      // step gone, the video PROMPT (assembleCaption) and the human recap
+      // story (buildDeterministicStory) both follow the dream's OWN mood via
+      // this opt-in field instead of a hardcoded 'dreamy'. Prefer the
+      // visitor's free text; else a mood-neutral subject+action text so an
+      // action-only dream ('running/chasing' → tense, 'flying' → epic) still
+      // infers. NOT the caption/story themselves — they bake the default
+      // dreamy mood language in, which would bias inference back to 'dreamy'.
+      moodInferText: (freeText && freeText.trim()) ? freeText : moodInferFallback()
     };
+  }
+
+  /** Mood-neutral subject+action text, the WizardChips mood-inference source when no free text was typed (see currentChipFields). */
+  function moodInferFallback(){
+    var ac = WizardChips.ACTION_CHIPS.filter(function(a){ return a.key === actionKey; })[0];
+    var at = actionKey === 'other' ? (actionOtherText || '') : (ac ? ac.phrase : '');
+    return ((subjectOtherText || '') + ' ' + at).trim();
   }
 
   function assembleFromState(){

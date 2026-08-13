@@ -146,6 +146,60 @@ test('style omitted entirely (not explicitly null) still defaults to Cinematic, 
   assert.match(result.caption, /Cinematic style, dreamlike\.$/);
 });
 
+// ── moodInferText: opt-in mood inference driving camera/lighting/mood-label ──
+// Founder standing rule 08-13: with the Mood step trimmed, the VIDEO prompt
+// (and its returned effective mood) should follow the mood inferred from the
+// dream's own text, not the hardcoded 'dreamy' default — but ONLY when a
+// caller opts in via input.moodInferText, so no existing caller changes.
+
+test('assembleCaption: moodInferText drives camera/lighting/mood-label AND the returned moodKey (a tense-implying text yields "tense mood" + "harsh high-contrast light", not the dreamy default)', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'none', actionKey: 'running', style: 'Cinematic',
+    // No explicit moodKey (Mood step trimmed) — the mood must come from here.
+    moodInferText: 'being chased through a dark forest, terrified'
+  });
+  assert.match(result.caption, /tense mood,/, 'the mood label must follow the inferred tense mood');
+  assert.match(result.caption, /harsh high-contrast light,/, 'lighting must follow the inferred tense mood');
+  assert.doesNotMatch(result.caption, /dreamy surreal mood|hazy ethereal light/, 'the default dreamy language must NOT appear');
+  assert.equal(result.moodKey, 'tense', 'the effective moodKey (for the caller to persist as the music mood) must be the inferred one');
+});
+
+test('assembleCaption: a keyword-free moodInferText falls back to the dreamy default (byte-identical mood clause to the no-inference case)', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'none', actionKey: 'flying', style: 'Cinematic',
+    moodInferText: 'exploring somewhere'
+  });
+  assert.match(result.caption, /dreamy surreal mood, hazy ethereal light,/);
+  assert.equal(result.moodKey, 'dreamy');
+});
+
+test('assembleCaption: an EXPLICIT non-default moodKey wins over moodInferText (a future restored Mood step / a free-text "other" mood is honored as-is)', function () {
+  var result = WizardChips.assembleCaption({
+    subjectKey: 'none', actionKey: 'flying', style: 'Cinematic',
+    moodKey: 'peaceful', moodInferText: 'being chased, terrified'
+  });
+  assert.match(result.caption, /peaceful mood, soft warm light,/, 'the explicit peaceful pick must beat the tense-inferring text');
+  assert.equal(result.moodKey, 'peaceful');
+});
+
+test('assembleCaption: WITHOUT moodInferText the output is byte-identical to today (opt-in only — no test churn for existing callers)', function () {
+  var withoutField = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'running', moodKey: 'joyful', style: 'Anime' });
+  // Same call the pre-existing "action -> camera default" test issues; the
+  // caption must match the historical exact string byte-for-byte.
+  assert.equal(withoutField.caption, 'medium tracking shot of the dream, running, chasing and being chased, joyful mood, bright airy light, Anime style, dreamlike.');
+  // The new returned moodKey field is additive and must equal the resolved mood.
+  assert.equal(withoutField.moodKey, 'joyful');
+  // An empty-string moodInferText must ALSO be a no-op (byte-identical),
+  // since it carries no signal.
+  var emptyField = WizardChips.assembleCaption({ subjectKey: 'none', actionKey: 'running', moodKey: 'joyful', style: 'Anime', moodInferText: '' });
+  assert.equal(emptyField.caption, withoutField.caption);
+});
+
+// Note: buildDeterministicStory deliberately does NOT follow moodInferText —
+// the founder 08-13 ask was for the VIDEO (assembleCaption's PROMPT) to follow
+// the dream text, not the human recap/story text, which keeps its historical
+// default mood word. moodInferText only drives assembleCaption (tested above).
+
 // ── buildDeterministicStory — tracker item split-prompttext-storytext ──
 // The zero-cost, always-available, non-LLM storyText fallback for "chips
 // selected, no free text typed". Must never contain camera/lighting/
