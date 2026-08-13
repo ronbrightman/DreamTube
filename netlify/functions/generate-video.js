@@ -252,11 +252,19 @@ function styleIntegrityClause(caption, style) {
       'render exactly as described, never as an animal, mythical creature, or any other non-human entity';
   }
 
-  // Ethnicity neutrality (founder 2026-08-11): the model was defaulting the
-  // subject to a specific ethnicity when the dream didn't ask for one. Keep it
-  // to ONE tight sentence, and preserve the "unless explicitly specified"
-  // carve-out so a dream that DOES describe an ethnicity is never suppressed.
-  clause += '; do not assign the subject any specific ethnicity, skin tone, or racial appearance unless the dream text explicitly specifies one';
+  // Ethnicity neutrality (founder 2026-08-11; reframed 2026-08-13 per tracker
+  // item for-product-investigate-no-specific-ethn-zz0fyv, founder report that
+  // a real video still came out with a specific ethnicity assigned). The
+  // original fix here was negative-only ("do not assign..."), and negative
+  // instructions are well-documented to be followed more weakly than a
+  // positive instruction stating the desired outcome directly for these
+  // models — so this now LEADS with the positive framing (render the
+  // subject neutrally by default) and keeps the original negative wording
+  // immediately after, as reinforcement rather than the sole instruction.
+  // Still one clause, and the "unless explicitly specified" carve-out is
+  // preserved verbatim so a dream that DOES describe an ethnicity is never
+  // suppressed — that carve-out is load-bearing and must not be weakened.
+  clause += '; render the subject with a neutral, unspecified ethnicity, skin tone, and racial appearance by default — do not assign the subject any specific ethnicity, skin tone, or racial appearance — unless the dream text explicitly specifies one';
 
   return clause;
 }
