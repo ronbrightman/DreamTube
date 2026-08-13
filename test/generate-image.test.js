@@ -323,10 +323,38 @@ test('buildImagePrompt includes a text-described character (non-photo)', functio
 test('buildImagePrompt appends the ethnicity-neutrality sentence with its explicit-specification carve-out (parity with generate-video, founder 2026-08-11)', function () {
   var genImage = require('../netlify/functions/generate-image');
   var prompt = genImage.buildImagePrompt('a woman in a garden', 'Cartoon', [], null, null, null);
-  assert.ok(prompt.indexOf('Do not assign the subject any specific ethnicity, skin tone, or racial appearance') !== -1,
+  // Reframed 2026-08-13 (tracker item for-product-investigate-no-specific-ethn-zz0fyv):
+  // the negative fragment now sits mid-sentence after the positive lead
+  // (reinforcement, not the sole instruction), so it's lowercase here rather
+  // than the capitalized sentence-starter it used to be — see the dedicated
+  // positive-lead test below for the full before/after reasoning.
+  assert.ok(prompt.indexOf('do not assign the subject any specific ethnicity, skin tone, or racial appearance') !== -1,
     'the ethnicity-neutrality sentence must be present');
   assert.ok(prompt.indexOf('unless the description explicitly specifies one') !== -1,
     'the carve-out must be present so a stated ethnicity is never suppressed');
+});
+
+test('buildImagePrompt\'s ethnicity clause LEADS with a positive instruction, not just the negative one (reframed 2026-08-13, tracker item for-product-investigate-no-specific-ethn-zz0fyv — negative-only instructions are more weakly followed by these models; parity with generate-video.js)', function () {
+  var genImage = require('../netlify/functions/generate-image');
+  var prompt = genImage.buildImagePrompt('a woman in a garden', 'Cartoon', [], null, null, null);
+
+  // Positive lead: states the desired outcome directly (render neutrally),
+  // not just what NOT to do.
+  var positiveLeadIndex = prompt.indexOf('Render the subject with a neutral, unspecified ethnicity, skin tone, and racial appearance by default');
+  assert.ok(positiveLeadIndex !== -1, 'the clause must lead with a positive instruction describing the desired neutral rendering, not just a negative one');
+
+  // The negative phrasing must still be present too, but strictly AFTER the
+  // positive lead — reinforcement, not the sole/first instruction.
+  var negativeIndex = prompt.indexOf('do not assign the subject any specific ethnicity, skin tone, or racial appearance');
+  assert.ok(negativeIndex !== -1, 'the negative phrasing must still be present as reinforcement');
+  assert.ok(negativeIndex > positiveLeadIndex, 'the positive instruction must come before the negative reinforcement, not after it');
+
+  // The carve-out must come after both, and survive completely unchanged
+  // from the original negative-only phrasing (this is the load-bearing part
+  // that must never be weakened by the reframe).
+  var carveOutIndex = prompt.indexOf('unless the description explicitly specifies one');
+  assert.ok(carveOutIndex !== -1 && carveOutIndex > negativeIndex,
+    'the "unless explicitly specifies one" carve-out must survive unchanged and stay after the negative reinforcement');
 });
 
 test('IMAGE_TOKEN_COST is exported as 10', function () {

@@ -110,11 +110,19 @@ function buildImagePrompt(caption, style, characters, cameraView, sceneryTime, s
   if (sceneryBits.length) parts.push('Setting: ' + sceneryBits.join(', '));
 
   parts.push(modifier);
-  // Ethnicity neutrality (founder 2026-08-11) — parity with generate-video.js's
-  // styleIntegrityClause: stop the model defaulting the subject to a specific
-  // ethnicity when the description didn't ask for one, while preserving any it
-  // DOES specify. One tight sentence, appended after the assembled prompt.
-  return parts.join(', ') + '. Do not assign the subject any specific ethnicity, skin tone, or racial appearance unless the description explicitly specifies one.';
+  // Ethnicity neutrality (founder 2026-08-11; reframed 2026-08-13, tracker
+  // item for-product-investigate-no-specific-ethn-zz0fyv) — parity with
+  // generate-video.js's styleIntegrityClause: stop the model defaulting the
+  // subject to a specific ethnicity when the description didn't ask for one,
+  // while preserving any it DOES specify. Reframed to LEAD with a positive
+  // instruction (render the subject neutrally by default), keeping the
+  // original negative wording right after it as reinforcement rather than
+  // the sole instruction — negative instructions are known to be followed
+  // more weakly than positive ones for these models; see generate-video.js's
+  // own doc comment on this same clause for the fuller reasoning. Still one
+  // sentence appended after the assembled prompt, and the "unless explicitly
+  // specifies one" carve-out is preserved verbatim.
+  return parts.join(', ') + '. Render the subject with a neutral, unspecified ethnicity, skin tone, and racial appearance by default — do not assign the subject any specific ethnicity, skin tone, or racial appearance — unless the description explicitly specifies one.';
 }
 
 /**

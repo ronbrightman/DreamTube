@@ -140,6 +140,28 @@ test('buildPrompt includes the ethnicity-neutrality sentence with its explicit-s
     'the neutrality clause is still present alongside the explicit specification');
 });
 
+test('buildPrompt\'s ethnicity clause LEADS with a positive instruction, not just the negative one (reframed 2026-08-13, tracker item for-product-investigate-no-specific-ethn-zz0fyv — negative-only instructions are more weakly followed by these models)', function () {
+  var prompt = genVideo.buildPrompt('a woman walking through a market', 'Cinematic', [], null, null, null);
+
+  // Positive lead: states the desired outcome directly (render neutrally),
+  // not just what NOT to do.
+  var positiveLeadIndex = prompt.indexOf('render the subject with a neutral, unspecified ethnicity, skin tone, and racial appearance by default');
+  assert.ok(positiveLeadIndex !== -1, 'the clause must lead with a positive instruction describing the desired neutral rendering, not just a negative one');
+
+  // The negative phrasing must still be present too, but strictly AFTER the
+  // positive lead — reinforcement, not the sole/first instruction.
+  var negativeIndex = prompt.indexOf('do not assign the subject any specific ethnicity, skin tone, or racial appearance');
+  assert.ok(negativeIndex !== -1, 'the negative phrasing must still be present as reinforcement');
+  assert.ok(negativeIndex > positiveLeadIndex, 'the positive instruction must come before the negative reinforcement, not after it');
+
+  // The carve-out must come after both, and survive completely unchanged
+  // from the original negative-only phrasing (this is the load-bearing part
+  // that must never be weakened by the reframe).
+  var carveOutIndex = prompt.indexOf('unless the dream text explicitly specifies one');
+  assert.ok(carveOutIndex !== -1 && carveOutIndex > negativeIndex,
+    'the "unless explicitly specifies one" carve-out must survive unchanged and stay after the negative reinforcement');
+});
+
 test('buildPrompt applies the style-integrity guardrail for every style, not just Anime/Cartoon', function () {
   ['Cartoon', 'Cinematic', 'Anime', 'Realistic', 'SomeFutureStyle'].forEach(function (style) {
     var prompt = genVideo.buildPrompt('a dream about the beach and the tide coming in', style, [], null, null, null);
