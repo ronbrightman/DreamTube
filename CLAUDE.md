@@ -44,6 +44,7 @@ moment named. Do not let them get buried by the rest of this file.
   the opening line; keep reasoning, caveats, and asides plain or italic. (Founder
   standing rule, reinforced 2026-08-12: "bold whatever you want me to actually
   read.")
+- **ALWAYS check the generation-failure rate every check period; >10% = a real problem, solve it** (founder standing rule 08-13). Compute the REAL rate (failed ÷ total attempts), and separate the reason codes: LEGITIMATE blocks (content-policy/safety/insufficient-tokens) are not bugs, but a TECHNICAL failure code above 10% (e.g. E304 dream_sync_unconfirmed = the P0 vanish/data-loss bug) is a real problem to root-cause and fix, not just report.
 - **Before reporting any cross-session status — re-fetch the live tracker.**
 
 ---
