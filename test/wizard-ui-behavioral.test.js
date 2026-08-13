@@ -464,17 +464,23 @@ test('wizard.html signup wall: the wall_subtext_arm A/B is assigned (persisted, 
     await page.close();
   }
 
-  // (c) no override -> the arm is still auto-assigned to exactly one of the
-  // two values, persisted (stable per visitor), and the rendered subtext
-  // MATCHES the assigned arm — proving assignment happened before paint.
+  // (c) no override -> the A/B was CONCLUDED on 'shown' (founder 2026-08-11,
+  // commit 82e6aaf: "always show wall reassurance" — with Facebook Login
+  // removed, the 'hidden' arm left the wall looking empty). assignWallSubtextArm
+  // now returns the fixed 'shown' default for every unforced visitor instead of
+  // a random 50/50, and — correctly — does NOT persist that fixed default to
+  // localStorage (there is no live per-visitor assignment left to persist;
+  // only the explicit ?wallsubtext= override path above still writes to
+  // localStorage, so a forced preview session stays consistent). The
+  // reassurance line must still render before first paint either way.
   page = await browser.newPage();
   await blockThirdParty(page);
   try {
     await reachWallWithSearch(page, '');
     var arm3 = await page.evaluate(function () { return localStorage.getItem('dt_wall_subtext_arm'); });
-    assert.ok(arm3 === 'shown' || arm3 === 'hidden', 'with no override the arm must still be auto-assigned to exactly one of the two values');
+    assert.equal(arm3, null, 'the concluded A/B no longer persists an arm for an unforced visitor — only the ?wallsubtext override path does');
     var lineCount = await page.locator('.fn-microcopy', { hasText: SUBTEXT }).count();
-    assert.equal(lineCount, arm3 === 'shown' ? 1 : 0, 'the rendered subtext must match the assigned arm — assignment is before first paint');
+    assert.equal(lineCount, 1, 'the concluded A/B defaults every unforced visitor to the "shown" arm — the reassurance line always renders');
   } finally {
     await page.close();
   }
