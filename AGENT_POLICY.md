@@ -84,6 +84,16 @@ now goes through **`tracker.html`** instead, this project's owner-only
 open-items list, backed by `dreamtube-tracker` (Netlify Blobs) via
 `netlify/functions/lib/tracker-store.js`.
 
+> **HARD GUARDRAIL (recurring violation, 08-13).** No agent may push to,
+> write to, clone, or read from `ronbrightman/dreamtube-signals` or ANY
+> repository outside this session's scope (the app repo, `dreamtube-growth`,
+> `manager`). `dreamtube-signals` is archived and NOT write-authorized —
+> writing to it "on your own judgment" is a boundary violation even though
+> the content is internal metadata to the founder's own repo. Multiple
+> agents did this anyway; if a task seems to need an out-of-scope repo, STOP
+> and surface it to the driving session/founder — do not proceed. All
+> coordination goes through `tracker.html`, full stop.
+
 `build`, `review`, and `ab-test-creator` here are retrofitted to use it
 (see each agent's own file for exactly how, given their different tool
 access), but the shape is the same for all three:
