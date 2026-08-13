@@ -130,11 +130,11 @@ async function reachStyleScreenViaChips(page, freeText) {
   await page.click('[data-build-subj-other="stranger"]');
   await page.click('#build-subject-continue');
 
-  await page.waitForSelector('#build-setting-skip');
-  await page.click('[data-build-time="Night"]');
-  await page.click('[data-build-place="nature"]');
-  await page.click('#build-setting-continue');
-
+  // 3-question wizard trim (founder 08-13): create.html no longer renders
+  // the Setting or Mood steps. Subject -> Action -> Free text. Setting is
+  // inferred by WizardChips.buildDeterministicStory and Mood defaults to
+  // WizardChips.DEFAULT_MOOD ('dreamy'), so both are still reflected in the
+  // assembled caption without a UI step.
   await page.waitForSelector('#build-action-continue');
   // "exploring" lives behind the "+N more" expander (tracker item
   // for-product-wizard-step-3-has-too-many-c-lrg1ct curated the default-
@@ -142,12 +142,6 @@ async function reachStyleScreenViaChips(page, freeText) {
   await page.click('#build-action-more-toggle');
   await page.click('[data-build-action="exploring"]');
   await page.click('#build-action-continue');
-
-  await page.waitForSelector('#build-mood-skip');
-  // Layout-B: a Mood chip tap AUTO-advances (~260ms) to Free text -- no
-  // Continue tap needed (Mood is the single-select step with no secondary
-  // field). Tapping the chip still records it as the answer.
-  await page.click('[data-build-mood="mysterious"]');
 
   await page.waitForSelector('#build-freetext-skip');
   if (freeText) {
@@ -287,7 +281,11 @@ test('chips-only (no free text): style.html preview shows a human story (never p
     await settle(function () { return generateVideoCalls.length >= 1; });
     assert.equal(generateVideoCalls.length, 1);
     assert.match(generateVideoCalls[0].caption, /of a stranger,/, 'the wire caption sent to generation must still be the engineered promptText');
-    assert.match(generateVideoCalls[0].caption, /mysterious mood/);
+    // Mood is no longer a create.html step (3-question trim, founder 08-13);
+    // it defaults to WizardChips.DEFAULT_MOOD ('dreamy'), which contributes
+    // "dreamy surreal mood," to the caption -- the same default-mood language
+    // the caption has always carried when the Mood step is not answered.
+    assert.match(generateVideoCalls[0].caption, /dreamy surreal mood,/);
     assert.doesNotMatch(generateVideoCalls[0].caption, new RegExp(MOCK_LLM_STORY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), 'the human story text must never leak into the generation prompt');
 
     // ----- (b) the saved dream's displayed caption/story is the human-readable version -----

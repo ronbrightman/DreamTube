@@ -154,7 +154,7 @@ test('create.html reverted entry: the default screen is the Build/Write/Record c
   }
 });
 
-test('create.html reverted entry: choosing "Build it" restores the Setting (Where) and Mood (feel) steps that the question-first trim had removed', async function (t) {
+test('create.html Build flow is the 3-question trim (Subject -> Action -> Free text); Setting and Mood are inferred, NOT shown — kept identical to the paid funnel + wizard.html (founder directive 08-13: unify always, shorter version)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
@@ -165,23 +165,28 @@ test('create.html reverted entry: choosing "Build it" restores the Setting (Wher
     await page.waitForSelector('#choice-build', { state: 'visible', timeout: 5000 });
     await page.click('#choice-build');
 
-    // Build flow order is Subject -> Setting -> Action -> Mood -> Free text.
+    // 3-question order: Subject -> Action -> Free text. Setting (Where) and
+    // Mood (feel) are PARKED — Setting is inferred from the action by the
+    // shared WizardChips.buildDeterministicStory, Mood defaults to 'dreamy'
+    // — exactly as the funnel and wizard.html do it. Founder directive 08-13:
+    // "I want them unified always. Obviously the shorter version as it
+    // converts better."
     // Step 1: Subject. Skip it.
     await page.waitForSelector('#build-subject-chip-row', { timeout: 5000 });
     await page.click('#build-subject-skip');
 
-    // Step 2: Setting (Where) — RESTORED (question-first had inferred it away).
-    await page.waitForSelector('#build-place-row', { timeout: 5000 });
-    assert.equal(await page.locator('#build-place-row').isVisible(), true, 'the Setting (Where) step renders again');
-    await page.click('#build-setting-skip');
-
-    // Step 3: Action. Continue.
+    // Step 2 is Action directly — NO Setting step in between.
     await page.waitForSelector('#build-action-row', { timeout: 5000 });
+    assert.equal(await page.locator('#build-place-row').count(), 0, 'the Setting (Where) step must NOT render — it is inferred, per the 3-question trim');
     await page.click('#build-action-continue');
 
-    // Step 4: Mood (feel) — RESTORED (question-first had inferred it away).
-    await page.waitForSelector('#build-mood-row', { timeout: 5000 });
-    assert.equal(await page.locator('#build-mood-row').isVisible(), true, 'the Mood (feel) step renders again');
+    // Step 3 is the Free-text step directly — NO Mood step in between.
+    await page.waitForSelector('#build-freetext-input', { timeout: 5000 });
+    assert.equal(await page.locator('#build-mood-row').count(), 0, 'the Mood (feel) step must NOT render — it defaults to dreamy, per the 3-question trim');
+
+    // Exactly 3 progress dots.
+    var dots = await page.locator('#build-dots i').count();
+    assert.equal(dots, 3, 'the Build-it wizard shows 3 progress dots');
   } finally {
     await context.close();
   }

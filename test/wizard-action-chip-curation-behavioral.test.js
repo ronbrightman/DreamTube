@@ -97,8 +97,8 @@ async function reachBuildActionStep(page) {
   await page.waitForSelector('#build-subject-chip-row');
   await page.click('[data-build-subj-other="none"]');
   await page.click('#build-subject-continue');
-  await page.waitForSelector('#build-place-row');
-  await page.click('#build-setting-skip');
+  // 3-question trim (founder 08-13): Subject leads straight to Action — no
+  // Setting step in between (it's inferred), same as wizard.html + the funnel.
   await page.waitForSelector('#build-action-row');
 }
 
@@ -350,8 +350,8 @@ test('create.html "Build it": Action step shows the same curated default view + 
     await page.click('[data-build-action="calm"]'); // a hidden chip
     await page.click('#build-action-continue');
 
-    await page.waitForSelector('#build-mood-row');
-    await page.click('#build-mood-skip');
+    // 3-question trim (founder 08-13): Action leads straight to Free text —
+    // no Mood step in between (it defaults to dreamy), same as wizard.html.
     await page.waitForSelector('#build-freetext-input');
     await page.click('#build-freetext-skip');
 

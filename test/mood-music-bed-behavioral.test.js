@@ -348,130 +348,16 @@ test('js/music-bed.js: the dream\'s own mood wins over its visual style with the
 // 2. Mood persistence — the actual bug fixed
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Walks create.html's "Build it" wizard to the Mood step (steps 1-3 skipped/defaulted). */
-async function walkBuildWizardToMood(page) {
-  await page.click('#choice-build');
-  await page.click('#build-subject-skip');
-  await page.click('#build-setting-skip');
-  await page.click('#build-action-continue');
-  await page.waitForSelector('#build-mood-row');
-}
-
-test('create.html "Build it": the Mood step answer now survives onto the draft as `mood` -- this is the exact hop where it used to be dropped', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await seedLoggedInUser(page, 'moodbuilder');
-    await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
-
-    await walkBuildWizardToMood(page);
-    // Layout-B: a Mood chip tap AUTO-advances (~260ms) to Free text -- no
-    // Continue tap needed (the step has no secondary field). Tapping the
-    // chip still records it as the answer.
-    await page.click('.fn-chip[data-build-mood="tense"]');
-    await page.waitForSelector('#build-freetext-input', { timeout: 8000 });
-    await page.click('#build-freetext-skip');
-    await page.waitForURL(/style\.html/, { timeout: 8000 });
-
-    var draft = await page.evaluate(function () { return DreamStore.getDraft(); });
-    assert.equal(draft.mood, 'tense', 'the chosen mood must be on the draft -- before this fix it existed only inside the assembled prompt text');
-    // And the prompt itself is unchanged by the new field.
-    assert.match(draft.caption, /tense mood,/, 'the assembled prompt must still carry the mood language exactly as before');
-  } finally {
-    await context.close();
-  }
-});
-
-test('create.html "Build it": tapping SKIP on the Mood step persists NO mood, even though the pre-highlighted default chip is still visibly selected -- Skip and Continue-on-the-default are different answers', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await seedLoggedInUser(page, 'moodskipper');
-    await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
-
-    await walkBuildWizardToMood(page);
-    // Confirm the ambiguity this behavior turns on is real: a chip IS
-    // highlighted right now, with the user having tapped nothing.
-    var preselected = await page.evaluate(function () {
-      var el = document.querySelector('#build-mood-row .fn-chip.sel');
-      return el ? el.dataset.buildMood : null;
-    });
-    assert.equal(preselected, 'dreamy', 'the default mood chip is pre-highlighted, which is why a skipped flag is needed at all');
-
-    await page.click('#build-mood-skip');
-    await page.click('#build-freetext-skip');
-    await page.waitForURL(/style\.html/, { timeout: 8000 });
-
-    var draft = await page.evaluate(function () { return DreamStore.getDraft(); });
-    assert.equal(draft.mood, null, 'a skipped mood step must persist no mood -> the dream falls back to its visual-style bed');
-    assert.match(draft.caption, /dreamy surreal mood,/, 'the GENERATED PROMPT is deliberately untouched by the skip -- it has always used the default mood language here, and changing that would be a real regression in what gets generated');
-  } finally {
-    await context.close();
-  }
-});
-
-test('create.html "Build it": a "+ Something else" free-text mood persists no mood (keyword mapping is out of scope) while the typed text still reaches the generated prompt, so nothing the user wrote is lost', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await seedLoggedInUser(page, 'moodfreetexter');
-    await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
-
-    await walkBuildWizardToMood(page);
-    // "+ Something else" deliberately does NOT auto-advance (the user is
-    // about to type) -- Continue advances with whatever was written.
-    await page.click('.fn-chip[data-build-mood="other"]');
-    await page.fill('#build-mood-other-input', 'bittersweet and electric');
-    await page.click('#build-mood-continue');
-    await page.click('#build-freetext-skip');
-    await page.waitForURL(/style\.html/, { timeout: 8000 });
-
-    var draft = await page.evaluate(function () { return DreamStore.getDraft(); });
-    assert.equal(draft.mood, null, 'free text has no mood-keyed bed -- falls back');
-    assert.match(draft.caption, /bittersweet and electric mood,/, 'the free text still reaches the prompt, so a future keyword mapping has something to work from');
-  } finally {
-    await context.close();
-  }
-});
-
-test('create.html "Build it": going Back to the Mood step after skipping it, and then tapping a real chip, records the real answer -- the skipped flag must not be sticky', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await seedLoggedInUser(page, 'moodbacktracker');
-    await page.goto(baseUrl + '/create.html', { waitUntil: 'domcontentloaded' });
-
-    await walkBuildWizardToMood(page);
-    await page.click('#build-mood-skip');
-    await page.waitForSelector('#build-freetext-input');
-    // Re-enter the Mood step through the page's own back affordance and
-    // answer it for real this time. The build wizard's steps are in-page
-    // state, NOT history entries -- #create-back is the real control (it
-    // calls buildPrev(), falling through to leaving the wizard only once
-    // there's no earlier step left).
-    await page.click('#create-back');
-    await page.waitForSelector('#build-mood-row', { timeout: 8000 });
-    // Tapping a real chip auto-advances (Layout-B) AND clears the earlier
-    // skip flag -- no Continue tap needed.
-    await page.click('.fn-chip[data-build-mood="epic"]');
-    await page.waitForSelector('#build-freetext-input', { timeout: 8000 });
-    await page.click('#build-freetext-skip');
-    await page.waitForURL(/style\.html/, { timeout: 8000 });
-
-    var draft = await page.evaluate(function () { return DreamStore.getDraft(); });
-    assert.equal(draft.mood, 'epic', 'answering after a previous skip must overwrite the skip, not be swallowed by it');
-  } finally {
-    await context.close();
-  }
-});
+// The four create.html "Build it" Mood-STEP UI tests that lived here (mood
+// survives onto the draft; SKIP persists no mood; a "+ Something else" free-
+// text mood persists no mood; going Back after a skip clears the sticky flag),
+// plus their walkBuildWizardToMood helper, were REMOVED by the 3-question
+// wizard trim (founder 08-13): create.html no longer renders a Mood step, so
+// its BUILD_RENDERERS is [Subject, Action, FreeText] and mood defaults to
+// WizardChips.DEFAULT_MOOD ('dreamy'). The mood->music mapping/persistence
+// coverage below is unaffected and stays -- it drives mood programmatically
+// (via DreamStore.generateVideo/adoptPendingGeneration opts and seeded
+// dreams), never through the removed UI step.
 
 test('js/store.js: a mood on the draft reaches the FINISHED dream record through a real (mocked-transport) generation, and drives that dream\'s music bed on result.html', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }

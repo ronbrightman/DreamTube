@@ -1230,10 +1230,8 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
     await page.click('[data-build-subj-other="none"]');
     await page.click('#build-subject-continue');
 
-    await page.waitForSelector('#build-place-row');
-    await page.click('[data-build-place="urban"]');
-    await page.click('#build-setting-continue');
-
+    // 3-question trim (founder 08-13): Subject -> Action directly (Setting
+    // inferred), Action -> Free text directly (Mood defaults to 'dreamy').
     await page.waitForSelector('#build-action-row');
     assert.equal(await page.locator('#build-action-continue').count(), 1);
     // "exploring" is curated behind the "+N more" expander by default now
@@ -1242,9 +1240,6 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
     await page.click('#build-action-more-toggle');
     await page.click('[data-build-action="exploring"]');
     await page.click('#build-action-continue');
-
-    await page.waitForSelector('#build-mood-row');
-    await page.click('#build-mood-skip');
 
     await page.waitForSelector('#build-freetext-input');
     await page.click('#build-freetext-skip');
@@ -1269,81 +1264,42 @@ test('create.html "Build it": logged-in retrofit reaches style.html with a chip-
 // for-product-founder-picked-layout-b-flo--lks7mj): the logged-in "Build it"
 // flow now wears the same Flo pill-row skin as wizard.html + the funnel, with
 // two founder-ruled interaction specifics that DIFFER from a naive port:
-//   - Mood (the one single-select Build step with no secondary field)
-//     AUTO-advances ~260ms after a tap, no Continue needed.
-//   - Setting (place + Day/Night) and Action (chip + POV) must NOT
-//     auto-advance on the primary tap — they carry a secondary choice, so
-//     they require Continue. (Founder: place tap was skipping Day/Night;
+//   - Action (chip + POV) must NOT auto-advance on the primary tap — it
+//     carries a secondary POV choice, so it requires Continue. (Founder:
 //     action tap was skipping POV.)
-// The pre-existing test above already pins the caption/draft contract; these
-// pin exactly the restyle's behavior deltas. Skin is byte-stable logic — no
+// The Setting (place + Day/Night) and Mood auto-advance behaviors this block
+// once also covered were REMOVED by the 3-question wizard trim (founder
+// directive 08-13: unify to the shorter version; those two steps are parked
+// and no longer in the active flow — see create.html BUILD_RENDERERS).
+// The pre-existing test above already pins the caption/draft contract; this
+// pins the remaining behavior delta. Skin is byte-stable logic — no
 // analytics/payload assertions change.
 // ===========================================================================
 
-test('create.html Layout-B: Mood auto-advances on a chip tap (no Continue), while Setting and Action do NOT auto-advance — their Day/Night and POV secondary choices stay reachable after the primary tap', async function (t) {
+test('create.html Layout-B: the Action step does NOT auto-advance on a chip tap — its POV secondary toggle stays reachable — then Continue advances straight to Free text (3-question trim: Subject -> Action -> Free text)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
     await gotoCreateBuild(page);
 
-    // Subject: skip straight past.
+    // Subject: skip straight past. Setting is inferred (no step), so this
+    // lands directly on Action.
     await page.click('#build-subject-skip');
 
-    // Setting: tap a place, then confirm we're STILL on Setting (no
-    // auto-advance) and Day/Night is still pickable afterwards.
-    await page.waitForSelector('#build-place-row [data-build-place="urban"]');
-    await page.click('#build-place-row [data-build-place="urban"]');
-    await page.waitForTimeout(400); // longer than the 260ms auto-advance window
-    assert.equal(await page.locator('#build-place-row').count(), 1, 'Setting must NOT auto-advance on a place tap — it carries the Day/Night pick');
-    await page.click('#build-time-row [data-build-time="Night"]');
-    assert.equal(await page.locator('#build-time-row .fn-chip.sel').count(), 1, 'Day/Night is still reachable after the place tap');
-    await page.click('#build-setting-continue');
-
     // Action: tap a chip, then confirm we're STILL on Action and POV is
-    // still toggleable afterwards.
+    // still toggleable afterwards (it carries the POV secondary field).
     await page.waitForSelector('#build-action-row [data-build-action="flying"]');
     await page.click('#build-action-row [data-build-action="flying"]');
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(400); // longer than the 260ms auto-advance window
     assert.equal(await page.locator('#build-action-row').count(), 1, 'Action must NOT auto-advance on a chip tap — it carries the POV toggle');
     await page.click('.fn-toggle-row .fn-switch-track'); // the POV switch (the hidden checkbox is toggled via its label)
     assert.equal(await page.isChecked('#build-pov-toggle'), true, 'POV toggle is still reachable after the action tap');
     await page.click('#build-action-continue');
 
-    // Mood: a chip tap AUTO-advances to Free text with no Continue tap.
-    await page.waitForSelector('#build-mood-row [data-build-mood="joyful"]');
-    await page.click('#build-mood-row [data-build-mood="joyful"]');
+    // Action -> Free text directly (Mood is parked / defaults to 'dreamy').
     await page.waitForSelector('#build-freetext-input', { timeout: 3000 });
-    assert.equal(await page.locator('#build-freetext-input').count(), 1, 'Mood must auto-advance on a chip tap (no secondary field)');
-  } finally {
-    await page.close();
-  }
-});
-
-test('create.html Layout-B: a Continue tap inside Mood\'s auto-advance window advances exactly once (never double-hops past Free text)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    await gotoCreateBuild(page);
-    await page.click('#build-subject-skip');
-    await page.click('#build-place-row [data-build-place="urban"]');
-    await page.click('#build-setting-continue');
-    await page.click('#build-action-row [data-build-action="flying"]');
-    await page.click('#build-action-continue');
-    await page.waitForSelector('#build-mood-row [data-build-mood="joyful"]');
-
-    // Chip-tap + Continue-tap in the SAME tick (guaranteed inside the 260ms
-    // window): buildNext cancels the armed auto-advance, so this lands on
-    // Free text exactly once — it must not double-hop straight to style.html.
-    await page.evaluate(function () {
-      document.querySelector('#build-mood-row [data-build-mood="joyful"]').click();
-      document.getElementById('build-mood-continue').click();
-    });
-    await page.waitForSelector('#build-freetext-input', { timeout: 3000 });
-    await page.waitForTimeout(500); // let the cancelled 260ms timer's window elapse
-    assert.equal(await page.locator('#build-freetext-input').count(), 1, 'must be sitting on Free text — a Continue tap inside the auto-advance window advances exactly once');
-    assert.equal(new URL(page.url()).pathname, '/create.html', 'must NOT have double-advanced through Free text to style.html');
+    assert.equal(await page.locator('#build-freetext-input').count(), 1, 'Action Continue advances straight to Free text');
   } finally {
     await page.close();
   }
@@ -1373,15 +1329,14 @@ test('create.html Layout-B: tapping Me opens the character sheet, and an uploade
     assert.equal(meHasPhoto, true, 'the uploaded photo is persisted on the real Me character');
     await page.click('#build-subject-continue');
 
-    // Setting -> Action with POV ON.
-    await page.click('#build-place-row [data-build-place="urban"]');
-    await page.click('#build-setting-continue');
+    // 3-question trim (founder 08-13): Subject -> Action directly (Setting
+    // inferred). Turn POV ON on the Action step, then Continue -> Free text
+    // directly (Mood parked / defaults to 'dreamy').
+    await page.waitForSelector('#build-action-row [data-build-action="flying"]');
     await page.click('#build-action-row [data-build-action="flying"]');
     await page.click('.fn-toggle-row .fn-switch-track');
     await page.click('#build-action-continue');
 
-    // Mood auto-advances, then finish through Free text.
-    await page.click('#build-mood-row [data-build-mood="dreamy"]');
     await page.waitForSelector('#build-freetext-input');
     await page.click('#build-freetext-continue');
 

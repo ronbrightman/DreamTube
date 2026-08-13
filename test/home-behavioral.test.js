@@ -939,10 +939,13 @@ test('home.html: the bare Tonight CTA button has the founder\'s exact "What did 
     // Build it -> the chip-first wizard, same rigor as the old test: the
     // Subject step (step 1) must actually render, not just an empty/
     // generic build screen. The Layout-B redesign replaced the old "step 1
-    // of 5" text progress indicator with #build-dots (pill/dot styling,
+    // of N" text progress indicator with #build-dots (pill/dot styling,
     // same as wizard.html) -- no text equivalent exists to pin anymore, so
     // this now checks the real, still-meaningful properties: landing on
-    // the actual Subject step content, and dot 1 (of 5) marked current.
+    // the actual Subject step content, and dot 1 marked current. Dot count
+    // is 3 since the 3-question wizard trim (founder directive 08-13, "unify
+    // always, the shorter version": Subject -> Action -> dream text; Setting
+    // + Mood parked/inferred, kept IDENTICAL to the paid funnel + wizard.html).
     await page.click('#choice-build');
     await page.waitForSelector('#create-build', { state: 'visible', timeout: 5000 });
     assert.equal(await page.locator('#create-select').isVisible(), false);
@@ -950,7 +953,7 @@ test('home.html: the bare Tonight CTA button has the founder\'s exact "What did 
     var dots = await page.locator('#build-dots i').evaluateAll(function (els) {
       return els.map(function (el) { return el.className; });
     });
-    assert.equal(dots.length, 5, 'the Build-it wizard should show 5 progress dots');
+    assert.equal(dots.length, 3, 'the Build-it wizard should show 3 progress dots (3-question trim, funnel-identical)');
     assert.match(dots[0], /\bon\b/, 'dot 1 (Subject) should be marked current on first landing');
   } finally {
     await context.close();
