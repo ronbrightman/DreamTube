@@ -95,6 +95,25 @@
     <div class="err-text" id="login-error"></div>
     <button class="btn btn-primary btn-block" id="login-submit" style="margin-top:2px;">Continue</button>
 
+    <!-- Passwordless email-code login (tracker: return-on-new-device for
+         passwordless funnel signups). A funnel/passwordless account has NO
+         password, so username+password+"Forgot password?" all dead-end it on
+         a fresh browser/device — the exact founder iOS repro. This is a
+         first-class recovery path that drives the SAME server flow the funnel
+         signup wall uses (DreamStore.signupPasswordless -> login-with-email-
+         code, ?bt= session transfer), NOT a new auth path. Shown in LOGIN mode
+         only — signup mode already collects an email and creates the account
+         directly. Toggled in syncAuthUI() below alongside forgot/email etc. -->
+    <div id="passwordless-entry" style="display:none;">
+      <div style="display:flex; align-items:center; gap:10px; margin:14px 0;">
+        <div style="flex:1; height:1px; background:var(--border);"></div>
+        <span style="font-size:12px; color:var(--text-faint);">or</span>
+        <div style="flex:1; height:1px; background:var(--border);"></div>
+      </div>
+      <button class="btn btn-secondary btn-block" id="passwordless-open" type="button">Email me a login code</button>
+      <div class="auth-sub" style="margin-top:8px; font-size:12px; text-align:center;">No password? Signed up through an ad or the quiz? Use this — we'll email you a code (or a link that signs you in).</div>
+    </div>
+
     <!-- Signup small-print (tracker.html's
          for-product-create-a-real-privacy-policy-o3g56s item) — only shown
          in signup mode, toggled alongside email-hint/local-only-note in
@@ -151,6 +170,38 @@
     <div style="flex:1"></div>
     <span class="link-text" id="reset-back" style="margin-bottom:22px; cursor:pointer; display:none;">Back to log in</span>
   </div>
+
+  <!-- Passwordless email-code login view (tracker: return-on-new-device for
+       passwordless funnel signups). Two swapped steps, mirroring start.html's
+       renderScreen13Passwordless: (1) email -> DreamStore.signupPasswordless,
+       which for an EXISTING (returning) account mails a 6-digit code + an
+       auto-login link and returns pendingVerification; (2) code ->
+       DreamStore.loginWithEmailCode, the real server-checked login that mints
+       a session and reconciles the account's dreams. Same endpoints/session
+       mechanism as the funnel wall — no new/weaker auth path. -->
+  <div class="px" id="passwordless-view" style="flex:1; display:none; flex-direction:column;">
+    <div class="auth-logo"><img src="assets/logo-v4.png" alt="DreamTube"></div>
+    <div class="auth-head">Log in with your email</div>
+    <div class="auth-sub" id="pl-sub">No password needed — we'll email you a code, or a link that signs you in.</div>
+
+    <div id="pl-email-step">
+      <input class="field" id="pl-email" placeholder="Email" type="email" autocomplete="email" dir="auto">
+      <div class="err-text" id="pl-email-error"></div>
+      <button class="btn btn-primary btn-block" id="pl-email-submit" style="margin-top:2px;">Email me a code</button>
+    </div>
+
+    <div id="pl-code-step" style="display:none;">
+      <div class="auth-sub" id="pl-code-sub" style="margin:-2px 0 12px;"></div>
+      <input class="field" id="pl-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" style="text-align:center; letter-spacing:6px; font-size:20px;">
+      <div class="err-text" id="pl-code-error"></div>
+      <button class="btn btn-primary btn-block" id="pl-code-submit" style="margin-top:2px;">Continue</button>
+      <span class="link-text" id="pl-resend" style="cursor:pointer; display:block; margin-top:14px;">Resend code</span>
+      <span class="link-text" id="pl-change-email" style="cursor:pointer; display:block; margin-top:10px;">Use a different email</span>
+    </div>
+
+    <div style="flex:1"></div>
+    <span class="link-text" id="pl-back" style="margin-bottom:22px; cursor:pointer;">Back to log in</span>
+  </div>
 </div>
 
 <script src="js/icons.js"></script>
@@ -179,7 +230,8 @@
   var authView = document.getElementById('auth-view');
   var forgotView = document.getElementById('forgot-view');
   var resetView = document.getElementById('reset-view');
-  var views = [authView, forgotView, resetView];
+  var passwordlessView = document.getElementById('passwordless-view');
+  var views = [authView, forgotView, resetView, passwordlessView];
   function showView(view){
     views.forEach(function(v){ v.style.display = v === view ? 'flex' : 'none'; });
   }
@@ -251,6 +303,9 @@
     document.getElementById('email-hint').style.display = isSignup ? 'block' : 'none';
     usernameField.placeholder = isSignup ? 'Username' : 'Username or email';
     forgotLink.style.display = isSignup ? 'none' : 'block';
+    // Passwordless email-code entry — login mode only (see #passwordless-entry
+    // comment above for why it's hidden in signup mode).
+    document.getElementById('passwordless-entry').style.display = isSignup ? 'none' : 'block';
     document.getElementById('local-only-note').style.display = isSignup ? 'block' : 'none';
     document.getElementById('signup-legal-note').style.display = isSignup ? 'block' : 'none';
     document.getElementById('login-error').textContent = '';
@@ -295,6 +350,136 @@
       });
     }, 450);
   });
+
+  // ===== Passwordless email-code login =====
+  // The recovery path for a passwordless (funnel/ad) account on a fresh
+  // browser or device: it has no password, so username/password and "Forgot
+  // password?" all dead-end it. Reuses the EXACT funnel-wall flow —
+  // DreamStore.signupPasswordless (mails a code + auto-login link for an
+  // existing account) then DreamStore.loginWithEmailCode (the real
+  // server-checked login that mints a session and reconciles dreams). Same
+  // endpoints, same ?bt= session mechanism, no new/weaker auth path. On
+  // success we land on nextUrl exactly like the password path.
+  (function(){
+    var plEmailStep = document.getElementById('pl-email-step');
+    var plCodeStep = document.getElementById('pl-code-step');
+    var plEmail = document.getElementById('pl-email');
+    var plEmailError = document.getElementById('pl-email-error');
+    var plEmailSubmit = document.getElementById('pl-email-submit');
+    var plCode = document.getElementById('pl-code');
+    var plCodeError = document.getElementById('pl-code-error');
+    var plCodeSubmit = document.getElementById('pl-code-submit');
+    var plCodeSub = document.getElementById('pl-code-sub');
+    var plResend = document.getElementById('pl-resend');
+    var plChangeEmail = document.getElementById('pl-change-email');
+    var currentEmail = '';
+
+    function showEmailStep(){
+      plCodeStep.style.display = 'none';
+      plEmailStep.style.display = 'block';
+      plEmailError.textContent = '';
+      plEmailSubmit.disabled = false;
+      plEmailSubmit.textContent = 'Email me a code';
+      plEmail.focus();
+    }
+
+    function showCodeStep(email){
+      currentEmail = email;
+      plEmailStep.style.display = 'none';
+      plCodeStep.style.display = 'block';
+      plCodeSub.innerHTML = 'We found your account — enter the code we just sent to <b></b>, or tap the link in that email.';
+      // textContent-set the email so it can't inject markup.
+      plCodeSub.querySelector('b').textContent = email;
+      plCode.value = '';
+      plCodeError.textContent = '';
+      plCodeSubmit.disabled = false;
+      plCodeSubmit.textContent = 'Continue';
+      plCode.focus();
+    }
+
+    document.getElementById('passwordless-open').addEventListener('click', function(){
+      // Seed the email field from whatever was already typed into the login
+      // username box if it looks like an email — a small convenience.
+      var maybeEmail = usernameField.value.trim();
+      plEmail.value = (maybeEmail.indexOf('@') !== -1) ? maybeEmail : '';
+      showView(passwordlessView);
+      showEmailStep();
+    });
+
+    document.getElementById('pl-back').addEventListener('click', function(){
+      showView(authView);
+    });
+    plChangeEmail.addEventListener('click', showEmailStep);
+
+    function submitEmail(){
+      var email = plEmail.value.trim();
+      plEmailError.textContent = '';
+      if(!email || email.indexOf('@') === -1){ plEmailError.textContent = 'Enter a valid email address.'; return; }
+      plEmailSubmit.disabled = true;
+      plEmailSubmit.innerHTML = '<span class="spinner-inline"></span>';
+      DreamStore.signupPasswordless(email).then(function(result){
+        if(!result.ok){
+          plEmailError.textContent = result.error || "Couldn't send a code — try again.";
+          plEmailSubmit.disabled = false;
+          plEmailSubmit.textContent = 'Email me a code';
+          return;
+        }
+        if(result.pendingVerification){
+          // Existing account — a code + auto-login link were just mailed; no
+          // session yet. Prove inbox ownership on the code step.
+          showCodeStep(email);
+          return;
+        }
+        // Brand-new account (unknown email) — signupPasswordless already
+        // created it and signed us in, same as the funnel wall's own new-
+        // account branch. Fire CompleteRegistration for a genuine new signup
+        // (never for the returning/code path), matching this page's password
+        // signup path and start.html's passwordless arm, then land on nextUrl.
+        if(result.created){ fireMetaConversion('CompleteRegistration', { email: email, custom_data: { signup_method: 'passwordless_code' } }); }
+        location.href = nextUrl;
+      });
+    }
+    plEmailSubmit.addEventListener('click', submitEmail);
+    plEmail.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); submitEmail(); } });
+
+    function submitCode(){
+      var code = plCode.value.trim();
+      plCodeError.textContent = '';
+      if(!/^[0-9]{6}$/.test(code)){ plCodeError.textContent = 'Enter the 6-digit code from your email.'; return; }
+      plCodeSubmit.disabled = true;
+      plCodeSubmit.innerHTML = '<span class="spinner-inline"></span>';
+      // Real server-checked login (login-with-email-code.js) — mints a
+      // session only once the mailed code matches, then reconciles this
+      // account's dreams (incl. any completed pending dream attached by
+      // lib/pending-dream-recovery.js). This is a LOGIN, not a new signup,
+      // so no CompleteRegistration here.
+      DreamStore.loginWithEmailCode(currentEmail, code).then(function(result){
+        if(!result.ok){
+          plCodeError.textContent = result.error || "That code didn't match — try again.";
+          plCodeSubmit.disabled = false;
+          plCodeSubmit.textContent = 'Continue';
+          return;
+        }
+        location.href = nextUrl;
+      });
+    }
+    plCodeSubmit.addEventListener('click', submitCode);
+    plCode.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); submitCode(); } });
+
+    plResend.addEventListener('click', function(){
+      if(!currentEmail) return;
+      plResend.style.pointerEvents = 'none';
+      var original = plResend.textContent;
+      plResend.textContent = 'Sending…';
+      // Re-submitting to signupPasswordless is the resend mechanism — the
+      // server's RESOLVE branch always mails a fresh code (see register-
+      // account-passwordless.js). Harmless to let land late.
+      DreamStore.signupPasswordless(currentEmail).then(function(){
+        plResend.textContent = 'Sent — check your email';
+        setTimeout(function(){ plResend.textContent = original; plResend.style.pointerEvents = ''; }, 4000);
+      });
+    });
+  })();
 
   // ===== Restore from backup file =====
   // Import half of the client-only mitigation for accounts/dreams living
