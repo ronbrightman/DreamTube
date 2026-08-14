@@ -1932,8 +1932,27 @@
             // this device's local id (any in-session reference to it would
             // dangle) — preserve local.id even when matched by operation.
             var preservedId = local.id;
+            // The server BACKSTOP (dream-webhook.js persistDurableDreamForOwner)
+            // writes the fields it can't know — mood, interpretation, storyText,
+            // promptText — as EXPLICIT null, with a fresh updatedAt. Without a
+            // guard, a non-wiped device whose own richer copy hasn't finished
+            // its dream-sync yet would have those fields overwritten with null
+            // when the backstop wins this merge (updatedAt is ~a coin-flip at
+            // completion time) — silently losing the mood (music bed) and the
+            // interpretation. So preserve any local non-null value the incoming
+            // server copy is null for; genuine server VALUES (a real client
+            // sync landed) are non-null and still win. Then the pushLocal below
+            // heals the server side with the preserved fields too. (E304 review
+            // finding, 2026-08-14.)
+            var RICH_FIELDS = ['mood', 'interpretationText', 'interpretationAt', 'storyText', 'promptText'];
+            var localRich = {};
+            for (var ri = 0; ri < RICH_FIELDS.length; ri++) localRich[RICH_FIELDS[ri]] = local[RICH_FIELDS[ri]];
             Object.assign(local, serverDream);
             local.id = preservedId;
+            for (var rj = 0; rj < RICH_FIELDS.length; rj++) {
+              var rf = RICH_FIELDS[rj];
+              if (serverDream[rf] == null && localRich[rf] != null) local[rf] = localRich[rf];
+            }
             changed = true;
             if (idsDiffer) pushLocal = true; // converge the server side onto this one id
           } else if (localUpdatedAt > serverUpdatedAt) {

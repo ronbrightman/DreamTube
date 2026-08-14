@@ -672,6 +672,11 @@ test('reconcile DEDUP: a server dream and this device\'s OWN local copy of the S
     assert.equal(forOp.length, 1, 'the server copy must NOT be added as a second journal entry for the same operation');
     assert.equal(forOp[0].id, 'dlocalcopy1', 'the local id is preserved through the operation-merge (no in-session dangling reference)');
     assert.equal(forOp[0].videoUrl, 'https://cdn.fal/finished.mp4', 'the newer server copy\'s fields were merged in');
+    // The server BACKSTOP carries mood/interpretation as explicit null; the
+    // newer-server-copy merge must NOT downgrade this device's richer local
+    // mood to null (it drives the music bed) even though the server won on
+    // updatedAt (E304 review finding 2026-08-14).
+    assert.equal(forOp[0].mood, 'joyful', 'a null server-backstop mood must not overwrite the richer local mood');
   } finally {
     await page.close();
   }
