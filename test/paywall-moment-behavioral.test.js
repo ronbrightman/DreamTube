@@ -209,14 +209,16 @@ test('TOKENS arm (forced): the 99c/300-token starter renders and its CTA POSTs p
   } finally { await page.close(); }
 });
 
-test('DISMISS ("Not now") goes straight to home.html with no checkout POST', async function (t) {
+test('DISMISS (topbar X) goes straight to home.html with no checkout POST', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
     var checkoutCalls = await stubBackend(page);
     await signupToMoment(page, '?paywall=subscription&trialarm=free', 'dismiss-home@example.com');
-    await page.click('.mm-notnow');
+    // The redundant "Not now" link was removed (founder 08-14); the topbar X
+    // is now the sole dismiss affordance.
+    await page.click('.mm-x');
     await page.waitForURL(/home\.html/, { timeout: 8000 });
     assert.match(page.url(), /home\.html/, 'dismiss lands on home.html');
     assert.equal(checkoutCalls.length, 0, 'dismiss fires no checkout');

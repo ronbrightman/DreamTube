@@ -118,7 +118,7 @@ async function safeGoto(page, url) {
 async function dismissMomentIfPresent(page) {
   try { await page.waitForSelector('.mm-overlay', { timeout: 8000 }); }
   catch (e) { return; }
-  await page.click('.mm-notnow');
+  await page.click('.mm-x'); // paywall dismiss (the 'Not now' link was removed 08-14; X dismisses)
 }
 
 /** Date.now monkeypatch -- shifts the embedded mock-operationName timestamp far enough into the past that video-status.js's mock-mode elapsed-time check reports done:true immediately, without this test waiting out the real 20s MOCK_DELAY_MS. */

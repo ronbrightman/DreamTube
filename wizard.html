@@ -2228,9 +2228,7 @@
           '</div>' +
           '<div class="mm-cue" id="mm-cue">$7.99/mo, billed today — save 20%, no trial.</div>' +
           '<button class="mm-cta" id="mm-cta">Get Dreamer Pass — $7.99/mo</button>' +
-          '<div class="mm-fine">Subscriptions renew automatically each month unless cancelled. <span class="mm-cancel">Free to cancel anytime.</span></div>' +
-          '<button class="mm-notnow" type="button">Not now</button>' +
-        '</div>' +
+          '<div class="mm-fine">Subscriptions renew automatically each month unless cancelled. <span class="mm-cancel">Free to cancel anytime.</span></div>' +        '</div>' +
       '</div>';
 
     var trialOn = false; // toggle DEFAULTS OFF = no-trial $7.99
@@ -2262,8 +2260,6 @@
     renderPrice();
     sw.addEventListener('click', function(){ trialOn = !trialOn; renderPrice(); });
     overlay.querySelector('.mm-x').addEventListener('click', dismiss);
-    overlay.querySelector('.mm-notnow').addEventListener('click', dismiss);
-
     cta.addEventListener('click', function(){
       var passVariant = window.PaywallMoment.passVariantFor(trialOn, trialArm);
       track('paywall_cta_tapped', { arm: arm, variant: passVariant });
@@ -2300,7 +2296,7 @@
   function buildTokensScreen(overlay, email, arm, dismiss){
     // The 99¢ / 300-token starter welcome pop-up — reuses the existing
     // create-checkout-session-dodo PACK path (pack099, the one-time-per-account
-    // starter). Same big-X / "Not now" dismiss as the subscription arm.
+    // starter). Same big-X dismiss as the subscription arm.
     overlay.innerHTML =
       '<button class="mm-x" type="button" aria-label="Close">✕</button>' +
       '<div class="mm-body">' +
@@ -2321,14 +2317,10 @@
           '</div>' +
           '<div class="mm-cue">Just 99¢, one time — 300 tokens that never expire.</div>' +
           '<button class="mm-cta mm-cta-gold" id="mm-cta">Get 300 tokens · $0.99</button>' +
-          '<div class="mm-fine">One-time charge. No subscription.</div>' +
-          '<button class="mm-notnow" type="button">Not now</button>' +
-        '</div>' +
+          '<div class="mm-fine">One-time charge. No subscription.</div>' +        '</div>' +
       '</div>';
 
-    overlay.querySelector('.mm-x').addEventListener('click', dismiss);
-    overlay.querySelector('.mm-notnow').addEventListener('click', dismiss);
-    var cta = overlay.querySelector('#mm-cta');
+    overlay.querySelector('.mm-x').addEventListener('click', dismiss);    var cta = overlay.querySelector('#mm-cta');
     cta.addEventListener('click', function(){
       track('paywall_cta_tapped', { arm: arm, variant: 'pack099' });
       cta.disabled = true;
@@ -2406,7 +2398,6 @@
       '.mm-cta-gold{background:linear-gradient(120deg,#e7b45a,#f4cd7a);color:#160f2b;box-shadow:0 10px 26px rgba(231,180,90,.35);}',
       '.mm-fine{margin-top:11px;color:var(--muted);font-size:10.5px;line-height:1.5;text-align:center;}',
       '.mm-fine .mm-cancel{color:#c3bcd8;font-weight:700;}',
-      '.mm-notnow{display:block;text-align:center;margin:12px auto 2px;font-size:12.5px;color:#9a95bd;text-decoration:underline;background:none;border:none;width:100%;cursor:pointer;-webkit-tap-highlight-color:transparent;}',
       '.mm-err{margin-top:10px;color:#ff9a9a;font-size:12px;text-align:center;}',
       '@media (prefers-reduced-motion: reduce){.mm-sw,.mm-sw::after{transition:none!important;}}'
     ].join('');

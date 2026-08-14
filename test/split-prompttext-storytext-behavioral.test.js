@@ -107,7 +107,7 @@ function mockTokenStatus(page) {
 async function dismissMomentIfPresent(page) {
   try { await page.waitForSelector('.mm-overlay', { timeout: 8000 }); }
   catch (e) { return; }
-  await page.click('.mm-notnow');
+  await page.click('.mm-x'); // paywall dismiss (the 'Not now' link was removed 08-14; X dismisses)
 }
 
 async function seedLoggedInUserAt(page, username, path) {
