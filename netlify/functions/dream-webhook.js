@@ -91,6 +91,7 @@ var unsubscribeToken = require('./lib/unsubscribe-token');
 var emailLayout = require('./lib/email-layout');
 var accountStore = require('./lib/account-store');
 var dreamStore = require('./lib/dream-store');
+var pendingDreamRecovery = require('./lib/pending-dream-recovery');
 var markGenerationCompleted = require('./mark-generation-completed');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
@@ -221,44 +222,16 @@ async function persistDurableDreamForOwner(event, record, videoUrl) {
       return;
     }
 
-    var mediaType = record.mediaType === 'image' ? 'image' : 'video';
-    // Matches finalizeDream's own resolvedStoryText fallback: the human-
-    // readable dream text is storyText, falling back to the (engineered)
-    // caption when a pre-storyText record has none.
-    var human = (typeof record.storyText === 'string' && record.storyText.trim()) ? record.storyText : record.caption;
-
     // Exactly the durable private-dream field shape dream-sync.js's own
-    // sanitizeDream produces (id, ownerHandle, isPublished:false, likes:0,
-    // likedByMe:false + the DREAM_FIELDS + createdAt), so a record restored
-    // by reconcilePrivateDreamsFromServer renders identically to a client-
-    // synced one. Fields the server can't know at completion (mood, any
-    // interpretation) are null — the same "never fabricate" convention
-    // buildDreamSyncUpsertBody uses; a later client sync fills them in.
-    var dream = {
-      id: dreamStore.serverDreamId(operationName),
-      // Canonical account handle. reconcilePrivateDreamsFromServer re-stamps
-      // ownerHandle to the session's own handle on ingest (every dream
-      // dream-sync returns belongs to the verified caller), so this restores
-      // correctly even when the user logged back in with different casing.
-      ownerHandle: '@' + account.username,
-      isPublished: false,
-      likes: 0,
-      likedByMe: false,
-      caption: human || null,
-      promptText: record.caption || null,
-      storyText: human || null,
-      style: record.style || null,
-      mediaType: mediaType,
-      videoUrl: mediaType === 'video' ? videoUrl : null,
-      imageUrl: mediaType === 'image' ? videoUrl : null,
-      dur: mediaType === 'video' ? '0:08' : null,
-      sourceOperationName: operationName,
-      interpretationText: null,
-      interpretationAt: null,
-      mood: null,
-      createdAt: (typeof record.createdAt === 'number' && isFinite(record.createdAt)) ? record.createdAt : null,
-      updatedAt: Date.now()
-    };
+    // sanitizeDream produces — built by the SHARED
+    // pending-dream-recovery.buildDurableDreamFromPendingRecord so this
+    // completion-time persist and the cross-device by-email finalization
+    // backfill (lib/pending-dream-recovery.js) can never drift. Canonical
+    // account handle; reconcilePrivateDreamsFromServer re-stamps ownerHandle
+    // to the session's own handle on ingest (every dream dream-sync returns
+    // belongs to the verified caller), so this restores correctly even when
+    // the user logged back in with different casing.
+    var dream = pendingDreamRecovery.buildDurableDreamFromPendingRecord(record, account.username, videoUrl);
 
     var persisted = await dreamStore.backfillServerDream(event, account.username, dream);
     if (persisted && persisted.ok) {

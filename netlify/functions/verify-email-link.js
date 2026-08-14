@@ -73,6 +73,7 @@ var emailVerificationStore = require('./lib/email-verification-store');
 var accountStore = require('./lib/account-store');
 var sessionTransferToken = require('./lib/session-transfer-token');
 var entitlements = require('./lib/entitlements');
+var pendingDreamRecovery = require('./lib/pending-dream-recovery');
 
 var REDIRECT_PATH_RE = /^\/(?!\/)/;
 var REDIRECT_SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
@@ -154,6 +155,19 @@ exports.handler = async function (event) {
   // resolved this exact username), so `null` is a safe, harmless fallback
   // rather than something worth failing the whole request over.
   var account = await accountStore.getByUsername(event, resolved.username);
+
+  // CROSS-DEVICE, BY-EMAIL attach (tracker item
+  // for-product-passwordless-cross-device-attach) — clicking this mailed link
+  // is itself proof this inbox is owned, on whatever device opened it (often a
+  // different one from where the funnel ran, with no device-local pendingId).
+  // Attach any completed pending generation(s) for this email now, so the page
+  // this redirects into (which consumes ?bt= and then reconciles) surfaces the
+  // finished video. Best-effort/awaited — the helper never throws, enforces
+  // ownership internally, and a bad account lookup below just means no attach.
+  if (account && account.email) {
+    await pendingDreamRecovery.attachCompletedPendingDreamsForEmail(event, account.email, resolved.username);
+  }
+
   var transferToken = await sessionTransferToken.createToken(event, resolved.username, (account && account.email) || null);
 
   return redirect(event, destination, { verified: '1', bt: transferToken });

@@ -45,6 +45,7 @@ var accountAuthToken = require('./lib/account-auth-token');
 var accountStore = require('./lib/account-store');
 var emailVerificationStore = require('./lib/email-verification-store');
 var entitlements = require('./lib/entitlements');
+var pendingDreamRecovery = require('./lib/pending-dream-recovery');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -123,5 +124,23 @@ exports.handler = async function (event) {
       // Exhaustion only — verification stands, bonus just isn't confirmed.
     }
   }
+
+  // CROSS-DEVICE, BY-EMAIL attach (tracker item
+  // for-product-passwordless-cross-device-attach) — defense in depth for the
+  // same-device deferred-verification path: an account created at the wall
+  // (register-account-passwordless branch 2) whose pending generation finished
+  // in the narrow window before its "e:" account index was durably visible to
+  // dream-webhook.js's persist (Blobs has no read-your-write guarantee) would
+  // otherwise still be stranded even here. Attach any completed pending
+  // generation(s) for this email now, so this account's next reconcile
+  // surfaces them. Runs regardless of `marked.changed` (a re-verify of an
+  // already-verified account can still have a stranded dream). Best-effort:
+  // the helper never throws and enforces ownership internally, so it can never
+  // affect the verification result. `auth.username` was proven by the verified
+  // authToken (E4) above; the email comes off that same account's record.
+  if (marked.ok && marked.record && marked.record.email) {
+    await pendingDreamRecovery.attachCompletedPendingDreamsForEmail(event, marked.record.email, auth.username);
+  }
+
   return { statusCode: 200, body: JSON.stringify({ ok: true, bonus: bonus }) };
 };

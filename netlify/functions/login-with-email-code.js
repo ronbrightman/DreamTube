@@ -60,6 +60,7 @@ var accountStore = require('./lib/account-store');
 var emailVerificationStore = require('./lib/email-verification-store');
 var accountAuthToken = require('./lib/account-auth-token');
 var rateLimit = require('./lib/rate-limit');
+var pendingDreamRecovery = require('./lib/pending-dream-recovery');
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -103,5 +104,20 @@ exports.handler = async function (event) {
 
   await accountStore.markEmailVerified(event, account.username);
   var authToken = await accountAuthToken.mintToken(event, account.username);
+
+  // CROSS-DEVICE, BY-EMAIL attach (tracker item
+  // for-product-passwordless-cross-device-attach) — this is the exact
+  // finalization the founder iOS repro hits: a pre-signup funnel visitor whose
+  // dream video FINISHED before any account existed now proves ownership of
+  // this inbox HERE, on a different device with no device-local pendingId.
+  // Attach any completed pending generation(s) for this email to the account
+  // now, so reconcilePrivateDreamsFromServer (which loginWithEmailCode awaits
+  // on the client right after this) surfaces them. Best-effort and awaited:
+  // the helper never throws (a failure degrades to a no-op summary), so it can
+  // never break this login, but it MUST complete before we return so the
+  // client's very next reconcile sees the backfilled dream. Ownership is
+  // enforced inside (only a record whose own stored email matches).
+  await pendingDreamRecovery.attachCompletedPendingDreamsForEmail(event, account.email, account.username);
+
   return { statusCode: 200, body: JSON.stringify({ ok: true, username: account.username, email: account.email, authToken: authToken }) };
 };

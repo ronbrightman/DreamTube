@@ -96,8 +96,53 @@ var blobsRetry = require('./blobs-retry');
 
 var STORE_NAME = 'dreamtube-pending-dreams';
 
+// Secondary BY-EMAIL index (cross-device recovery, tracker item
+// for-product-passwordless-cross-device-attach — the founder iOS repro
+// 2026-08-14 the E304 server-persist does NOT cover). A completed pending
+// generation whose owning account did not exist yet at fal-completion time
+// (dream-webhook.js's persistDurableDreamForOwner correctly SKIPs there —
+// "no account yet") must still be attachable to that account once it's
+// finalized LATER, on a DIFFERENT device, with no device-local pendingId to
+// claim by. The primary store keys records by an unguessable random id, so
+// there is no way to find "every pending record for this email" without an
+// index. This is that index — the same "email is the cross-device anchor of
+// identity" role account-store.js's own "e:" index plays, kept in its OWN
+// store here (rather than a prefixed key in the primary store) so the
+// primary store's keyspace stays exactly the pdXXXX records every existing
+// get()/update()/tryTransition() call already assumes.
+//
+// KEY SHAPE: `<normalizedEmail>:<pendingId>` -> the pendingId (as JSON). One
+// key per (email, record), so a create() only ever writes its OWN unique
+// key — there is NO shared array to concurrently mutate (contrast a single
+// "email -> [ids]" blob, which would have the lost-update race every other
+// Blobs store in this codebase documents). listIdsByEmail below reads them
+// back with a single prefix list(). The pendingId is recovered from the key
+// itself (everything after the LAST ':'), so a pendingId — which is hex and
+// never contains ':' — is isolated correctly even in the (practically
+// impossible, but harmless) event a normalized email contained a colon.
+var EMAIL_INDEX_STORE_NAME = 'dreamtube-pending-dreams-email-index';
+
 function store() {
   return getStore({ name: STORE_NAME });
+}
+
+function emailIndexStore() {
+  return getStore({ name: EMAIL_INDEX_STORE_NAME });
+}
+
+/**
+ * The single normalization used for BOTH a record's stored `email` and its
+ * email-index key, so the two can never drift out of match (a mismatch would
+ * silently make listIdsByEmail miss a record). Identical to
+ * entitlements.js's normalizeEmail / the trim().toLowerCase() every other
+ * email anchor in this codebase uses.
+ */
+function normalizeEmailKey(email) {
+  return (typeof email === 'string' ? email : '').trim().toLowerCase();
+}
+
+function emailIndexKey(email, id) {
+  return normalizeEmailKey(email) + ':' + id;
 }
 
 function newId() {
@@ -110,7 +155,7 @@ async function create(event, data) {
   var id = newId();
   var record = {
     id: id,
-    email: (data.email || '').trim().toLowerCase(),
+    email: normalizeEmailKey(data.email),
     whatsapp: data.whatsapp || null,
     caption: data.caption || '',
     storyText: data.storyText || '',
@@ -131,7 +176,42 @@ async function create(event, data) {
     failedReason: null
   };
   await store().setJSON(id, record);
+  // Secondary by-email index write (best-effort) — see EMAIL_INDEX_STORE_NAME
+  // above. A failure here never fails the create: the primary record still
+  // exists and every existing recovery path (client sync, webhook persist,
+  // claim email) still works; only the new cross-device finalization backfill
+  // would miss this one record, an honest degrade back to today's behavior.
+  if (record.email) {
+    try {
+      await emailIndexStore().setJSON(emailIndexKey(record.email, id), id);
+    } catch (e) {
+      console.error('pending-dreams: email-index write failed (non-fatal) for id ' + id, e);
+    }
+  }
   return record;
+}
+
+/**
+ * Every pending-record id created under `email` (via the secondary by-email
+ * index — see EMAIL_INDEX_STORE_NAME above). Cross-device recovery reads
+ * these back at account finalization to find completed generations to attach,
+ * with no device-local pendingId. Returns [] for an empty/unknown email or on
+ * any read failure (never throws) — the caller (lib/pending-dream-recovery.js)
+ * treats an empty list as "nothing to recover", same best-effort posture as
+ * every other recovery path here.
+ */
+async function listIdsByEmail(event, email) {
+  var normalized = normalizeEmailKey(email);
+  if (!normalized) return [];
+  try {
+    connectLambda(event);
+    var listResult = await emailIndexStore().list({ prefix: normalized + ':' });
+    var blobs = (listResult && listResult.blobs) || [];
+    return blobs.map(function (b) { return b.key.slice(b.key.lastIndexOf(':') + 1); });
+  } catch (e) {
+    console.error('pending-dreams: listIdsByEmail failed (non-fatal) for ' + normalized, e);
+    return [];
+  }
 }
 
 async function get(event, id) {
@@ -395,4 +475,4 @@ async function markFailed(event, id, reason) {
   return tryTransition(event, id, ['pending', 'ready'], 'failed', { failedReason: reason || 'unknown' });
 }
 
-module.exports = { STORE_NAME, create, get, getWithReadyRetry, update, tryTransition, markReady, markNotified, markClaimed, markFailed };
+module.exports = { STORE_NAME, EMAIL_INDEX_STORE_NAME, normalizeEmailKey, create, get, getWithReadyRetry, listIdsByEmail, update, tryTransition, markReady, markNotified, markClaimed, markFailed };
