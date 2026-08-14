@@ -883,6 +883,35 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
    a separate label bolted on top. */
 .webview-steplabel{ font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#ffe0aa; opacity:.85; margin-bottom:5px; }
 
+/* --- Finished-video playback-FAILURE guidance (founder-directed 2026-08-14).
+   Deliberately DISTINCT from .webview-card above: that one is the quiet,
+   detection-triggered install/data-safety nudge that shows in EVERY webview;
+   THIS one shows ONLY when the finished dream video genuinely won't play here
+   (see the playback-failure guard IIFE in the script). It's the actionable
+   moment — the user is staring at a video that won't play — so it reads a
+   touch more prominently (stronger border/glow) than the quiet nudge, while
+   reusing the exact same intent:// / copy-link escape mechanics. Never shown
+   on the smooth path. --- */
+.playfail-card{
+  border:1.5px solid rgba(224,170,90,.62); border-radius:16px;
+  padding:15px 16px; margin:14px 0 0;
+  background:linear-gradient(180deg, rgba(70,48,20,.42), rgba(36,29,71,.5));
+  box-shadow:0 0 0 1px rgba(224,170,90,.14), 0 8px 26px rgba(0,0,0,.28);
+}
+.playfail-head{ display:flex; align-items:center; gap:9px; }
+.playfail-dot{ font-size:16px; flex:0 0 auto; display:flex; }
+.playfail-title{ font-size:15px; font-weight:800; color:#ffe0aa; }
+.playfail-body{ margin-top:6px; font-size:13px; line-height:1.5; color:#e8cfa4; }
+.playfail-btn{
+  margin-top:11px; display:inline-flex; align-items:center; gap:6px;
+  min-height:42px; padding:0 18px; border:none; border-radius:99px; cursor:pointer;
+  background:var(--home-warn); color:#1c1206; font:800 14px var(--font-body);
+  -webkit-tap-highlight-color:transparent;
+}
+.playfail-btn:active{ transform:scale(.97); }
+.playfail-note{ margin-top:8px; font-size:13px; font-weight:600; line-height:1.4; color:#e8cfa4; }
+.playfail-email{ margin-top:9px; font-size:12.5px; line-height:1.4; color:#c8b48f; }
+
 .toast{ position:absolute; left:50%; bottom:calc(var(--nav-clearance) + 20px); transform:translate(-50%,10px); background:rgba(20,16,38,.95); border:1px solid var(--home-line); color:var(--home-ink); padding:10px 18px; border-radius:99px; font-size:15px; font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; z-index:30; max-width:88%; text-align:center; }
 .toast.show{ opacity:1; transform:translate(-50%,0); }
 
@@ -994,6 +1023,26 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
           <span class="interp-sparkle" aria-hidden="true">✨</span> What does this dream mean?
         </button>
         <div class="quiet-caption" id="d0-caption">No need to wait for the video</div>
+      </section>
+
+      <!-- Finished-video playback-FAILURE guidance (founder-directed
+           2026-08-14). Shown ONLY when this account is inside an FB/IG/
+           Messenger in-app webview AND the finished dream video genuinely
+           fails to play here (an error, a play() rejection, or a multi-second
+           stall with zero decoded frames — see the playback-failure guard
+           IIFE in the script below). Never shown on the smooth path: a webview
+           whose video plays fine sees NOTHING here. Reuses the exact escape
+           mechanics the #webview-card above already carries (Android intent://
+           "Open in Chrome", iOS copy-link, both carrying the live ?bt= session-
+           transfer token). The email line points at the server-side "your dream
+           is ready" recovery email that already exists as the reliable backstop.
+           Hidden by default. -->
+      <section class="playfail-card" id="playfail-card" style="display:none;" aria-live="polite">
+        <div class="playfail-head"><span class="playfail-dot" id="playfail-icon"></span><span class="playfail-title">Your dream is ready to watch</span></div>
+        <div class="playfail-body" id="playfail-body"></div>
+        <button type="button" class="playfail-btn" id="playfail-btn"></button>
+        <div class="playfail-note" id="playfail-note" style="display:none;"></div>
+        <div class="playfail-email">Or check your email — we’ve sent you a link to watch it in your browser.</div>
       </section>
 
       <!-- 3 · TONIGHT CTA / logged confirmation — founder ruling 2026-08-07
@@ -1856,6 +1905,165 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       try { runCapture(dream); } catch (e) { /* must never affect the real playback video */ }
     }
     video.addEventListener('timeupdate', maybeCapture);
+  })();
+
+  // ===== Finished-video playback-FAILURE detect-and-guide (webview only) =====
+  // Founder-directed 2026-08-14. DreamTube's biggest cohort arrives via FB/IG/
+  // Messenger in-app webviews (iOS especially), and on iOS we CANNOT
+  // programmatically force an escape to Safari. After signup a user lands back
+  // here (home.html?generate=1) INSIDE the webview and watches their dream
+  // generate/play in the #d0-video-el above. Sometimes the media-constrained
+  // webview plays the finished video fine; sometimes it genuinely can't.
+  //
+  // Founder's decision: DON'T block app entry, and DON'T nag a webview user
+  // whose video plays fine — detect ACTUAL finished-video playback FAILURE and
+  // only THEN guide them out (to their real browser / the recovery email). So
+  // this is gated on BOTH (in an FB/IG/Messenger webview) AND (the finished
+  // video really won't play). On the smooth path it shows nothing at all; the
+  // quiet detection-triggered #webview-card above is left exactly as-is (it's a
+  // separate, non-blocking install/data-safety nudge, not a video block — see
+  // this build's notes for the reconcile reasoning).
+  //
+  // WHY THIS CAN'T FALSE-POSITIVE ON A "NOT YET TAPPED" VIDEO: #d0-video-el is
+  // `muted autoplay playsinline` — the browser starts it WITHOUT a user
+  // gesture, so there is no "waiting for the user to press play" state to
+  // confuse with a failure. A muted-autoplay video that, ~7s after getting a
+  // real src (while the tab is VISIBLE), has produced ZERO advancing/decoded
+  // frames — or fired `error`, or whose one self-heal reload also failed — is a
+  // real media-constrained-webview playback failure, not an un-tapped video.
+  // We also never count a stall while document.hidden (browsers legitimately
+  // pause autoplay when the tab is backgrounded), and we give one silent reload
+  // first (mirrors result.html's own ambient-preview one-retry) so a transient
+  // CDN/network blip that self-heals never triggers the guidance.
+  (function(){
+    var video = document.getElementById('d0-video-el');
+    if(!video) return;
+    var host = window.DreamStore ? DreamStore.detectInAppWebviewHost() : null;
+    if(!host) return; // never outside an FB/IG/Messenger in-app webview
+
+    var STALL_MS = 7000; // "a few seconds of when it should have started playing"
+    var onAndroid = isAndroidUA();
+    var armedForId = null;    // the dream id whose playback we're currently watching
+    var settledForId = null;  // a dream id we've confirmed plays fine (disarm; never guide)
+    var guidedForId = null;   // a dream id we've already shown guidance for (fire-once)
+    var retriedForId = null;  // a dream id we've already given its one self-heal reload
+    var stallTimer = null;
+
+    // A real decoded, advancing frame — the SAME "actually playing" proof the
+    // thumbnail-capture IIFE above relies on (currentTime past 0 + a decoded
+    // frame available). This is the ground truth for "the finished video is
+    // genuinely playing," and reaching it disarms the guard forever for this
+    // dream (the smooth path shows nothing).
+    function isPlayingNow(){
+      return video.currentTime > 0.15 && video.readyState >= 2; // HAVE_CURRENT_DATA
+    }
+    function clearStall(){ if(stallTimer){ clearTimeout(stallTimer); stallTimer = null; } }
+    function disarm(id){ if(id != null) settledForId = id; armedForId = null; clearStall(); }
+
+    // Only a completed VIDEO dream shown ready in the card (d0DreamId is set by
+    // renderDay0CardReady) with a real src actually assigned to the element.
+    function currentReadyVideoDreamId(){
+      if(!d0DreamId) return null;
+      if(!video.currentSrc && !video.getAttribute('src')) return null;
+      return d0DreamId;
+    }
+
+    function showGuidance(id, reason){
+      if(guidedForId === id) return;
+      guidedForId = id;
+      var card = document.getElementById('playfail-card');
+      document.getElementById('playfail-icon').innerHTML = window.Icons ? Icons.globe : '';
+      document.getElementById('playfail-body').textContent =
+        "It can’t play inside " + host + ". Open DreamTube in your browser to watch it — it takes a second.";
+      var btn = document.getElementById('playfail-btn');
+      btn.innerHTML = onAndroid
+        ? 'Open in my browser <span class="icon">' + (window.Icons ? Icons.externalLink : '') + '</span>'
+        : 'Copy link for your browser <span class="icon">' + (window.Icons ? Icons.copy : '') + '</span>';
+      if(!card.dataset.wired){
+        card.dataset.wired = '1';
+        btn.addEventListener('click', function(){
+          track('webview_video_recovery_tapped', { host: host, platform: onAndroid ? 'android' : 'other' });
+          if(onAndroid){
+            // Same Android one-tap "open in Chrome" intent:// the #webview-card
+            // uses; the URL carries the live ?bt= session-transfer token.
+            location.href = buildAndroidChromeIntentUrl();
+          } else {
+            // iOS (and any non-Android): copy the canonical, session-carrying
+            // link for the user to paste into their real browser.
+            var note = document.getElementById('playfail-note');
+            copyLinkForBrowser(function(){
+              note.textContent = 'Link copied. Open your browser app and paste the link there to watch — keep it to yourself, it signs you in.';
+              note.style.display = 'block';
+            });
+          }
+        });
+      }
+      card.style.display = 'block';
+      try { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch(e){}
+      // The one number that tells us how often the webview genuinely can't play
+      // the finished video — distinct from the detection-only
+      // home_webview_escape_shown, which fires for EVERY webview visit.
+      track('webview_video_playback_failed', { host: host, platform: onAndroid ? 'android' : 'other', reason: reason || 'stall' });
+    }
+
+    function failNow(reason){
+      var id = armedForId || currentReadyVideoDreamId();
+      if(!id) return;
+      if(settledForId === id) return; // it already played fine once — ignore a late blip
+      armedForId = null;
+      clearStall();
+      // NOTE: deliberately do NOT mark this id settled — a failure is not a
+      // "plays fine." guidedForId (set inside showGuidance) is what prevents a
+      // second show for the same dream.
+      showGuidance(id, reason);
+    }
+
+    function scheduleStall(){
+      clearStall();
+      stallTimer = setTimeout(function(){
+        if(armedForId == null) return;
+        if(document.hidden){ scheduleStall(); return; } // autoplay legitimately paused while backgrounded — re-open the window on refocus
+        if(isPlayingNow()){ disarm(armedForId); return; }
+        failNow('stall');
+      }, STALL_MS);
+    }
+
+    function arm(){
+      var id = currentReadyVideoDreamId();
+      if(!id) return;
+      if(id === settledForId || id === guidedForId || id === armedForId) return;
+      armedForId = id;
+      scheduleStall();
+    }
+
+    // Success signals → disarm (smooth path: never show anything).
+    ['playing', 'timeupdate', 'canplay', 'loadeddata'].forEach(function(ev){
+      video.addEventListener(ev, function(){
+        if(armedForId != null && isPlayingNow()) disarm(armedForId);
+      });
+    });
+
+    // Hard failure signal. One silent self-heal reload first (same one-retry
+    // budget result.html's ambient-preview uses), then, if it errors again,
+    // guide out. The stall timer stays the backstop if the reload just hangs.
+    video.addEventListener('error', function(){
+      var id = armedForId || currentReadyVideoDreamId();
+      if(!id || settledForId === id) return;
+      if(retriedForId !== id){
+        retriedForId = id;
+        try { video.load(); var p = video.play(); if(p && p.catch) p.catch(function(){}); } catch(e){}
+        return;
+      }
+      failNow('error');
+    });
+
+    // renderDay0CardReady (re)assigns video.src on completion / re-render;
+    // loadstart fires right after — (re)arm for whatever dream just loaded.
+    video.addEventListener('loadstart', arm);
+    // And arm against the state that already exists at wire time: a fresh page
+    // load lands here with an already-completed dream (renderDay0Card ran
+    // synchronously above), past loadstart, so wire-time arm() covers it.
+    arm();
   })();
 
   document.getElementById('d0-play-icon').innerHTML = window.Icons ? Icons.play : '';
