@@ -943,6 +943,80 @@
     document.getElementById(elId).style.display = 'none';
   }
 
+  // ===================================================================
+  // PRE-SIGNUP / PRE-GENERATION CONTENT GATE (founder-directed 2026-08-14).
+  // This is the in-app create screen (the user is already signed in, so
+  // there's no signup conversion to protect here) — but the SAME explicit-
+  // content check the wizard/funnel run pre-signup runs here too, before a
+  // dream is committed and handed to style.html -> generation, so an
+  // explicit dream is caught on the editable text step with a revise message
+  // instead of only at the (wasted) generation attempt. Delegates to the
+  // shared endpoint (netlify/functions/check-dream-content.js); FAILS OPEN
+  // on any error (the generation-time gate in generate-video.js is the full
+  // backstop). Surface 'create' in the telemetry so the block is measurable
+  // per surface.
+  // ===================================================================
+  var contentGateBlockMessage =
+    "This dream includes content we can’t turn into a video — explicit sexual content isn’t allowed. Please revise the text to continue.";
+  var contentGateLastCaption = null;
+  var contentGateLastResult = null;
+
+  /** Resolves { allowed, tier } for `caption` (+ characters); FAILS OPEN on any error, caches the last verdict by caption. */
+  function checkDreamContentAllowed(caption, characters){
+    var text = (caption || '').trim();
+    if(!text){ return Promise.resolve({ allowed: true, tier: 'clean' }); }
+    if(contentGateLastCaption === text && contentGateLastResult){
+      return Promise.resolve(contentGateLastResult);
+    }
+    return fetch('/.netlify/functions/check-dream-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caption: text, characters: characters || [] })
+    }).then(function(res){ return res.json(); }).then(function(data){
+      var result = { allowed: data && data.allowed !== false, tier: (data && data.tier) || 'clean' };
+      contentGateLastCaption = text;
+      contentGateLastResult = result;
+      return result;
+    }).catch(function(){
+      return { allowed: true, tier: 'clean' };
+    });
+  }
+
+  /** Resolves DreamStore characters for `ids` into the generation payload shape, so the gate applies the named-other-person-photo threshold the same way generation will. */
+  function resolveCharactersForGate(ids){
+    if(!ids || !ids.length) return [];
+    var all = (DreamStore.getCharacters && DreamStore.getCharacters()) || [];
+    return ids.map(function(id){ return all.filter(function(c){ return c.id === id; })[0]; })
+      .filter(Boolean)
+      .map(function(c){
+        var r = { name: c.name, description: c.description, isSelf: !!c.isSelf };
+        if(c.isSelf && c.photoDataUrl) r.photoDataUrl = c.photoDataUrl;
+        return r;
+      });
+  }
+
+  /**
+   * Runs the content gate for `caption`, then either calls `proceed()`
+   * (allowed / nothing to check / fail-open) or shows the revise message in
+   * `errorElId` and fires content_gate_blocked_preemail. `btns` are disabled
+   * with a "Checking…" label on the first one while in flight.
+   */
+  function gateCreateContentThen(caption, characters, errorElId, btns, proceed){
+    var text = (caption || '').trim();
+    if(!text){ proceed(); return; }
+    btns = btns || [];
+    var labels = btns.map(function(b){ return b ? b.textContent : null; });
+    btns.forEach(function(b){ if(b) b.disabled = true; });
+    if(btns[0]) btns[0].textContent = 'Checking…';
+    if(errorElId) hideError(errorElId);
+    checkDreamContentAllowed(text, characters || []).then(function(result){
+      btns.forEach(function(b, i){ if(b){ b.disabled = false; b.textContent = labels[i]; } });
+      if(result.allowed){ proceed(); return; }
+      track('content_gate_blocked_preemail', { tier: result.tier, surface: 'create' });
+      if(errorElId) showError(errorElId, contentGateBlockMessage);
+    });
+  }
+
   function stopMediaStream(){
     if(mediaStream){ mediaStream.getTracks().forEach(function(t){ t.stop(); }); mediaStream = null; }
   }
@@ -1863,12 +1937,13 @@
       '<div class="fn-headline">Anything to add?</div>' +
       '<div class="fn-body-copy">A few extra words — totally optional.</div>' +
       '<textarea class="fn-field" id="build-freetext-input" placeholder="Anything else about your dream..." dir="auto" style="min-height:110px;"></textarea>' +
+      '<div class="err-text" id="build-freetext-error" style="display:none;"></div>' +
       '<div class="fn-spacer"></div>' +
       '<button class="fn-btn-primary lb-cta" id="build-freetext-continue" type="button">Looks good →</button>' +
       '<span class="fn-small-link" id="build-freetext-skip" style="cursor:pointer;">Skip</span>';
     var input = document.getElementById('build-freetext-input');
     input.value = buildFreeText;
-    input.addEventListener('input', function(){ buildFreeText = input.value; });
+    input.addEventListener('input', function(){ buildFreeText = input.value; hideError('build-freetext-error'); });
     document.getElementById('build-freetext-continue').addEventListener('click', finishBuildWizard);
     document.getElementById('build-freetext-skip').addEventListener('click', finishBuildWizard);
   }
@@ -1949,6 +2024,15 @@
       ? WizardChips.joinStorySentences(WizardChips.buildDeterministicStory(storyChipFields), buildFreeText)
       : WizardChips.buildDeterministicStory(storyChipFields);
 
+    // PRE-GENERATION CONTENT GATE — block explicit content before committing
+    // the draft and handing off to style.html -> generation (see
+    // gateCreateContentThen). Allowed (or a check error -> fail open)
+    // proceeds exactly as before; explicit keeps the visitor on this
+    // editable free-text step with the revise message.
+    var buildCharacters = resolveCharactersForGate(assembled.characterIdsForGeneration);
+    gateCreateContentThen(assembled.caption, buildCharacters, 'build-freetext-error',
+      [document.getElementById('build-freetext-continue'), document.getElementById('build-freetext-skip')],
+      function(){
     DreamStore.setDraft({
       caption: assembled.caption,
       storyText: storyText,
@@ -1975,6 +2059,7 @@
       mood: assembled.moodKey
     });
     location.href = 'style.html';
+      });
   }
 
   /**
@@ -2039,8 +2124,13 @@
     // path's existing (unchanged) behavior. needsStoryRewrite:false tells
     // style.html's preview card there's nothing to fetch.
     var text = textArea.value.trim();
-    DreamStore.setDraft({ caption: text, storyText: text, needsStoryRewrite: false, sourceDreamId: null });
-    location.href = 'style.html';
+    // PRE-GENERATION CONTENT GATE (see gateCreateContentThen) — block
+    // explicit content on this editable text step before committing +
+    // navigating to generation. No characters are staged on the Write path.
+    gateCreateContentThen(text, [], 'dream-text-error', [writeContinue], function(){
+      DreamStore.setDraft({ caption: text, storyText: text, needsStoryRewrite: false, sourceDreamId: null });
+      location.href = 'style.html';
+    });
   });
 
   document.getElementById('stop-record').addEventListener('click', function(){
@@ -2227,15 +2317,20 @@
       showError('transcript-error', WORD_LIMIT_MESSAGE);
       return;
     }
-    // storyText -- same "already the human dream description, verbatim"
-    // treatment as Write-it above (tracker item for-product-split-
-    // prompttext-storytext-f-yt5kc7).
-    DreamStore.setDraft({ caption: edited, storyText: edited, needsStoryRewrite: false, sourceDreamId: null });
-    // Checked against the user's edited text, not the discarded raw
-    // transcript -- an edit is what actually gets submitted as the caption,
-    // so that's what needs to correctly link to the saved self character.
-    autoSelectSelfIfMentioned(edited);
-    location.href = 'style.html';
+    // PRE-GENERATION CONTENT GATE (see gateCreateContentThen) — block
+    // explicit content on this editable transcript step before committing +
+    // navigating to generation.
+    gateCreateContentThen(edited, [], 'transcript-error', [transcriptContinue], function(){
+      // storyText -- same "already the human dream description, verbatim"
+      // treatment as Write-it above (tracker item for-product-split-
+      // prompttext-storytext-f-yt5kc7).
+      DreamStore.setDraft({ caption: edited, storyText: edited, needsStoryRewrite: false, sourceDreamId: null });
+      // Checked against the user's edited text, not the discarded raw
+      // transcript -- an edit is what actually gets submitted as the caption,
+      // so that's what needs to correctly link to the saved self character.
+      autoSelectSelfIfMentioned(edited);
+      location.href = 'style.html';
+    });
   });
 
   transcriptTextArea.addEventListener('input', function(){
