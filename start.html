@@ -457,6 +457,51 @@
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
 
+  // ===================================================================
+  // PRE-SIGNUP CONTENT GATE (founder-directed 2026-08-14). This paid-funnel
+  // handoff landing fires the CompleteRegistration conversion on signup —
+  // the exact event the Meta campaign optimizes on — so an explicit-content
+  // seeker who signs up before being blocked at GENERATION time teaches Meta
+  // to acquire more of them. Running the SAME classification the
+  // generation-time gate uses (netlify/functions/check-dream-content.js ->
+  // content-classifier.js's evaluateGenerationGate) on the handed-off
+  // caption BEFORE the signup screen renders blocks progression, so explicit
+  // users never reach signup.
+  //
+  // start.html does NOT let a handoff visitor EDIT the caption (it arrives
+  // as a URL param and only the email/password fields are on screen), so a
+  // block here sends them back to revise via a Back-to-funnel affordance —
+  // the funnel side (dreamtube-growth) owns the primary revise UX and its
+  // own matching gate. FAILS OPEN on any check error.
+  // ===================================================================
+  var contentGateBlockMessage =
+    "This dream includes content we can’t turn into a video — explicit sexual content isn’t allowed. Please go back and revise the text to continue.";
+  var contentGateChecked = false;   // has the (single) check for this arrival's caption completed
+  var contentGateAllowed = true;    // its result (fail-open default)
+
+  /** Resolves { allowed, tier } for the handed-off caption; FAILS OPEN on any error. Result is cached on the module vars above (the caption can't change on this page). */
+  function checkHandoffContentAllowed(){
+    // Record-it and any no-caption arrival: nothing to check.
+    var text = (captionText || '').trim();
+    if(!text || contentGateChecked){
+      return Promise.resolve({ allowed: contentGateAllowed, tier: 'clean' });
+    }
+    return fetch('/.netlify/functions/check-dream-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caption: text, characters: resolveStagedCharactersForGeneration() })
+    }).then(function(res){ return res.json(); }).then(function(data){
+      contentGateChecked = true;
+      contentGateAllowed = !!(data && data.allowed !== false);
+      return { allowed: contentGateAllowed, tier: (data && data.tier) || 'clean' };
+    }).catch(function(){
+      // Fail open — never strand a real user on our own transport error.
+      contentGateChecked = true;
+      contentGateAllowed = true;
+      return { allowed: true, tier: 'clean' };
+    });
+  }
+
   // ===== Signup screen (screen 13) — unified design, A/B test concluded
   // ===== tracker items for-product-a-b-the-email-capture-signup-nri2fn
   // (the original A/B) and for-product-signup-screen-the-single-big-bkwhbe
@@ -1529,6 +1574,32 @@
     // progress.
     var headline = isRecordMode ? 'Almost set — where should we send you?' : 'Where should we send your first dream?';
 
+    // PRE-SIGNUP CONTENT GATE (see checkHandoffContentAllowed above): run
+    // the same explicit-content check the generation-time gate uses on the
+    // handed-off caption BEFORE the signup screen — and its
+    // ReachedEmailEntry conversion — ever render, so an explicit-content
+    // visitor never reaches (or converts at) signup. Record-it / no-caption
+    // arrivals and the fail-open path go straight through. A block renders a
+    // "go back and revise" screen instead (start.html can't edit the caption
+    // in place — see renderContentGateBlock).
+    if(contentGateChecked){
+      if(contentGateAllowed) dispatchScreen13(el, headline);
+      else renderContentGateBlock(el, headline);
+      return;
+    }
+    if(!(captionText || '').trim()){ dispatchScreen13(el, headline); return; } // nothing to check (record-it / no caption)
+    renderScreen13Checking(el, headline);
+    var myStep = cur;
+    checkHandoffContentAllowed().then(function(result){
+      if(cur !== myStep) return; // navigated away while the check was in flight
+      if(result.allowed){ dispatchScreen13(el, headline); return; }
+      track('content_gate_blocked_preemail', { tier: result.tier, surface: 'start' });
+      renderContentGateBlock(el, headline);
+    });
+  }
+
+  /** The real screen-13 render (variant dispatch), reached only once the content gate has passed (or there was nothing to check). */
+  function dispatchScreen13(el, headline){
     // Fired once per actual arrival at this screen: renderScreen13 runs
     // exactly once per navigation here (see render()/goToStep() below),
     // even though both variants' own renderers then do their own internal,
@@ -1543,6 +1614,13 @@
       try{ posthog.register({ signup_email_first_variant: signupVariant }); }catch(e){ /* analytics must never break the funnel */ }
     }
     track('signup_email_first_variant_shown', { variant: signupVariant });
+    // ReachedEmailEntry — the higher-volume Meta mid-funnel signal — fires
+    // the moment the email-capture screen actually renders. Moved here from
+    // render() (2026-08-14, pre-signup content gate) so an explicit-content
+    // visitor blocked BEFORE this screen never fires it: like
+    // CompleteRegistration, it must not count a visitor who never reached
+    // email entry. Same event_id/CAPI pairing as before (fireMetaConversion).
+    fireMetaConversion('ReachedEmailEntry', {}, true);
 
     if(signupVariant === 'reveal'){
       renderScreen13Reveal(el, headline);
@@ -1553,6 +1631,24 @@
       return;
     }
     renderScreen13EmailFirst(el, headline);
+  }
+
+  /** Brief interstitial shown while the pre-signup content check is in flight. */
+  function renderScreen13Checking(el, headline){
+    el.innerHTML = fnStageHtml([
+      '<div class="fn-headline">' + headline + '</div>',
+      '<div class="fn-body-copy" style="opacity:.75;">Just a moment…</div>'
+    ]);
+  }
+
+  /** Block screen for an explicit handed-off dream — start.html can't edit the caption in place, so the only affordance is Back (to the funnel's own recap, where the text is editable). */
+  function renderContentGateBlock(el, headline){
+    el.innerHTML = fnStageHtml([
+      '<div class="fn-headline">Let’s adjust your dream</div>',
+      '<div class="fn-body-copy">' + esc(contentGateBlockMessage) + '</div>',
+      '<button class="fn-btn-primary" id="fn-content-gate-back" type="button">Go back and edit</button>'
+    ]);
+    document.getElementById('fn-content-gate-back').addEventListener('click', function(){ prev(); });
   }
 
   /**
@@ -2798,14 +2894,12 @@
     screenEl.scrollTop = 0;
     window.scrollTo(0, 0);
     track('funnel_step_viewed', { step: cur + 1, screen: TAGS[cur] });
-    // Higher-volume mid-funnel signal than CompleteRegistration (fires on
-    // reaching the ask, not just on completing it) — Growth wants this as
-    // an optimization target with more volume. Custom event (not a
-    // standard Pixel event), same event_id/CAPI pairing as
-    // CompleteRegistration above (see fireMetaConversion).
-    if(TAGS[cur] === 'email_capture'){
-      fireMetaConversion('ReachedEmailEntry', {}, true);
-    }
+    // ReachedEmailEntry (the higher-volume Meta mid-funnel signal, custom
+    // event, same event_id/CAPI pairing as CompleteRegistration) USED to
+    // fire here for the email_capture screen. It moved into dispatchScreen13
+    // (2026-08-14, pre-signup content gate) so it fires only once the signup
+    // screen actually renders — an explicit-content visitor blocked before
+    // that screen must not fire it, exactly like CompleteRegistration.
   }
 
   function goToStep(n){

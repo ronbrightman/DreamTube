@@ -457,6 +457,55 @@
       try{ posthog.capture(name, props || {}); }catch(e){ /* analytics must never break the wizard */ }
     }
   }
+
+  // ===================================================================
+  // PRE-SIGNUP CONTENT GATE (founder-directed 2026-08-14). Runs the SAME
+  // classification the generation-time gate uses (netlify/functions/
+  // check-dream-content.js -> content-classifier.js's evaluateGenerationGate)
+  // on the finalized dream text BEFORE the visitor reaches the signup wall,
+  // so explicit-content seekers never fire the CompleteRegistration
+  // conversion event (the metric the Meta campaign optimizes on) and Meta
+  // stops learning to acquire more of them.
+  //
+  // FAIL-OPEN by design: any transport/endpoint error resolves to allowed
+  // — the server itself fails open for the normal case, and blocking a
+  // real user because our own check hiccuped would be worse than the
+  // generation-time gate catching it later (it still does). A verdict is
+  // cached per exact caption so a caption that already passed the recap
+  // gate isn't re-checked at the wall.
+  // ===================================================================
+  var contentGateBlockMessage =
+    "This dream includes content we can’t turn into a video — explicit sexual content isn’t allowed. Please revise the text to continue.";
+  var contentGateLastCaption = null;   // the exact caption last checked
+  var contentGateLastResult = null;    // { allowed, tier } for that caption
+
+  /**
+   * Resolves { allowed, tier } for `caption` (+ generation characters).
+   * FAILS OPEN (allowed:true) on any error. Caches the last verdict by
+   * caption so the recap gate and the wall gate don't double-call for the
+   * same unchanged text.
+   */
+  function checkDreamContentAllowed(caption, characters){
+    var text = (caption || '').trim();
+    if(!text){ return Promise.resolve({ allowed: true, tier: 'clean' }); }
+    if(contentGateLastCaption === text && contentGateLastResult){
+      return Promise.resolve(contentGateLastResult);
+    }
+    return fetch('/.netlify/functions/check-dream-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ caption: text, characters: characters || [] })
+    }).then(function(res){ return res.json(); }).then(function(data){
+      var result = { allowed: data && data.allowed !== false, tier: (data && data.tier) || 'clean' };
+      contentGateLastCaption = text;
+      contentGateLastResult = result;
+      return result;
+    }).catch(function(){
+      // Fail open — never block a real user on our own transport error.
+      return { allowed: true, tier: 'clean' };
+    });
+  }
+
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
 
@@ -1434,13 +1483,75 @@
     document.getElementById('fn-story-recap-text').addEventListener('input', function(e){
       currentStoryText = e.target.value;
       storyEditedByUser = true;
+      clearRecapGateError(); // a fresh edit dismisses any stale revise message
+
       // A hand-edit settles the story for the CURRENT inputs (round-9
       // release rule): it survives any navigation that doesn't change
       // the dream's content, and releases only when the signature does.
       storySettledSignature = storyContentSignature();
     });
     computeStoryText();
-    document.getElementById('fn-recap-continue').addEventListener('click', next);
+    document.getElementById('fn-recap-continue').addEventListener('click', function(){
+      gateRecapThenAdvance();
+    });
+  }
+
+  /**
+   * Recap-step half of the pre-signup content gate (organic flow): before
+   * advancing from the editable dream text toward the signup wall, run the
+   * SAME classification the generation-time gate uses. Explicit content
+   * (or any sexual/romantic tier with a named-other-person photo) keeps the
+   * visitor on THIS editable recap step with an inline revise message, so
+   * they never fire the signup conversion event. Anything allowed (or a
+   * check error -> fail open) advances exactly as before.
+   */
+  function gateRecapThenAdvance(){
+    assembleFromState();
+    var btn = document.getElementById('fn-recap-continue');
+    var text = recapGateText();
+    // Nothing to check -> advance immediately (no perceptible delay).
+    if(!text){ next(); return; }
+    var characters = resolveCharactersForGeneration();
+    var origLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Checking…';
+    clearRecapGateError();
+    var myToken = ++signupAttemptToken; // reuse the wizard's staleness guard
+    checkDreamContentAllowed(text, characters).then(function(result){
+      if(myToken !== signupAttemptToken) return; // navigated away meanwhile
+      btn.disabled = false;
+      btn.textContent = origLabel;
+      if(result.allowed){ next(); return; }
+      track('content_gate_blocked_preemail', { tier: result.tier, surface: 'wizard' });
+      showRecapGateError();
+    });
+  }
+
+  /** The exact text the recap gate classifies: the generation caption plus the visitor's edited story (union), so explicit content in EITHER is caught and a recap edit can clear it. */
+  function recapGateText(){
+    var cap = (assembled && assembled.caption ? assembled.caption : '').trim();
+    var story = (currentStoryText || '').trim();
+    if(story && story !== cap){ return (cap ? cap + '. ' : '') + story; }
+    return cap;
+  }
+
+  function showRecapGateError(){
+    var wrap = document.querySelector('.lb-recap-wrap');
+    if(!wrap) return;
+    clearRecapGateError();
+    var el = document.createElement('div');
+    el.className = 'fn-err-text';
+    el.id = 'fn-recap-gate-error';
+    el.setAttribute('role', 'alert');
+    el.style.marginTop = '10px';
+    el.textContent = contentGateBlockMessage;
+    wrap.parentNode.insertBefore(el, wrap.nextSibling);
+    var ta = document.getElementById('fn-story-recap-text');
+    if(ta) ta.focus();
+  }
+  function clearRecapGateError(){
+    var el = document.getElementById('fn-recap-gate-error');
+    if(el) el.parentNode.removeChild(el);
   }
 
   // ===================================================================
@@ -2495,6 +2606,14 @@
     var continueBtn = document.getElementById('fn-contact-continue');
     emailInput.value = contactEmail;
 
+    // Pre-signup content gate, funnel-arrival wall half (see
+    // checkDreamContentAllowed and the gate block in trySubmit). Cleared once
+    // the handed-off dream text has passed the gate for THIS wall render —
+    // the caption isn't editable on this screen, so a single pass holds.
+    // Only consulted on the funnel-arrival path; the organic flow was already
+    // gated at the recap step.
+    var wallGateCleared = false;
+
     function trySubmit(){
       contactEmail = emailInput.value.trim();
       // "Entered email" micro-step — fired on the first non-empty submit
@@ -2506,6 +2625,41 @@
         errEl.textContent = 'Enter a valid email address.';
         track('signup_error_shown', { reason: 'invalid_email' });
         return;
+      }
+
+      // PRE-SIGNUP CONTENT GATE — block explicit content BEFORE any signup /
+      // CompleteRegistration fires. Runs ONLY for a funnel handoff that
+      // landed DIRECTLY on this wall (funnelArrival): those skipped the recap
+      // step, so this is their first and only pre-signup check. The organic
+      // flow was already gated one step back, on the editable recap
+      // (gateRecapThenAdvance), so the wall stays a pure signup chokepoint
+      // there — no redundant re-check, and no async hop inserted into the
+      // wall's own delicate submit/Back timing. Fails open on any check error
+      // (checkDreamContentAllowed), so a legit user is never stuck. On a real
+      // block the funnel visitor stays on this wall with the revise message —
+      // the caption is one browser-Back away (the funnel's own recap, which
+      // owns its own gate too). Re-enters trySubmit once cleared so the
+      // existing flow below is untouched.
+      if(funnelArrival && !wallGateCleared){
+        var gateText = recapGateText();
+        if(gateText){
+          continueBtn.disabled = true;
+          backBtn.disabled = true;
+          continueBtn.textContent = 'Checking…';
+          var gateToken = ++signupAttemptToken;
+          checkDreamContentAllowed(gateText, resolveCharactersForGeneration()).then(function(gateResult){
+            if(gateToken !== signupAttemptToken) return; // navigated away meanwhile
+            continueBtn.disabled = false;
+            backBtn.disabled = false;
+            continueBtn.textContent = 'Send me my dream';
+            if(gateResult.allowed){ wallGateCleared = true; trySubmit(); return; }
+            track('content_gate_blocked_preemail', { tier: gateResult.tier, surface: 'wizard' });
+            errEl.textContent = contentGateBlockMessage;
+            track('signup_error_shown', { reason: 'content_policy_blocked' });
+          });
+          return;
+        }
+        wallGateCleared = true; // nothing to check
       }
 
       // Same event the former Contact step fired at this exact moment —
