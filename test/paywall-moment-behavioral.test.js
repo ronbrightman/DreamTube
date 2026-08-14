@@ -200,6 +200,17 @@ test('TOKENS arm (forced): the 99c/300-token starter renders and its CTA POSTs p
     var checkoutCalls = await stubBackend(page);
     await signupToMoment(page, '?paywall=tokens', 'tokens-arm@example.com');
     assert.match(await page.locator('#mm-cta').textContent(), /\$0\.99|300 tokens/);
+    // Founder 2026-08-14: the token wall now sells the real value points the
+    // Dreamer Pass wall does (Dream Meaning / Watch & Share / private journal —
+    // all available to a token buyer), replacing the weaker "Full dream quality"
+    // / "Tokens never expire" / "No subscription" cards. The no-subscription
+    // message stays in the price row + fine print, not a benefit card.
+    var mmBody = await page.locator('.mm-body').innerText();
+    assert.match(mmBody, /Dream Meaning/i, 'the token wall must surface Dream Meaning (interpretation is not Pass-gated)');
+    assert.match(mmBody, /Watch (&|and) Share/i, 'the token wall must surface Watch & Share');
+    assert.match(mmBody, /private dream journal/i, 'the token wall must surface the private dream journal');
+    assert.doesNotMatch(mmBody, /Full dream quality/i, 'the dropped "Full dream quality" card must be gone');
+    assert.match(mmBody, /no subscription/i, 'the no-subscription message must still appear (price badge / fine print)');
     await page.click('#mm-cta');
     await settle(function () { return checkoutCalls.length >= 1; });
     assert.equal(checkoutCalls[0].pack, 'pack099', 'the tokens arm reuses the pack099 starter checkout path');
