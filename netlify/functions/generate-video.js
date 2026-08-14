@@ -935,6 +935,7 @@ var ownerBypass = require('./lib/owner-bypass');
 var geo = require('./lib/geo');
 var effectiveConfig = require('./lib/effective-config');
 var contentClassifier = require('./lib/content-classifier');
+var moderationLogStore = require('./lib/moderation-log-store');
 
 // Logs this function's resolved rate-limit/cost-control config once per
 // cold start (tracker item for-product-damage-assessment-env-var-ca-
@@ -1019,6 +1020,32 @@ async function recordJobOwnerBestEffort(event, operationName, email) {
   }
 }
 
+// MODERATION LOG (founder-approved 2026-08-14 — see lib/moderation-log-store.js's
+// header comment). Best-effort record of a REFUSED generation's blocked prompt
+// text so the founder can review what users are trying to generate. Wrapped in
+// its own try/catch and awaited only for its side effect — a store failure must
+// NEVER alter or delay the block response the user gets (same posture as every
+// other completion-time side effect in this file, e.g. recordJobOwnerBestEffort
+// above). Called at each content-block emission point below.
+async function recordModerationBlockBestEffort(event, record) {
+  try {
+    await moderationLogStore.append(event, record);
+  } catch (e) {
+    console.error('generate-video: moderation-log append failed (non-fatal, block response is unaffected)', e);
+  }
+}
+
+// True when a humanized fal rejection message is one of the content-policy
+// blocks this file's own humanizeFalDetail emits (see that function) — matched
+// on OUR OWN controlled wording, not fal's raw third-party detail structure, so
+// it stays robust: humanizeFalDetail is the only thing that ever produces the
+// "flagged by the safety system" phrase, and only for a content_policy_violation
+// item. Used to log fal's own content refusals (the async/submission-time
+// equivalent of the E116 pre-gate) without touching the fal call functions.
+function isFalContentPolicyBlock(message) {
+  return typeof message === 'string' && /flagged by the safety system/i.test(message);
+}
+
 // Same placeholder-string convention as js/analytics-config.js's
 // POSTHOG_KEY/META_PIXEL_ID and js/turnstile-config.js's TURNSTILE_SITE_KEY
 // — an unset or still-placeholder secret key means the E113 guardrail
@@ -1054,10 +1081,15 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E102: missing_api_key' }) };
   }
 
-  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, sourceImageUrl, ownerBypassToken, clientAudioOn, musicStyle, requestedModel;
+  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, sourceImageUrl, ownerBypassToken, clientAudioOn, musicStyle, requestedModel, source;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
+    // Client-supplied analytics source (PostHog properties.source — e.g. which
+    // surface the create came from), passed through to the moderation log on a
+    // content block so the founder can see WHERE blocked attempts originate.
+    // Optional and untrusted; absent on every caller that doesn't send it.
+    source = typeof payload.source === 'string' ? payload.source : null;
     style = (payload.style || '').trim();
     characters = Array.isArray(payload.characters) ? payload.characters : [];
     cameraView = payload.cameraView || null;
@@ -1236,6 +1268,15 @@ exports.handler = async function (event) {
   });
   if (!gate.allowed) {
     console.log('generate-video: content_gate_blocked reason=' + gate.reason + (gate.error ? (' error=' + gate.error) : '') + ' named_photo=' + hasNamedOtherPersonPhoto);
+    await recordModerationBlockBestEffort(event, {
+      ts: new Date().toISOString(),
+      reason: 'E116',
+      promptText: caption,
+      mediaType: 'video',
+      user: email || 'anonymous',
+      source: source,
+      operationName: null
+    });
     return { statusCode: 422, body: JSON.stringify({ error: 'E116: content_policy_blocked: ' + gate.message }) };
   }
 
@@ -1343,6 +1384,21 @@ exports.handler = async function (event) {
       // No real spend happened — a rejected submission must NOT spend
       // tokens, so spendTokens is deliberately not called on this path
       // (see the E112 doc block above).
+      // A fal-side CONTENT-POLICY refusal at submission time is logged to the
+      // moderation log too (the pre-gate at E116 above catches most, but fal's
+      // own safety system can refuse text/photos the classifier passed) —
+      // best-effort, never alters the reject response below.
+      if (isFalContentPolicyBlock(result.error)) {
+        await recordModerationBlockBestEffort(event, {
+          ts: new Date().toISOString(),
+          reason: 'content_policy_violation',
+          promptText: caption,
+          mediaType: 'video',
+          user: email || 'anonymous',
+          source: source,
+          operationName: null
+        });
+      }
       var rejectCode = sourceImageUrl ? 'E114' : (selfPhoto ? 'E106' : (useModelKey === MODEL_KEY_PIXVERSE_V6 ? 'E115' : 'E105'));
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: rejectCode + ': ' + result.error }) };
     }

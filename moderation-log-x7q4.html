@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Moderation Log — DreamTube</title>
+<meta name="theme-color" content="#000000">
+<meta name="robots" content="noindex, nofollow">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon-v4.png">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="assets/logo-v4.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+<style>
+  /* Utilitarian owner tool, same posture + reused css/styles.css classes as
+     moderation-x7q4.html (the user-reported-content review page — the closest
+     precedent in this codebase). This page is READ-ONLY: it shows what OUR OWN
+     content filter refused to generate (the blocked prompt text), so the
+     founder can see what users are trying to make. No actions/mutations. */
+  .mod-summary{ display:flex; gap:10px; margin:14px 0 18px; }
+  .mod-stat{ flex:1; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:10px 12px; }
+  .mod-stat-num{ font-size:18px; font-weight:800; }
+  .mod-stat-label{ font-size:10.5px; color:var(--text-muted); margin-top:2px; }
+  .mod-badge{ display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#000; border-radius:6px; padding:3px 7px; margin-right:8px; vertical-align:middle; }
+  .mod-badge.video{ background:var(--accent-value); }
+  .mod-badge.image{ background:var(--accent-growth); }
+  .mod-reason{ display:inline-block; font-size:9.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#000; background:#ff6b6b; border-radius:6px; padding:3px 7px; margin-right:8px; vertical-align:middle; }
+  .mod-when{ font-size:11px; color:var(--text-faint); float:right; }
+  .mod-item-title{ font-size:13.5px; font-weight:600; line-height:1.4; }
+  .mod-item-prompt{ margin-top:10px; padding:10px 12px; background:var(--surface-alt); border-radius:10px; border-left:3px solid #ff6b6b; font-size:12.5px; line-height:1.5; white-space:pre-wrap; word-break:break-word; }
+  .mod-reason-label{ font-size:11.5px; color:var(--text-muted); margin-top:4px; }
+  .mod-empty{ padding:40px 20px; text-align:center; color:var(--text-muted); font-size:13px; }
+</style>
+</head>
+<body>
+
+<div id="app" class="scroll-shell">
+  <div class="topbar">
+    <a class="icon-btn" id="mod-back" href="admin.html"></a>
+    <div class="topbar-logo" style="font-size:15px;">Moderation Log</div>
+    <div style="width:36px;"></div>
+  </div>
+
+  <div class="scroll-area">
+  <div class="px">
+
+    <!-- Unauthorized / not-logged-in state -->
+    <div id="mod-unauthorized" style="padding:60px 0; text-align:center; display:none;">
+      <div class="icon" style="width:32px; height:32px; color:var(--text-faint); margin:0 auto 14px;" id="mod-unauthorized-icon"></div>
+      <div class="auth-sub" style="margin:0;">This page isn't available for your account.</div>
+    </div>
+
+    <!-- Main content -->
+    <div id="mod-content" style="display:none;">
+      <div class="admin-row-sub" style="margin-bottom:14px;">Prompts our content filter REFUSED to generate, newest first. Captured at each content-block point (generate-video.js / generate-image.js). Retention: most recent ~500, dropped after 30 days.</div>
+
+      <div class="mod-summary" id="mod-summary"></div>
+
+      <div class="mod-list" id="mod-list"></div>
+      <div class="mod-empty" id="mod-empty" style="display:none;">No blocked generations on file.</div>
+    </div>
+    <div class="err-text" id="mod-error" style="margin-top:8px;"></div>
+  </div>
+  </div>
+</div>
+
+<script src="js/icons.js"></script>
+<script src="js/store.js"></script>
+<script src="js/pwa.js"></script>
+<script>
+  document.getElementById('mod-back').innerHTML = Icons.back;
+  document.getElementById('mod-unauthorized-icon').innerHTML = Icons.lock;
+
+  var user = DreamStore.getCurrentUser();
+  if (!user) { location.href = 'login.html?next=moderation-log-x7q4.html'; }
+
+  var email = DreamStore.getAccountEmail();
+  var unauthorizedEl = document.getElementById('mod-unauthorized');
+  var contentEl = document.getElementById('mod-content');
+  var listEl = document.getElementById('mod-list');
+  var emptyEl = document.getElementById('mod-empty');
+  var summaryEl = document.getElementById('mod-summary');
+  var errorEl = document.getElementById('mod-error');
+
+  var allRecords = [];
+
+  // Plain-English labels for the reason codes the capture hooks emit (see the
+  // task spec + lib/content-classifier.js). E207 is included for completeness
+  // (video-status.js's async fal result-fetch code, "sensitive/possible-minor")
+  // so a record carrying it reads correctly even though the current hooks emit
+  // only E116 and content_policy_violation.
+  var REASON_LABELS = {
+    'E116': 'Explicit sexual content',
+    'E207': 'Sensitive / possible minor',
+    'content_policy_violation': 'Flagged by fal safety (often minor/sensitive)'
+  };
+
+  function reasonLabel(reason) {
+    if (!reason) return 'Blocked';
+    return REASON_LABELS[reason] || reason;
+  }
+
+  function showUnauthorized() {
+    unauthorizedEl.style.display = 'block';
+    contentEl.style.display = 'none';
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function renderSummary(records) {
+    var videoCount = records.filter(function (r) { return r.mediaType === 'video'; }).length;
+    var imageCount = records.filter(function (r) { return r.mediaType === 'image'; }).length;
+    summaryEl.innerHTML = [
+      { label: 'Total blocked', num: records.length },
+      { label: 'Video', num: videoCount },
+      { label: 'Image', num: imageCount }
+    ].map(function (s) {
+      return '<div class="mod-stat"><div class="mod-stat-num">' + s.num + '</div><div class="mod-stat-label">' + s.label + '</div></div>';
+    }).join('');
+  }
+
+  function itemHTML(r) {
+    var isVideo = r.mediaType === 'video';
+    var when = r.ts ? new Date(r.ts).toLocaleString() : 'unknown time';
+    var mediaLabel = isVideo ? 'Video' : (r.mediaType === 'image' ? 'Image' : 'Generation');
+    var sourceLine = r.source ? ' &nbsp;·&nbsp; Source: ' + esc(r.source) : '';
+    var promptHTML = r.promptText
+      ? '<div class="mod-item-prompt" dir="auto">' + esc(r.promptText) + '</div>'
+      : '<div class="mod-item-prompt" dir="auto" style="color:var(--text-faint);">(no prompt text captured)</div>';
+
+    return '<div class="tracker-item">' +
+      '<div class="tracker-item-summary" style="cursor:default;">' +
+        '<div class="mod-item-title">' +
+          '<span class="mod-badge ' + (isVideo ? 'video' : 'image') + '">' + mediaLabel + '</span>' +
+          '<span class="mod-reason">' + esc(r.reason || 'blocked') + '</span>' +
+          '<span class="mod-when">' + esc(when) + '</span>' +
+        '</div>' +
+        '<div class="mod-reason-label">' + esc(reasonLabel(r.reason)) + '</div>' +
+        promptHTML +
+        '<div class="tracker-item-meta"><span>User: ' + esc(r.user || 'anonymous') + sourceLine + '</span></div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderList() {
+    // Server already returns newest-first; re-sort defensively by ts.
+    var sorted = allRecords.slice().sort(function (a, b) {
+      return new Date(b.ts || 0) - new Date(a.ts || 0);
+    });
+    renderSummary(sorted);
+
+    if (!sorted.length) {
+      listEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    listEl.innerHTML = sorted.map(itemHTML).join('');
+  }
+
+  function loadRecords() {
+    return fetch('/.netlify/functions/get-moderation-log?email=' + encodeURIComponent(email))
+      .then(function (res) {
+        if (res.status === 403) { showUnauthorized(); throw new Error('forbidden'); }
+        return res.json();
+      })
+      .then(function (data) {
+        allRecords = data.records || [];
+        contentEl.style.display = 'block';
+        renderList();
+      });
+  }
+
+  if (!email) {
+    // Logged in, but no email on file — can never match OWNER_EMAIL, so don't
+    // bother calling the function (same short-circuit admin.html's gate uses).
+    showUnauthorized();
+  } else {
+    loadRecords().catch(function (err) {
+      if (err && err.message === 'forbidden') return; // already handled above
+      // Network/parse failure — fail closed, same visible result as not being
+      // the owner, rather than a broken half-rendered page.
+      showUnauthorized();
+    });
+  }
+</script>
+</body>
+</html>

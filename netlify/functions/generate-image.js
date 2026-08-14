@@ -238,6 +238,7 @@ var jobOwners = require('./lib/job-owners');
 var ownerBypass = require('./lib/owner-bypass');
 var effectiveConfig = require('./lib/effective-config');
 var contentClassifier = require('./lib/content-classifier');
+var moderationLogStore = require('./lib/moderation-log-store');
 
 // Logs this function's resolved rate-limit/cost-control config once per
 // cold start (tracker item for-product-damage-assessment-env-var-ca-
@@ -262,6 +263,25 @@ async function recordJobOwnerBestEffort(event, operationName, email) {
   }
 }
 
+// MODERATION LOG (founder-approved 2026-08-14 — see lib/moderation-log-store.js).
+// Best-effort record of a REFUSED generation's blocked prompt text. Mirrors
+// generate-video.js's own recordModerationBlockBestEffort/isFalContentPolicyBlock
+// exactly (duplicated, not shared — this codebase's "each Netlify function is
+// self-contained" convention, same as buildImagePrompt/humanizeFalDetail above).
+// A store failure NEVER alters or delays the block response the user gets.
+async function recordModerationBlockBestEffort(event, record) {
+  try {
+    await moderationLogStore.append(event, record);
+  } catch (e) {
+    console.error('generate-image: moderation-log append failed (non-fatal, block response is unaffected)', e);
+  }
+}
+
+/** True when a humanized fal rejection is a content-policy block this file's humanizeFalDetail emits — matched on OUR OWN controlled "flagged by the safety system" wording, not fal's raw detail (see generate-video.js's identical helper). */
+function isFalContentPolicyBlock(message) {
+  return typeof message === 'string' && /flagged by the safety system/i.test(message);
+}
+
 var IMAGE_TOKEN_COST = 10;
 
 var TURNSTILE_SECRET_PLACEHOLDER = 'REPLACE_WITH_REAL_TURNSTILE_SECRET_KEY';
@@ -283,7 +303,7 @@ exports.handler = async function (event) {
     return { statusCode: 500, body: JSON.stringify({ error: 'E402: missing_api_key' }) };
   }
 
-  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, ownerBypassToken;
+  var caption, style, characters, cameraView, sceneryTime, sceneryPlace, email, turnstileToken, ownerBypassToken, source;
   try {
     var payload = JSON.parse(event.body || '{}');
     caption = (payload.caption || '').trim();
@@ -295,6 +315,9 @@ exports.handler = async function (event) {
     email = entitlements.normalizeEmail(payload.email);
     turnstileToken = typeof payload.turnstileToken === 'string' ? payload.turnstileToken : null;
     ownerBypassToken = typeof payload.ownerBypassToken === 'string' ? payload.ownerBypassToken : null;
+    // Client-supplied analytics source (PostHog properties.source) — passed
+    // through to the moderation log on a content block. Optional/untrusted.
+    source = typeof payload.source === 'string' ? payload.source : null;
   } catch (e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E403: invalid_json' }) };
   }
@@ -399,6 +422,15 @@ exports.handler = async function (event) {
   });
   if (!gate.allowed) {
     console.log('generate-image: content_gate_blocked reason=' + gate.reason + (gate.error ? (' error=' + gate.error) : '') + ' named_photo=' + hasNamedOtherPersonPhoto);
+    await recordModerationBlockBestEffort(event, {
+      ts: new Date().toISOString(),
+      reason: 'E116',
+      promptText: caption,
+      mediaType: 'image',
+      user: email || 'anonymous',
+      source: source,
+      operationName: null
+    });
     return { statusCode: 422, body: JSON.stringify({ error: 'E116: content_policy_blocked: ' + gate.message }) };
   }
 
@@ -428,6 +460,19 @@ exports.handler = async function (event) {
     if (!result.ok) {
       // No real spend happened — a rejected submission must NOT spend
       // tokens, matching generate-video.js's own E105/E106 discipline.
+      // A fal-side content-policy refusal at submission time is logged to the
+      // moderation log too (best-effort, never alters the reject response).
+      if (isFalContentPolicyBlock(result.error)) {
+        await recordModerationBlockBestEffort(event, {
+          ts: new Date().toISOString(),
+          reason: 'content_policy_violation',
+          promptText: caption,
+          mediaType: 'image',
+          user: email || 'anonymous',
+          source: source,
+          operationName: null
+        });
+      }
       return { statusCode: result.statusCode || 500, body: JSON.stringify({ error: 'E405: ' + result.error }) };
     }
     await entitlements.spendTokens(event, email, IMAGE_TOKEN_COST);
