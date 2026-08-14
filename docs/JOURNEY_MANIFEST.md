@@ -58,7 +58,20 @@ instead of `home.html` (no dream text exists yet to poll for).
 
 ## Journey 2 — Organic / direct entry (index.html → first video)
 
-Founder decision 2026-07-26 (`for-product-route-organic-direct-visitor-olu8md`):
+> **⚠️ SUPERSEDED 2026-08-14 (unify-all-creation-flows, founder-directed).** The
+> three drifting creation flows (this repo's `wizard.html` + `create.html`, and
+> the `dreamtube-growth` funnel) are being collapsed into ONE flow: the `/go/`
+> funnel. **`index.html`'s "Get Started" now routes organic visitors to
+> `/go/?utm_source=organic` (the same-origin proxy to the growth funnel), NOT
+> `wizard.html`** — reversing the 2026-07-26 decision below. `wizard.html` is
+> being retired to a funnel-arrival receiver (signup wall + content gate); its
+> chip-first creation screens documented in the table below are legacy pending
+> the consolidation cleanup pass, still reachable on a direct `wizard.html` hit
+> until removed. The screen table is kept for now as the record of that legacy
+> flow. Update this section fully when `wizard.html`'s creation UI is removed.
+
+Founder decision 2026-07-26 (`for-product-route-organic-direct-visitor-olu8md`,
+**superseded 2026-08-14 — see the note above**):
 organic/direct visitors enter dream creation through `wizard.html` (a
 lighter, chip-first, pre-signup dream builder purpose-built for this
 entry), not `start.html`. `wizard.html` and `start.html` are two

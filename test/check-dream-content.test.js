@@ -74,6 +74,31 @@ test('explicit -> allowed:false, tier explicit', async function () {
   assert.equal(body.tier, 'explicit');
 });
 
+// Moderation-log bridge (2026-08-14): a pre-signup block must ALSO record the
+// blocked text to the moderation log, since this gate now intercepts explicit
+// content before the generation-time capture point — otherwise the founder
+// loses the very visibility the log was built for.
+test('a pre-signup BLOCK records the blocked text to the moderation log (reason E116_preemail); a clean check records NOTHING', async function () {
+  var moderationLog = require('../netlify/functions/lib/moderation-log-store');
+
+  process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'explicit';
+  var blocked = await handler(post({ caption: 'a graphic sexual scene', source: 'wizard' }));
+  assert.equal(JSON.parse(blocked.body).allowed, false);
+
+  var records = await moderationLog.list(fakeEvent({}), { limit: 50 });
+  assert.equal(records.length, 1, 'a pre-signup block must write exactly one moderation-log record');
+  assert.equal(records[0].reason, 'E116_preemail');
+  assert.equal(records[0].promptText, 'a graphic sexual scene', 'the blocked text must be captured verbatim');
+  assert.equal(records[0].source, 'wizard', 'the surface tag must be recorded');
+  assert.equal(records[0].user, 'anonymous', 'a pre-signup block has no account yet');
+
+  // A subsequent CLEAN check writes no new record.
+  process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'clean';
+  await handler(post({ caption: 'a calm river at dawn' }));
+  var after = await moderationLog.list(fakeEvent({}), { limit: 50 });
+  assert.equal(after.length, 1, 'a clean pre-check must not write a moderation-log record');
+});
+
 test('clean -> allowed:true, tier clean', async function () {
   process.env.CONTENT_CLASSIFIER_MOCK_TIER = 'clean';
   var res = await handler(post({ caption: 'flying over mountains' }));

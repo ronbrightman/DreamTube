@@ -63,6 +63,23 @@
 
 var contentClassifier = require('./lib/content-classifier');
 var rateLimit = require('./lib/rate-limit');
+var moderationLogStore = require('./lib/moderation-log-store');
+
+// MODERATION LOG bridge (added 2026-08-14, same day as this gate). Before this,
+// the moderation log (lib/moderation-log-store.js) only captured blocked prompt
+// text at GENERATION time (generate-video.js / generate-image.js E116). But this
+// pre-signup gate now blocks explicit content BEFORE the user ever reaches
+// generation — so a pre-email block would leave NO record of the text the
+// founder built the moderation log to review. This best-effort append closes
+// that gap: every real pre-signup block is logged with reason 'E116_preemail'.
+// Best-effort — wrapped in try/catch, never alters or delays the gate response.
+async function recordPreEmailBlockBestEffort(event, record) {
+  try {
+    await moderationLogStore.append(event, record);
+  } catch (e) {
+    console.error('check-dream-content: moderation-log append failed (non-fatal, gate response unaffected)', e);
+  }
+}
 
 /** Normalizes evaluateGenerationGate's possibly-null tier into the non-null contract value clients report in telemetry. */
 function normalizeTier(gate) {
@@ -90,6 +107,9 @@ exports.handler = async function (event) {
 
   var caption = typeof payload.caption === 'string' ? payload.caption : '';
   var characters = Array.isArray(payload.characters) ? payload.characters : [];
+  // Optional surface tag ('wizard'|'start'|'create') the caller passes so the
+  // moderation log records WHERE a pre-email block originated. Untrusted/optional.
+  var source = typeof payload.source === 'string' ? payload.source : null;
 
   // Cheap per-IP daily cap on the classifier call. Exceeding it FAILS OPEN
   // (allowed:true) — the limiter exists to protect LLM cost from scripted
@@ -131,6 +151,22 @@ exports.handler = async function (event) {
       return { statusCode: 200, body: JSON.stringify({ allowed: false, tier: 'explicit', reason: 'named_person_fail_closed' }) };
     }
     return { statusCode: 200, body: JSON.stringify({ allowed: true, tier: 'clean', reason: 'gate_error_fail_open' }) };
+  }
+
+  // Capture the blocked text to the moderation log so the founder retains
+  // visibility into what people try to make — the pre-email gate now intercepts
+  // it before generation, where the log's only other capture point sits. Only
+  // real blocks are logged; a clean/allowed pre-check writes nothing.
+  if (!gate.allowed) {
+    await recordPreEmailBlockBestEffort(event, {
+      ts: new Date().toISOString(),
+      reason: 'E116_preemail',
+      promptText: caption,
+      mediaType: null, // media type isn't chosen yet at pre-signup
+      user: 'anonymous', // pre-signup: no account/email yet
+      source: source,
+      operationName: null
+    });
   }
 
   return {

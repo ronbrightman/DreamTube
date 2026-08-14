@@ -404,17 +404,24 @@ test('BUG 2 regression: wizard.html, visited directly while logged out on a brow
   }
 });
 
-test('BUG 3 regression (tracker item for-product-urgent-founder-repro-index-g-c6boa9): a returning-but-logged-out visitor who explicitly clicks "Get Started" on index.html proceeds into wizard.html -- must NOT bounce straight back to index.html a second time', async function (t) {
+test('BUG 3 regression, now handled by routing (tracker item for-product-urgent-founder-repro-index-g-c6boa9): a returning-but-logged-out visitor clicking "Get Started" routes into the /go/ funnel, which structurally CANNOT bounce back to index.html -- it never touches wizard.html\'s returning-visitor guard', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
     await safeGoto(page, baseUrl + '/login.html');
     await page.evaluate(function () {
-      // Same stale-but-logged-out state as the BUG 2 regression above --
-      // this visitor already saw index.html's own "Log in" link and chose
-      // Get Started anyway, an informed choice the guard has no business
-      // overriding a second time.
+      // Same stale-but-logged-out state as the BUG 2 regression above.
+      // Original BUG 3 (2026-07-26): with organic routed INTO wizard.html,
+      // this stale account history made wizard.html's guard bounce a
+      // legitimate Get-Started click back to index.html, and the
+      // ?entry=index marker was the fix. Founder decision 2026-08-14
+      // (unify-all-creation-flows) routes organic to the /go/ funnel
+      // instead, so a Get-Started click never reaches wizard.html's guard
+      // at all -- the bounce is now structurally impossible, not just
+      // guarded against. wizard.html's guard itself is still exercised for
+      // DIRECT hits by "BUG 2 regression" and "BUG 3 regression, control"
+      // above/below.
       var state = {
         user: null,
         accounts: { staleoriginuser2: { password: 'testpass1', email: 'staleoriginuser2@example.com' } },
@@ -426,27 +433,14 @@ test('BUG 3 regression (tracker item for-product-urgent-founder-repro-index-g-c6
     });
 
     await safeGoto(page, baseUrl + '/index.html');
-    // Promise.all, not sequential awaits (test/route-organic-to-wizard-
-    // behavioral.test.js's own established pattern for this exact click):
-    // arms the URL wait BEFORE the click fires, so a fast client-side
-    // redirect can't complete and settle before this test starts
-    // listening for it.
-    await Promise.all([
-      page.waitForURL(/\/wizard\.html/, { timeout: 5000 }),
-      page.click('a.btn-primary')
-    ]);
-    // waitForFunction (polls/retries), not a one-shot page.evaluate read --
-    // the URL settling on wizard.html and wizard.html's own JS having
-    // actually rendered its first screen are two different moments; a
-    // bare evaluate() has no auto-wait and can read the DOM in the gap
-    // between them (real full-suite-load flake observed here once).
-    await page.waitForFunction(function () {
-      return /What was your dream about\?/.test(document.body.innerText);
-    }, { timeout: 5000 });
-
-    // The ?entry=index marker must not linger in the address bar once read.
-    var url = new URL(page.url());
-    assert.equal(url.searchParams.get('entry'), null, 'the entry=index marker must be stripped from the URL after being consumed');
+    // Markup-level assertion: the Get-Started CTA points at the /go/ funnel
+    // (a Netlify same-origin proxy to the separate dreamtube-growth site,
+    // which the local static test server does not serve, so it can't be
+    // click-followed here). The stale account history above has no bearing
+    // on this plain link -- which is exactly the point: routing, not a
+    // client-side guard, now prevents the bounce.
+    var href = await page.getAttribute('a.btn-primary', 'href');
+    assert.match(href, /^\/go\//, 'a returning-logged-out visitor\'s Get-Started click must route into the /go/ funnel, never into wizard.html\'s guard');
   } finally {
     await page.close();
   }

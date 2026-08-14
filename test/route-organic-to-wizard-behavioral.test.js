@@ -78,29 +78,23 @@ async function safeGoto(page, url, opts) {
   }
 }
 
-test('index.html: organic/direct visitor -- the "Get Started" CTA links straight to wizard.html, not start.html or the external growth funnel', async function (t) {
+test('index.html: organic/direct visitor -- the "Get Started" CTA routes into the /go/ funnel (unify-all-creation-flows, founder 2026-08-14), not wizard.html', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
     await safeGoto(page, baseUrl + '/index.html');
 
-    // ?entry=index (tracker item for-product-urgent-founder-repro-index-g-
-    // c6boa9) is a deliberate marker, not a route change -- wizard.html's
-    // returning-visitor guard reads it to let an explicit Get-Started
-    // click proceed even with stale local account history, see that
-    // guard's own doc comment.
+    // Founder decision 2026-08-14 (unify-all-creation-flows): organic now
+    // enters the SAME creation funnel as paid ads via the /go/ same-origin
+    // proxy (see netlify.toml's /go/* rewrite), REVERSING the 2026-07-26
+    // organic->wizard.html routing so there is ONE creation flow. The
+    // link is a markup-level assertion here (not a click-through) because
+    // /go/ is a Netlify CDN proxy to the separate dreamtube-growth funnel
+    // site, which the local static test server does not serve.
     var href = await page.getAttribute('a.btn-primary.btn-block', 'href');
-    assert.equal(href, 'wizard.html?entry=index', '"Get Started" must point at wizard.html, not start.html or the external dreamtube-growth funnel');
-
-    // Follow the link for real and confirm it actually lands on wizard.html
-    // (not just that the href string looks right) -- clicking through is
-    // what a real organic/direct visitor does.
-    await Promise.all([
-      page.waitForURL(/wizard\.html/, { waitUntil: 'domcontentloaded' }),
-      page.click('a.btn-primary.btn-block')
-    ]);
-    assert.match(page.url(), /\/wizard\.html/, 'clicking "Get Started" from index.html must land on wizard.html');
+    assert.match(href, /^\/go\/(\?|$)/, '"Get Started" must route organic visitors into the /go/ funnel, not wizard.html/start.html');
+    assert.match(href, /utm_source=organic/, 'organic funnel entries must be tagged utm_source=organic so they stay out of paid CPS/creative attribution');
   } finally {
     await page.close();
   }

@@ -116,16 +116,17 @@ test('JOURNEY_MANIFEST.md: wizard.html\'s actual SCREEN_RENDERERS sequence match
 // seam itself hasn't silently moved.
 // ===========================================================================
 
-test('JOURNEY_MANIFEST.md: index.html\'s "Get Started" CTA still routes into wizard.html, the documented Journey 2 entry point', function () {
+test('JOURNEY_MANIFEST.md: index.html\'s "Get Started" CTA routes organic into the /go/ funnel (unify-all-creation-flows, founder 2026-08-14)', function () {
   var source = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-  // ?entry=index (tracker item for-product-urgent-founder-repro-index-g-
-  // c6boa9) is a deliberate marker, not a route change -- wizard.html's
-  // returning-visitor guard reads it to distinguish an explicit
-  // Get-Started click (proceed) from a direct/bookmarked hit (still
-  // bounced to index.html) -- see that guard's own doc comment.
+  // Founder decision 2026-08-14 (unify-all-creation-flows): organic "Get
+  // Started" now enters the SAME creation funnel as paid ads via the /go/
+  // same-origin proxy (netlify.toml /go/* rewrite), REVERSING the
+  // 2026-07-26 organic->wizard.html routing so all three creation surfaces
+  // collapse to one flow. utm_source=organic keeps these distinct from
+  // paid (utm_content) in PostHog.
   assert.match(
     source,
-    /href="wizard\.html(\?entry=index)?"/,
-    'index.html no longer links "Get Started" straight to wizard.html -- this is the documented Journey 2 entry seam in docs/JOURNEY_MANIFEST.md. If this routing changed deliberately, update the manifest\'s Journey 2 table to match.'
+    /href="\/go\/[^"]*utm_source=organic[^"]*"/,
+    'index.html "Get Started" must route organic visitors into the /go/ funnel (tagged utm_source=organic) -- the documented Journey 2 entry seam moved here on 2026-08-14. If this changed again, update docs/JOURNEY_MANIFEST.md.'
   );
 });
