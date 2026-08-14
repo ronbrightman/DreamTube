@@ -152,16 +152,24 @@ test('wizard.html funnel arrival (resume=1 + caption): REE + entered-email + fir
   }
 });
 
-test('wizard.html organic entry (no caption): none of the ad-funnel REE events fire', async function (t) {
+test('wizard.html organic/direct entry (no caption): the wall is never reached (bare hit redirects to /go/), so none of the ad-funnel REE events fire', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await newInstrumentedPage();
   try {
-    // Organic Get-Started entry — no ?caption, so isFunnelHandoffArrival is
-    // false. Drive to the wall is not even necessary: the events are gated
-    // on the arrival flag, not on reaching the wall.
-    await safeGoto(page, baseUrl + '/wizard.html?entry=index');
-    await page.waitForTimeout(1200);
-    var ev = await page.evaluate(function () { return window.__ev; });
+    // Stub the /go/ funnel (a same-origin CDN proxy the static server doesn't
+    // serve) so the retirement redirect lands on a real HTML page here.
+    await page.route(/\/go\//, function (route) {
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>stub /go/ funnel</body></html>' });
+    });
+    // Organic/direct entry — no ?caption, so isFunnelHandoffArrival is false.
+    // Since unify-all-creation-flows (founder 2026-08-14) this bounces to the
+    // /go/ funnel BEFORE the wall renders, so none of the wall's ad-funnel REE
+    // events can fire — the paid REE metric stays uncontaminated by organic.
+    await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForFunction(function () { return /\/go\//.test(location.href); }, null, { timeout: 5000 }).catch(function () {});
+    assert.match(page.url(), /\/go\//, 'a bare wizard.html hit must redirect to the /go/ funnel, never reaching the wall');
+
+    var ev = await page.evaluate(function () { return window.__ev || []; });
     assert.equal(countScreen(ev, 'email_capture'), 0, 'no email_capture REE event on organic traffic');
     assert.equal(count(ev, 'signup_email_first_variant_shown'), 0, 'no first-variant event on organic traffic');
     assert.equal(count(ev, 'signup_email_entered'), 0, 'no entered-email event on organic traffic');

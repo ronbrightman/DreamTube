@@ -133,6 +133,17 @@ function callsNamed(calls, name) {
 
 var BASE_RESUME_PARAMS = 'resume=1&recall=vividly&types=flying&motivations=' + encodeURIComponent('Turn them into videos') + '&style=Cartoon&caption=' + encodeURIComponent('Flying over the ocean');
 
+// The wizard.html cases below use the page ONLY as a "DreamStore + PostHog stub
+// loaded here" vehicle — they drive linkPreSignupIdentity()/signup() directly via
+// page.evaluate(), never the wall UI. Since unify-all-creation-flows (founder
+// 2026-08-14) a BARE wizard.html hit is retired and redirects to /go/ (not served
+// by the static test server), so it's reached via the funnel-arrival URL — the
+// SAME page/scripts, no redirect. Deliberately NO distinct_id in the URL: the
+// pre-signup stitch is exercised ONLY by the explicit in-test
+// linkPreSignupIdentity()/marker calls (exactly as before), so the "organic, no
+// prior identify, zero alias" cases stay a true no-prior-identify scenario.
+var WIZARD_WALL_PATH = '/wizard.html?resume=1&caption=' + encodeURIComponent('a dream of flying over a glowing city, dreamlike');
+
 var PRE_ACCOUNT_KEY = 'dreamtube_ph_pre_account_distinct_id';
 var PRE_ACCOUNT_WRITTEN_AT_KEY = 'dreamtube_ph_pre_account_distinct_id_written_at';
 var PRE_ACCOUNT_MARKER_TTL_MS = 6 * 60 * 60 * 1000;
@@ -203,7 +214,7 @@ test('wizard.html + signup: a pre-account marker set by an EARLIER page load (e.
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     // wizard.html itself never calls identify() pre-signup -- simulate an
     // EARLIER, separate page load (e.g. start.html, on a previous visit to
@@ -240,7 +251,7 @@ test('wizard.html + signup: an ordinary organic signup with NO prior identify() 
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     var markerBeforeSignup = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
     assert.equal(markerBeforeSignup, null, 'a fresh browser must have no pre-account marker at all');
@@ -284,7 +295,7 @@ test('linkPreSignupIdentity: an ALREADY-signed-in browser re-hitting the funnel 
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     // Establish a real signed-in session first (an ordinary organic
     // signup -- no pre-account marker involved at all).
@@ -320,7 +331,7 @@ test('linkPreSignupIdentity: two repeat funnel visits before ever converting ali
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     await page.evaluate(function () {
       window.DreamStore.linkPreSignupIdentity('ph-visit-1');
@@ -381,7 +392,7 @@ test('linkPreSignupIdentity: a repeat funnel visit with the SAME distinct_id as 
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-same-visit'); });
     await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-same-visit'); });
@@ -415,7 +426,7 @@ test('identifyForAnalytics: an EXPIRED pre-account marker (older than the TTL) m
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     // Visitor X hits the funnel and never converts.
     await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-visitor-x-abandoned'); });
@@ -452,7 +463,7 @@ test('linkPreSignupIdentity: an EXPIRED marker from an earlier abandoned visit i
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-stale-visit'); });
     await expirePreAccountMarker(page);
@@ -475,7 +486,7 @@ test('logout(): clears any pending pre-account marker so a signed-out session le
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-pending-visit'); });
     var markerBeforeLogout = await page.evaluate(function (key) { return localStorage.getItem(key); }, PRE_ACCOUNT_KEY);
@@ -498,7 +509,7 @@ test('deleteAccount(): wipeAllLocalState clears any pending pre-account marker t
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
     var signupResult = await page.evaluate(function () {
       return window.DreamStore.signup('deleteacctuser', 'password123', 'deleteacctuser@example.com');
     });
@@ -535,7 +546,7 @@ test('readLivePreAccountMarker TTL boundary: a marker just UNDER the TTL still a
   await mockSignupSucceeds(page);
   try {
     // Just under the TTL -- must still be treated as live.
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
     await page.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-just-under-ttl'); });
     await page.evaluate(function (args) {
       localStorage.setItem(args.key, String(Date.now() - args.ttl + 5000));
@@ -556,7 +567,7 @@ test('readLivePreAccountMarker TTL boundary: a marker just UNDER the TTL still a
   await mockSignupSucceeds(page2);
   try {
     // Just over the TTL -- must be treated as expired.
-    await safeGoto(page2, baseUrl + '/wizard.html');
+    await safeGoto(page2, baseUrl + WIZARD_WALL_PATH);
     await page2.evaluate(function () { window.DreamStore.linkPreSignupIdentity('ph-just-over-ttl'); });
     await page2.evaluate(function (args) {
       localStorage.setItem(args.key, String(Date.now() - args.ttl - 5000));

@@ -1,22 +1,27 @@
 // test/presignup-content-gate-behavioral.test.js
 //
 // Real browser-driven coverage for the PRE-SIGNUP content gate
-// (founder-directed 2026-08-14) wired into wizard.html's recap step. The
-// gate runs the same explicit-content classification the generation-time
-// gate uses (netlify/functions/check-dream-content.js) BEFORE the visitor
-// reaches the signup wall, so explicit-content seekers never fire the
-// CompleteRegistration conversion.
+// (founder-directed 2026-08-14). The gate runs the same explicit-content
+// classification the generation-time gate uses
+// (netlify/functions/check-dream-content.js) BEFORE the visitor's signup /
+// CompleteRegistration conversion, so explicit-content seekers never sign up.
 //
-// Asserts the founder's requirement end-to-end: an explicit dream text on
-// the recap step shows the revise message and does NOT reach the signup
-// wall (no email entry possible); a clean dream text passes through to the
-// wall unchanged.
+// RETARGETED 2026-08-14 (unify-all-creation-flows, founder): the gate used to
+// run on wizard.html's own editable recap step (the organic chip flow). That
+// creation flow is retired to a funnel-arrival receiver — a bare wizard.html
+// hit now redirects to /go/, and the ONLY live path onto the page is the
+// growth-funnel handoff (?resume=1&caption=...), which lands DIRECTLY on the
+// signup wall. So the gate now runs at the WALL SUBMIT (checkDreamContentAllowed
+// in wizard.html's trySubmit, funnelArrival-gated): the funnel-carried dream
+// text is classified when the visitor submits their email, BEFORE any
+// start-pending-generation / signup / CompleteRegistration fires. This suite
+// asserts that live behavior end to end.
 //
 // Follows test/wizard-ui-behavioral.test.js's conventions exactly: a plain
-// static file server, page.route() intercept for the one function endpoint
-// this exercises (check-dream-content — decided here by inspecting the
-// POSTed caption so the REAL client wiring is tested), blockThirdParty()
-// for this sandbox's flaky outbound network.
+// static file server, page.route() intercept for the endpoints this exercises
+// (check-dream-content — decided here by inspecting the POSTed caption so the
+// REAL client wiring is tested), blockThirdParty() for the sandbox's flaky
+// outbound network.
 
 var test = require('node:test');
 var assert = require('node:assert/strict');
@@ -64,9 +69,9 @@ function blockThirdParty(page) {
 
 /**
  * Intercepts the pre-signup content-gate endpoint and answers by inspecting
- * the POSTed caption — explicit (contains "sex"/"naked") is blocked, clean
- * is allowed — so the test drives the REAL client wiring (assemble text ->
- * POST -> act on { allowed, tier }) rather than a stub of it. Returns a
+ * the POSTed caption — explicit (contains "sex"/"naked"/"nude") is blocked,
+ * clean is allowed — so the test drives the REAL client wiring (assemble text
+ * -> POST -> act on { allowed, tier }) rather than a stub of it. Returns a
  * counter of how many times the endpoint was actually hit.
  */
 function routeContentGate(page) {
@@ -91,70 +96,85 @@ async function safeGoto(page, url) {
   catch (e) { await page.goto(url, { waitUntil: 'domcontentloaded' }); }
 }
 
-/** Enters wizard.html via the "Someone specific" build tile and walks Subject -> Action -> Style -> free text to the editable recap step. */
-async function gotoWizardRecap(page) {
-  await safeGoto(page, baseUrl + '/wizard.html');
-  await page.click('#fn-q-grid [data-tile="2"]');
-  await page.waitForSelector('#sheet-character-overlay.open');
-  await page.click('#char-cancel');
-  await page.waitForSelector('#subject-chip-row');
-  // Subject
-  await page.click('#subject-other-row [data-subj-other="stranger"]');
-  await page.click('#fn-subject-continue');
-  // Action (required)
-  await page.waitForSelector('#action-row [data-action="flying"]');
-  await page.click('#action-row [data-action="flying"]');
-  await page.click('#fn-action-continue');
-  // Style (auto-advances)
-  await page.waitForSelector('#style-grid [data-style="Anime"]');
-  await page.click('#style-grid [data-style="Anime"]');
-  // Free text — skip
-  await page.waitForSelector('#fn-freetext-skip');
-  await page.click('#fn-freetext-skip');
-  // Recap (editable)
-  await page.waitForSelector('#fn-story-recap-text');
+/** Lands on wizard.html's signup wall as a growth-funnel arrival carrying `caption` (the live path onto the wall). */
+async function reachWallWithCaption(page, caption) {
+  await safeGoto(page, baseUrl + '/wizard.html?resume=1&caption=' + encodeURIComponent(caption) + '&style=Anime');
+  await page.waitForSelector('#contact-email');
 }
 
-test('wizard.html: an EXPLICIT dream on the recap step shows the revise message and does NOT reach the signup wall', async function (t) {
+test('wizard.html funnel-arrival wall: an EXPLICIT funnel-carried dream is BLOCKED at the email submit — the revise message shows, and NO generation, signup, or navigation fires (the pre-signup gate runs before CompleteRegistration)', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   var gate = routeContentGate(page);
+  var startPendingCalls = 0;
+  var signupCalls = 0;
+  await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+    startPendingCalls++;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-x', operationName: 'op-x' }) });
+  });
+  await page.route('**/.netlify/functions/register-account-passwordless', function (route) {
+    signupCalls++;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, created: true }) });
+  });
+  await page.route('**/.netlify/functions/check-email', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: true }) });
+  });
   try {
-    await gotoWizardRecap(page);
-    // Replace the recap text with explicit content and continue.
-    await page.fill('#fn-story-recap-text', 'we had sex on the beach all night');
-    await page.click('#fn-recap-continue');
+    await reachWallWithCaption(page, 'we had sex on the beach all night');
+    await page.fill('#contact-email', 'explicit-seeker@example.com');
+    await page.click('#fn-contact-continue');
 
-    // The revise message appears...
-    await page.waitForSelector('#fn-recap-gate-error', { timeout: 5000 });
-    var msg = await page.textContent('#fn-recap-gate-error');
-    assert.match(msg, /explicit sexual content isn’t allowed/);
-    assert.ok(gate.calls >= 1, 'the content-gate endpoint was actually called');
+    // The revise message appears in the wall's own error slot...
+    await page.waitForFunction(function () {
+      var e = document.getElementById('contact-error');
+      return e && /explicit sexual content isn’t allowed/.test(e.textContent);
+    }, null, { timeout: 5000 });
+    assert.ok(gate.calls >= 1, 'the content-gate endpoint was actually called at the wall submit');
 
-    // ...and the signup wall's email field is NOT reachable — we're still on
-    // the editable recap step.
-    assert.equal(await page.locator('#contact-email').count(), 0, 'must NOT advance to the signup wall on an explicit dream');
-    assert.equal(await page.locator('#fn-story-recap-text').count(), 1, 'stays on the editable recap step');
+    // ...and NOTHING downstream of the gate fired: no billed generation, no
+    // account, and the visitor is still sitting on the wall (no navigation).
+    await page.waitForTimeout(300);
+    assert.equal(startPendingCalls, 0, 'an explicit dream must NOT fire the real, billed pending generation');
+    assert.equal(signupCalls, 0, 'an explicit dream must NOT create an account / fire CompleteRegistration');
+    assert.match(page.url(), /wizard\.html/, 'must stay on the wall, not navigate');
+    assert.equal(await page.locator('#contact-email').count(), 1, 'still on the signup wall (email field present)');
   } finally {
     await page.close();
   }
 });
 
-test('wizard.html: a CLEAN dream on the recap step passes through to the signup wall unchanged', async function (t) {
+test('wizard.html funnel-arrival wall: a CLEAN funnel-carried dream passes the gate at submit and proceeds to the real pending generation, with no revise message', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
-  routeContentGate(page);
+  var gate = routeContentGate(page);
+  await page.route('**/.netlify/functions/check-email', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, available: true, deliverable: true }) });
+  });
+  var startPendingRequested = false;
+  await page.route('**/.netlify/functions/start-pending-generation', function (route) {
+    startPendingRequested = true;
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ pendingId: 'pd-clean', operationName: 'op-clean' }) });
+  });
+  await page.route('**/.netlify/functions/register-account-passwordless', function (route) {
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, created: true, username: 'cleanuser' }) });
+  });
   try {
-    await gotoWizardRecap(page);
-    await page.fill('#fn-story-recap-text', 'I was flying peacefully over a glowing city of glass');
-    await page.click('#fn-recap-continue');
+    await reachWallWithCaption(page, 'I was flying peacefully over a glowing city of glass');
+    await page.fill('#contact-email', 'clean-dreamer@example.com');
+    await page.click('#fn-contact-continue');
 
-    // Reaches the signup wall — the email field is present.
-    await page.waitForSelector('#contact-email', { timeout: 5000 });
-    assert.equal(await page.locator('#contact-email').count(), 1, 'a clean dream reaches the signup wall');
-    assert.equal(await page.locator('#fn-recap-gate-error').count(), 0, 'no revise message on a clean dream');
+    // The gate passes, so the flow proceeds to the real pending generation
+    // (which fires BEFORE signup — see wizard.html's trySubmit ordering).
+    var start = Date.now();
+    while (!startPendingRequested && Date.now() - start < 6000) {
+      await page.waitForTimeout(150);
+    }
+    assert.ok(gate.calls >= 1, 'the content-gate endpoint was called at the wall submit');
+    assert.ok(startPendingRequested, 'a clean dream passes the gate and fires the real pending generation');
+    var errText = await page.evaluate(function () { var e = document.getElementById('contact-error'); return e ? e.textContent : ''; });
+    assert.doesNotMatch(errText, /explicit sexual content/, 'no revise message on a clean dream');
   } finally {
     await page.close();
   }

@@ -92,6 +92,15 @@ function mockSignupSucceeds(page) {
   });
 }
 
+// The wizard.html cases below use the page ONLY as a "DreamStore + PostHog stub
+// loaded here" vehicle — they call DreamStore.signup() directly via
+// page.evaluate() to exercise identifyForAnalytics/is_test tagging (UNCHANGED),
+// never the wall UI. Since unify-all-creation-flows (founder 2026-08-14) a BARE
+// wizard.html hit is retired and redirects to /go/ (not served by the static test
+// server), so it's reached via the funnel-arrival URL — the SAME page/scripts, no
+// redirect. No distinct_id is passed, so no pre-signup identity stitch occurs.
+var WIZARD_WALL_PATH = '/wizard.html?resume=1&caption=' + encodeURIComponent('a dream of flying over a glowing city, dreamlike');
+
 function readPostHogCalls(page) {
   return page.evaluate(function () {
     var queue = (window.posthog && typeof window.posthog.slice === 'function') ? window.posthog.slice() : [];
@@ -199,7 +208,7 @@ test('identifyForAnalytics: richardharrisman and jackflaa (new founder aliases) 
     await blockThirdParty(page);
     await mockSignupSucceeds(page);
     try {
-      await safeGoto(page, baseUrl + '/wizard.html');
+      await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
       var result = await page.evaluate(function (u) {
         return window.DreamStore.signup(u, 'password123', u + '@gmail.com');
       }, username);
@@ -221,7 +230,7 @@ test('identifyForAnalytics: a numbered throwaway founder account (ronbrightman88
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
     var result = await page.evaluate(function () {
       return window.DreamStore.signup('ronbrightman8877', 'password123', 'ron+throwaway@gmail.com');
     });
@@ -242,7 +251,7 @@ test('identifyForAnalytics: a real user whose username merely resembles a founde
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
     var result = await page.evaluate(function () {
       return window.DreamStore.signup('sonbrightman99', 'password123', 'sonbrightman99@gmail.com');
     });

@@ -100,28 +100,32 @@ test('index.html: organic/direct visitor -- the "Get Started" CTA routes into th
   }
 });
 
-test('wizard.html: works correctly as a completely fresh entry point -- no query params, no prior draft/localStorage state', async function (t) {
+test('wizard.html: a bare/direct hit (no ?resume=1) REDIRECTS to the /go/ funnel -- its own chip-build creation UI is retired (unify-all-creation-flows, founder 2026-08-14), never shown to a real user again', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
+    // /go/ is a Netlify same-origin proxy to the separate growth funnel site,
+    // which the local static test server does not serve -- stub it so the
+    // retirement redirect resolves in this sandbox.
+    await page.route(/\/go\//, function (route) {
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>stub /go/ funnel</body></html>' });
+    });
+
     // Bare navigation, no ?query params, no seeded localStorage at all --
     // exactly what a brand-new organic/direct visitor's browser looks like.
+    // wizard.html's creation flow is retired to a funnel-arrival receiver, so
+    // this must bounce to the unified /go/ funnel instead of ever painting the
+    // old six-tile chooser.
     await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForFunction(function () { return /\/go\//.test(location.href); }, null, { timeout: 5000 }).catch(function () {});
 
-    var title = await page.title();
-    assert.equal(title, 'Build your dream — DreamTube');
+    assert.match(page.url(), /\/go\//, 'a bare wizard.html hit must redirect to the /go/ funnel');
+    assert.match(page.url(), /utm_source=organic/, 'the retirement redirect tags itself utm_source=organic so a direct wizard hit stays out of paid attribution');
 
-    // The question-first screen 1 must render with no crash/blank screen --
-    // this is the same first screen a real visitor sees.
+    // The old chooser is never painted.
     var bodyText = await page.evaluate(function () { return document.body.innerText; });
-    assert.match(bodyText, /What was your dream about\?/, 'wizard.html must render its first screen (the question-first tile grid) with no query params or prior state');
-
-    // No console errors on a totally cold load.
-    var consoleErrors = [];
-    page.on('pageerror', function (err) { consoleErrors.push(String(err)); });
-    await page.evaluate(function () { return true; }); // flush any pending events
-    assert.deepEqual(consoleErrors, [], 'wizard.html must not throw on a fresh, param-less load');
+    assert.doesNotMatch(bodyText, /What was your dream about\?/, 'the retired six-tile chooser must never be shown');
   } finally {
     await page.close();
   }

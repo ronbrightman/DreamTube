@@ -575,19 +575,21 @@
     }, 260);
   }
 
-  // Already-signed-in visitors have no business in a PRE-signup wizard —
-  // send them to the normal logged-in "New Dream" flow instead (create.html's
-  // own chip wizard retrofit covers the same chip-first experience there).
+  // Already-signed-in visitors have no business in a PRE-signup wizard.
+  // wizard.html's own chip-build creation UI is retired (unify-all-creation-
+  // flows, founder 2026-08-14) — a bare/direct hit is not user-reachable — so a
+  // signed-in visitor is sent to the normal logged-in "New Dream" flow
+  // (create.html), which is unchanged and shares the same content classifier.
   if(DreamStore.getCurrentUser()){
     // EXCEPT a funnel handoff carrying a built dream (?resume=1 + caption):
     // that visitor already has an account, so skip the signup wall and
     // GENERATE the carried dream directly (home.html?generate=1, the
     // signed-in generate path), persisting the same caption+style draft the
-    // logged-out funnel arrival persists — instead of bouncing to
-    // create.html's fresh builder and LOSING the dream (founder repro,
-    // tracker item for-product-life-origin-generate-handoff-founder-repro-
-    // 8yc4wm follow-up). Any other signed-in visitor still goes to the
-    // normal logged-in New Dream flow (create.html) as before.
+    // logged-out funnel arrival persists — instead of bouncing to a fresh
+    // builder and LOSING the dream (founder repro, tracker item
+    // for-product-life-origin-generate-handoff-founder-repro-8yc4wm
+    // follow-up). This is the signed-in funnel-arrival shortcut: a logged-in
+    // user coming back from the funnel generates without hitting the paywall.
     var signedInFunnelCaption = (getParam('resume') === '1') ? (getParam('caption') || '') : '';
     if(signedInFunnelCaption.trim()){
       DreamStore.clearDraft();
@@ -595,6 +597,8 @@
       location.href = 'home.html?generate=1';
       return;
     }
+    // Any other signed-in visitor (a bare/direct hit to this retired page)
+    // goes to the normal logged-in New Dream flow (create.html), unchanged.
     location.href = 'create.html';
     return;
   }
@@ -3186,12 +3190,28 @@
   // fresh/direct visitors, the signup wall for a funnel handoff).
   // ===================================================================
   function boot(){
-      // Fresh entries (Get Started / direct) meet the question-first
-      // screen 1 first. A ?resume=1 arrival (funnel-style handoff) skips
-      // it: funnel users already chose their scenario funnel-side.
-      if(getParam('resume') !== '1'){
-        chooserOffered = true;
-        showQuestionFirst();
+      // ===================================================================
+      // RETIRED CREATION UI (unify-all-creation-flows, founder 2026-08-14):
+      // wizard.html's own creation flow (the question-first chooser + the
+      // Subject/Action/Style/FreeText/Recap chip-build steps) is no longer
+      // user-reachable. The ONLY live path through this page for a real user
+      // is now the funnel-arrival wall leg below: the growth funnel's flo arm
+      // hands off here with ?resume=1&caption=... and lands DIRECTLY on the
+      // signup wall (renderSignupWall). Everything else — a bare/direct hit,
+      // an old organic entry, or a malformed ?resume=1 with no caption — is
+      // redirected out to the unified /go/ funnel instead of ever painting
+      // the dead chooser/step UI.
+      //
+      // (The step renderers + SCREEN_RENDERERS machinery are deliberately
+      // KEPT rather than deleted: the wall's own analytics step number
+      // (wizard_step_viewed {step:7}), progress dots, and Back navigation
+      // are all positional against SCREEN_RENDERERS, so removing the now-dead
+      // step renderers from that array would shift the wall's own indices and
+      // break its live instrumentation. Retiring by routing keeps the shared
+      // wall path byte-stable. See SCREEN_RENDERERS' own comment.)
+      // ===================================================================
+      if(!isFunnelHandoffArrival){
+        location.replace('/go/?utm_source=organic');
         return;
       }
       // ===== FUNNEL-ARRIVAL WALL LEG (wall routing, 2026-08-08) =====
@@ -3213,8 +3233,9 @@
       //     linkPreSignupIdentity);
       //   - Meta attribution cookie persistence (fbc/fbp/fbclid params);
       //   - the funnel_resumed_from_marketing event, same props.
-      // A bare ?resume=1 WITHOUT a caption keeps the pre-existing
-      // defensive behavior (chooser-free step flow) unchanged.
+      // (A bare ?resume=1 WITHOUT a caption is not a real handoff — it was
+      // already redirected to /go/ by the retirement guard above, so this
+      // leg only ever runs for a genuine caption-carrying arrival.)
       if(isFunnelHandoffArrival){
         // Same cross-app PostHog identity stitch as start.html's arrival
         // leg (see that file's handoffDistinctId block for the full
@@ -3269,7 +3290,6 @@
         render();
         return;
       }
-      render();
   }
 
   // ===================================================================

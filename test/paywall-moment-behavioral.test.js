@@ -87,17 +87,19 @@ async function stubBackend(page) {
   return checkoutCalls;
 }
 
-/** Drives a fresh organic wizard arrival to the signup wall (Flying tile -> Subject -> Style -> free text -> recap -> wall) and submits an email. Does NOT wait for the moment overlay — used both by signupToMoment (which then waits) and by the robustness test (where the module is blocked so no overlay ever appears). `search` carries founder overrides (?paywall=/?trialarm=). */
+/** Drives a fresh signup to the wizard.html signup wall and submits an email.
+ * The wall is reached as a growth-funnel arrival now (unify-all-creation-flows,
+ * founder 2026-08-14, retired wizard.html's own chip-build flow — a bare hit
+ * redirects to /go/); a ?resume=1&caption=... handoff lands DIRECTLY on the
+ * wall. The post-signup monetization moment still shows for a fresh signup here
+ * regardless of how the wall was reached. Does NOT wait for the moment overlay
+ * — used both by signupToMoment (which then waits) and by the robustness test
+ * (where the module is blocked so no overlay ever appears). `search` carries
+ * founder overrides (?paywall=/?trialarm=). */
 async function driveToWallAndSubmit(page, search, email) {
-  await safeGoto(page, baseUrl + '/wizard.html' + (search || ''));
-  await page.click('#fn-q-grid [data-tile="0"]'); // Flying -> build, Action seeded + skipped
-  await page.waitForSelector('#subject-chip-row');
-  await page.click('[data-subj-other="none"]');
-  await page.click('#fn-subject-continue');
-  await page.waitForSelector('#fn-style-skip');
-  await page.click('#fn-style-skip');
-  await page.click('#fn-freetext-skip');
-  await page.click('#fn-recap-continue');
+  var extra = search || '';
+  var glue = extra.indexOf('?') !== -1 ? '&' : '?';
+  await safeGoto(page, baseUrl + '/wizard.html' + extra + glue + 'resume=1&caption=' + encodeURIComponent('a dream of flying over a glowing city of glass, dreamlike'));
   await page.waitForSelector('#contact-email');
   await page.fill('#contact-email', email || ('mm-' + Date.now() + '@example.com'));
   await page.click('#fn-contact-continue');
