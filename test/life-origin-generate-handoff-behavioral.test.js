@@ -473,21 +473,29 @@ test('BUG 3 regression, control: a DIRECT/bookmarked hit to wizard.html (no ?ent
   }
 });
 
-test('BUG 2 regression, control: wizard.html, visited directly while logged out on a GENUINELY brand-new browser (no local account history at all), still renders the pre-signup wizard normally -- this fix must not affect real first-time visitors', async function (t) {
+test('BUG 2 regression, control: wizard.html, visited directly while logged out on a GENUINELY brand-new browser (no local account history at all), REDIRECTS to the /go/ funnel -- wizard.html\'s own creation UI is retired (unify-all-creation-flows, founder 2026-08-14), so even a first-time visitor never sees its chooser', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
+    // /go/ is a same-origin CDN proxy the local static server doesn't serve --
+    // stub it so the retirement redirect resolves here.
+    await page.route(/\/go\//, function (route) {
+      route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body>stub /go/ funnel</body></html>' });
+    });
     // No seeded localStorage at all -- exactly what a brand-new visitor's
-    // browser looks like (same setup as test/route-organic-to-wizard-
-    // behavioral.test.js's own "completely fresh entry point" test, this
-    // one specifically re-asserted here alongside the regression above so
-    // the two are read as a matched pair, not coverage living in isolation).
+    // browser looks like. Since the 2026-08-14 unify-all-creation-flows change,
+    // a bare wizard.html hit (no ?resume=1 handoff) bounces to the /go/ funnel
+    // rather than rendering the retired six-tile chooser. (The
+    // returning-but-logged-out guard above -- stale account history ->
+    // index.html -- is preserved and covered by "BUG 2 regression" / "BUG 3
+    // regression, control".)
     await safeGoto(page, baseUrl + '/wizard.html');
+    await page.waitForFunction(function () { return /\/go\//.test(location.href); }, null, { timeout: 5000 }).catch(function () {});
 
-    assert.match(page.url(), /\/wizard\.html$/, 'a genuinely first-time visitor must still land on wizard.html, not be redirected away');
+    assert.match(page.url(), /\/go\//, 'a genuinely first-time visitor hitting bare wizard.html must be routed into the /go/ funnel');
     var bodyText = await page.evaluate(function () { return document.body.innerText; });
-    assert.match(bodyText, /What was your dream about\?/, 'a genuinely first-time visitor must still see the wizard\'s first screen (the question-first tile grid)');
+    assert.doesNotMatch(bodyText, /What was your dream about\?/, 'the retired wizard chooser must never render');
   } finally {
     await page.close();
   }

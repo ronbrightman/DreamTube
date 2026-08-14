@@ -253,22 +253,12 @@ test('REAL CHAIN, END TO END: wizard.html\'s actual client flow (the merged sign
       }
     });
 
-    // ===== The actual wizard.html click-through, exactly as a real visitor
-    // would drive it (no shortcuts/localStorage seeding) =====
-    await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#fn-q-grid [data-tile="2"]'); // question-first: "Someone specific" → build, Action still asked
-    await page.waitForSelector('#sheet-character-overlay.open');
-    await page.click('#char-cancel'); // dismiss the who-detail sheet for a clean Subject
-    await page.waitForSelector('#subject-chip-row');
-    await page.click('[data-subj-other="none"]');
-    await page.click('#fn-subject-continue');
-    await page.waitForSelector('[data-action="flying"]'); // Setting gone: Subject → Action directly
-    await page.click('[data-action="flying"]'); // selects; Action needs Continue (compound step)
-    await page.click('#fn-action-continue');
-    await page.waitForSelector('#fn-style-skip'); // Mood gone: Action → Style directly
-    await page.click('#fn-style-skip');
-    await page.click('#fn-freetext-skip');
-    await page.click('#fn-recap-continue'); // round 8: recap step before the wall
+    // ===== The actual wizard.html client flow, entered exactly as a real
+    // visitor reaches the wall now: a growth-funnel arrival. unify-all-
+    // creation-flows (founder 2026-08-14) retired wizard.html's own chip-build
+    // flow (a bare hit redirects to /go/); the ?resume=1&caption=... handoff
+    // lands DIRECTLY on the signup wall (no shortcuts/localStorage seeding). =====
+    await safeGoto(page, baseUrl + '/wizard.html?resume=1&caption=' + encodeURIComponent('a dream of flying over a glowing city of glass, dreamlike') + '&style=Cinematic');
 
     // The merged signup wall (tracker item for-product-wizard-signup-
     // wall-is-the-ol-lt1l9j) -- this one submit is the exact moment

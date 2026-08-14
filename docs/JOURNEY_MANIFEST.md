@@ -60,15 +60,33 @@ instead of `home.html` (no dream text exists yet to poll for).
 
 > **⚠️ SUPERSEDED 2026-08-14 (unify-all-creation-flows, founder-directed).** The
 > three drifting creation flows (this repo's `wizard.html` + `create.html`, and
-> the `dreamtube-growth` funnel) are being collapsed into ONE flow: the `/go/`
+> the `dreamtube-growth` funnel) are collapsed into ONE flow: the `/go/`
 > funnel. **`index.html`'s "Get Started" now routes organic visitors to
 > `/go/?utm_source=organic` (the same-origin proxy to the growth funnel), NOT
-> `wizard.html`** — reversing the 2026-07-26 decision below. `wizard.html` is
-> being retired to a funnel-arrival receiver (signup wall + content gate); its
-> chip-first creation screens documented in the table below are legacy pending
-> the consolidation cleanup pass, still reachable on a direct `wizard.html` hit
-> until removed. The screen table is kept for now as the record of that legacy
-> flow. Update this section fully when `wizard.html`'s creation UI is removed.
+> `wizard.html`** — reversing the 2026-07-26 decision below.
+>
+> **`wizard.html`'s own chip-first creation UI is now RETIRED to a
+> funnel-arrival receiver.** An ANONYMOUS bare/direct hit to `wizard.html` (no
+> `?resume=1`) **redirects to `/go/?utm_source=organic`** (the funnel); a
+> SIGNED-IN bare hit goes to **`create.html`** (the logged-in creator, unchanged
+> — it already shares the same content classifier). Either way the six-tile
+> chooser and the Subject/Action/Style/FreeText/Recap chip-build steps (rows
+> 0.5–5 below) are no longer reachable by any real user. The ONLY live path
+> through `wizard.html` now is the growth-funnel handoff
+> (`?resume=1&caption=...`), which lands DIRECTLY on the signup wall (row 6) with
+> its pre-email content gate, PostHog identity stitch, Meta cookie persistence,
+> and funnel-character-stash adoption intact. **Rows 0.5–5 are RETAINED-BUT-DEAD
+> markup**, kept only so `SCREEN_RENDERERS`' positional indices (and therefore
+> the wall's own `wizard_step_viewed {step:7}` analytics, progress dots, and Back
+> navigation) stay byte-stable — deleting them from the array would shift the
+> wall's live instrumentation. The table below is kept as the record of that
+> retired flow; the live journeys for a real user are now:
+> **(a) organic + ads →** `/go/` funnel → (`?resume=1&caption=`) →
+> `wizard.html` **row 6 (wall)** → **row 7 (Home)**;
+> **(b) logged-in creation →** `create.html` (UNCHANGED — the founder's decision
+> 2026-08-14 was to KEEP logged-in creation on `create.html` since it already
+> uses the shared classifier; the bottom-nav "+", Home Tonight CTA,
+> "Make another", chamber "Begin", etc. all still point at `create.html`).
 
 Founder decision 2026-07-26 (`for-product-route-organic-direct-visitor-olu8md`,
 **superseded 2026-08-14 — see the note above**):

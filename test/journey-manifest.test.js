@@ -78,17 +78,22 @@ test('JOURNEY_MANIFEST.md: start.html\'s actual SCREEN_RENDERERS sequence matche
 // per this test's own contract.
 // ===========================================================================
 
-// Question-first trim (mirrors the growth funnel): the standalone Setting
-// ("Where") and Mood ("How did it feel") steps were REMOVED as questions
-// — both are now inferred into the caption (per-action fallback place +
-// default dreamy mood/lighting), so the organic flow is now Who → What →
-// Style → free text → recap → wall. renderRecap (between FreeText and the
-// wall) is founder round 8's editable "Here's your dream — make it yours"
-// screen. The question-first screen 1 (six-tile "What was your dream
-// about?" grid that replaced the build/write/speak chooser) is deliberately
-// NOT in SCREEN_RENDERERS — a pre-step shown to fresh entries only, firing
-// wizard_entry_mode_chosen and no wizard_step_viewed — see wizard.html's
-// own question-first section comment.
+// RETIREMENT NOTE (unify-all-creation-flows, founder 2026-08-14): wizard.html's
+// own chip-build creation UI is retired — a bare hit now redirects to /go/, and
+// the ONLY live path through the page is the funnel-arrival wall
+// (renderSignupWall). The step renderers below are RETAINED-BUT-DEAD markup,
+// kept intact precisely so this array's positional indices stay byte-stable:
+// the wall's own wizard_step_viewed {step:7}, progress dots, and Back navigation
+// are all positional against SCREEN_RENDERERS, so removing the now-dead
+// renderers would shift the wall's live instrumentation. This test therefore
+// still pins the SAME six-element array (drift-detection is unchanged); what
+// changed is only which of them a real user can reach (just the wall). See
+// docs/JOURNEY_MANIFEST.md's Journey 2 "SUPERSEDED" callout.
+//
+// (Historical: the standalone Setting/Mood steps were earlier removed as
+// questions and are inferred into the caption; renderRecap was founder round
+// 8's editable recap; the six-tile question-first screen was a pre-step outside
+// SCREEN_RENDERERS. All now unreachable behind the retirement redirect.)
 var EXPECTED_ORGANIC_SCREENS = [
   'renderSubject', 'renderAction',
   'renderStyleStep', 'renderFreeText', 'renderRecap', 'renderSignupWall'

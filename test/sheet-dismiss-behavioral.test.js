@@ -29,9 +29,11 @@
 //     4. result.html — Add/edit character sheet (the one with an
 //        overlay-level z-index override, sheet-character-overlay)
 //     5. create.html — Add/edit character sheet
-//     6. create.html — "Build it" character sheet (build-sheet-character-overlay)
-//     7. wizard.html — Subject (character) sheet
-//     8. start.html — Advanced > Characters sheet
+//     6. create.html — "Build it" character sheet (build-sheet-character-overlay),
+//        including the rapid-re-tap position-guard founder repro (originally
+//        covered on wizard.html's now-retired Subject sheet — unify-all-creation-
+//        flows, founder 2026-08-14 — repointed here to the live surface)
+//     7. start.html — Advanced > Characters sheet
 //     9. js/purchase-sheet.js — out-of-tokens purchase sheet
 //    10. js/purchase-sheet.js — daily-claim sheet
 //
@@ -563,33 +565,6 @@ test('create.html "Build it" character sheet: tap-outside closes, drag-dismiss/s
 // 7. wizard.html — Subject (character) sheet
 // ============================================================================
 
-test('wizard.html character sheet: tap-outside closes, drag-dismiss/snap-back both work, and Cancel still works', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
-    await page.waitForSelector('#subject-chip-row');
-    await page.waitForSelector('#subj-add-other');
-
-    async function openCharSheet() { await page.click('#subj-add-other'); }
-
-    await assertTapOutsideCloses(page, '#sheet-character-overlay', openCharSheet);
-    await assertDragPastThresholdDismisses(page, '#sheet-character-overlay', openCharSheet);
-    await assertDragUnderThresholdSnapsBack(page, '#sheet-character-overlay', openCharSheet);
-
-    // Already open from the snap-back above -- go straight to the
-    // Cancel-button regression check.
-    await page.waitForSelector('#sheet-character-overlay.open');
-    await page.click('#char-cancel');
-    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
-  } finally {
-    await context.close();
-  }
-});
-
 // ============================================================================
 // 7b. Rapid re-tap immediately after opening must NOT self-dismiss (tracker
 // item for-product-urgent-founder-posthog-recor-75ob70, founder repro via a
@@ -637,82 +612,57 @@ async function tapTwiceRapidly(page, selector, gapMs) {
   await page.touchscreen.tap(x, y);
 }
 
-test('wizard.html character sheet ("Me"): a rapid second tap at the same spot (~30ms later, landing on the just-opened overlay backdrop before the sheet has visibly slid up) does not immediately close the sheet again', async function (t) {
+/**
+ * Seeds a logged-in account and opens create.html's "Build it" Subject step —
+ * the LIVE character-sheet surface (unify-all-creation-flows, founder
+ * 2026-08-14, retired wizard.html's own chip-build flow, so its Subject sheet
+ * is no longer user-reachable; the identical js/sheet-dismiss.js-driven sheet
+ * behavior is now exercised here). The founder's original rapid-re-tap repro
+ * was on the pre-signup character sheet; create.html's Build subject sheet is
+ * its live equivalent (same .sheet-overlay + shared dismiss module).
+ */
+async function reachCreateBuildSubject(page) {
+  await safeGoto(page, baseUrl + '/login.html');
+  await page.evaluate(function () {
+    var state = { user: { handle: '@dsmtester', username: 'dsmtester' }, accounts: { dsmtester: { password: 'testpass1', email: 'dsmtester@example.com' } }, dreams: [], draft: { caption: '', style: null, characterIds: [], sceneryTime: null, sceneryPlace: null, restore: false }, charactersByUser: {}, likedIds: {} };
+    localStorage.setItem('dreamtube_state_v1', JSON.stringify(state));
+  });
+  await safeGoto(page, baseUrl + '/create.html');
+  await page.click('#choice-build');
+  await page.waitForSelector('#build-subject-chip-row');
+}
+
+test('create.html Build character sheet ("Me"): a rapid second tap at the same spot (~30ms later, landing on the just-opened overlay backdrop before the sheet has visibly slid up) does not immediately close the sheet again — the founder-reported "sheet never opens" repro, on the live character-sheet surface', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
-    // Round 8: tapping the Me row opens the character sheet directly
-    // (self mode, photo option included) -- so the Me row tap itself is
-    // where the rapid-re-tap protection has to hold for "Me".
-    await page.waitForSelector('#subj-me-row');
+    await reachCreateBuildSubject(page);
+    // Tapping the "Me" add row opens the self character sheet directly -- so
+    // the add-row tap itself is where the rapid-re-tap protection must hold.
+    await page.waitForSelector('#build-subj-add-self');
 
-    await tapTwiceRapidly(page, '#subj-me-row', 30);
+    await tapTwiceRapidly(page, '#build-subj-add-self', 30);
     await page.waitForTimeout(400);
-    assert.equal(await page.locator('#sheet-character-overlay.open').count(), 1, 'the sheet must still be open after a rapid re-tap landing on its own just-opened backdrop -- this is the exact founder-reported "sheet never opens" failure mode');
+    assert.equal(await page.locator('#build-sheet-character-overlay.open').count(), 1, 'the sheet must still be open after a rapid re-tap landing on its own just-opened backdrop -- the exact founder-reported "sheet never opens" failure mode (js/sheet-dismiss.js position guard)');
   } finally {
     await context.close();
   }
 });
 
-test('wizard.html character sheet ("Someone I know"): same rapid-re-tap protection', async function (t) {
+test('create.html Build character sheet ("Someone I know"): same rapid-re-tap protection on the live character-sheet surface', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await newMobileContext();
   try {
     var page = await context.newPage();
     await blockThirdParty(page);
-    await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
-    await page.waitForSelector('#subj-add-other');
+    await reachCreateBuildSubject(page);
+    await page.waitForSelector('#build-subj-add-other');
 
-    await tapTwiceRapidly(page, '#subj-add-other', 25);
+    await tapTwiceRapidly(page, '#build-subj-add-other', 25);
     await page.waitForTimeout(400);
-    assert.equal(await page.locator('#sheet-character-overlay.open').count(), 1, 'the sheet must still be open after a rapid re-tap landing on its own just-opened backdrop');
-  } finally {
-    await context.close();
-  }
-});
-
-test('wizard.html character sheet: a genuine tap-outside at a DIFFERENT position, immediately (well within the old flat time window) after opening, still closes it -- proves the fix is position-based, not time-based', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
-    await page.waitForSelector('#subj-add-other');
-    await page.click('#subj-add-other');
-    // No settle wait -- dismiss immediately (same instant the .open class
-    // lands), but at a screen position far from #subj-add-other's own
-    // coordinates. A time-based grace period would have swallowed this;
-    // the position-based guard must not, since this is a real, different
-    // tap, not a duplicate of the one that opened the sheet.
-    await page.waitForSelector('#sheet-character-overlay.open');
-    await page.mouse.click(370, 700);
-    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
-  } finally {
-    await context.close();
-  }
-});
-
-test('wizard.html character sheet: a genuine tap-outside well after opening still closes it (the fix above must not disable tap-outside-to-close entirely)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
-    await page.waitForSelector('#subj-add-other');
-    await page.click('#subj-add-other');
-    await waitForSheetSettled(page, '#sheet-character-overlay');
-    var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
-    await page.mouse.click(box.x + box.width / 2, Math.max(1, box.y - 10));
-    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
+    assert.equal(await page.locator('#build-sheet-character-overlay.open').count(), 1, 'the sheet must still be open after a rapid re-tap landing on its own just-opened backdrop');
   } finally {
     await context.close();
   }
@@ -735,40 +685,6 @@ test('wizard.html character sheet: a genuine tap-outside well after opening stil
 // it -- i.e. saving a character via this sheet, opened by a plain tap,
 // adds it to the selection without touching any other current selection.
 // ============================================================================
-
-test('wizard.html character sheet: opened via a normal (non-adversarial) tap, saving a character still ADDS it to the multi-select subject set without unchecking an already-selected "other" chip -- the exact founder repro (Me + a stranger both stay selected)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
-    await page.waitForSelector('#subject-other-row [data-subj-other="stranger"]');
-
-    // Select "A stranger" FIRST (an ordinary tap, no character sheet involved).
-    await page.click('#subject-other-row [data-subj-other="stranger"]');
-    assert.equal(await page.locator('#subject-other-row [data-subj-other="stranger"]').evaluate(function (el) { return el.classList.contains('sel'); }), true);
-
-    // Round 8: tapping the Me row selects it AND opens the sheet directly
-    // (single, ordinary tap -- not the rapid-re-tap pattern the 75ob70
-    // tests above exercise); fill in a description and save.
-    await page.click('#subj-me-row');
-    await waitForSheetSettled(page, '#sheet-character-overlay');
-    await page.fill('#char-desc-input', 'a woman in her 40s with short brown hair');
-    await page.click('#char-save-btn');
-    await page.waitForSelector('#sheet-character-overlay:not(.open)');
-
-    // The just-saved "Me" chip must be selected...
-    var meSelected = await page.locator('.char-chip.selected .chip-edit-area[data-char-edit]').count();
-    assert.equal(meSelected, 1, 'the newly-saved "Me" character must be selected after saving through a normally-opened sheet');
-    // ...AND "A stranger" must STILL be selected too -- this is the exact
-    // founder-reported bug: adding a character used to uncheck it.
-    assert.equal(await page.locator('#subject-other-row [data-subj-other="stranger"]').evaluate(function (el) { return el.classList.contains('sel'); }), true, '"A stranger" must remain selected after adding a character through the sheet -- founder repro: it used to get unchecked');
-  } finally {
-    await context.close();
-  }
-});
 
 // ============================================================================
 // 8. start.html — Advanced > Characters sheet
@@ -1073,41 +989,6 @@ test('create.html character sheet: #app stays capped and the sheet still has a c
     var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
     assert.ok(box.y > 0 && box.y < 844, 'the character sheet must render within the real viewport (y between 0 and 844), got y=' + box.y);
     await page.mouse.click(box.x + box.width / 2, Math.max(1, box.y - 10));
-    await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
-  } finally {
-    await context.close();
-  }
-});
-
-test('wizard.html character sheet: #app stays capped and the sheet still has a correct on-screen position/tappable backdrop even when #fnScreen\'s own content is deliberately made much taller than one viewport (round-1 review finding: this sheet used to be mounted INSIDE #fnScreen, the funnel\'s own scrolling region, not #app)', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var context = await newMobileContext();
-  try {
-    var page = await context.newPage();
-    await blockThirdParty(page);
-    await safeGoto(page, baseUrl + '/wizard.html');
-    await page.click('#fn-q-grid [data-tile="0"]'); // question-first: Flying tile -> build, clean Subject (no auto-sheet)
-    await page.waitForSelector('#subject-chip-row');
-
-    await inflateContentTallerThanViewport(page, '#fnScreen');
-    var appHeight = await page.evaluate(function () { return document.getElementById('app').getBoundingClientRect().height; });
-    assert.ok(appHeight <= 844, '#app.funnel-app must stay capped at the real viewport even once #fnScreen\'s content is deliberately inflated, got ' + appHeight);
-
-    await page.click('#subj-add-other');
-    await waitForSheetSettled(page, '#sheet-character-overlay');
-    var box = await page.locator('#sheet-character-overlay .sheet').boundingBox();
-    assert.ok(box.y > 0 && box.y < 844, 'the character sheet must render within the real viewport (y between 0 and 844), got y=' + box.y + ' -- if this is a large negative number, the sheet is STILL nested inside #fnScreen\'s own scrollable box rather than mounted directly on #app');
-    // Dismiss tap at a LEFT-EDGE x, not the sheet's center: every prior
-    // click in this flow (chooser row, #subj-add-other) lands at the
-    // rows' shared center x, and Playwright's auto-scroll can leave the
-    // trigger row's click point within ~48px of the sheet's top edge --
-    // where a center-x dismiss tap would be (correctly!) swallowed by
-    // js/sheet-dismiss.js's same-POSITION rapid-re-tap guard (75ob70).
-    // The x-offset makes this a genuinely different-position tap, which
-    // is what "a real user deliberately tapping the backdrop" means for
-    // this test; the guard's own swallow behavior has its dedicated
-    // coverage in section 7b.
-    await page.mouse.click(box.x + 24, Math.max(1, box.y - 10));
     await page.waitForSelector('#sheet-character-overlay:not(.open)', { timeout: DISMISS_WAIT_TIMEOUT_MS });
   } finally {
     await context.close();
