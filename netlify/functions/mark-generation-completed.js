@@ -103,6 +103,7 @@ var rateLimit = require('./lib/rate-limit');
 var pendingDreams = require('./lib/pending-dreams');
 var pushDedupStore = require('./lib/push-dedup-store');
 var pushSender = require('./lib/push-sender');
+var posthogCapture = require('./lib/posthog-capture');
 
 var FAL_API_BASE = 'https://queue.fal.run';
 
@@ -296,25 +297,67 @@ exports.handler = async function (event) {
  */
 async function maybeEnqueueUnwatchedNudge(event, operationName) {
   var ownerRecord = await jobOwners.getJobOwnerRecordWithRetry(event, operationName);
-  if (!ownerRecord || !ownerRecord.email) return;
-  if (ownerRecord.mediaType !== 'video') return;
+  if (!ownerRecord || !ownerRecord.email) {
+    await reportEnqueueDecision(operationName, { skipped: 'no_owner' });
+    return;
+  }
+  if (ownerRecord.mediaType !== 'video') {
+    await reportEnqueueDecision(ownerRecord.email, { skipped: 'not_video' });
+    return;
+  }
 
   // Pre-signup ready-email overlap: skip a funnel-started dream whose
   // abandonment email already sent (readyAt set). See this function's own
   // doc comment for the full guard/reasoning.
   if (ownerRecord.pendingId) {
     var pendingRecord = await pendingDreams.getWithReadyRetry(event, ownerRecord.pendingId);
-    if (pendingRecord && pendingRecord.readyAt) return;
+    if (pendingRecord && pendingRecord.readyAt) {
+      await reportEnqueueDecision(ownerRecord.email, { skipped: 'ready_email_overlap' });
+      return;
+    }
   }
 
   var account = await accountStore.getByEmail(event, ownerRecord.email);
-  if (!account || !account.username) return;
+  if (!account || !account.username) {
+    await reportEnqueueDecision(ownerRecord.email, { skipped: 'no_account' });
+    return;
+  }
 
   // Idempotent + best-effort — a duplicate call for the SAME operationName
   // is a harmless no-op against the already-ticking window (onlyIfNew CAS),
   // and a failed enqueue is a silent miss for this one nudge (no failure
   // ever surfaces to the caller), same posture as this function's siblings.
-  await unwatchedDreamNudgeStore.markPending(event, operationName, account.username, account.email);
+  var enqueue = await unwatchedDreamNudgeStore.markPending(event, operationName, account.username, account.email);
+  if (enqueue && enqueue.ok) {
+    await reportEnqueueDecision(account.username, enqueue.alreadyPending ? { enqueued: true, already_pending: true } : { enqueued: true });
+  } else {
+    await reportEnqueueDecision(account.username, { skipped: 'enqueue_failed' });
+  }
+}
+
+/**
+ * Durable enqueue-DECISION telemetry (added for the "unwatched nudge went
+ * silently dead" root-cause fix — this path fired ZERO sends AND zero skips
+ * for 7+ days with no signal at all at the decision point, so there was no
+ * way to tell an empty queue from a starved sender from a broken guard).
+ * Fires 'unwatched_dream_nudge_enqueue_decision' with { enqueued:true } on a
+ * real enqueue, or { skipped:<reason> } for every early-exit guard above
+ * ('no_owner' | 'not_video' | 'ready_email_overlap' | 'no_account' |
+ * 'enqueue_failed'), so the morning report can WATCH this path and it can
+ * never silently die unnoticed again. Best-effort — never throws, never
+ * affects the enqueue outcome, same posture as every other analytics-
+ * adjacent call in this handler (a distinct_id is always passed: the
+ * account username / owner email when known, else the operationName, so the
+ * event always has a stable key even in the no-owner branch).
+ */
+async function reportEnqueueDecision(distinctId, outcome) {
+  try {
+    await posthogCapture.captureEvent({
+      event: 'unwatched_dream_nudge_enqueue_decision',
+      distinct_id: distinctId || 'unknown',
+      properties: outcome || {}
+    });
+  } catch (e) { /* analytics must never break the app */ }
 }
 
 /**

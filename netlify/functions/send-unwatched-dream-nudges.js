@@ -74,6 +74,7 @@ var nudgeStore = require('./lib/unwatched-dream-nudge-store');
 var resultViewStore = require('./lib/result-view-store');
 var dreamStore = require('./lib/dream-store');
 var nudgeSender = require('./lib/unwatched-dream-nudge-sender');
+var posthogCapture = require('./lib/posthog-capture');
 
 // The "unwatched" floor: don't nudge until at least this long after the
 // dream became ready, giving the user a real chance to watch it first.
@@ -100,6 +101,28 @@ var TERMINAL_SKIPS = {
   // step-1-to-send race the sender re-check closes.
   already_viewed: true
 };
+
+/**
+ * Best-effort DROP telemetry — fires 'unwatched_dream_nudge_dropped', never
+ * throws. A give-up drop (no thumbnail ever synced, or a send that never
+ * succeeded before the window closed) is the ONE outcome that otherwise
+ * emits NOTHING (the sender's sent/skipped events only fire once the scan
+ * reaches sendIfEligible with a real thumbnail), so it was the exact blind
+ * spot that hid this nudge being dead — a queue full of thumbnail-starved
+ * records draining to zero sends with no signal. Surfacing it lets the
+ * morning report tell "nobody eligible" from "everybody dropped for lack of
+ * a thumbnail" (the post-processing.html-removal regression this build also
+ * fixes on the capture side).
+ */
+async function reportDrop(record, reason) {
+  try {
+    await posthogCapture.captureEvent({
+      event: 'unwatched_dream_nudge_dropped',
+      distinct_id: (record && (record.username || record.email)) || 'unknown',
+      properties: { reason: reason }
+    });
+  } catch (e) { /* analytics must never break the app */ }
+}
 
 /** Finds the private dream (if any) whose sourceOperationName matches — the zero-new-client-contract correlation on the already-synced private-dream record. */
 function findDreamForOperation(dreams, operationName) {
@@ -181,6 +204,7 @@ async function scanAndSend(event) {
       if (elapsedMs >= GIVE_UP_AFTER_MS) {
         await nudgeStore.removePending(event, operationName);
         result.droppedNoThumbnail++;
+        await reportDrop(record, 'send_never_succeeded');
         continue;
       }
       result.stillWaiting++;
@@ -191,6 +215,7 @@ async function scanAndSend(event) {
     if (elapsedMs >= GIVE_UP_AFTER_MS) {
       await nudgeStore.removePending(event, operationName);
       result.droppedNoThumbnail++;
+      await reportDrop(record, 'no_thumbnail');
       continue;
     }
     result.stillWaiting++;

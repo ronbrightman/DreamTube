@@ -1750,6 +1750,114 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   }
   renderDay0Card();
 
+  // ===== Video-frame thumbnail capture at the COMPLETION landing point =====
+  // (root-cause fix for the dead "unwatched dream" retention nudge). The
+  // dream's server-side `imageUrl` thumbnail — which
+  // send-unwatched-dream-nudges.js REQUIRES before it will ever send the
+  // "your dream is ready to watch" email — is captured ONLY from an
+  // autoplaying <video> frame. It used to be captured reliably because every
+  // completion routed processing.html -> result.html (where the capture
+  // lives). Since that flow moved here (the completion now lands on Home,
+  // and a user who doesn't tap into result.html never triggers result.html's
+  // own capture), a completed VIDEO dream's `imageUrl` stayed null forever,
+  // so every enqueued nudge for a NON-watcher was silently dropped at the
+  // scan's give-up step (no send, no skip event — exactly the 0/0 symptom).
+  //
+  // This restores the capture at the new landing point: it hooks the SAME
+  // #d0-video-el that already autoplays the finished dream here. The capture
+  // logic is deliberately duplicated from (and kept identical to)
+  // result.html's own thumbnail-capture IIFE rather than shared — same
+  // "each self-contained surface keeps its own copy of a small, DOM-specific
+  // bit" convention this codebase uses elsewhere — see result.html's IIFE
+  // header comment for the FULL writeup of why the capture draws from a
+  // SEPARATE detached crossOrigin element (never the real playback element,
+  // whose cross-origin loading must never be touched) and why it's gated on
+  // a real decoded frame ('timeupdate' + currentTime/readyState), not just
+  // metadata. saveThumbnailBestEffort itself re-checks ownership + a
+  // still-missing imageUrl before using the result.
+  (function(){
+    var video = document.getElementById('d0-video-el');
+    if(!video) return;
+    var CAPTURE_AFTER_SECONDS = 0.1;
+    var CAPTURE_TIMEOUT_MS = 6000;
+    // Keyed by dream id so a re-render to a DIFFERENT completed dream gets its
+    // own single attempt, while repeated timeupdate ticks for the same dream
+    // never re-fire.
+    var attemptedForId = null;
+
+    // The completed VIDEO dream currently shown ready in the card (d0DreamId
+    // is set by renderDay0CardReady), resolved fresh off myDreams each tick.
+    function currentReadyVideoDream(){
+      if(!d0DreamId) return null;
+      var d = null;
+      for(var i=0;i<myDreams.length;i++){ if(myDreams[i] && myDreams[i].id === d0DreamId){ d = myDreams[i]; break; } }
+      if(!d || !d.videoUrl || d.imageUrl) return null;
+      return d;
+    }
+
+    function runCapture(dream){
+      var capture = document.createElement('video');
+      capture.crossOrigin = 'anonymous';
+      capture.muted = true;
+      capture.playsInline = true;
+      capture.preload = 'auto';
+      capture.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;top:-9999px;left:-9999px;';
+
+      var settled = false;
+      var timeoutId = null;
+
+      function cleanup(){
+        if(timeoutId){ clearTimeout(timeoutId); timeoutId = null; }
+        capture.removeEventListener('timeupdate', onTimeUpdate);
+        capture.removeEventListener('error', onError);
+        try { capture.pause(); } catch (e) {}
+        capture.removeAttribute('src');
+        try { capture.load(); } catch (e) {}
+        if(capture.parentNode) capture.parentNode.removeChild(capture);
+      }
+      function finish(){ if(settled) return; settled = true; cleanup(); }
+      function onError(){ finish(); }
+      function onTimeUpdate(){
+        if(settled) return;
+        if(capture.currentTime < CAPTURE_AFTER_SECONDS) return;
+        if(capture.readyState < 2) return; // HAVE_CURRENT_DATA — a real decoded frame
+        try {
+          var w = capture.videoWidth || 480;
+          var h = capture.videoHeight || 270;
+          var canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d').drawImage(capture, 0, 0, w, h);
+          var dataUrl = canvas.toDataURL('image/jpeg', 0.72);
+          DreamStore.saveThumbnailBestEffort(dream.id, dataUrl);
+        } catch (e) { /* tainted canvas / decode issue — best-effort no-op */ }
+        finish();
+      }
+
+      capture.addEventListener('timeupdate', onTimeUpdate);
+      capture.addEventListener('error', onError);
+      timeoutId = setTimeout(finish, CAPTURE_TIMEOUT_MS);
+      try {
+        capture.src = dream.videoUrl;
+        document.body.appendChild(capture);
+        var playResult = capture.play();
+        if(playResult && typeof playResult.catch === 'function'){
+          playResult.catch(function(){ /* autoplay blocked — the timeout cleans up */ });
+        }
+      } catch (e) { finish(); }
+    }
+
+    function maybeCapture(){
+      var dream = currentReadyVideoDream();
+      if(!dream) return;
+      if(attemptedForId === dream.id) return;
+      if(video.currentTime < CAPTURE_AFTER_SECONDS) return;
+      if(video.readyState < 2) return; // proof the real element is actually decoding/playing
+      attemptedForId = dream.id;
+      try { runCapture(dream); } catch (e) { /* must never affect the real playback video */ }
+    }
+    video.addEventListener('timeupdate', maybeCapture);
+  })();
+
   document.getElementById('d0-play-icon').innerHTML = window.Icons ? Icons.play : '';
   document.getElementById('d0-watch-icon').innerHTML = window.Icons ? Icons.play : '';
   document.getElementById('d0-make-another-icon').innerHTML = window.Icons ? Icons.plus : '';
