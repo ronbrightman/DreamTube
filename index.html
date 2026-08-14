@@ -128,34 +128,19 @@
     <div class="wm-copy">Your dreams<br>come <i>alive.</i></div>
     <div class="wm-subcopy">Turn your dreams into videos.</div>
     <div class="wm-foot">
-      <!-- Founder decision 2026-07-26 (tracker item
-           for-product-route-organic-direct-visitor-olu8md): organic/direct
-           visitors landing here now go straight into the pre-signup
-           wizard.html dream-builder instead of the external growth funnel
-           (https://dreamtubeapp.netlify.app/), per WIZARD_SPEC.md's
-           confirmed "build the dream first, sign up after" seam. This is
-           routing-only — wizard.html itself is unchanged, and does not
-           read any URL params, so it works identically whether reached
-           from here or hit directly. wizard.html's own Contact/Signup
-           steps then hand off into the SAME processing.html/start.html
-           post-signup tail the paid ad funnel uses (see
-           docs/JOURNEY_MANIFEST.md for the full, reconciled screen-by-
-           screen walkthrough of both entries).
-
-           The PAID growth-funnel handoff is completely untouched by this:
-           paid/ad traffic never passes through this button at all — ads
-           land visitors directly on the external funnel
-           (https://dreamtubeapp.netlify.app/), whose own hook/quiz/style
-           screens (a separate dreamtube-growth repo) still hand off into
-           start.html?resume=1&... exactly as before (see start.html's own
-           "Entry guard" comment). Previously this button pointed at that
-           same external funnel for EVERY visitor, organic included; per
-           this decision organic/direct traffic is redirected to wizard.html
-           while the paid path (which never touches index.html) is
-           unaffected. See the for-product-build-the-dream-builder-wiza-28did1
-           tracker item for the earlier, held-back proposal of this exact
-           change. -->
-      <a class="btn btn-primary btn-block" href="wizard.html?entry=index">Get Started</a>
+      <!-- Founder decision 2026-08-14 (unify-all-creation-flows): organic/
+           direct visitors now go through the SAME creation funnel as paid
+           ad traffic — the /go/ path, which same-origin-proxies to the
+           dreamtube-growth funnel (see netlify.toml's /go/* rewrite). This
+           REVERSES the 2026-07-26 routing (which sent organic into the
+           app's own wizard.html builder) so there is ONE creation flow for
+           ads + homepage + logged-in instead of three drifting copies. The
+           funnel builds the dream and hands off (?resume=1&caption=...) into
+           the same start.html/wizard.html signup tail as before; the
+           app-side wizard.html creation UI is being retired to a
+           funnel-arrival receiver. utm_source=organic keeps these entries
+           distinguishable from paid (utm_content) in PostHog. -->
+      <a class="btn btn-primary btn-block" href="/go/?utm_source=organic&utm_medium=homepage">Get Started</a>
       <span class="link-text">Already have an account? <a href="login.html">Log in</a></span>
     </div>
   </div>
