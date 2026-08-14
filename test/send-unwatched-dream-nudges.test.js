@@ -279,3 +279,80 @@ test('SEND-TIME viewed re-check: the sender itself refuses to send if a viewed m
   var guard = await nudgeStore.markNudgedOnce(fakeEvent({}), op, 'd-sendrace');
   assert.ok(guard.ok, 'the watched re-check must skip BEFORE claiming the guard — it must still be claimable');
 });
+
+// ===== SHORT recovery-delay floor for server-side (webview-leaver) enqueues =====
+//
+// A record flagged `recoveryEnqueue` (dream-webhook.js's server-side enqueue,
+// fired when the CLIENT never marked completion — an FB/IG-webview leaver) uses
+// a SHORTER pre-send floor so the recovery email — whose link opens the user's
+// real browser to the durably-saved video — lands promptly. The watched/active
+// guard is fully intact: the shorter floor only changes how soon we CHECK-and-
+// send. Env-tunable via RECOVERY_NUDGE_DELAY_MS / UNWATCHED_NUDGE_DELAY_MS.
+
+/** Like enqueueAged, but flags the record recoveryEnqueue (the server-side webhook enqueue path). */
+async function enqueueAgedRecovery(operationName, username, email, ageMs) {
+  await nudgeStore.markPending(fakeEvent({}), operationName, username, email, { recovery: true });
+  var record = await nudgeStore.getPending(fakeEvent({}), operationName);
+  assert.equal(record.recoveryEnqueue, true, 'test setup: the recovery flag must be stored on the pending record');
+  var age = (typeof ageMs === 'number') ? ageMs : (sendNudges.RECOVERY_READY_AGE_MS + 5000);
+  mockBlobs.seed(nudgeStore.PENDING_STORE_NAME, operationName, Object.assign({}, record, {
+    triggeredAt: Date.now() - age
+  }));
+}
+
+test('a RECOVERY-flagged dream SENDS after the SHORT recovery floor while a standard-enqueued dream of the SAME age still WAITS', async function () {
+  delete process.env.RECOVERY_NUDGE_DELAY_MS;
+  delete process.env.UNWATCHED_NUDGE_DELAY_MS;
+  // An age past the 3-min recovery floor but still inside the 7-min standard floor.
+  var age = sendNudges.RECOVERY_READY_AGE_MS + 30 * 1000;
+  assert.ok(age < sendNudges.READY_AGE_MS, 'sanity: this age is inside the standard floor');
+
+  var opStd = 'mock:1:std-young';
+  await enqueueAged(opStd, 'stduser', 'stduser@example.com', age); // client-enqueued (no recovery flag)
+  await seedDream('stduser', opStd, { storyText: 'client dream', imageUrl: 'https://img.example/c.jpg' });
+
+  var opRec = 'mock:1:rec-young';
+  await enqueueAgedRecovery(opRec, 'recuser', 'recuser@example.com', age); // server-enqueued (recovery)
+  await seedDream('recuser', opRec, { storyText: 'recovery dream', imageUrl: 'https://img.example/r.jpg' });
+
+  var spies = installFetchSpy();
+  var result = await sendNudges.scanAndSend(fakeEvent({}));
+
+  assert.equal(result.sent, 1, 'only the recovery dream is eligible at this age');
+  assert.equal(result.stillWaiting, 1, 'the standard dream keeps waiting under the longer floor');
+  assert.equal(spies.resendCalls.length, 1);
+  assert.deepEqual(spies.resendCalls[0].body.to, ['recuser@example.com'], 'only the recovery dream got the prompt email');
+  assert.ok(await nudgeStore.getPending(fakeEvent({}), opStd), 'the standard dream is still enqueued');
+  assert.equal(await nudgeStore.getPending(fakeEvent({}), opRec), null, 'the recovery dream was sent and dequeued');
+});
+
+test('the WATCHED guard still suppresses a RECOVERY-flagged dream — the short floor never emails someone who already watched', async function () {
+  delete process.env.RECOVERY_NUDGE_DELAY_MS;
+  var op = 'mock:1:rec-watched';
+  await enqueueAgedRecovery(op, 'recwatch', 'recwatch@example.com');
+  await seedDream('recwatch', op, { storyText: 'watched recovery', imageUrl: 'https://img.example/w.jpg' });
+  await resultViewStore.markViewed(fakeEvent({}), op); // they watched it
+  var spies = installFetchSpy();
+
+  var result = await sendNudges.scanAndSend(fakeEvent({}));
+  assert.equal(result.suppressedViewed, 1);
+  assert.equal(result.sent, 0);
+  assert.equal(spies.resendCalls.length, 0, 'a watched dream is suppressed even on the short recovery floor');
+});
+
+test('RECOVERY_NUDGE_DELAY_MS env var tunes the recovery floor (a record younger than the override waits)', async function () {
+  process.env.RECOVERY_NUDGE_DELAY_MS = String(20 * 60 * 1000); // override to 20 min
+  try {
+    var op = 'mock:1:rec-envtune';
+    await enqueueAgedRecovery(op, 'envuser', 'envuser@example.com', 5 * 60 * 1000); // 5 min: past 3-min default, inside 20-min override
+    await seedDream('envuser', op, { storyText: 'tuned', imageUrl: 'https://img.example/t.jpg' });
+    var spies = installFetchSpy();
+
+    var result = await sendNudges.scanAndSend(fakeEvent({}));
+    assert.equal(result.stillWaiting, 1, 'the env-overridden longer recovery floor keeps it waiting');
+    assert.equal(result.sent, 0);
+    assert.equal(spies.resendCalls.length, 0);
+  } finally {
+    delete process.env.RECOVERY_NUDGE_DELAY_MS;
+  }
+});

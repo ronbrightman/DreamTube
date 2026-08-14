@@ -18,6 +18,8 @@ mockBlobs.install();
 var { fakeEvent } = require('./helpers/fake-event');
 var falWebhookVerify = require('../netlify/functions/lib/fal-webhook-verify');
 var pendingDreams = require('../netlify/functions/lib/pending-dreams');
+var accountStore = require('../netlify/functions/lib/account-store');
+var dreamStore = require('../netlify/functions/lib/dream-store');
 var handler = require('../netlify/functions/dream-webhook').handler;
 
 var realFetch = global.fetch;
@@ -360,4 +362,182 @@ test('an already-claimed record also gets the RE-HOSTED url in its bookkeeping-o
   var updated = await pendingDreams.get({}, record.id);
   assert.equal(updated.status, 'claimed');
   assert.equal(updated.videoUrl, '/.netlify/functions/video-file?key=req-webhook-rehost-claimed');
+});
+
+// ===== SERVER-SIDE DURABLE PERSIST (E304 dream_sync_unconfirmed / P0 vanish) =====
+//
+// When a funnel generation completes AND its email resolves to a real account,
+// dream-webhook.js now persists the finished video into that account's durable
+// private-dream store itself — so a wiped/closed FB-IG-webview client that
+// never confirmed its own dream-sync can no longer lose the (already-billed)
+// video. reconcilePrivateDreamsFromServer pulls it back on the user's next
+// load. Best-effort: it must never break the webhook's own markReady/notify/ack.
+
+test('completion for a REGISTERED account persists a durable private-dream server-side', async function () {
+  await accountStore.createAccount({}, { username: 'dreamer', email: 'dreamer@example.com', password: 'pw' });
+  var record = await pendingDreams.create({}, {
+    email: 'dreamer@example.com', caption: 'engineered prompt', storyText: 'I flew over a city',
+    style: 'Cinematic', operationName: 'fal:veo/x:req-persist-1'
+  });
+  var res = await handler(webhookEvent({
+    bodyObj: { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  assert.equal(res.statusCode, 200);
+
+  var dreams = await dreamStore.getPrivateDreams({}, 'dreamer');
+  assert.equal(dreams.length, 1, 'the finished video is now durably attached to the account server-side');
+  var d = dreams[0];
+  assert.equal(d.sourceOperationName, 'fal:veo/x:req-persist-1');
+  assert.equal(d.ownerHandle, '@dreamer');
+  assert.equal(d.videoUrl, 'https://cdn.fal/finished.mp4');
+  assert.equal(d.mediaType, 'video');
+  assert.equal(d.dur, '0:08');
+  assert.equal(d.caption, 'I flew over a city', 'human-readable storyText maps to caption (matches finalizeDream)');
+  assert.equal(d.storyText, 'I flew over a city');
+  assert.equal(d.promptText, 'engineered prompt', 'the engineered caption maps to promptText');
+  assert.equal(d.isPublished, false);
+  assert.equal(d.mood, null, "a field the server can't know at completion stays null, never fabricated");
+  assert.equal(d.id, dreamStore.serverDreamId('fal:veo/x:req-persist-1'));
+});
+
+test('completion for an email with NO account yet persists NOTHING and never throws (webhook still acks + notifies)', async function () {
+  var record = await pendingDreams.create({}, {
+    email: 'not-registered@example.com', caption: 'p', storyText: 'a dream',
+    style: 'Cinematic', operationName: 'fal:veo/x:req-persist-2'
+  });
+  process.env.RESEND_API_KEY = 'test-resend-key';
+  var res = await handler(webhookEvent({
+    bodyObj: { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  assert.equal(res.statusCode, 200, 'webhook still acks normally');
+  var updated = await pendingDreams.get({}, record.id);
+  assert.equal(updated.status, 'notified', 'the normal webhook flow (ready/notify + email) still completes');
+  // No account -> no username to key by -> nothing durable persisted.
+  var dreams = await dreamStore.getPrivateDreams({}, accountStore.normalizeUsername('not-registered@example.com'));
+  assert.equal(dreams.length, 0);
+});
+
+test('the already-claimed branch also persists the durable dream for the (now registered) account', async function () {
+  await accountStore.createAccount({}, { username: 'claimer', email: 'claimer@example.com', password: 'pw' });
+  var record = await pendingDreams.create({}, {
+    email: 'claimer@example.com', caption: 'p', storyText: 'claimed dream',
+    style: 'Cinematic', operationName: 'fal:veo/x:req-persist-3'
+  });
+  await pendingDreams.markClaimed({}, record.id);
+  var res = await handler(webhookEvent({
+    bodyObj: { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  assert.equal(res.statusCode, 200);
+  var updated = await pendingDreams.get({}, record.id);
+  assert.equal(updated.status, 'claimed', 'never downgraded back to ready');
+  var dreams = await dreamStore.getPrivateDreams({}, 'claimer');
+  assert.equal(dreams.length, 1);
+  assert.equal(dreams[0].videoUrl, 'https://cdn.fal/finished.mp4');
+  assert.equal(dreams[0].sourceOperationName, 'fal:veo/x:req-persist-3');
+});
+
+test('a completion with no operationName on the pending record persists nothing, without throwing', async function () {
+  await accountStore.createAccount({}, { username: 'noop', email: 'noop@example.com', password: 'pw' });
+  var record = await pendingDreams.create({}, {
+    email: 'noop@example.com', caption: 'p', storyText: 'a dream', style: 'Cinematic'
+    // operationName deliberately omitted (defaults null)
+  });
+  var res = await handler(webhookEvent({
+    bodyObj: { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  assert.equal(res.statusCode, 200);
+  var dreams = await dreamStore.getPrivateDreams({}, 'noop');
+  assert.equal(dreams.length, 0, 'no operation to dedup/key by -> nothing persisted (never an un-dedup-able record)');
+});
+
+test('DEDUP end-to-end: a client dream-sync for the SAME operation after the webhook persist converges to ONE journal entry', async function () {
+  await accountStore.createAccount({}, { username: 'conv', email: 'conv@example.com', password: 'pw' });
+  var op = 'fal:veo/x:req-persist-4';
+  var record = await pendingDreams.create({}, {
+    email: 'conv@example.com', caption: 'p', storyText: 'converging dream', style: 'Cinematic', operationName: op
+  });
+  await handler(webhookEvent({
+    bodyObj: { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  // The client (finally, on a later load) syncs its OWN copy of the same generation,
+  // under its own random id and with a richer mood field.
+  await dreamStore.upsertPrivateDream({}, 'conv', {
+    id: 'd-client-random', ownerHandle: '@conv', sourceOperationName: op,
+    caption: 'converging dream', style: 'Cinematic', mediaType: 'video',
+    videoUrl: 'https://cdn.fal/finished.mp4', mood: 'dreamy', updatedAt: Date.now()
+  });
+  var dreams = await dreamStore.getPrivateDreams({}, 'conv');
+  assert.equal(dreams.length, 1, 'server persist + client sync of one generation = one dream, never two');
+  assert.equal(dreams[0].id, 'd-client-random', 'the client copy wins');
+  assert.equal(dreams[0].mood, 'dreamy', 'the richer client field lands');
+});
+
+// ===== SERVER-SIDE RECOVERY-EMAIL ENQUEUE (E304 / vanish recovery, founder-approved) =====
+//
+// The "unwatched dream" nudge — the email whose link opens the user's REAL
+// browser (not the FB/IG in-app webview) where the durably-saved video waits —
+// was enqueued ONLY client-side (home.html -> mark-generation-completed). A
+// webview user who leaves before home.html loads never enqueued it. The webhook
+// (fal's own completion) now ALSO enqueues it in the already-claimed branch,
+// needing no surviving client. Convergence to exactly ONE nudge is guaranteed
+// by unwatchedDreamNudgeStore.markPending's onlyIfNew CAS keyed by operationName.
+
+test('the claimed branch ENQUEUES the recovery nudge server-side — no client mark-generation-completed needed', async function () {
+  var jobOwners = require('../netlify/functions/lib/job-owners');
+  var nudgeStore = require('../netlify/functions/lib/unwatched-dream-nudge-store');
+  await accountStore.createAccount({}, { username: 'recov', email: 'recov@example.com', password: 'pw' });
+  var op = 'fal:veo/x:req-nudge-1';
+  var record = await pendingDreams.create({}, {
+    email: 'recov@example.com', caption: 'p', storyText: 'a recoverable dream', style: 'Cinematic', operationName: op
+  });
+  // Funnel job-owner binding (recorded at submission time in real life), keyed to
+  // this pending record so the nudge's own readyAt-overlap guard reads it.
+  await jobOwners.recordJobOwner({}, op, 'recov@example.com', 'video', record.id);
+  await pendingDreams.markClaimed({}, record.id); // signed up, but the client never fired mark-generation-completed
+
+  var res = await handler(webhookEvent({
+    bodyObj: { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  assert.equal(res.statusCode, 200);
+
+  var nudge = await nudgeStore.getPending({}, op);
+  assert.ok(nudge, 'the webhook must enqueue the recovery nudge even with no client completion call');
+  assert.equal(nudge.username, 'recov');
+  assert.equal(nudge.email, 'recov@example.com');
+});
+
+test('CONVERGENCE: a later client mark-generation-completed enqueue for the SAME operation does NOT double-enqueue (one nudge)', async function () {
+  var jobOwners = require('../netlify/functions/lib/job-owners');
+  var nudgeStore = require('../netlify/functions/lib/unwatched-dream-nudge-store');
+  var markGenerationCompleted = require('../netlify/functions/mark-generation-completed');
+  await accountStore.createAccount({}, { username: 'conv2', email: 'conv2@example.com', password: 'pw' });
+  var op = 'fal:veo/x:req-nudge-2';
+  var record = await pendingDreams.create({}, {
+    email: 'conv2@example.com', caption: 'p', storyText: 'a dream', style: 'Cinematic', operationName: op
+  });
+  await jobOwners.recordJobOwner({}, op, 'conv2@example.com', 'video', record.id);
+  await pendingDreams.markClaimed({}, record.id);
+
+  // 1) Webhook enqueues (server-side).
+  await handler(webhookEvent({
+    bodyObj: { status: 'OK', payload: { video: { url: 'https://cdn.fal/finished.mp4' } } },
+    query: { pendingId: record.id }
+  }));
+  var first = await nudgeStore.getPending({}, op);
+  assert.ok(first, 'server-side enqueue landed');
+
+  // 2) The client (finally) fires its own enqueue for the SAME operation.
+  await markGenerationCompleted.maybeEnqueueUnwatchedNudge({ headers: {} }, op);
+
+  // Still exactly one pending nudge, unchanged — the onlyIfNew CAS made the
+  // second enqueue a harmless no-op (never a second nudge, never a double-send).
+  var second = await nudgeStore.getPending({}, op);
+  assert.ok(second, 'the nudge is still pending');
+  assert.equal(second.triggeredAt, first.triggeredAt, 'the second enqueue did not overwrite/re-create the pending nudge');
 });

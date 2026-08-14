@@ -1874,37 +1874,86 @@
       .then(function (data) {
         if (!data || data.ok !== true || !Array.isArray(data.dreams)) return;
 
+        // A dream's stable cross-device/cross-writer key is its
+        // sourceOperationName (the fal operation), NOT its id — the client
+        // mints a random `d<...>` id in finalizeDream while a SERVER-side
+        // persist (dream-webhook.js, the E304/vanish backstop) mints its own
+        // operation-derived id for the SAME generation. Matching on operation
+        // is what stops those two copies from becoming two journal entries.
+        function keyOp(d) {
+          return (d && typeof d.sourceOperationName === 'string' && d.sourceOperationName) ? d.sourceOperationName : null;
+        }
+
         var localById = {};
+        var localByOp = {};
         state.dreams.forEach(function (d) {
-          if (d.ownerHandle === myHandle) localById[d.id] = d;
+          if (d.ownerHandle !== myHandle) return;
+          localById[d.id] = d;
+          var op = keyOp(d);
+          if (op && !localByOp[op]) localByOp[op] = d;
         });
 
         var changed = false;
         var serverIds = {};
+        var serverOps = {};
         data.dreams.forEach(function (serverDream) {
+          // Every dream dream-sync returns belongs to the VERIFIED caller (the
+          // server resolves them from the authToken, never a client claim), so
+          // re-stamp ownerHandle to this session's own handle. This keeps
+          // getMyDreams's exact-`===` ownership filter working after a fresh-
+          // device login that pinned a different CASING than the stored copy
+          // (see login()'s displayUsername), and lets a SERVER-persisted
+          // restore — which only ever knew the canonical lowercase handle —
+          // actually appear in the journal.
+          serverDream.ownerHandle = myHandle;
           serverIds[serverDream.id] = true;
-          var local = localById[serverDream.id];
+          var op = keyOp(serverDream);
+          if (op) serverOps[op] = true;
+
+          // Match by id first, then by operation — so a server record for a
+          // generation this device also has locally under its own random id
+          // resolves to the SAME dream rather than duplicating it.
+          var local = localById[serverDream.id] || (op ? localByOp[op] : null);
           if (!local) {
             state.dreams.push(serverDream);
             localById[serverDream.id] = serverDream;
+            if (op) localByOp[op] = serverDream;
             changed = true;
             return;
           }
           if (local.isPublished) return; // local already authoritative — see doc comment
+
+          var idsDiffer = local.id !== serverDream.id;
           var localUpdatedAt = local.updatedAt || 0;
           var serverUpdatedAt = serverDream.updatedAt || 0;
+          var pushLocal = false;
           if (serverUpdatedAt > localUpdatedAt) {
+            // Take the server's newer copy, but NEVER let the merge change
+            // this device's local id (any in-session reference to it would
+            // dangle) — preserve local.id even when matched by operation.
+            var preservedId = local.id;
             Object.assign(local, serverDream);
+            local.id = preservedId;
             changed = true;
+            if (idsDiffer) pushLocal = true; // converge the server side onto this one id
           } else if (localUpdatedAt > serverUpdatedAt) {
-            syncPrivateDreamBestEffort(local);
+            pushLocal = true;
+          } else if (idsDiffer) {
+            // Same updatedAt, two ids for one operation (a server backstop +
+            // this device's own copy) — push local so upsertPrivateDream's
+            // operation-dedup collapses the server side onto this one id.
+            pushLocal = true;
           }
+          if (pushLocal) syncPrivateDreamBestEffort(local);
         });
 
-        // Catch-up: any private dream this device has that the server
-        // doesn't know about at all yet (e.g. created while offline).
+        // Catch-up: any private dream this device has that the server doesn't
+        // know about yet — checked by id AND by operation (e.g. created while
+        // offline).
         state.dreams.forEach(function (d) {
-          if (d.ownerHandle === myHandle && !d.isPublished && !serverIds[d.id]) {
+          if (d.ownerHandle !== myHandle || d.isPublished) return;
+          var op = keyOp(d);
+          if (!serverIds[d.id] && !(op && serverOps[op])) {
             syncPrivateDreamBestEffort(d);
           }
         });

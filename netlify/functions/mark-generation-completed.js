@@ -295,7 +295,7 @@ exports.handler = async function (event) {
  * derived from operationName alone (mock-mode operationNames are identical
  * strings for both kinds).
  */
-async function maybeEnqueueUnwatchedNudge(event, operationName) {
+async function maybeEnqueueUnwatchedNudge(event, operationName, options) {
   var ownerRecord = await jobOwners.getJobOwnerRecordWithRetry(event, operationName);
   if (!ownerRecord || !ownerRecord.email) {
     await reportEnqueueDecision(operationName, { skipped: 'no_owner' });
@@ -327,7 +327,12 @@ async function maybeEnqueueUnwatchedNudge(event, operationName) {
   // is a harmless no-op against the already-ticking window (onlyIfNew CAS),
   // and a failed enqueue is a silent miss for this one nudge (no failure
   // ever surfaces to the caller), same posture as this function's siblings.
-  var enqueue = await unwatchedDreamNudgeStore.markPending(event, operationName, account.username, account.email);
+  // `options.recovery` (passed only by dream-webhook.js's server-side enqueue —
+  // the webview-leaver recovery path) flags the record for the SHORTER pre-send
+  // delay in send-unwatched-dream-nudges.js; the client caller (home.html →
+  // this handler) omits it and keeps the standard delay. onlyIfNew CAS means
+  // whichever caller enqueues first sets it — see markPending's own doc comment.
+  var enqueue = await unwatchedDreamNudgeStore.markPending(event, operationName, account.username, account.email, options && options.recovery ? { recovery: true } : undefined);
   if (enqueue && enqueue.ok) {
     await reportEnqueueDecision(account.username, enqueue.alreadyPending ? { enqueued: true, already_pending: true } : { enqueued: true });
   } else {
@@ -426,3 +431,17 @@ exports.verifyOperationCompleted = verifyOperationCompleted;
 // Exposed for direct unit testing (test/video-ready-push.test.js) -- not
 // used by any other production caller.
 exports.maybeSendVideoReadyPush = maybeSendVideoReadyPush;
+// Exposed so dream-webhook.js can fire the SAME server-side "unwatched dream"
+// recovery-email enqueue at fal-completion time (E304 dream_sync_unconfirmed /
+// P0 vanish recovery — the SECOND server-side enqueue point). The client only
+// ever POSTs mark-generation-completed from home.html's markGenerationJust-
+// Completed, so an FB/IG-webview user who leaves before home.html loads never
+// enqueues the "your dream is ready" email; enqueuing it from the webhook too
+// closes that gap. Safe to call from both: markPending's onlyIfNew CAS is keyed
+// by operationName, so a server-side enqueue and any later client-side one for
+// the SAME generation converge to exactly ONE nudge (never a double-send), and
+// the readyAt overlap guard inside still suppresses it for a dream whose
+// pre-signup abandonment email already sent. Reused, not re-implemented, so the
+// enqueue decision (owner lookup, video-only scope, overlap guard, account
+// resolution, decision telemetry) can never drift between the two call sites.
+exports.maybeEnqueueUnwatchedNudge = maybeEnqueueUnwatchedNudge;

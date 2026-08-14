@@ -219,3 +219,115 @@ test('MAX_DREAMS_PER_ACCOUNT caps the array — the just-upserted dream is never
   assert.equal(dreamsAfterOverflow.length, cap, 'must stay capped, never grow past it');
   assert.ok(dreamsAfterOverflow.some(function (d) { return d.id === 'over-the-cap'; }), 'the just-upserted dream must still survive even when the cap is genuinely exceeded');
 });
+
+// ===== DEDUP BY sourceOperationName (E304 dream_sync_unconfirmed / P0 vanish) =====
+//
+// The crux of persisting a completed generation server-side (dream-webhook.js's
+// backstop) WITHOUT ever producing two journal entries for one generation. A
+// dream's id is NOT a stable cross-writer key — the client mints a random
+// `d<...>` id, the server persist mints its own operation-derived id — so
+// convergence is designed around the shared sourceOperationName. Each ordering
+// below is proven to converge to exactly one record. See dream-store.js's
+// DEDUP-BY-OPERATION block for the design.
+
+test('serverDreamId is deterministic per operation and cannot collide with a client id shape', function () {
+  var a = dreamStore.serverDreamId('fal:veo/x:req-1');
+  var b = dreamStore.serverDreamId('fal:veo/x:req-1');
+  var c = dreamStore.serverDreamId('fal:veo/x:req-2');
+  assert.equal(a, b, 'same operation -> same id (idempotent server persist)');
+  assert.notEqual(a, c, 'different operations -> different ids');
+  assert.match(a, /^srv[0-9a-f]{16}$/, "srv-prefixed hex, a shape finalizeDream's newId() never emits");
+});
+
+test('backfillServerDream inserts a durable dream when none exists yet', async function () {
+  var event = fakeEvent({});
+  var op = 'fal:veo/x:req-b1';
+  var res = await dreamStore.backfillServerDream(event, 'alice', dream(dreamStore.serverDreamId(op), { sourceOperationName: op }));
+  assert.equal(res.ok, true);
+  assert.equal(res.inserted, true);
+  var dreams = await dreamStore.getPrivateDreams(event, 'alice');
+  assert.equal(dreams.length, 1);
+  assert.equal(dreams[0].sourceOperationName, op);
+});
+
+test('backfillServerDream is idempotent — a second persist of the same operation never duplicates', async function () {
+  var event = fakeEvent({});
+  var op = 'fal:veo/x:req-b2';
+  var d = dream(dreamStore.serverDreamId(op), { sourceOperationName: op });
+  await dreamStore.backfillServerDream(event, 'alice', d);
+  var second = await dreamStore.backfillServerDream(event, 'alice', d);
+  assert.equal(second.ok, true);
+  assert.equal(second.existed, true, 'the second persist reports the record already existed');
+  var dreams = await dreamStore.getPrivateDreams(event, 'alice');
+  assert.equal(dreams.length, 1);
+});
+
+test('ORDERING client-syncs-then-server-persists: backfill NEVER downgrades a richer client copy of the same operation', async function () {
+  var event = fakeEvent({});
+  var op = 'fal:veo/x:req-b3';
+  // Client synced first, under its OWN random id, carrying rich fields.
+  await dreamStore.upsertPrivateDream(event, 'alice', dream('d-client-rand', {
+    sourceOperationName: op, mood: 'peaceful', interpretationText: 'a reading', caption: 'client caption'
+  }));
+  // Server persist arrives later for the SAME operation (op-derived id, minimal).
+  var res = await dreamStore.backfillServerDream(event, 'alice', dream(dreamStore.serverDreamId(op), {
+    sourceOperationName: op, mood: null, interpretationText: null, caption: 'server caption'
+  }));
+  assert.equal(res.ok, true);
+  assert.equal(res.existed, true, 'server persist must no-op when the client already has this operation');
+  var dreams = await dreamStore.getPrivateDreams(event, 'alice');
+  assert.equal(dreams.length, 1, 'exactly one dream for the operation, never two');
+  assert.equal(dreams[0].id, 'd-client-rand', 'the client copy is kept');
+  assert.equal(dreams[0].mood, 'peaceful', 'the richer client fields survive');
+  assert.equal(dreams[0].interpretationText, 'a reading');
+  assert.equal(dreams[0].caption, 'client caption');
+});
+
+test('ORDERING server-persists-then-client-syncs: a later client upsert REPLACES the server backstop by operation (one record, client id, rich fields)', async function () {
+  var event = fakeEvent({});
+  var op = 'fal:veo/x:req-b4';
+  await dreamStore.backfillServerDream(event, 'alice', dream(dreamStore.serverDreamId(op), {
+    sourceOperationName: op, mood: null, interpretationText: null, caption: 'server caption'
+  }));
+  await dreamStore.upsertPrivateDream(event, 'alice', dream('d-client-rand', {
+    sourceOperationName: op, mood: 'joyful', interpretationText: 'client reading', caption: 'client caption'
+  }));
+  var dreams = await dreamStore.getPrivateDreams(event, 'alice');
+  assert.equal(dreams.length, 1, 'the two copies of one operation collapse to a single record');
+  assert.equal(dreams[0].id, 'd-client-rand', 'the client (authoritative) id wins');
+  assert.equal(dreams[0].mood, 'joyful');
+  assert.equal(dreams[0].caption, 'client caption');
+  assert.ok(!dreams.some(function (d) { return d.id === dreamStore.serverDreamId(op); }), 'the server-derived id must not linger as a second entry');
+});
+
+test('upsertPrivateDream collapses any pre-existing duplicates for one operation into a single record', async function () {
+  var event = fakeEvent({});
+  var op = 'fal:veo/x:req-b5';
+  // Seed a pathological state: TWO records for the same operation under two ids.
+  mockBlobs.seed(dreamStore.STORE_NAME, 'alice', { username: 'alice', dreams: [
+    dream('dup-a', { sourceOperationName: op }),
+    dream('dup-b', { sourceOperationName: op })
+  ], updatedAt: Date.now() });
+  await dreamStore.upsertPrivateDream(event, 'alice', dream('dup-c', { sourceOperationName: op, caption: 'authoritative' }));
+  var dreams = await dreamStore.getPrivateDreams(event, 'alice');
+  var forOp = dreams.filter(function (d) { return d.sourceOperationName === op; });
+  assert.equal(forOp.length, 1, 'the duplicates collapse to exactly one');
+  assert.equal(forOp[0].id, 'dup-c');
+  assert.equal(forOp[0].caption, 'authoritative');
+});
+
+test('dreams with NO sourceOperationName still dedup by id only — a null op never merges two unrelated dreams', async function () {
+  var event = fakeEvent({});
+  await dreamStore.upsertPrivateDream(event, 'alice', dream('no-op-1', { sourceOperationName: null }));
+  await dreamStore.upsertPrivateDream(event, 'alice', dream('no-op-2', { sourceOperationName: null }));
+  var dreams = await dreamStore.getPrivateDreams(event, 'alice');
+  assert.equal(dreams.length, 2, 'two null-operation dreams are two distinct entries, not merged');
+});
+
+test('two DIFFERENT operations stay two separate dreams', async function () {
+  var event = fakeEvent({});
+  await dreamStore.backfillServerDream(event, 'alice', dream(dreamStore.serverDreamId('op-A'), { sourceOperationName: 'op-A' }));
+  await dreamStore.backfillServerDream(event, 'alice', dream(dreamStore.serverDreamId('op-B'), { sourceOperationName: 'op-B' }));
+  var dreams = await dreamStore.getPrivateDreams(event, 'alice');
+  assert.equal(dreams.length, 2);
+});

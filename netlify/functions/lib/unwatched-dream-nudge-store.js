@@ -58,10 +58,24 @@ function sentStore() {
  * Returns { ok:true } first time, { ok:true, alreadyPending:true } on a
  * duplicate, or { ok:false, error } on invalid input / a genuinely failed
  * write.
+ *
+ * `options.recovery` (optional) stamps `recoveryEnqueue: true` on the record —
+ * set only by the SERVER-SIDE (dream-webhook.js) enqueue, which fires when the
+ * CLIENT never marked the completion at all (an FB/IG-webview leaver → the
+ * recovery-email path). send-unwatched-dream-nudges.js reads it to apply a
+ * SHORTER pre-send delay for those records (fire the recovery email promptly)
+ * while keeping the standard delay for ordinary client-enqueued nudges. Because
+ * this is an onlyIfNew CAS keyed by operationName, whichever caller enqueues
+ * FIRST sets the flag: a webview leaver's ONLY enqueue is the server one (so
+ * it's flagged recovery), while an active user who fires the client enqueue
+ * first keeps the standard delay — exactly the intended split. Absent (the
+ * default / every existing caller) reads as "standard delay," fully backward
+ * compatible with existing records.
  */
-async function markPending(event, operationName, username, email) {
+async function markPending(event, operationName, username, email, options) {
   if (!operationName || !username || !email) return { ok: false, error: 'invalid_input' };
   var record = { operationName: operationName, username: username, email: email, triggeredAt: Date.now() };
+  if (options && options.recovery) record.recoveryEnqueue = true;
   var result;
   try {
     connectLambda(event);

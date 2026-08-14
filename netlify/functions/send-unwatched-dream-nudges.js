@@ -77,8 +77,35 @@ var nudgeSender = require('./lib/unwatched-dream-nudge-sender');
 var posthogCapture = require('./lib/posthog-capture');
 
 // The "unwatched" floor: don't nudge until at least this long after the
-// dream became ready, giving the user a real chance to watch it first.
+// dream became ready, giving the user a real chance to watch it first. This is
+// the DEFAULT for an ordinary client-enqueued nudge; overridable via the
+// UNWATCHED_NUDGE_DELAY_MS env var (see resolvedStandardFloorMs).
 var READY_AGE_MS = 7 * 60 * 1000;
+
+// The SHORTER floor for a SERVER-side (dream-webhook.js) recovery enqueue — a
+// record flagged `recoveryEnqueue` (the CLIENT never marked completion, i.e. an
+// FB/IG-webview leaver whose durable video was saved server-side; see
+// dream-webhook.js). For that user the pre-send wait is just dead time — the
+// recovery email, whose link opens their real browser to the saved video,
+// should land promptly. DEFAULT 3 min; overridable via RECOVERY_NUDGE_DELAY_MS.
+// This ONLY changes how soon we CHECK-and-send — the watched/active guard
+// (step 1's viewed check + the sender's own belt-and-suspenders viewed re-check)
+// is fully intact, so a user who watched within the (shorter) window is still
+// suppressed exactly as before.
+var RECOVERY_READY_AGE_MS = 3 * 60 * 1000;
+
+// Env-tunable effective floors, resolved at scan time (not module load) so a
+// test can set the env var and call scanAndSend directly without re-requiring
+// the module. Each falls back to its own default constant for any missing/
+// non-positive value.
+function resolvedStandardFloorMs() {
+  var v = parseInt(process.env.UNWATCHED_NUDGE_DELAY_MS, 10);
+  return (v && v > 0) ? v : READY_AGE_MS;
+}
+function resolvedRecoveryFloorMs() {
+  var v = parseInt(process.env.RECOVERY_NUDGE_DELAY_MS, 10);
+  return (v && v > 0) ? v : RECOVERY_READY_AGE_MS;
+}
 
 // How long to keep a record enqueued before giving up entirely (dropping,
 // never sending a thumbnail-less nudge). Generous headroom past the 7-min
@@ -140,6 +167,8 @@ function findDreamForOperation(dreams, operationName) {
  */
 async function scanAndSend(event) {
   var operationNames = await nudgeStore.listPendingOperationNames(event);
+  var standardFloorMs = resolvedStandardFloorMs();
+  var recoveryFloorMs = resolvedRecoveryFloorMs();
 
   var result = {
     scanned: 0,
@@ -167,8 +196,14 @@ async function scanAndSend(event) {
 
     var elapsedMs = Date.now() - (record.triggeredAt || 0);
 
-    // 2) TOO SOON — still inside the unwatched floor; give them time.
-    if (elapsedMs < READY_AGE_MS) {
+    // 2) TOO SOON — still inside the unwatched floor; give them time. A
+    // server-side recovery enqueue (a webview leaver) uses the SHORTER floor so
+    // its recovery email fires promptly; an ordinary client-enqueued nudge keeps
+    // the standard floor. The VIEWED suppression (step 1 above) already ran
+    // regardless of which floor applies, so the shorter floor never emails
+    // someone who has already watched.
+    var floorMs = record.recoveryEnqueue ? recoveryFloorMs : standardFloorMs;
+    if (elapsedMs < floorMs) {
       result.stillWaiting++;
       continue;
     }
@@ -247,4 +282,5 @@ exports.handler = schedule('*/3 * * * *', async function (event) {
 // Exposed for direct unit testing.
 exports.scanAndSend = scanAndSend;
 exports.READY_AGE_MS = READY_AGE_MS;
+exports.RECOVERY_READY_AGE_MS = RECOVERY_READY_AGE_MS;
 exports.GIVE_UP_AFTER_MS = GIVE_UP_AFTER_MS;

@@ -562,3 +562,117 @@ test('reset-then-login (regression, nsbbg5): a real reset-password UI flow follo
     await page.close();
   }
 });
+
+// ===== reconcilePrivateDreamsFromServer: dedup-by-operation + ownerHandle re-stamp =====
+//
+// The CLIENT half of the E304 dream_sync_unconfirmed / P0 "vanish" fix (the
+// server half is dream-webhook.js + lib/dream-store.js, covered in
+// test/dream-webhook.test.js / test/dream-store.test.js). Proves the completed
+// video the server persisted actually comes back into the journal, exactly
+// once, regardless of what the wiped client had locally. See
+// reconcilePrivateDreamsFromServer's own doc comment in js/store.js.
+
+async function reconcileAndRead(page) {
+  return await page.evaluate(function () {
+    return window.DreamStore.reconcilePrivateDreamsFromServer().then(function () {
+      return window.DreamStore.getMyDreams();
+    });
+  });
+}
+
+test('reconcile RESTORE (wiped-device / never-synced target case): a server-persisted dream this device has no local copy of is pulled back into the journal', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    // The server-persisted backstop dream-webhook.js writes: an operation-derived
+    // id, the canonical lowercase handle, and the finished video.
+    var serverDream = {
+      id: 'srvdeadbeefcafe01', ownerHandle: '@tester', isPublished: false, likes: 0, likedByMe: false,
+      caption: 'I flew over a city', promptText: 'engineered', storyText: 'I flew over a city',
+      style: 'Cinematic', mediaType: 'video', videoUrl: 'https://cdn.fal/finished.mp4', imageUrl: null,
+      dur: '0:08', sourceOperationName: 'fal:veo/x:req-restore-1', mood: null,
+      interpretationText: null, interpretationAt: null, createdAt: Date.now(), updatedAt: Date.now()
+    };
+    mockDreamSync(page, { ok: true, dreams: [serverDream] });
+    await seedUser(page, { dreams: [] }); // wiped: no local dreams at all
+    await safeGoto(page, baseUrl + '/home.html');
+
+    var dreams = await reconcileAndRead(page);
+    var mine = dreams.filter(function (d) { return d.sourceOperationName === 'fal:veo/x:req-restore-1'; });
+    assert.equal(mine.length, 1, 'the stranded, already-billed video is recovered into the journal');
+    assert.equal(mine[0].videoUrl, 'https://cdn.fal/finished.mp4');
+  } finally {
+    await page.close();
+  }
+});
+
+test('reconcile RESTORE re-stamps ownerHandle so a server dream (canonical lowercase) shows up even when the session handle is a different CASING', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    // The server only ever knows the canonical lowercase '@tester'; the live
+    // session's handle here is a DIFFERENT casing ('@TESTER'). Without the
+    // ownerHandle re-stamp, getMyDreams's exact-=== filter would hide the
+    // restored dream entirely.
+    var serverDream = {
+      id: 'srvdeadbeefcafe02', ownerHandle: '@tester', isPublished: false, likes: 0, likedByMe: false,
+      caption: 'a restored dream', promptText: 'p', storyText: 'a restored dream', style: 'Cinematic',
+      mediaType: 'video', videoUrl: 'https://cdn.fal/v2.mp4', imageUrl: null, dur: '0:08',
+      sourceOperationName: 'fal:veo/x:req-restore-2', mood: null, interpretationText: null,
+      interpretationAt: null, createdAt: Date.now(), updatedAt: Date.now()
+    };
+    mockDreamSync(page, { ok: true, dreams: [serverDream] });
+    await seedUser(page, { dreams: [] });
+    await safeGoto(page, baseUrl + '/home.html');
+    // Force a different-cased handle on the live session (a fresh-device login
+    // that pinned the typed casing — see login()'s displayUsername).
+    await page.evaluate(function () {
+      var s = JSON.parse(localStorage.getItem('dreamtube_state_v1'));
+      s.user.handle = '@TESTER';
+      localStorage.setItem('dreamtube_state_v1', JSON.stringify(s));
+    });
+    await safeGoto(page, baseUrl + '/home.html');
+
+    var dreams = await reconcileAndRead(page);
+    assert.equal(dreams.length, 1, 'the restored dream is visible under the differently-cased session handle');
+    assert.equal(dreams[0].ownerHandle, '@TESTER', 'ownerHandle was re-stamped to the session handle');
+  } finally {
+    await page.close();
+  }
+});
+
+test('reconcile DEDUP: a server dream and this device\'s OWN local copy of the SAME operation (different ids) converge to ONE journal entry', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    var op = 'fal:veo/x:req-dedup-1';
+    // This device already has its OWN local copy (finalizeDream's random id).
+    var localDream = {
+      id: 'dlocalcopy1', ownerHandle: '@tester', isPublished: false, likes: 0, likedByMe: false,
+      caption: 'my dream', promptText: 'p', storyText: 'my dream', style: 'Cinematic', mediaType: 'video',
+      videoUrl: 'https://cdn.fal/local.mp4', imageUrl: null, dur: '0:08', sourceOperationName: op,
+      mood: 'joyful', createdAt: 1000, updatedAt: 1000
+    };
+    // The server has the SAME generation under a DIFFERENT (operation-derived) id, newer.
+    var serverDream = {
+      id: 'srvdeadbeefcafe03', ownerHandle: '@tester', isPublished: false, likes: 0, likedByMe: false,
+      caption: 'my dream', promptText: 'p', storyText: 'my dream', style: 'Cinematic', mediaType: 'video',
+      videoUrl: 'https://cdn.fal/finished.mp4', imageUrl: null, dur: '0:08', sourceOperationName: op,
+      mood: null, interpretationText: null, interpretationAt: null, createdAt: 1000, updatedAt: 2000
+    };
+    mockDreamSync(page, { ok: true, dreams: [serverDream] });
+    await seedUser(page, { dreams: [localDream] });
+    await safeGoto(page, baseUrl + '/home.html');
+
+    var dreams = await reconcileAndRead(page);
+    var forOp = dreams.filter(function (d) { return d.sourceOperationName === op; });
+    assert.equal(forOp.length, 1, 'the server copy must NOT be added as a second journal entry for the same operation');
+    assert.equal(forOp[0].id, 'dlocalcopy1', 'the local id is preserved through the operation-merge (no in-session dangling reference)');
+    assert.equal(forOp[0].videoUrl, 'https://cdn.fal/finished.mp4', 'the newer server copy\'s fields were merged in');
+  } finally {
+    await page.close();
+  }
+});

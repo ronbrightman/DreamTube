@@ -98,6 +98,45 @@ function normalizeUsername(username) {
   return (typeof username === 'string' ? username : '').trim().toLowerCase();
 }
 
+// ============================================================================
+// DEDUP-BY-OPERATION (tracker item for E304 dream_sync_unconfirmed / the P0
+// "vanish") — the crux of persisting a completed generation server-side from
+// dream-webhook.js (see backfillServerDream below) WITHOUT ever producing two
+// journal entries for one generation.
+// ----------------------------------------------------------------------------
+// A dream's `id` is NOT a stable cross-writer key: the client mints its own
+// random `d<...>` id in finalizeDream, while a server-side persist has never
+// seen that id and must mint its own deterministic one (serverDreamId below).
+// Both records DO carry the same `sourceOperationName` — the fal operation the
+// generation ran under, threaded identically through start-pending-generation
+// -> the pending-dreams record -> the client's finalizeDream. So convergence
+// is designed around that stable operation identity: two records for the SAME
+// operation are the SAME dream, even under different ids, and must collapse to
+// one. `id` is only the fallback key for a dream with no operation at all
+// (older records, or a creation path that never carried one).
+// ============================================================================
+
+/** True when `existing` and `incoming` are the SAME dream: same non-empty sourceOperationName (the stable key), OR — only when there's no operation to key on — the same id. */
+function isSameDream(existing, incoming) {
+  if (!existing || !incoming) return false;
+  var op = incoming.sourceOperationName;
+  if (op && existing.sourceOperationName === op) return true;
+  return existing.id === incoming.id;
+}
+
+/**
+ * The deterministic private-dream id for a completed generation the SERVER
+ * persists (backfillServerDream) — derived purely from its operationName, so
+ * a repeated server persist of the same operation is idempotent by id, and so
+ * the id can never collide with the client's own random `d<...>` ids (this is
+ * a `srv`-prefixed sha1 slice, a shape finalizeDream's `newId()` never emits).
+ * The value is only ever a fallback key anyway — real convergence with a later
+ * client sync happens by sourceOperationName (see isSameDream), not by id.
+ */
+function serverDreamId(operationName) {
+  return 'srv' + crypto.createHash('sha1').update(String(operationName)).digest('hex').slice(0, 16);
+}
+
 /** Raw record read, defaulting a never-written/malformed record to an empty one — same "never throw, degrade to empty" posture as push-subscription-store.js's getSubscriptions, and the same shape tracker-store.js's own getItems/support-store.js's getMessages use as the `read` function blobs-retry.js's retryingWrite calls on every attempt. */
 async function getRecord(event, username) {
   var key = normalizeUsername(username);
@@ -152,17 +191,32 @@ async function upsertPrivateDream(event, username, dream) {
       var dreams = (current && Array.isArray(current.dreams)) ? current.dreams.slice() : [];
       marker = crypto.randomBytes(8).toString('hex');
       stamped = Object.assign({}, dream, { _syncMarker: marker });
-      var idx = -1;
+      // Match by sourceOperationName (preferred) OR id — see the
+      // DEDUP-BY-OPERATION block at the top of this file. The client's copy
+      // of a generation is authoritative (it carries the richer mood/
+      // interpretation/edit fields), so a client upsert REPLACES the matched
+      // record in place, adopting the client's own id — collapsing a
+      // server-persisted backstop record (a different, operation-derived id)
+      // and the client's copy into one. Removing EVERY match (not just the
+      // first) also self-heals any accidental duplicate for the same
+      // operation that a rare concurrent double-insert could have left,
+      // keeping the "at most one record per operation" invariant true.
+      var insertAt = -1;
+      var kept = [];
       for (var i = 0; i < dreams.length; i++) {
-        if (dreams[i].id === stamped.id) { idx = i; break; }
+        if (isSameDream(dreams[i], stamped)) {
+          if (insertAt === -1) insertAt = kept.length; // preserve the first match's position (no reordering on a plain re-sync)
+          continue;
+        }
+        kept.push(dreams[i]);
       }
-      if (idx === -1) {
-        dreams.unshift(stamped);
+      if (insertAt === -1) {
+        kept.unshift(stamped);
       } else {
-        dreams[idx] = stamped;
+        kept.splice(insertAt, 0, stamped);
       }
-      if (dreams.length > MAX_DREAMS_PER_ACCOUNT) dreams = dreams.slice(0, MAX_DREAMS_PER_ACCOUNT);
-      return { username: key, dreams: dreams, updatedAt: Date.now() };
+      if (kept.length > MAX_DREAMS_PER_ACCOUNT) kept = kept.slice(0, MAX_DREAMS_PER_ACCOUNT);
+      return { username: key, dreams: kept, updatedAt: Date.now() };
     },
     verify: function (verifyRead) {
       if (!verifyRead || !Array.isArray(verifyRead.dreams)) return false;
@@ -175,6 +229,74 @@ async function upsertPrivateDream(event, username, dream) {
   });
 
   return result.ok ? { ok: true } : { ok: false, error: 'write_failed' };
+}
+
+/**
+ * INSERT-IF-ABSENT persist of a completed generation the SERVER learned about
+ * (dream-webhook.js, at fal completion) into `username`'s durable private-dream
+ * record — the server-side backstop for the E304 dream_sync_unconfirmed / P0
+ * "vanish": a finished, already-billed video whose owning client (an FB/IG
+ * in-app-webview session whose localStorage is wiped between sessions) closed
+ * or was wiped before its own dream-sync ever confirmed. reconcilePrivateDreams-
+ * FromServer pulls this back on the user's next load.
+ *
+ * DELIBERATELY different semantics from upsertPrivateDream above: this is a
+ * BACKSTOP, never authoritative. If a record for this generation already exists
+ * — matched by sourceOperationName OR id (isSameDream) — this leaves it
+ * completely alone (SKIP) rather than overwriting it. That is what makes the
+ * ordering "client-syncs-then-server-persists" safe: the client's copy carries
+ * the richer mood/interpretation/edit fields the server never had, and a
+ * blind overwrite here would silently downgrade it. In the reverse ordering
+ * (server-persists-then-client-syncs) the client's later upsertPrivateDream
+ * REPLACES this backstop by operation (see that function), so the two never
+ * coexist as two journal entries. See the DEDUP-BY-OPERATION block at the top
+ * of this file for the full convergence design.
+ *
+ * `dream.id` should be serverDreamId(operationName) so a repeated server
+ * persist is idempotent by id even for a generation with no operation (there
+ * is none in practice — every webhook-completed dream has one). Returns
+ * { ok:true, inserted:true } on a fresh insert, { ok:true, existed:true } when
+ * a record for this generation already existed (a normal, expected no-op), or
+ * { ok:false, error:'write_failed' } only if the guarded write genuinely
+ * failed every attempt — callers treat that as "did NOT persist" (the client
+ * path still backstops), never a silent success.
+ */
+async function backfillServerDream(event, username, dream) {
+  var key = normalizeUsername(username);
+  if (!key) return { ok: false, error: 'invalid_username' };
+  if (!dream || typeof dream.id !== 'string' || !dream.id) return { ok: false, error: 'invalid_dream' };
+
+  var marker;
+  var stamped;
+
+  var result = await blobsRetry.retryingWrite(event, STORE_NAME, key, {
+    maxAttempts: MAX_WRITE_ATTEMPTS,
+    read: function (evt) { return getRecord(evt, key); },
+    mutate: function (current) {
+      var dreams = (current && Array.isArray(current.dreams)) ? current.dreams.slice() : [];
+      for (var i = 0; i < dreams.length; i++) {
+        // A record for this generation already exists (a client sync landed
+        // first, or a prior backfill did) — never downgrade it. SKIP aborts
+        // the whole operation with no write and no retry (see blobs-retry.js).
+        if (isSameDream(dreams[i], dream)) return blobsRetry.SKIP;
+      }
+      marker = crypto.randomBytes(8).toString('hex');
+      stamped = Object.assign({}, dream, { _syncMarker: marker });
+      dreams.unshift(stamped);
+      if (dreams.length > MAX_DREAMS_PER_ACCOUNT) dreams = dreams.slice(0, MAX_DREAMS_PER_ACCOUNT);
+      return { username: key, dreams: dreams, updatedAt: Date.now() };
+    },
+    verify: function (verifyRead) {
+      if (!verifyRead || !Array.isArray(verifyRead.dreams)) return false;
+      for (var i = 0; i < verifyRead.dreams.length; i++) {
+        if (verifyRead.dreams[i].id === stamped.id && verifyRead.dreams[i]._syncMarker === marker) return true;
+      }
+      return false;
+    }
+  });
+
+  if (result.skipped) return { ok: true, existed: true };
+  return result.ok ? { ok: true, inserted: true } : { ok: false, error: 'write_failed' };
 }
 
 /**
@@ -243,8 +365,10 @@ module.exports = {
   STORE_NAME,
   MAX_DREAMS_PER_ACCOUNT,
   normalizeUsername,
+  serverDreamId,
   getPrivateDreams,
   upsertPrivateDream,
+  backfillServerDream,
   removePrivateDream,
   deleteAllPrivateDreams
 };

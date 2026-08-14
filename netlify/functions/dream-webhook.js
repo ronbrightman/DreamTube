@@ -89,6 +89,9 @@ var mediaRehost = require('./lib/media-rehost');
 var emailSuppressionStore = require('./lib/email-suppression-store');
 var unsubscribeToken = require('./lib/unsubscribe-token');
 var emailLayout = require('./lib/email-layout');
+var accountStore = require('./lib/account-store');
+var dreamStore = require('./lib/dream-store');
+var markGenerationCompleted = require('./mark-generation-completed');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
@@ -164,6 +167,152 @@ async function sendReadyWhatsapp(event, record) {
     await whatsappClient.sendMessage(record.whatsapp, 'Your dream is ready to watch: ' + url);
   } catch (e) {
     console.error('dream-webhook: whatsapp send failed (non-fatal)', e);
+  }
+}
+
+/**
+ * SERVER-SIDE DURABLE PERSIST — the fix for E304 dream_sync_unconfirmed / the
+ * P0 "vanish" (a finished, already-billed video silently disappearing from a
+ * user's journal). The completed video reaches the DURABLE private-dream
+ * journal (lib/dream-store.js) today only via the CLIENT's own dream-sync
+ * (js/store.js attemptPrivateDreamSync). For DreamTube's biggest cohort —
+ * FB/IG in-app-webview users whose localStorage is wiped between sessions — a
+ * client that closes or is wiped before that sync confirms strands the video
+ * in pending-dreams, never attached to the account. This closes the gap at
+ * the SERVER: the moment a funnel generation completes AND its email resolves
+ * to a real account, we persist the dream into that account's durable store
+ * ourselves, so reconcilePrivateDreamsFromServer pulls it back on the user's
+ * next load regardless of what the wiped client did.
+ *
+ * We have everything needed right here: the pending-dreams `record` carries
+ * caption/storyText/style/mediaType/operationName/createdAt, and `videoUrl` is
+ * the just-completed video. The owner is resolved from the record's own email
+ * (accountStore.getByEmail) — an account this email hasn't registered yet
+ * (a genuinely pre-signup, not-yet-claimed visitor) is simply skipped: there
+ * is no durable username to key by until they sign up, and the client path
+ * still backstops that case (the "your dream is ready" claim email brings
+ * them back). Dedup is by sourceOperationName (dreamStore.backfillServerDream
+ * is insert-if-absent and never downgrades a richer client copy) — see
+ * dream-store.js's DEDUP-BY-OPERATION block for the full convergence design.
+ *
+ * BEST-EFFORT, never throws: a failure here must never break the webhook's own
+ * markReady/markNotified/response — the client sync path stays the fast path
+ * and still backstops. Same "log and move on" discipline as sendReadyEmail.
+ */
+async function persistDurableDreamForOwner(event, record, videoUrl) {
+  try {
+    if (!record || !record.email) return;
+    var operationName = record.operationName;
+    if (!operationName) {
+      // No operation to key/dedup on (shouldn't happen for a real
+      // webhook-completed video — start-pending-generation always stamps
+      // one). Skip rather than risk an un-dedup-able server record.
+      console.log('dream-webhook: skipping durable persist — no operationName on pending id ' + record.id);
+      return;
+    }
+    if (!videoUrl) return;
+
+    var account = await accountStore.getByEmail(event, record.email);
+    if (!account || !account.username) {
+      // A genuinely pre-signup / not-yet-claimed visitor — nothing to attach
+      // to a durable account yet. The re-engagement claim email is the path
+      // that recovers this dream once they actually sign up.
+      console.log('dream-webhook: no account yet for pending id ' + record.id + ' — durable persist skipped (client/claim path backstops)');
+      return;
+    }
+
+    var mediaType = record.mediaType === 'image' ? 'image' : 'video';
+    // Matches finalizeDream's own resolvedStoryText fallback: the human-
+    // readable dream text is storyText, falling back to the (engineered)
+    // caption when a pre-storyText record has none.
+    var human = (typeof record.storyText === 'string' && record.storyText.trim()) ? record.storyText : record.caption;
+
+    // Exactly the durable private-dream field shape dream-sync.js's own
+    // sanitizeDream produces (id, ownerHandle, isPublished:false, likes:0,
+    // likedByMe:false + the DREAM_FIELDS + createdAt), so a record restored
+    // by reconcilePrivateDreamsFromServer renders identically to a client-
+    // synced one. Fields the server can't know at completion (mood, any
+    // interpretation) are null — the same "never fabricate" convention
+    // buildDreamSyncUpsertBody uses; a later client sync fills them in.
+    var dream = {
+      id: dreamStore.serverDreamId(operationName),
+      // Canonical account handle. reconcilePrivateDreamsFromServer re-stamps
+      // ownerHandle to the session's own handle on ingest (every dream
+      // dream-sync returns belongs to the verified caller), so this restores
+      // correctly even when the user logged back in with different casing.
+      ownerHandle: '@' + account.username,
+      isPublished: false,
+      likes: 0,
+      likedByMe: false,
+      caption: human || null,
+      promptText: record.caption || null,
+      storyText: human || null,
+      style: record.style || null,
+      mediaType: mediaType,
+      videoUrl: mediaType === 'video' ? videoUrl : null,
+      imageUrl: mediaType === 'image' ? videoUrl : null,
+      dur: mediaType === 'video' ? '0:08' : null,
+      sourceOperationName: operationName,
+      interpretationText: null,
+      interpretationAt: null,
+      mood: null,
+      createdAt: (typeof record.createdAt === 'number' && isFinite(record.createdAt)) ? record.createdAt : null,
+      updatedAt: Date.now()
+    };
+
+    var persisted = await dreamStore.backfillServerDream(event, account.username, dream);
+    if (persisted && persisted.ok) {
+      console.log('dream-webhook: durable dream persist ' + (persisted.inserted ? 'inserted' : 'already-existed') + ' for pending id ' + record.id + ' operationName=' + operationName);
+    } else {
+      console.error('dream-webhook: durable dream persist write failed for pending id ' + record.id + ' — client sync path still backstops');
+    }
+  } catch (e) {
+    console.error('dream-webhook: durable dream persist failed (non-fatal)', e);
+  }
+}
+
+/**
+ * SERVER-SIDE RECOVERY-EMAIL ENQUEUE (the second half of the E304 / vanish
+ * recovery, founder-approved scope extension). Persisting the dream server-side
+ * (above) makes the finished video safe; this makes the user actually LEARN it's
+ * ready — the "unwatched dream" nudge email, whose link opens the user's REAL
+ * browser (not the FB/IG in-app webview), where the durably-saved video plays.
+ *
+ * The bug: mark-generation-completed.js's maybeEnqueueUnwatchedNudge — the only
+ * thing that enqueues that email — is triggered ONLY client-side (home.html's
+ * markGenerationJustCompleted POSTs mark-generation-completed). An FB/IG-webview
+ * user who leaves before home.html loads never fires it, so for the biggest
+ * cohort the recovery email barely sends. This fires the SAME enqueue from the
+ * webhook (fal's own completion), which needs no surviving client.
+ *
+ * Called ONLY from the already-'claimed' branch (a signed-up user), because that
+ * is exactly the gap: a claimed record never sends the pre-signup abandonment
+ * email AND never stamps readyAt, so maybeEnqueueUnwatchedNudge's own readyAt
+ * overlap guard correctly lets the recovery nudge through here. In the markReady-
+ * won branch the abandonment email IS the recovery email (and readyAt is set,
+ * which the guard would honor), so no nudge is needed there — and not calling it
+ * there avoids racing that branch's own just-issued markReady write.
+ *
+ * Convergence to exactly ONE nudge is guaranteed by the store, not re-invented:
+ * unwatchedDreamNudgeStore.markPending is an onlyIfNew CAS keyed by
+ * operationName, so this server-side enqueue and any later client-side
+ * mark-generation-completed for the SAME generation collapse to a single nudge —
+ * the same operationName-based convergence the durable-dream dedup uses.
+ *
+ * Best-effort, never throws — mirrors mark-generation-completed.js's own handler,
+ * which wraps this exact call in try/catch for the same reason.
+ */
+async function enqueueRecoveryNudge(event, operationName) {
+  if (!operationName) return;
+  try {
+    // `recovery: true` — this enqueue fires because the CLIENT never marked the
+    // completion (a webview leaver), so the recovery email should send promptly:
+    // it flags the queue record for the SHORTER pre-send delay in
+    // send-unwatched-dream-nudges.js. The send-time watched/active guard is
+    // unchanged (a shorter delay only decides how soon we CHECK-and-send).
+    await markGenerationCompleted.maybeEnqueueUnwatchedNudge(event, operationName, { recovery: true });
+  } catch (e) {
+    console.error('dream-webhook: recovery-nudge enqueue failed (non-fatal)', e);
   }
 }
 
@@ -260,7 +409,20 @@ exports.handler = async function (event) {
         // make mark-generation-completed.js's automatic retention email
         // incorrectly skip for most ordinary completions, regressing
         // toward the original "no email ever" bug.
-        await pendingDreams.update(event, pendingId, { videoUrl: videoUrl });
+        var claimedRecord = await pendingDreams.update(event, pendingId, { videoUrl: videoUrl });
+        // The user already signed up (that's what 'claimed' means), so their
+        // email resolves to a real account — persist the finished video into
+        // their durable journal server-side, the exact vanish this fix
+        // targets (a converting funnel user whose client sync never confirmed
+        // before a webview wipe). Best-effort, never blocks the ack.
+        await persistDurableDreamForOwner(event, claimedRecord || transition.record, videoUrl);
+        // ...and enqueue the "your dream is ready" recovery email server-side.
+        // This branch (claimed, no abandonment email, no readyAt) is the exact
+        // gap where a webview user who left before home.html fired
+        // mark-generation-completed would otherwise get NO email at all. The
+        // durable persist saves the video; this email is how they learn it's
+        // ready and open it in their real browser. See enqueueRecoveryNudge.
+        await enqueueRecoveryNudge(event, (claimedRecord && claimedRecord.operationName) || (transition.record && transition.record.operationName));
         return { statusCode: 200, body: JSON.stringify({ ok: true, claimed: true }) };
       }
       // 'notified' or 'failed' — an already-fully-processed, harmless
@@ -277,6 +439,13 @@ exports.handler = async function (event) {
     // own doc comment for why that's fine (the email decision was
     // already correctly made above; this is bookkeeping only).
     await pendingDreams.markNotified(event, pendingId);
+
+    // Durable server-side persist (best-effort) — if this abandoned-dream
+    // visitor has ALREADY registered under this email (e.g. signed up, then
+    // abandoned before their client confirmed the sync), attach the finished
+    // video to their durable journal now. A genuinely pre-signup visitor with
+    // no account yet is skipped inside (the claim email recovers that case).
+    await persistDurableDreamForOwner(event, transition.record, videoUrl);
 
     return { statusCode: 200, body: JSON.stringify({ ok: true }) };
   } catch (e) {
