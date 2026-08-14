@@ -76,6 +76,17 @@ async function safeGoto(page, url) {
   }
 }
 
+// These tests use wizard.html ONLY as a "page with DreamStore + the PostHog
+// pre-init stub loaded" vehicle — they call DreamStore.signup()/importAccountBackup()
+// directly via page.evaluate() to exercise js/store.js's identifyForAnalytics
+// (UNCHANGED), never walking the wall UI. Since unify-all-creation-flows (founder
+// 2026-08-14) a BARE wizard.html hit is retired and redirects to /go/ (which the
+// static test server does not serve), so it's reached via the funnel-arrival URL
+// instead — the SAME page/scripts, no redirect. NO distinct_id is passed, so no
+// pre-signup identity stitch occurs (linkPreSignupIdentity only fires with one),
+// keeping every "first identify is the signup" assertion below exactly as before.
+var WIZARD_WALL_PATH = '/wizard.html?resume=1&caption=' + encodeURIComponent('a dream of flying over a glowing city, dreamlike');
+
 /** Mocks register-account.js to always succeed, so DreamStore.signup() resolves deterministically without a real Netlify Functions runtime. */
 function mockSignupSucceeds(page) {
   return page.route('**/.netlify/functions/register-account', function (route) {
@@ -101,7 +112,7 @@ test('identifyForAnalytics: an @example.com signup email gets tagged is_test:tru
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     var result = await page.evaluate(function () {
       return window.DreamStore.signup('exampletestuser', 'password123', 'exampletestuser@example.com');
@@ -130,7 +141,7 @@ test('identifyForAnalytics: a normal real-looking email does NOT get tagged is_t
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     var result = await page.evaluate(function () {
       return window.DreamStore.signup('realgenuineuser', 'password123', 'realgenuineuser@gmail.com');
@@ -151,7 +162,7 @@ test('identifyForAnalytics: the founder\'s own known accounts (ronbrightman, ben
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     var ronResult = await page.evaluate(function () {
       return window.DreamStore.signup('ronbrightman', 'password123', 'ron@gmail.com');
@@ -170,7 +181,7 @@ test('identifyForAnalytics: the founder\'s own known accounts (ronbrightman, ben
   await blockThirdParty(page2);
   await mockSignupSucceeds(page2);
   try {
-    await safeGoto(page2, baseUrl + '/wizard.html');
+    await safeGoto(page2, baseUrl + WIZARD_WALL_PATH);
 
     var benResult = await page2.evaluate(function () {
       return window.DreamStore.signup('benbrightman14', 'password123', 'ben@gmail.com');
@@ -191,7 +202,7 @@ test('identifyForAnalytics: a probe-style throwaway username (__word__ shape) ge
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     // signup() itself already rejects the __word__ shape client-side (the
     // same E10-equivalent guard register-account.js enforces server-side),
@@ -229,7 +240,7 @@ test('identifyForAnalytics: a missing/unavailable PostHog object never throws --
   await blockThirdParty(page);
   await mockSignupSucceeds(page);
   try {
-    await safeGoto(page, baseUrl + '/wizard.html');
+    await safeGoto(page, baseUrl + WIZARD_WALL_PATH);
 
     // Simulate PostHog genuinely unavailable (e.g. POSTHOG_KEY still the
     // placeholder -- see js/analytics-config.js -- or the array.js bundle
