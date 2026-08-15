@@ -94,6 +94,11 @@
    * @param {Object} opts
    * @param {'home'|'explore'|'profile'} opts.active - which tab gets the
    *   `.active` class + `aria-current="page"`.
+   * @param {boolean} [opts.shimmerHome] - when true, the Home tab gently
+   *   shimmers to draw the eye back home (founder 2026-08-15: "when user is
+   *   in profile page or Dream result page make the home icon shimmer a
+   *   little bit"). Opt-in per page: only profile.html / result.html pass it
+   *   — home.html (already on Home) and explore.html deliberately don't.
    */
   function mount(container, opts) {
     if (!container) return;
@@ -137,6 +142,14 @@
     container.querySelector('#dock-icon-home').innerHTML = (active === 'home') ? Icons.home : Icons.homeOutline;
     container.querySelector('#dock-icon-explore').innerHTML = Icons.compass;
     container.querySelector('#dock-icon-create').innerHTML = Icons.plus;
+
+    // Opt-in Home-tab shimmer (see opts.shimmerHome above) -- a gentle,
+    // reduced-motion-aware pulse defined in css/styles.css (.shimmer-home).
+    // Scoped to THIS container's own Home item, same as the icon fills above.
+    if (opts.shimmerHome) {
+      var homeItem = container.querySelector('#nav-home');
+      if (homeItem) homeItem.classList.add('shimmer-home');
+    }
 
     // New-likes badge dot (tracker item idea-notify-likes) -- the same
     // synchronous, no-network read every bottom-nav page has always done.

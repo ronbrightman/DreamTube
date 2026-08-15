@@ -163,6 +163,36 @@
     lockedScrollers = [];
   }
 
+  // Sweep the LIVE DOM for any scroller carrying leftover inline lock styles
+  // and clear them (rebuilding iOS momentum the same way releaseLock does).
+  // releaseLock only knows the scrollers it captured at lock time; this heals
+  // a scroller whose inline `overflow:hidden` / momentum hint leaked through a
+  // path that release never saw — e.g. the page frozen into the bfcache
+  // mid-release so releaseLock's next-frame momentum-restore never fired, or a
+  // scroller that wasn't in the captured set. Safe to call anytime: a scroller
+  // with no inline lock styles is left completely untouched. This is the
+  // belt-and-suspenders half of the "scroll stuck again on home" fix
+  // (founder 2026-08-15) — the invariant that no scroller can stay frozen once
+  // nothing holds the lock.
+  function sanitizeScrollers() {
+    if (!doc) return;
+    var all = doc.querySelectorAll(SCROLLER_SELECTOR);
+    Array.prototype.forEach.call(all, function (el) {
+      var hasHiddenOverflow = el.style.overflow === 'hidden';
+      var hasMomentumHint = !!el.style.webkitOverflowScrolling &&
+        el.style.webkitOverflowScrolling !== '';
+      if (!hasHiddenOverflow && !hasMomentumHint) return; // clean — don't touch
+      el.style.overflow = '';
+      el.style.webkitOverflowScrolling = 'auto';
+      // eslint-disable-next-line no-unused-expressions
+      void el.offsetHeight; // force synchronous reflow (see releaseLock)
+      (function (node) {
+        if (win && win.requestAnimationFrame) win.requestAnimationFrame(function () { node.style.webkitOverflowScrolling = ''; });
+        else node.style.webkitOverflowScrolling = '';
+      })(el);
+    });
+  }
+
   function lock() {
     refCount += 1;
     if (refCount === 1) applyLock();
@@ -176,13 +206,28 @@
 
   // Unconditional full release, ignoring the ref count. For the backstops
   // (page hidden/frozen/restored) and any "get me out of a stuck state" need.
+  // Follows the normal release (restore captured scrollers + scroll positions)
+  // with a live-DOM sweep so a scroller that leaked lock styles outside the
+  // captured set is healed too — nothing can stay frozen after this returns.
   function forceRelease() {
     refCount = 0;
     releaseLock();
+    sanitizeScrollers();
   }
 
   function isLocked() {
     return refCount > 0;
+  }
+
+  // Public "guarantee the page is scrollable" call for a page that KNOWS
+  // nothing should currently be locked (e.g. home.html on becoming visible
+  // again with no overlay open — see its installScrollSelfHeal guard). Alias
+  // of forceRelease today; named for intent at the call site, and so a page
+  // can feature-detect it. A page MUST check its own overlays are closed
+  // before calling — ScrollLock itself can't tell a leak from a legitimately
+  // open overlay's lock.
+  function ensureReleased() {
+    forceRelease();
   }
 
   // ── bfcache / navigation backstops ──────────────────────────────────────
@@ -201,6 +246,7 @@
     lock: lock,
     unlock: unlock,
     forceRelease: forceRelease,
+    ensureReleased: ensureReleased,
     isLocked: isLocked,
     // Exposed for tests only (same "export an internal for testability"
     // precedent as js/interpret-experience.js / js/purchase-sheet.js).

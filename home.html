@@ -3800,6 +3800,68 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
     startCreditConfirmation(pendingPurchase);
   })();
+
+  // ===== ONE-TAP EMAIL LOGIN: reconcile server dreams so the finished video
+  // is actually here (founder 2026-08-15: "when logging in from the email,
+  // bring him to the homepage" — and it must not be an empty homepage) =====
+  // When THIS load arrived via a recovery / "your dream is ready" email's
+  // one-tap login link (email-login.js -> ?bt= -> consumeSessionTransferToken-
+  // FromUrlSync above), the session is committed but this device's local dream
+  // cache is empty: the dream was generated in the in-app webview, lives on the
+  // server, and was never written to THIS browser's storage. Without a server
+  // reconcile the user lands signed-in on an EMPTY Home (the exact "zero videos
+  // ready" the founder hit on profile.html before the dest moved here). Pull
+  // the account's private dreams from the server, then re-render every card so
+  // the finished video is waiting. No-ops entirely on an ordinary Home visit
+  // (wasSessionJustTransferred is false when no ?bt= was consumed this load).
+  (function reconcileOnEmailLogin(){
+    if(!(window.DreamStore &&
+         typeof DreamStore.wasSessionJustTransferred === 'function' &&
+         DreamStore.wasSessionJustTransferred() &&
+         DreamStore.getCurrentUser())) return;
+    if(typeof DreamStore.reconcilePrivateDreamsFromServer !== 'function') return;
+    DreamStore.reconcilePrivateDreamsFromServer().then(function(){
+      myDreams = DreamStore.getMyDreams();
+      completedDream = myDreams.filter(function(d){ return d.videoUrl || d.imageUrl; })[0] || null;
+      refreshHomeState();
+    }).catch(function(){
+      /* offline / server hiccup — the normal local render already painted;
+         a later visit (or maintainSessionTransferUrl re-entry) reconciles. */
+    });
+  })();
+
+  // ===== SCROLL-LOCK SELF-HEAL (founder 2026-08-15: "Scrolling is stuck
+  // again in the homepage") =====
+  // The shared scroll lock (js/scroll-lock.js) freezes .home-scroll's overflow
+  // while a full-screen overlay (the interpretation Chamber, #itp-root) is
+  // open, and releases it on close. That open/close pairing is ref-counted and
+  // balanced — but a page CAN still be stranded unscrollable through a path the
+  // normal release never sees: iOS Safari freezing home into the bfcache
+  // mid-release (so the next-frame momentum-restore never runs), or any unlock
+  // that a gesture-only dismiss skipped. This invariant guarantees the one
+  // thing that must always hold on Home: if NO overlay is actually open, the
+  // page is scrollable. It runs every time Home becomes interactive again
+  // (tab refocus via visibilitychange, back/forward-swipe restore via
+  // pageshow), and is a no-op on the overwhelmingly common case where nothing
+  // was ever locked (ensureReleased only touches a scroller that still carries
+  // an inline lock style). It never fights a legitimately-open overlay — it
+  // bails the moment #itp-root is open, since that overlay owns the lock.
+  (function installScrollSelfHeal(){
+    function overlayOpen(){
+      var itp = document.getElementById('itp-root');
+      return !!(itp && itp.classList.contains('open'));
+    }
+    function heal(){
+      if(overlayOpen()) return; // an overlay legitimately holds the lock
+      if(!window.ScrollLock) return;
+      if(typeof ScrollLock.ensureReleased === 'function') ScrollLock.ensureReleased();
+      else if(typeof ScrollLock.forceRelease === 'function') ScrollLock.forceRelease();
+    }
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState === 'visible') heal();
+    });
+    window.addEventListener('pageshow', heal);
+  })();
 </script>
 </body>
 </html>

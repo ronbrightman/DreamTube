@@ -274,6 +274,27 @@ body{
 #nav-home{ width:72px; }
 #nav-home .nav-icon{ font-size:26px; color:#cfc8ff; filter:drop-shadow(0 0 8px rgba(157,144,255,.85)); }
 #nav-home .night-dock-label{ font-size:11px; color:#cfc8ff; }
+/* Home-tab shimmer (founder 2026-08-15: "when user is in profile page or
+   Dream result page make the home icon shimmer a little bit, so it attracts
+   the eye and click it"). Opt-in only — js/bottom-nav.js adds .shimmer-home
+   to #nav-home when a page passes {shimmerHome:true} (profile.html /
+   result.html), NOT on home.html or explore.html. A gentle, slow glow+lift
+   pulse on the icon (the label stays put), keyed on top of the icon's
+   existing static drop-shadow so it reads as a living version of the same
+   glow, not a new effect. Deliberately quiet — an eye-catch, not a klaxon. */
+@keyframes home-tab-shimmer{
+  0%,100%{ transform:translateY(0) scale(1); filter:drop-shadow(0 0 8px rgba(157,144,255,.85)); }
+  50%{ transform:translateY(-2px) scale(1.12); filter:drop-shadow(0 0 15px rgba(179,158,255,1)); }
+}
+.shimmer-home .nav-icon{
+  animation:home-tab-shimmer 2.4s ease-in-out infinite;
+  transform-origin:center bottom; will-change:transform,filter;
+}
+/* Accessibility: never animate for users who ask for reduced motion — the
+   icon keeps its static resting glow, which already makes Home prominent. */
+@media (prefers-reduced-motion:reduce){
+  .shimmer-home .nav-icon{ animation:none; }
+}
 .night-dock-create{
   width:40px; height:40px; border-radius:50%; flex:none; cursor:pointer;
   border:1.5px solid transparent;

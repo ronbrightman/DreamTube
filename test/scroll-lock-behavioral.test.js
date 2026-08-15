@@ -321,3 +321,41 @@ test('scroll-lock: forceRelease() and the pagehide backstop drop a held lock to 
     await context.close();
   }
 });
+
+test('scroll-lock: ensureReleased() heals a scroller stranded with a leaked overflow:hidden even when the ref-count is already 0 (the "stuck again on home" leak path)', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext({ viewport: { width: 390, height: 640 } });
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await seedResultPage(page, 'sl-selfheal');
+
+    // Simulate the founder-reported leak: a scroller left frozen with an inline
+    // overflow:hidden while NOTHING holds the lock (ref-count 0) — the state a
+    // bfcache-mid-release or a missed unlock can strand the page in. The normal
+    // release path can't reach this: it only restores scrollers it captured at
+    // lock time, and here nothing was locked through the helper at all.
+    await page.evaluate(function () {
+      document.querySelector('.scroll-area').style.overflow = 'hidden';
+    });
+    var stuck = await lockState(page);
+    assert.equal(stuck.refCount, 0, 'precondition: ref-count is 0 (the leak is a dangling style, not a held lock)');
+    assert.equal(stuck.scrollerOverflow, 'hidden', 'precondition: the scroller is stranded frozen');
+
+    // The self-heal invariant home.html calls when it becomes visible with no
+    // overlay open. It must sweep the LIVE DOM and clear the leaked style.
+    await page.evaluate(function () { window.ScrollLock.ensureReleased(); });
+    var healed = await lockState(page);
+    assert.equal(healed.scrollerOverflow, '', 'ensureReleased() clears the leaked overflow:hidden off the live scroller');
+    assert.equal(healed.refCount, 0, 'ref-count stays at 0');
+
+    // And the page genuinely scrolls again.
+    var kinds = await installScrollProbe(page);
+    assert.ok(kinds.length > 0, 'a scroller is active again after healing');
+    (await setScroll(page, 20)).forEach(function (s) {
+      assert.equal(s.pos, 20, s.kind + ' scroller responds to a scroll after ensureReleased() — no longer frozen');
+    });
+  } finally {
+    await context.close();
+  }
+});

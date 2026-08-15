@@ -875,7 +875,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 
   // Bar A dock -- no tab is active; this screen isn't Home/Explore/Profile
   // itself, it just needs a real way back to all three.
-  BottomNav.mount(document.getElementById('bottom-nav-slot'), {});
+  BottomNav.mount(document.getElementById('bottom-nav-slot'), { shimmerHome: true });
 
   // Keeps this page's own URL carrying a fresh transfer token for as long
   // as it stays open, signed in, and inside a detected FB/IG webview —

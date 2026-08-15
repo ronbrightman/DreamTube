@@ -112,25 +112,25 @@ function absoluteImageUrl(event, url) {
   return siteOrigin.emailOrigin(event) + (url.charAt(0) === '/' ? url : '/' + url);
 }
 
-function profileUrl(event) {
-  return siteOrigin.emailOrigin(event) + '/profile.html';
-}
-
 /**
  * The one-tap login CTA target (founder 2026-08-15 "make the recovery emails
  * auto-login"): the email-login.js endpoint carrying a single-use, 7-day
  * lib/email-login-token.js token, landing (after that endpoint mints a fresh
- * ?bt= and redirects) on /profile.html signed in with the finished video
- * attached. Falls back to a plain /profile.html link only if minting fails —
- * a token-store hiccup must never stop the "your dream is ready" email.
+ * ?bt= and redirects) on /home.html signed in — the home hub (daily claim /
+ * streak / explore / make-another), NOT the dead-end Profile page (founder
+ * 2026-08-15: "when logging in from the email, bring him to the homepage").
+ * home.html reconciles the account's server dreams on this ?bt= arrival, so
+ * the finished video is there. Falls back to a plain /home.html link only if
+ * minting fails — a token-store hiccup must never stop the "dream is ready"
+ * email.
  */
-async function loginProfileUrl(event, username, email) {
+async function loginHomeUrl(event, username, email) {
   try {
     var token = await emailLoginToken.createToken(event, username, email);
     return siteOrigin.emailOrigin(event) + '/.netlify/functions/email-login?elt=' +
-      encodeURIComponent(token) + '&dest=' + encodeURIComponent('/profile.html');
+      encodeURIComponent(token) + '&dest=' + encodeURIComponent('/home.html');
   } catch (e) {
-    return profileUrl(event);
+    return siteOrigin.emailOrigin(event) + '/home.html';
   }
 }
 
@@ -166,7 +166,7 @@ function buildHtml(opts) {
     media +
     '<p style="font-size:16px;line-height:1.5;color:' + emailLayout.COLORS.textPrimary + ';margin:0 0 14px;">' + lead + '</p>' +
     '<p style="font-size:15px;line-height:1.5;color:' + emailLayout.COLORS.textMuted + ';margin:0 0 18px;">It&rsquo;s waiting for you. Take a minute and see how it turned out.</p>' +
-    '<p style="margin:0;">' + emailLayout.ctaButton(opts.profileUrl, 'Watch my dream') + '</p>'
+    '<p style="margin:0;">' + emailLayout.ctaButton(opts.watchUrl, 'Watch my dream') + '</p>'
   );
 
   return emailLayout.renderShell({
@@ -278,7 +278,7 @@ async function sendIfEligible(event, opts) {
     event: event,
     description: description,
     imageUrl: absImageUrl,
-    profileUrl: await loginProfileUrl(event, username, email),
+    watchUrl: await loginHomeUrl(event, username, email),
     unsubscribeUrl: unsubscribeUrl
   });
 

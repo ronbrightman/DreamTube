@@ -963,7 +963,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
     // above on every call, including right after an identity-edit save.
     // BottomNav computes that avatar itself straight from DreamStore, so
     // this is the one call that keeps both renders in sync.
-    BottomNav.mount(document.getElementById('bottom-nav-slot'), { active: 'profile' });
+    BottomNav.mount(document.getElementById('bottom-nav-slot'), { active: 'profile', shimmerHome: true });
   }
   renderIdentity();
 
