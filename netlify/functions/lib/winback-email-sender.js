@@ -42,6 +42,7 @@ var emailSuppressionStore = require('./email-suppression-store');
 var unsubscribeToken = require('./unsubscribe-token');
 var emailLayout = require('./email-layout');
 var siteOrigin = require('./site-origin');
+var emailLoginToken = require('./email-login-token');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 // Same address the nudge sender / dream-webhook sender use — this codebase's
@@ -86,6 +87,24 @@ function isExcludedEmail(email, ownerEmail) {
 
 function createUrl(event) {
   return siteOrigin.emailOrigin(event) + '/create.html';
+}
+
+/**
+ * The one-tap login CTA target (founder 2026-08-15 "make the return emails
+ * auto-login"): the email-login.js endpoint carrying a single-use, 7-day
+ * lib/email-login-token.js token, landing (after that endpoint mints a fresh
+ * ?bt= and redirects) on /create.html already signed in. Falls back to a
+ * plain /create.html link if minting fails — a token-store hiccup must never
+ * stop a win-back send.
+ */
+async function loginCreateUrl(event, username, email) {
+  try {
+    var token = await emailLoginToken.createToken(event, username, email);
+    return siteOrigin.emailOrigin(event) + '/.netlify/functions/email-login?elt=' +
+      encodeURIComponent(token) + '&dest=' + encodeURIComponent('/create.html');
+  } catch (e) {
+    return createUrl(event);
+  }
 }
 
 /** Builds the win-back email HTML — the static approved copy rendered through email-layout's shared night-aesthetic shell (unsubscribe footer + mailing address + logo). */
@@ -184,7 +203,7 @@ async function sendIfEligible(event, opts) {
   var unsubscribeUrl = unsubscribeToken.buildUnsubscribeUrl(event, email);
   var html = buildHtml({
     event: event,
-    createUrl: createUrl(event),
+    createUrl: await loginCreateUrl(event, username, email),
     unsubscribeUrl: unsubscribeUrl
   });
 

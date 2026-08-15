@@ -809,6 +809,13 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
 <script src="js/purchase-sheet.js"></script>
 <script src="js/email-verify-sheet.js"></script>
 <script>
+  // One-tap login from a recovery/"your dream is ready" email: email-login.js
+  // redirects here carrying ?bt=<session-transfer-token>. Consume it BEFORE
+  // the auth gate below, so a recipient who tapped that email lands signed in
+  // (with the finished video attached) instead of being bounced to login.html.
+  // No-ops instantly when there's no bt param (the common case). Mirrors
+  // create.html/home.html/result.html.
+  DreamStore.consumeSessionTransferTokenFromUrlSync();
   if(!DreamStore.getCurrentUser()){ location.href = 'login.html'; }
   // Install-to-home-screen nudge for a real-browser visitor's 2nd+ time on
   // Profile (tracker item for-product-build-stage-0-pwa-web-push-f-jbutt5,

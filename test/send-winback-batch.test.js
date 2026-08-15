@@ -258,7 +258,11 @@ test('the sent email carries the exact approved subject/copy + one-click unsubsc
   assert.ok(body.html.indexOf('never really end') !== -1, 'line 1 copy present');
   assert.ok(body.html.indexOf('turn it into a video you can keep') !== -1, 'line 2 copy present');
   assert.ok(body.html.indexOf('Make a new dream') !== -1, 'CTA label present');
-  assert.ok(body.html.indexOf('/create.html') !== -1, 'CTA links to the canonical create page');
+  // One-tap login (founder 2026-08-15): the CTA now points at the email-login
+  // endpoint carrying a single-use token, redirecting (signed in) to create.html.
+  assert.ok(body.html.indexOf('/.netlify/functions/email-login') !== -1, 'CTA routes through the one-tap email-login endpoint');
+  assert.ok(body.html.indexOf('elt=') !== -1, 'CTA carries a single-use email-login token');
+  assert.ok(body.html.indexOf('dest=%2Fcreate.html') !== -1, 'the login redirect lands the user on the canonical create page');
   assert.ok(body.html.indexOf('Sweet dreams') !== -1, 'sign-off present');
   assert.ok(body.html.indexOf('Unsubscribe') !== -1, 'footer unsubscribe link present');
   assert.ok(body.headers && body.headers['List-Unsubscribe'], 'RFC 8058 List-Unsubscribe header present');

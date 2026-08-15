@@ -60,6 +60,7 @@ var emailSuppressionStore = require('./email-suppression-store');
 var unsubscribeToken = require('./unsubscribe-token');
 var emailLayout = require('./email-layout');
 var siteOrigin = require('./site-origin');
+var emailLoginToken = require('./email-login-token');
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 // Deliberately duplicated per-file (same address dream-webhook.js's own
@@ -112,6 +113,24 @@ function absoluteImageUrl(event, url) {
 
 function profileUrl(event) {
   return siteOrigin.emailOrigin(event) + '/profile.html';
+}
+
+/**
+ * The one-tap login CTA target (founder 2026-08-15 "make the recovery emails
+ * auto-login"): the email-login.js endpoint carrying a single-use, 7-day
+ * lib/email-login-token.js token, landing (after that endpoint mints a fresh
+ * ?bt= and redirects) on /profile.html signed in with the finished video
+ * attached. Falls back to a plain /profile.html link only if minting fails —
+ * a token-store hiccup must never stop the "your dream is ready" email.
+ */
+async function loginProfileUrl(event, username, email) {
+  try {
+    var token = await emailLoginToken.createToken(event, username, email);
+    return siteOrigin.emailOrigin(event) + '/.netlify/functions/email-login?elt=' +
+      encodeURIComponent(token) + '&dest=' + encodeURIComponent('/profile.html');
+  } catch (e) {
+    return profileUrl(event);
+  }
 }
 
 function subjectLine(description) {
@@ -241,7 +260,7 @@ async function sendIfEligible(event, opts) {
     event: event,
     description: description,
     imageUrl: absImageUrl,
-    profileUrl: profileUrl(event),
+    profileUrl: await loginProfileUrl(event, username, email),
     unsubscribeUrl: unsubscribeUrl
   });
 
