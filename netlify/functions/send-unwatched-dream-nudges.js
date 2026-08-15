@@ -208,11 +208,26 @@ async function scanAndSend(event) {
       continue;
     }
 
-    // 3) THUMBNAIL — resolve the dream and, if it has one, try to send.
+    // 3) RESOLVE THE DREAM + decide whether to send.
     var dreams = await dreamStore.getPrivateDreams(event, record.username);
     var dream = findDreamForOperation(dreams, operationName);
 
-    if (dream && dream.imageUrl) {
+    // A per-dream thumbnail is PREFERRED but no longer REQUIRED (founder
+    // 2026-08-15): a recovery (webview-leaver) dream is persisted server-side
+    // with a videoUrl but NO imageUrl — fal's webhook returns no poster and no
+    // client ran to sync a first-frame still — so it will NEVER get one, and
+    // requiring it silently dropped the recovery email for the exact cohort it
+    // exists for. So the sender falls back to a branded dreamscape hero when
+    // there's no real thumbnail, and this scan sends when the dream record
+    // exists AND either: it has a real thumbnail; OR it's a recovery enqueue
+    // (thumbnail will never come — send promptly); OR a normal enqueue has
+    // waited out the give-up window for its client thumbnail (send with the
+    // fallback rather than dropping). A NULL dream (never persisted) still
+    // can't be sent — there's nothing to link to.
+    var giveUpElapsed = elapsedMs >= GIVE_UP_AFTER_MS;
+    var readyToSend = dream && (dream.imageUrl || record.recoveryEnqueue || giveUpElapsed);
+
+    if (readyToSend) {
       var sendResult = await nudgeSender.sendIfEligible(event, {
         operationName: operationName,
         username: record.username,
@@ -236,7 +251,7 @@ async function scanAndSend(event) {
       // — the sender already released any claim it won, so a later scan can
       // genuinely retry. Leave it enqueued, unless we're past the give-up
       // window (a permanently-failing send must not loop forever).
-      if (elapsedMs >= GIVE_UP_AFTER_MS) {
+      if (giveUpElapsed) {
         await nudgeStore.removePending(event, operationName);
         result.droppedNoThumbnail++;
         await reportDrop(record, 'send_never_succeeded');
@@ -246,11 +261,14 @@ async function scanAndSend(event) {
       continue;
     }
 
-    // 4) NO THUMBNAIL yet — wait, then give up.
-    if (elapsedMs >= GIVE_UP_AFTER_MS) {
+    // 4) NOT READY — a normal dream still inside its thumbnail-grace window
+    // (give its client first-frame still time to sync before falling back to
+    // the branded hero), or no dream record persisted at all. Wait, then give
+    // up.
+    if (giveUpElapsed) {
       await nudgeStore.removePending(event, operationName);
       result.droppedNoThumbnail++;
-      await reportDrop(record, 'no_thumbnail');
+      await reportDrop(record, dream ? 'no_thumbnail' : 'no_dream_record');
       continue;
     }
     result.stillWaiting++;

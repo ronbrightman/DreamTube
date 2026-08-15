@@ -210,27 +210,51 @@ test('a dream still inside the 7-minute unwatched floor WAITS — no send, stays
   assert.ok(await nudgeStore.getPending(fakeEvent({}), op), 'still enqueued for a later scan');
 });
 
-test('a dream past the floor but with NO thumbnail yet WAITS, then DROPS past the give-up window (never sent thumbnail-less)', async function () {
+test('a NORMAL dream past the floor with NO thumbnail WAITS for its client still to sync, then (past give-up) SENDS with the branded fallback hero rather than dropping (founder 2026-08-15: never silently drop the recovery email)', async function () {
   var op = 'mock:1:noThumb';
   // Past the floor, but not yet past give-up; no thumbnail synced.
   await enqueueAged(op, 'nothumb', 'nothumb@example.com', sendNudges.READY_AGE_MS + 5000);
   await seedDream('nothumb', op, { storyText: 'pending frame', imageUrl: null });
   var spies = installFetchSpy();
 
+  // Within the grace window: give the client first-frame still time to sync.
   var waiting = await sendNudges.scanAndSend(fakeEvent({}));
-  assert.equal(waiting.stillWaiting, 1, 'no thumbnail yet -- waits');
+  assert.equal(waiting.stillWaiting, 1, 'no thumbnail yet, still inside grace -- waits');
   assert.equal(spies.resendCalls.length, 0);
 
-  // Now push it past the give-up window; still no thumbnail -> drop.
+  // Past the give-up window, still no thumbnail -> SEND with the branded
+  // fallback (was: silently dropped, which killed the recovery email).
   var record = await nudgeStore.getPending(fakeEvent({}), op);
   mockBlobs.seed(nudgeStore.PENDING_STORE_NAME, op, Object.assign({}, record, {
     triggeredAt: Date.now() - sendNudges.GIVE_UP_AFTER_MS - 1000
   }));
   var spies2 = installFetchSpy();
-  var dropped = await sendNudges.scanAndSend(fakeEvent({}));
-  assert.equal(dropped.droppedNoThumbnail, 1);
-  assert.equal(spies2.resendCalls.length, 0, 'past the window with no thumbnail sends NOTHING, not a bare email');
-  assert.equal(await nudgeStore.getPending(fakeEvent({}), op), null, 'dropped and dequeued');
+  var sentRes = await sendNudges.scanAndSend(fakeEvent({}));
+  assert.equal(sentRes.sent, 1, 'past give-up with no client thumbnail, the email still sends (with a fallback hero)');
+  assert.equal(spies2.resendCalls.length, 1);
+  assert.match(spies2.resendCalls[0].body.html, /dream-neon\.webp/, 'the branded fallback dreamscape is the hero when no per-dream thumbnail exists');
+  assert.match(spies2.resendCalls[0].body.html, /pending frame/, 'the dream text still personalizes the email');
+  assert.equal(await nudgeStore.getPending(fakeEvent({}), op), null, 'sent and dequeued');
+});
+
+test('a RECOVERY dream with NO thumbnail (the webview-leaver cohort) SENDS PROMPTLY with the branded fallback hero — fixes the no_thumbnail drop that silently killed the recovery email (founder 2026-08-15)', async function () {
+  delete process.env.RECOVERY_NUDGE_DELAY_MS;
+  delete process.env.UNWATCHED_NUDGE_DELAY_MS;
+  var op = 'mock:1:rec-nothumb';
+  // Past the short recovery floor, nowhere near the give-up window — the
+  // webview leaver's server-persisted dream carries a videoUrl but no imageUrl
+  // and never will (fal returns no poster, no client ran to sync a still).
+  await enqueueAgedRecovery(op, 'recnothumb', 'recnothumb@example.com', sendNudges.RECOVERY_READY_AGE_MS + 30 * 1000);
+  await seedDream('recnothumb', op, { storyText: 'left before the frame synced', imageUrl: null });
+  var spies = installFetchSpy();
+
+  var result = await sendNudges.scanAndSend(fakeEvent({}));
+
+  assert.equal(result.sent, 1, 'the recovery email sends promptly even with no thumbnail — no more silent no_thumbnail drop');
+  assert.equal(spies.resendCalls.length, 1);
+  assert.match(spies.resendCalls[0].body.html, /dream-neon\.webp/, 'uses the branded fallback dreamscape hero');
+  assert.deepEqual(spies.resendCalls[0].body.to, ['recnothumb@example.com']);
+  assert.equal(await nudgeStore.getPending(fakeEvent({}), op), null, 'sent and dequeued');
 });
 
 test('an empty pending store is a harmless no-op scan', async function () {

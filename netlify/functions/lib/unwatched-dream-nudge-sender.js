@@ -218,14 +218,17 @@ async function sendIfEligible(event, opts) {
     return { ok: true, sent: false, skipped: 'already_viewed' };
   }
 
-  // Thumbnail gate (the scan already enforces this, but this is the single
-  // choke point so the guarantee lives here too &mdash; never claim the once-per-
-  // dream guard for a send that can't legitimately go out).
-  var absImageUrl = absoluteImageUrl(event, dream && dream.imageUrl);
-  if (!absImageUrl) {
-    await reportSkip(username, email, 'no_thumbnail');
-    return { ok: true, sent: false, skipped: 'no_thumbnail' };
-  }
+  // Hero image: the recipient's own dream thumbnail when we have one, else a
+  // tasteful branded DREAMSCAPE fallback (emailLayout.brandedFallbackImageUrl).
+  // The email is NEVER blocked for lack of a per-dream thumbnail (founder
+  // 2026-08-15): a webview leaver's server-persisted dream carries a videoUrl
+  // but NO imageUrl (fal's webhook returns no poster, and no client ran to
+  // sync a first-frame still), so requiring a thumbnail here silently DROPPED
+  // the recovery email for the exact cohort it exists to bring back (2 real
+  // users dropped no_thumbnail in one hour before this fix). The dream text
+  // still personalizes subject + body; the generic dreamscape hero represents
+  // "your dream" without a per-dream still.
+  var absImageUrl = absoluteImageUrl(event, dream && dream.imageUrl) || emailLayout.brandedFallbackImageUrl(event);
 
   // Unsubscribed &mdash; checked BEFORE claiming the guard, so a suppressed
   // recipient never burns this dream's one-and-only nudge marker.
