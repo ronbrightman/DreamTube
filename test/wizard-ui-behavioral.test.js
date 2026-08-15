@@ -993,23 +993,22 @@ test('wizard.html signup wall: if the pre-account generation call fails, signup 
   }
 });
 
-test('claim-dream.html: a ready pending dream shows the video immediately (no login required) and lets a new visitor sign up to save it', async function (t) {
+test('claim-dream.html: a ready pending dream shows the video immediately (no login required) and lets a visitor sign up PASSWORDLESS (resolve-existing-email, no dead-end) to save it', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    await page.route('**/.netlify/functions/verify-pending-claim', function (route) {
-      route.fulfill({
-        status: 200, contentType: 'application/json',
-        body: JSON.stringify({
-          ok: true, pendingId: 'pd-claim-1', email: 'claimed@example.com',
-          caption: 'a finished dream about flying', style: 'Cinematic',
-          videoUrl: 'https://example.com/fake-video.mp4', status: 'notified'
-        })
-      });
-    });
-    await page.route('**/.netlify/functions/claim-pending-generation', function (route) {
-      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, found: true }) });
+    // One dispatcher for every backend call (claim + passwordless resolve +
+    // code login + reconcile). An already-registered email -> pendingVerification
+    // (the case that used to dead-end on the old password create-account),
+    // updated for the founder 2026-08-15 passwordless conversion.
+    await page.route('**/.netlify/functions/**', function (route) {
+      var url = route.request().url();
+      function json(o) { route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) }); }
+      if (url.indexOf('verify-pending-claim') !== -1) return json({ ok: true, pendingId: 'pd-claim-1', email: 'claimed@example.com', caption: 'a finished dream about flying', style: 'Cinematic', videoUrl: 'https://example.com/fake-video.mp4', status: 'notified' });
+      if (url.indexOf('register-account-passwordless') !== -1) return json({ ok: true, pendingVerification: true });
+      if (url.indexOf('login-with-email-code') !== -1) return json({ ok: true, username: 'claimtester', authToken: 'tok', emailVerified: true });
+      return json({ ok: true, dreams: [], found: true }); // claim-pending-generation, private-dream reconcile, etc.
     });
     await page.route('https://example.com/fake-video.mp4', function (route) {
       route.fulfill({ status: 200, contentType: 'video/mp4', body: Buffer.from('x') });
@@ -1023,9 +1022,13 @@ test('claim-dream.html: a ready pending dream shows the video immediately (no lo
     assert.equal(videoSrc, 'https://example.com/fake-video.mp4');
     assert.equal(await page.locator('#signup-view').isVisible(), true);
 
-    await page.fill('#claim-username', 'claimtester');
-    await page.fill('#claim-password', 'longenoughpassword1');
-    await page.click('#claim-signup-btn');
+    // Passwordless save: "Email me a login code" -> an already-registered email
+    // RESOLVES to the code step (no "email already exists" dead-end) -> enter
+    // the code -> the dream is saved and opened.
+    await page.click('#claim-code-btn');
+    await page.waitForSelector('#claim-code-step', { state: 'visible', timeout: 5000 });
+    await page.fill('#claim-code', '123456');
+    await page.click('#claim-verify-btn');
 
     await page.waitForURL(/result\.html\?id=/, { timeout: 10000 });
     var dreams = await page.evaluate(function () {
