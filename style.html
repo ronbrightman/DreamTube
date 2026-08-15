@@ -149,6 +149,10 @@
 </div>
 
 <script src="js/icons.js"></script>
+<!-- wizard-chips: exposes WizardChips.humanizeDreamText, used to strip a funnel dream's
+     engineered camera/lighting/style prompt down to the human story for the preview recap
+     (founder 2026-08-15). -->
+<script src="js/wizard-chips.js"></script>
 <script src="js/store.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/sheet-dismiss.js"></script>
@@ -174,7 +178,11 @@
   // all times; currentDraftPatch() below persists exactly this value, so
   // whatever's on screen the instant Generate is tapped is what gets
   // saved — never a promise of something better that never rendered.
-  var currentStoryText = draft.storyText || draft.caption;
+  // humanized (founder 2026-08-15): the recap the user reads (and the storyText this
+  // page persists) must be the HUMAN dream story, never a funnel dream's engineered
+  // camera/lighting/style prompt. The generation prompt (draft.caption -> promptText) is
+  // carried separately and left engineered — currentDraftPatch never touches it.
+  var currentStoryText = WizardChips.humanizeDreamText(draft.storyText || draft.caption);
   function renderStoryRecap(){
     var card = document.getElementById('style-recap-card');
     var textEl = document.getElementById('style-recap-text');

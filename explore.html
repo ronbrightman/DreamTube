@@ -366,7 +366,7 @@
     // deliberately untouched by this feature — no reason to grow it when
     // the existing field already carries the right value).
     var dowBadge = isDreamOfDay
-      ? '<div class="dow-badge"><div class="dow-eyebrow">Dream of the day</div><div class="dow-title" dir="auto">"'+esc(d.caption)+'"</div><div class="dow-sub">by '+esc(DreamStore.displayHandle(d.ownerHandle))+' · '+formatCount(d.likes)+' likes</div></div>'
+      ? '<div class="dow-badge"><div class="dow-eyebrow">Dream of the day</div><div class="dow-title" dir="auto">"'+esc(WizardChips.humanizeDreamText(d.caption))+'"</div><div class="dow-sub">by '+esc(DreamStore.displayHandle(d.ownerHandle))+' · '+formatCount(d.likes)+' likes</div></div>'
       : '';
     return '<div class="feed-card" data-id="'+d.id+'" data-index="'+globalIndex+'">' +
       media +
@@ -376,7 +376,7 @@
       '<div class="feed-scrim"></div>' +
       '<div class="feed-info">' +
         '<div class="feed-user-row">'+avatarHTML(d)+'<div class="feed-user" data-profile-handle="'+esc(d.ownerHandle)+'">'+esc(DreamStore.displayHandle(d.ownerHandle))+'</div></div>' +
-        '<div class="feed-caption clamped" dir="auto">'+esc(d.caption)+'</div>' +
+        '<div class="feed-caption clamped" dir="auto">'+esc(WizardChips.humanizeDreamText(d.caption))+'</div>' +
         '<div class="feed-tag-row"><span data-filter-style="'+esc(d.style)+'">Style: '+esc(d.style)+'</span>' + '</div>' +
       '</div>' +
       '<div class="feed-actions">' +
@@ -1146,7 +1146,7 @@
       // wording for the owner's own perspective.
       ShareSheet.show({
         dream: dream,
-        shareText: 'Check out this dream: "' + dream.caption + '" — create your own on DreamTube!',
+        shareText: 'Check out this dream: "' + WizardChips.humanizeDreamText(dream.caption) + '" — create your own on DreamTube!',
         onToast: showToast
       });
       return;

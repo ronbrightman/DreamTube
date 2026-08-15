@@ -2361,7 +2361,10 @@
     // is both the story and the prompt" tradeoff Write-it/Record-it
     // already accept elsewhere, so a retried chip-dream's inferred
     // camera/lighting language isn't re-derived after an edit here.
-    textArea.value = draft.storyText || draft.caption;
+    // humanized (founder 2026-08-15): show the HUMAN dream story in the Write box, never
+    // a funnel dream's engineered camera/lighting/style prompt (a no-op for a genuine
+    // Write-it/Record-it draft or buildDeterministicStory output).
+    textArea.value = WizardChips.humanizeDreamText(draft.storyText || draft.caption);
     updateCharCount();
     DreamStore.setDraft({ restore: false });
   } else if(new URLSearchParams(location.search).get('build') === '1'){

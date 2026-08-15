@@ -1657,7 +1657,12 @@
    */
   function open(dreamId, opts) {
     var dream = window.DreamStore.getDream(dreamId);
-    var captionText = dream && (dream.storyText || dream.caption);
+    // humanized (founder 2026-08-15): the Chamber shows the HUMAN dream story, never a
+    // funnel dream's engineered camera/lighting/style prompt. WizardChips is loaded on
+    // every host page that opens the Chamber (result.html/home.html); fall back to the
+    // raw text only if it somehow isn't present.
+    var rawCaption = dream && (dream.storyText || dream.caption);
+    var captionText = (window.WizardChips && rawCaption) ? window.WizardChips.humanizeDreamText(rawCaption) : rawCaption;
     if (!dream || !captionText) {
       if (typeof window.showToast === 'function') window.showToast('Couldn\'t open this dream\'s reflection right now.');
       return;

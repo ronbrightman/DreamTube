@@ -61,6 +61,7 @@ var unsubscribeToken = require('./unsubscribe-token');
 var emailLayout = require('./email-layout');
 var siteOrigin = require('./site-origin');
 var emailLoginToken = require('./email-login-token');
+var humanizeDreamText = require('./humanize-dream-text').humanizeDreamText;
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 // Deliberately duplicated per-file (same address dream-webhook.js's own
@@ -81,12 +82,12 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** The human-readable dream description this codebase already shows humans (js/store.js reads `d.storyText || d.caption`). Trimmed; '' if the dream carries neither (a legacy/edge record) &mdash; the caller's copy falls back to the generic line then. */
+/** The human-readable dream description this codebase already shows humans (js/store.js reads `d.storyText || d.caption`). Trimmed; '' if the dream carries neither (a legacy/edge record) &mdash; the caller's copy falls back to the generic line then. humanizeDreamText (founder 2026-08-15) strips a FUNNEL dream's engineered camera/lighting/style prompt down to the human core so the email never embeds "Medium tracking shot of …, hazy ethereal light, Cinematic style, dreamlike." &mdash; a no-op on already-human text. */
 function dreamDescription(dream) {
   if (!dream) return '';
   var text = (typeof dream.storyText === 'string' && dream.storyText.trim()) ? dream.storyText
     : (typeof dream.caption === 'string' ? dream.caption : '');
-  return String(text || '').trim();
+  return humanizeDreamText(String(text || '').trim());
 }
 
 /** Truncates on a word boundary where possible, appending an ellipsis only when it actually cut something. */

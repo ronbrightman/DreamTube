@@ -178,6 +178,10 @@
 </div>
 
 <script src="js/icons.js"></script>
+<!-- wizard-chips: exposes WizardChips.humanizeDreamText, used to strip a funnel dream's
+     engineered camera/lighting/style prompt down to the human story in the admin cards
+     (founder 2026-08-15). -->
+<script src="js/wizard-chips.js"></script>
 <script src="js/store.js"></script>
 <script src="js/sheet-dismiss.js"></script>
 <script src="js/pwa.js"></script>
@@ -318,7 +322,7 @@
     // entirely (not an empty placeholder box) for a dream with no text on
     // file, matching this card's existing pattern for every other optional
     // field (expiry above, priv/pub badge).
-    var descHTML = item.storyText ? '<div class="interp-text ml-desc" dir="auto">' + esc(item.storyText) + '</div>' : '';
+    var descHTML = item.storyText ? '<div class="interp-text ml-desc" dir="auto">' + esc(WizardChips.humanizeDreamText(item.storyText)) + '</div>' : '';
     return '<div class="vcard" data-media-url="' + esc(item.url) + '" data-media-type="' + esc(item.mediaType) + '">' +
       '<div class="vcard-thumb ml-vcard-thumb">' +
         mediaEl +

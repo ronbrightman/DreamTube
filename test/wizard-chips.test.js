@@ -620,3 +620,100 @@ test('inferMoodFromText: on an exact score tie the fixed priority order (tense >
     assert.ok(keys.indexOf(WizardChips.inferMoodFromText(t)) !== -1, 'must return a real mood key for: ' + t);
   });
 });
+
+// ── humanizeDreamText (founder-directed 2026-08-15) ──────────────────────────
+// Strips a funnel dream's ENGINEERED prompt wrappers (leading camera phrase +
+// trailing mood/lighting/style/dreamlike boilerplate) down to the human core,
+// for display + interpretation, while never touching promptText/fal. See
+// js/wizard-chips.js's humanizeDreamText doc comment.
+
+test('humanizeDreamText: the founder\'s exact example strips leading camera + trailing mood/lighting/style/dreamlike, keeping the human core (incl. the "Dreamy, surreal mood" comma variant and a mid-sentence "dreamlike place")', function () {
+  assert.equal(
+    WizardChips.humanizeDreamText('Medium tracking shot of an animal or creature, watching something magical unfold, in a dreamlike place, Dreamy, surreal mood, hazy ethereal light, Realistic style, dreamlike.'),
+    'an animal or creature, watching something magical unfold, in a dreamlike place'
+  );
+});
+
+test('humanizeDreamText: strips each of the five inferCamera lead-in phrases', function () {
+  ['aerial wide shot', 'first-person POV shot', 'intimate close-up shot', 'medium tracking shot', 'sweeping crane shot'].forEach(function (cam) {
+    assert.equal(
+      WizardChips.humanizeDreamText(cam + ' of a stranger, flying through an open sky, dreamy surreal mood, hazy ethereal light, Cinematic style, dreamlike.'),
+      'a stranger, flying through an open sky',
+      'camera phrase "' + cam + '" must be stripped'
+    );
+  });
+});
+
+test('humanizeDreamText: strips a generic "<words> angle of" lead-in too', function () {
+  assert.equal(
+    WizardChips.humanizeDreamText('Low angle of a giant creature, exploring, hazy ethereal light, dreamlike.'),
+    'a giant creature, exploring'
+  );
+});
+
+test('humanizeDreamText: strips the trailing mood + lighting + style + dreamlike clause (all present)', function () {
+  assert.equal(
+    WizardChips.humanizeDreamText('medium tracking shot of a stranger, flying through an open sky, mysterious mood, low-key moody light, Anime style, dreamlike.'),
+    'a stranger, flying through an open sky'
+  );
+});
+
+test('humanizeDreamText: handles the optional clauses — no style clause, and no mood clause', function () {
+  // style omitted (create.html Build-it before the style pick)
+  assert.equal(
+    WizardChips.humanizeDreamText('medium tracking shot of the dream, exploring, dreamy surreal mood, hazy ethereal light, dreamlike.'),
+    'the dream, exploring'
+  );
+  // no mood clause at all
+  assert.equal(
+    WizardChips.humanizeDreamText('aerial wide shot of a stranger, exploring, bright daylight, Cartoon style, dreamlike.'),
+    'a stranger, exploring'
+  );
+});
+
+test('humanizeDreamText: preserves free-typed text that follows "dreamlike." as its own sentence', function () {
+  assert.equal(
+    WizardChips.humanizeDreamText('medium tracking shot of a stranger, exploring, dreamy surreal mood, hazy ethereal light, Cinematic style, dreamlike. The sea was made of glass.'),
+    'a stranger, exploring. The sea was made of glass.'
+  );
+});
+
+test('humanizeDreamText: does not swallow a one-word action/place clause that sits right before the mood run', function () {
+  assert.equal(
+    WizardChips.humanizeDreamText('medium tracking shot of a stranger, exploring, dreamy surreal mood, hazy ethereal light, Cinematic style, dreamlike.'),
+    'a stranger, exploring'
+  );
+});
+
+test('humanizeDreamText: keeps a place phrase that itself contains a comma', function () {
+  assert.equal(
+    WizardChips.humanizeDreamText('medium tracking shot of an animal or creature, witnessing something magical happen in a surreal, otherworldly place, dreamy surreal mood, hazy ethereal light, Cinematic style, dreamlike.'),
+    'an animal or creature, witnessing something magical happen in a surreal, otherworldly place'
+  );
+});
+
+test('humanizeDreamText: is a NO-OP on an already-clean free-typed sentence and on buildDeterministicStory output (idempotent)', function () {
+  var clean = 'I was flying through an open sky, feeling free and weightless.';
+  assert.equal(WizardChips.humanizeDreamText(clean), clean);
+
+  var story = WizardChips.buildDeterministicStory({ subjectKey: 'animal', actionKey: 'magical', placeKey: 'unreal', moodKey: 'dreamy' });
+  assert.equal(WizardChips.humanizeDreamText(story), story, 'buildDeterministicStory output must pass through unchanged');
+
+  // Running it twice equals running it once.
+  var once = WizardChips.humanizeDreamText('Medium tracking shot of an animal or creature, watching something magical unfold, in a dreamlike place, Dreamy, surreal mood, hazy ethereal light, Realistic style, dreamlike.');
+  assert.equal(WizardChips.humanizeDreamText(once), once);
+});
+
+test('humanizeDreamText: real assembleCaption output round-trips to the clean human core', function () {
+  var assembled = WizardChips.assembleCaption({ subjectKey: 'animal', actionKey: 'magical', placeKey: 'unreal', moodKey: 'dreamy', style: 'Cinematic' }).caption;
+  assert.equal(
+    WizardChips.humanizeDreamText(assembled),
+    'an animal or creature, witnessing something magical happen in a surreal, otherworldly place'
+  );
+});
+
+test('humanizeDreamText: empty / null / undefined / non-string inputs all return the empty string safely', function () {
+  [undefined, null, '', '   ', 0, {}, []].forEach(function (v) {
+    assert.equal(WizardChips.humanizeDreamText(v), '', JSON.stringify(v) + ' must return an empty string');
+  });
+});

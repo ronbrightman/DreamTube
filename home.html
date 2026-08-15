@@ -1528,7 +1528,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     var __freshDraft = DreamStore.getDraft();
     if (__freshDraft && __freshDraft.sourceDreamId) optimisticEditDreamId = __freshDraft.sourceDreamId;
     optimisticFreshGenerationPending = true;
-    optimisticFreshGenerationCaption = (__freshDraft && (__freshDraft.storyText || __freshDraft.caption)) || '';
+    optimisticFreshGenerationCaption = (__freshDraft && WizardChips.humanizeDreamText(__freshDraft.storyText || __freshDraft.caption)) || '';
   }
   // Shared by handleFreshInAppGeneration (below, the ?generate=1 path
   // above already primes this synchronously before first paint) and
@@ -1540,7 +1540,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   function beginOptimisticFreshGeneration(){
     optimisticFreshGenerationPending = true;
     var d = DreamStore.getDraft();
-    optimisticFreshGenerationCaption = (d && (d.storyText || d.caption)) || '';
+    optimisticFreshGenerationCaption = (d && WizardChips.humanizeDreamText(d.storyText || d.caption)) || '';
   }
   function clearOptimisticFreshGeneration(){
     optimisticFreshGenerationPending = false;
@@ -1695,7 +1695,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // covers the OTHER optimistic case — a brand-new generation with no
     // prior dream to fall back to at all — so that state isn't left
     // blank either.
-    var quoteText = (pendingJob && (pendingJob.storyText || pendingJob.caption)) || optimisticFreshGenerationCaption || '';
+    var quoteText = (pendingJob && WizardChips.humanizeDreamText(pendingJob.storyText || pendingJob.caption)) || optimisticFreshGenerationCaption || '';
     if (quoteText) document.getElementById('d0-quote').textContent = '“' + quoteText + '”';
   }
   function renderDay0CardReady(dream){
@@ -1731,7 +1731,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // this dream's own full room) — the forming-only offer steps aside.
     document.getElementById('d0-sage').hidden = true;
     Array.prototype.forEach.call(document.querySelectorAll('#d0-quiet .quietlink'), function(b){ b.disabled = false; });
-    var quoteText = dream.storyText || dream.caption || '';
+    var quoteText = WizardChips.humanizeDreamText(dream.storyText || dream.caption) || '';
     document.getElementById('d0-quote').textContent = quoteText ? ('“' + quoteText + '”') : '';
     // Publish label mirrors result.html's own quiet-row state (§ render()) --
     // "Publish" pre-publish, "Live on Explore" once published.
@@ -2778,7 +2778,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         // the normal Generate flow re-gates server-side once more.
         var e116msg = ((match && match[2]) || '').replace(/^content_policy_blocked:\s*/, '') || 'That dream can’t be turned into a video.';
         var draftNow = DreamStore.getDraft();
-        var blockedText = (draftNow && (draftNow.storyText || draftNow.caption)) || '';
+        var blockedText = (draftNow && WizardChips.humanizeDreamText(draftNow.storyText || draftNow.caption)) || '';
         var isNamedBlock = /real person you.?ve named/i.test(e116msg);
         ContentBlockPanel.show({
           message: e116msg,

@@ -64,6 +64,18 @@
       .replace(/'/g, '&#39;');
   }
 
+  // humanText (founder 2026-08-15): a funnel-built dream's caption/storyText is the
+  // engineered fal prompt ("Medium tracking shot of …, hazy ethereal light, Cinematic
+  // style, dreamlike."); tiles must show the HUMAN core. Delegates to the shared
+  // WizardChips.humanizeDreamText (no logic duplicated here), falling back to raw text
+  // when WizardChips isn't loaded on the host page. NEVER used on promptText.
+  function humanText(t) {
+    if (typeof window !== 'undefined' && window.WizardChips && typeof window.WizardChips.humanizeDreamText === 'function') {
+      return window.WizardChips.humanizeDreamText(t);
+    }
+    return typeof t === 'string' ? t : (t == null ? '' : t);
+  }
+
   /** "999" / "1k" / "1.2k" — same shape profile.html's own formatCount had before this module existed. */
   function formatCount(n) {
     var v = typeof n === 'number' && isFinite(n) ? n : 0;
@@ -184,7 +196,7 @@
         // on the record (harmless, and future variable-length videos can
         // bring the badge back with real information in it).
       '</div>' +
-      '<div class="vcard-title" dir="auto">' + esc(d.caption) + '</div>' +
+      '<div class="vcard-title" dir="auto">' + esc(humanText(d.caption)) + '</div>' +
       (metaParts.length ? '<div class="vcard-meta">' + esc(metaParts.join(' · ')) + '</div>' : '') +
     '</a>';
   }
@@ -288,7 +300,7 @@
     var handle = (typeof window !== 'undefined' && window.DreamStore && DreamStore.displayHandle)
       ? DreamStore.displayHandle(d.ownerHandle)
       : (d.ownerHandle || '');
-    var snippet = d.caption || d.storyText || '';
+    var snippet = humanText(d.caption || d.storyText || '');
     return '<button type="button" class="insp-tile" data-dream-id="' + esc(d.id) + '">' +
       '<span class="insp-thumb">' + media +
         (snippet ? '<span class="insp-snip">' + esc(snippet) + '</span>' : '') +
@@ -316,7 +328,7 @@
         ? '<img class="vcard-image" src="' + esc(d.imageUrl) + '" alt="">'
         : '<div class="vcard-thumb-bg" style="background:' + gradient + '"></div>';
     var when = relativeDayLabel(d.createdAt, opts.now);
-    var snippet = d.caption || d.storyText || '';
+    var snippet = humanText(d.caption || d.storyText || '');
     return '<button type="button" class="insp-tile" data-dream-id="' + esc(d.id) + '">' +
       '<span class="insp-thumb">' + media +
         '<span class="pbadge"><span class="icon">' + (opts.privateIcon || '') + '</span>Private</span>' +

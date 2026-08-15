@@ -245,6 +245,9 @@
 </div>
 
 <script src="js/icons.js"></script>
+<!-- wizard-chips: exposes WizardChips.humanizeDreamText, used to strip a funnel dream's
+     engineered camera/lighting/style prompt down to the human story for display (founder 2026-08-15). -->
+<script src="js/wizard-chips.js"></script>
 <script src="js/store.js"></script>
 <script src="js/dream-cards.js"></script>
 <script src="js/bottom-nav.js"></script>
@@ -387,7 +390,7 @@
         '<div class="dj-action" data-comments="'+esc(d.id)+'"><span class="icon">'+Icons.messageCircle+'</span><span data-comment-count="'+esc(d.id)+'">'+formatCount(commentCount)+'</span></div>' +
         '<div class="dj-action" data-share="'+esc(d.id)+'"><span class="icon">'+Icons.share+'</span><span>Share</span></div>' +
       '</div>' +
-      '<div class="dj-caption clamped" dir="auto">'+esc(d.caption)+'</div>' +
+      '<div class="dj-caption clamped" dir="auto">'+esc(WizardChips.humanizeDreamText(d.caption))+'</div>' +
       '<div class="dj-interp-seam"></div>' +
       '<div class="dj-comments-preview" id="dj-comments-preview-'+esc(d.id)+'"></div>' +
       '<div class="dj-comments-teaser" data-comments-teaser="'+esc(d.id)+'">'+esc(teaserLabel)+'</div>' +
@@ -729,7 +732,7 @@
       if(!dream) return;
       ShareSheet.show({
         dream: dream,
-        shareText: 'Check out this dream: "' + dream.caption + '" — create your own on DreamTube!',
+        shareText: 'Check out this dream: "' + WizardChips.humanizeDreamText(dream.caption) + '" — create your own on DreamTube!',
         onToast: showToast
       });
       return;

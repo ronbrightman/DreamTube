@@ -32,6 +32,7 @@ var siteOrigin = require('./site-origin');
 var pushSender = require('./push-sender');
 var pushDedupStore = require('./push-dedup-store');
 var winbackSender = require('./winback-email-sender');
+var humanizeDreamText = require('./humanize-dream-text').humanizeDreamText;
 
 var RESEND_API_BASE = 'https://api.resend.com/emails';
 var FROM_ADDRESS = 'DreamTube <dreams@dreamtube.life>';
@@ -51,12 +52,12 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** The human-readable dream description this codebase already shows humans (js/store.js reads `d.storyText || d.caption`). '' if the dream carries neither. */
+/** The human-readable dream description this codebase already shows humans (js/store.js reads `d.storyText || d.caption`). '' if the dream carries neither. humanizeDreamText (founder 2026-08-15) strips a FUNNEL dream's engineered camera/lighting/style prompt down to the human core so the retention email quotes the real dream, not "Medium tracking shot of …, dreamlike." — a no-op on already-human text. Also used by interp-unread-email-sender.js (it reuses this exact function). */
 function dreamDescription(dream) {
   if (!dream) return '';
   var text = (typeof dream.storyText === 'string' && dream.storyText.trim()) ? dream.storyText
     : (typeof dream.caption === 'string' ? dream.caption : '');
-  return String(text || '').trim();
+  return humanizeDreamText(String(text || '').trim());
 }
 
 /** Truncates on a word boundary where possible, appending an ellipsis only when it actually cut something. */

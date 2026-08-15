@@ -349,6 +349,25 @@
   // something unexpected turns up in production after merge.
   var PRIVATE_DREAM_SYNC_ENABLED = true;
 
+  // Humanize an engineered chip-flow caption for a HUMAN-facing read (founder-directed
+  // 2026-08-15). A funnel-built dream stores an engineered prompt string in
+  // caption/storyText ("Medium tracking shot of …, dreamy surreal mood, hazy ethereal
+  // light, Cinematic style, dreamlike."); that is right for promptText -> fal, but it
+  // must never be shown to users or fed to the interpretation LLM. This delegates to the
+  // ONE shared implementation (js/wizard-chips.js's WizardChips.humanizeDreamText) when
+  // it's loaded on the page — no logic is duplicated here (the drift-killer rule). When
+  // WizardChips isn't present (a page/store.js load without it, or the Node test env), it
+  // falls back to the raw text: pure display pages that call this all load wizard-chips,
+  // and the interpretation path is additionally humanized server-side in interpret-dream.js,
+  // so nothing depends on this client fallback doing the strip. NEVER call this on
+  // promptText / the text sent to generate-video.js.
+  function humanText(t) {
+    if (typeof window !== 'undefined' && window.WizardChips && typeof window.WizardChips.humanizeDreamText === 'function') {
+      return window.WizardChips.humanizeDreamText(t);
+    }
+    return typeof t === 'string' ? t : (t == null ? '' : t);
+  }
+
   var STYLE_GRADIENTS = {
     Cartoon:   'linear-gradient(165deg,#FFD68A,#FFB199)',
     Cinematic: 'linear-gradient(165deg,#3E6E8E,#182A44 55%,#0B0A1F)',
@@ -4820,7 +4839,7 @@
       return {
         loggedToday: !!todayDream || todayNoRecall || pendingToday,
         todayEntryType: todayDream ? 'dream' : (todayNoRecall ? 'no_recall' : (pendingToday ? 'pending' : null)),
-        todayDreamCaption: todayDream ? (todayDream.storyText || todayDream.caption) : (pendingToday ? (pendingJob.storyText || pendingJob.caption) : null),
+        todayDreamCaption: todayDream ? humanText(todayDream.storyText || todayDream.caption) : (pendingToday ? humanText(pendingJob.storyText || pendingJob.caption) : null),
         loggedYesterday: loggedYesterday,
         weekCount: weekDreamCount + weekNoRecallCount + (pendingToday && !todayDream ? 1 : 0),
         weekTarget: WEEK_SUMMARY_TARGET,
@@ -5604,7 +5623,11 @@
         // dream saved before this field existed (see finalizeDream's own
         // doc comment) — behaviorally identical to today for every
         // existing dream, and correctly storyText-only for every new one.
-        body: JSON.stringify({ caption: d.storyText || d.caption, personaKey: personaKey, mode: 'questions' })
+        // humanText (founder 2026-08-15): the interpretation LLM must read the HUMAN
+        // dream text, never a funnel dream's engineered camera/lighting/style prompt.
+        // interpret-dream.js also humanizes defensively server-side, so this is the
+        // belt to that suspenders (and a no-op for a genuinely human storyText).
+        body: JSON.stringify({ caption: humanText(d.storyText || d.caption), personaKey: personaKey, mode: 'questions' })
       }).then(function (res) {
         return res.json().then(function (data) {
           if (!res.ok) throw new Error(data.error || 'E407: empty_or_invalid_response');
@@ -5658,7 +5681,8 @@
         // sourceOperationName yet (a legacy/edge record); the server simply
         // skips the marker then. Sent ONLY on the reading call (a generated
         // reading is the "read" signal), never the questions call.
-        body: JSON.stringify({ caption: d.storyText || d.caption, personaKey: personaKey, mode: 'reading', qa: qa || [], operationName: d.sourceOperationName || null })
+        // humanText — see requestInterpretationQuestions above (same reasoning).
+        body: JSON.stringify({ caption: humanText(d.storyText || d.caption), personaKey: personaKey, mode: 'reading', qa: qa || [], operationName: d.sourceOperationName || null })
       }).then(function (res) {
         return res.json().then(function (data) {
           if (!res.ok) throw new Error(data.error || 'E407: empty_or_invalid_response');

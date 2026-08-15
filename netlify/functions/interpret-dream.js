@@ -58,6 +58,7 @@
 //   E409 invalid_mode              — personaKey was valid but `mode` isn't "questions" or "reading"
 
 var InterpreterPersonas = require('../../js/interpreter-personas');
+var humanizeDreamText = require('./lib/humanize-dream-text').humanizeDreamText;
 var interpReadStore = require('./lib/interp-read-store');
 var jobOwners = require('./lib/job-owners');
 var accountStore = require('./lib/account-store');
@@ -232,7 +233,13 @@ exports.handler = async function (event) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E403: invalid_json' }) };
   }
 
-  var caption = (payload.caption || '').trim();
+  // humanizeDreamText (founder 2026-08-15): a FUNNEL-built dream's stored caption is the
+  // engineered fal prompt (leading camera phrase + trailing mood/lighting/style/dreamlike
+  // boilerplate). The interpretation LLM must read the HUMAN dream, so strip those
+  // wrappers defensively here — the client already sends humanized text (js/store.js), but
+  // this makes the endpoint correct for any caller (legacy client, a direct call). A no-op
+  // on already-human text. The rate-limit + emptiness checks run on the humanized value.
+  var caption = humanizeDreamText(payload.caption || '');
   if (!caption) {
     return { statusCode: 400, body: JSON.stringify({ error: 'E404: caption_required' }) };
   }

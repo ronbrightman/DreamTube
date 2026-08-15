@@ -71,6 +71,10 @@
 </div>
 
 <script src="js/icons.js"></script>
+<!-- wizard-chips: exposes WizardChips.humanizeDreamText, used to strip a funnel dream's
+     engineered camera/lighting/style prompt down to the human story on the shared-dream
+     view (founder 2026-08-15). -->
+<script src="js/wizard-chips.js"></script>
 <script src="js/pwa.js"></script>
 <script>
 (function(){
@@ -103,7 +107,7 @@
           return;
         }
         document.getElementById('ready-video').src = data.dream.videoUrl;
-        document.getElementById('ready-caption').textContent = data.dream.caption || '';
+        document.getElementById('ready-caption').textContent = WizardChips.humanizeDreamText(data.dream.caption || '');
         showView('ready-view');
 
         document.getElementById('make-another-btn').addEventListener('click', function(){

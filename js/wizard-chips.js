@@ -726,8 +726,80 @@
     return b ? b + ' ' + e : e;
   }
 
+  // ── Humanize an engineered chip-flow caption for HUMAN display / interpretation ──
+  // (founder-directed 2026-08-15) A dream built through the chip funnel stores an
+  // ENGINEERED prompt string — assembleCaption's output — of the shape:
+  //   "<camera> of <subject>, <action-and-place>, [<mood> mood, ]<lighting>, [<style> style, ]dreamlike.[ <freeText>]"
+  // e.g. "Medium tracking shot of an animal or creature, watching something magical
+  //       unfold, in a dreamlike place, dreamy surreal mood, hazy ethereal light,
+  //       Cinematic style, dreamlike."
+  // That text is correct as the fal.ai VIDEO prompt (a dream's promptText -> generate-
+  // video.js), but it must NEVER be what a human sees (profile / result page / "your
+  // dream is ready" emails / claim page) or what the dream-INTERPRETATION LLM reads.
+  // This strips the two engineered wrappers, leaving the human core:
+  //   (a) the leading camera-shot phrase — the five inferCamera outputs, plus any
+  //       generic "<…> shot of" / "<…> angle of" lead-in, and
+  //   (b) the trailing ", <mood> mood, <lighting>, <style> style, dreamlike." boilerplate
+  //       — matched from the mood/lighting/style run through the terminal "dreamlike.",
+  // while PRESERVING any free-typed text the user added after "dreamlike.".
+  // The example above humanizes to:
+  //   "an animal or creature, watching something magical unfold, in a dreamlike place"
+  //
+  // Pure and IDEMPOTENT: running it on already-clean text — a real free-typed sentence,
+  // or buildDeterministicStory's output — is a NO-OP (neither wrapper is present), and
+  // running it twice equals running it once. Empty / null / non-string in -> '' out.
+  //
+  // Deliberately STRUCTURAL, not keyword-list-driven: it keys off assembleCaption's
+  // fixed template shape (leading "…shot/angle of", a trailing lighting clause that
+  // always contains "light", the terminal "dreamlike.") rather than the specific
+  // mood/lighting/style words, so it keeps working if those tables change. It also
+  // never strips a mid-sentence "dreamlike" (e.g. "in a dreamlike place" is KEPT — only
+  // the terminal "dreamlike." with its lighting run is removed).
+  //
+  // NEVER call this on promptText / the text sent to generate-video.js / fal — that must
+  // keep the full engineered prompt. This is display/interpretation-only.
+  function humanizeDreamText(text) {
+    if (typeof text !== 'string') return '';
+    var s = text.trim();
+    if (!s) return '';
+
+    // (a) Leading camera phrase. The five known inferCamera outputs are listed
+    // explicitly (self-documenting), then a generic "<words> shot of" / "<words>
+    // angle of" fallback catches any similar lead-in; the char class excludes commas
+    // so it can never reach across into the first real content clause.
+    s = s.replace(
+      /^(?:aerial wide shot|first-person POV shot|intimate close-up shot|medium tracking shot|sweeping crane shot|[A-Za-z][\w'\- ]*?(?:shot|angle)) of\s+/i,
+      ''
+    );
+
+    // (b) Trailing engineered boilerplate: an optional "<mood> mood," clause, the
+    // always-present lighting clause (any clause containing "light"), an optional
+    // "<style> style," clause, then the terminal "dreamlike.". Anything after
+    // "dreamlike." is free-typed text and is preserved as its own sentence. The leading
+    // ",\s*" consumes the comma that joined the human core to the boilerplate, so the
+    // core is left with no dangling trailing comma.
+    //
+    // The one-leading-mood-ADJECTIVE alternation before the "…mood" clause handles the
+    // founder's own "…, Dreamy, surreal mood, …" two-clause variant (where the mood word
+    // and "surreal mood" are comma-split) — but ONLY for a real mood adjective, never an
+    // arbitrary single word, so a genuine one-word action/place clause immediately before
+    // the mood run (e.g. "…, exploring, dreamy surreal mood, …") is NOT swallowed.
+    s = s.replace(
+      /,\s*(?:(?:(?:dreamy|surreal|peaceful|joyful|mysterious|tense|epic|awe-inspiring),\s*)?[^,]*\bmood\b[^,]*,\s*)?[^,]*light[^,]*,\s*(?:[^,]*\bstyle\b[^,]*,\s*)?dreamlike\.?([\s\S]*)$/i,
+      function (_m, tail) {
+        tail = (tail || '').trim();
+        return tail ? '. ' + tail : '';
+      }
+    );
+
+    // Tidy: collapse whitespace, pull punctuation back onto the preceding word, drop a
+    // stray trailing comma.
+    return s.replace(/\s+/g, ' ').replace(/\s+([,.])/g, '$1').replace(/,\s*$/, '').trim();
+  }
+
   var WizardChips = {
     joinStorySentences: joinStorySentences,
+    humanizeDreamText: humanizeDreamText,
     SUBJECT_CHIPS: SUBJECT_CHIPS,
     SETTING_PLACE_CHIPS: SETTING_PLACE_CHIPS,
     ACTION_CHIPS: ACTION_CHIPS,

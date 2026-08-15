@@ -842,6 +842,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 </div>
 
 <script src="js/icons.js"></script>
+<!-- wizard-chips: exposes WizardChips.humanizeDreamText, used to strip a funnel dream's
+     engineered camera/lighting/style prompt down to the human story for the recap quote,
+     edit box, share text and Chamber (founder 2026-08-15). -->
+<script src="js/wizard-chips.js"></script>
 <script src="js/store.js"></script>
 <script src="js/music-bed.js"></script>
 <script src="js/content-block-panel.js"></script>
@@ -1422,7 +1426,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       // treatment: immediate confirmation the edit was received, rather
       // than the stale pre-edit text sitting there unexplained for the
       // whole regenerate.
-      var liveQuote = pendingJob && (pendingJob.storyText || pendingJob.caption);
+      var liveQuote = pendingJob && WizardChips.humanizeDreamText(pendingJob.storyText || pendingJob.caption);
       if(liveQuote) document.getElementById('result-quote').textContent = '"' + liveQuote + '"';
     }
     // Sound-discoverability nudge (see maybeShowSoundNudge's own comment) --
@@ -1500,7 +1504,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // overwriting it here would silently revert the live quote back to
     // the old text on every re-render while the job is in flight.
     if(!regenerating){
-      document.getElementById('result-quote').textContent = '"' + (dream.storyText || dream.caption) + '"';
+      document.getElementById('result-quote').textContent = '"' + WizardChips.humanizeDreamText(dream.storyText || dream.caption) + '"';
       quoteExpanded = false; // fresh caption (e.g. after edit/regenerate) starts collapsed again
       setupExpandableQuote();
     }
@@ -1517,7 +1521,12 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       privacyTag.classList.remove('pub');
       privacyTag.title = 'Private';
     }
-    document.getElementById('edit-text').value = dream.storyText || dream.caption;
+    // humanText (founder 2026-08-15): the edit box shows the HUMAN dream story, never a
+    // funnel dream's engineered camera/lighting/style prompt. persistGenerateAgainDraft
+    // below humanizes its comparison base the SAME way, so an UNEDITED box still counts as
+    // "unchanged" and keeps sending the dream's own engineered promptText to generation
+    // (the engineered prompt is never lost — see that function's own comment).
+    document.getElementById('edit-text').value = WizardChips.humanizeDreamText(dream.storyText || dream.caption);
     Array.prototype.forEach.call(document.querySelectorAll('#sheet-style-grid .style-card'), function(c){
       c.classList.toggle('selected', c.dataset.style === dream.style);
     });
@@ -1622,7 +1631,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
         ContentBlockPanel.show({
           message: e116msg,
           namedPerson: isNamedBlock,
-          originalText: (dream && (dream.storyText || dream.caption)) || '',
+          originalText: (dream && WizardChips.humanizeDreamText(dream.storyText || dream.caption)) || '',
           onApplyText: function(text){
             DreamStore.setDraft({ restore: true, caption: text, storyText: text, sourceDreamId: null });
             location.href = 'create.html';
@@ -2679,7 +2688,10 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     applyBtn.textContent = 'Realigning your dream…';
 
     var originalPromptText = dream.promptText || dream.caption;
-    var originalStoryText = dream.storyText || dream.caption;
+    // storyText humanized (founder 2026-08-15): the realign LLM and the delta-confirm
+    // preview must work from the HUMAN dream story, never a funnel dream's engineered
+    // prompt. originalPromptText (the fal prompt) is deliberately left engineered.
+    var originalStoryText = WizardChips.humanizeDreamText(dream.storyText || dream.caption);
     // DreamStore.realignDreamPrompt never rejects (falls back to a naive
     // concatenation merge internally on any failure — see its own doc
     // comment) — no separate error branch needed here.
@@ -2844,7 +2856,11 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
     // exactly what an unedited "Generate Again" always produced before
     // this feature existed — while storyText/the displayed caption still
     // stay the correct human sentence either way.
-    var originalStoryText = dream.storyText || dream.caption;
+    // Humanized to MATCH the edit-text prefill (render() above) exactly, so an
+    // untouched box is correctly detected as unchanged for a funnel dream too — which is
+    // what keeps its engineered promptText (camera/lighting/style) intact on an unedited
+    // "Generate Again". storyText persists as the human text either way.
+    var originalStoryText = WizardChips.humanizeDreamText(dream.storyText || dream.caption);
     var textUnchanged = text === originalStoryText;
     var newPromptText = textUnchanged ? (dream.promptText || dream.caption) : text;
     var newStoryText = textUnchanged ? originalStoryText : text;
@@ -2993,7 +3009,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
   function doShare(){
     ShareSheet.show({
       dream: dream,
-      shareText: 'Check out my dream: "' + (dream.storyText || dream.caption) + '" — create your own on DreamTube!',
+      shareText: 'Check out my dream: "' + WizardChips.humanizeDreamText(dream.storyText || dream.caption) + '" — create your own on DreamTube!',
       onToast: showToast
     });
   }
