@@ -117,6 +117,9 @@ test('a ready, UNVIEWED signed-up dream sends exactly one email with the dream t
   var body = spies.resendCalls[0].body;
   assert.deepEqual(body.to, ['dreamer@example.com']);
   assert.match(body.subject, /neon city made of glass/, 'the dream text must be embedded in the subject');
+  // The subject is PLAIN TEXT — it must NOT carry raw HTML entities (they
+  // render literally in an inbox subject; founder-caught 2026-08-15).
+  assert.doesNotMatch(body.subject, /&(ldquo|rdquo|mdash|hellip|amp|#\d+);/, 'the subject must use real Unicode punctuation, not HTML entities');
   assert.match(body.html, /neon city made of glass/, 'the dream text must be embedded in the body');
   assert.match(body.html, /https:\/\/img\.example\/neon\.jpg/, 'the real thumbnail must be rendered');
   assert.match(body.html, /object-fit:cover/, 'the thumbnail <img> uses the shared banner style');

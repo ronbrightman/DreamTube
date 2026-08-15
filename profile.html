@@ -1312,6 +1312,17 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); color:var(
   refreshPublishedCountFromServer();
   refreshFollowerCountFromServer();
 
+  // A ?bt= one-tap auto-login (e.g. tapping a recovery/"your dream is ready"
+  // email) commits the session but does NOT itself pull the account's
+  // server-side dreams onto this device — unlike loginWithEmailCode, which
+  // reconciles before it resolves. Without this, a user who just auto-logged
+  // in from an email lands on Profile showing ZERO dreams even though they
+  // have some on the server (founder-caught 2026-08-15). So on a fresh
+  // session transfer, reconcile the server dreams and re-render.
+  if (DreamStore.wasSessionJustTransferred() && DreamStore.getCurrentUser()) {
+    DreamStore.reconcilePrivateDreamsFromServer().then(function () { render(); }).catch(function () { /* best-effort — a reconcile failure just leaves the local view */ });
+  }
+
   // ===== New-likes notification (tracker item idea-notify-likes, v1) =====
   // The only page-load fetch anywhere in this feature — see
   // DreamStore.refreshNewLikesCount's own doc block in js/store.js for the

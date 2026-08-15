@@ -133,9 +133,23 @@ async function loginProfileUrl(event, username, email) {
   }
 }
 
+/** Plain-text truncation for the SUBJECT line. A subject is NOT HTML, so it must use a real ellipsis, never the `&hellip;` entity truncate() appends for the HTML body. */
+function truncatePlain(text, max) {
+  if (text.length <= max) return text;
+  var slice = text.slice(0, max);
+  var lastSpace = slice.lastIndexOf(' ');
+  if (lastSpace > max * 0.6) slice = slice.slice(0, lastSpace);
+  return slice.replace(/[\s.,;:!?-]+$/, '') + '…';
+}
+
 function subjectLine(description) {
-  if (!description) return 'Your dream is ready &mdash; come see it';
-  return 'Your dream &ldquo;' + truncate(description, SUBJECT_TEXT_MAX) + '&rdquo; is ready &mdash; come see it';
+  // An email SUBJECT is PLAIN TEXT, never HTML — it must use real Unicode
+  // punctuation, never the &ldquo;/&rdquo;/&mdash;/&hellip; entities the HTML
+  // BODY uses. Those entities render literally in an inbox subject line
+  // ("Your dream &ldquo;...&hellip;&rdquo; is ready &mdash; come see it") —
+  // founder-caught 2026-08-15.
+  if (!description) return 'Your dream is ready — come see it';
+  return 'Your dream “' + truncatePlain(description, SUBJECT_TEXT_MAX) + '” is ready — come see it';
 }
 
 function buildHtml(opts) {
