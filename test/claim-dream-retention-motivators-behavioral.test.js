@@ -267,7 +267,9 @@ test('short benefit bullets render next to the signup CTA, without touching the 
     });
 
     // The bullets sit next to the CTA, not in front of the maybe-later exit.
-    var ctaBox = await page.locator('#claim-signup-btn').boundingBox();
+    // (CTA is now the passwordless "Email me a login code" button — the page
+    // moved off the password create-account flow, founder 2026-08-15.)
+    var ctaBox = await page.locator('#claim-code-btn').boundingBox();
     var benefitsBox = await benefits.boundingBox();
     assert.ok(ctaBox && benefitsBox, 'both the CTA and the benefits block must be visible with real dimensions');
 
@@ -310,6 +312,62 @@ test('a logged-in visitor whose email matches the pending dream never sees the s
 
     var calls = await readPostHogCalls(page);
     assert.equal(captureCallsNamed(calls, 'claim_page_viewed').length, 1);
+  } finally {
+    await context.close();
+  }
+});
+
+// ===== PASSWORDLESS claim signup (founder 2026-08-15) =====
+// The bug this proves fixed: claim-dream.html used a username+PASSWORD
+// create-account that hard-rejected an already-registered email with "An
+// account with that email already exists" and no way forward. Since the
+// funnel registers the email at its email-entry step, EVERY returning user
+// hit that dead-end and was locked out of their own finished dream. The page
+// now uses the funnel's passwordless email-code flow, which RESOLVES an
+// already-registered email to a code step instead of erroring.
+
+test('PASSWORDLESS claim: an already-registered email resolves to a code step and logs in — no "email already exists" dead-end', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    var page = await context.newPage();
+    await blockThirdParty(page);
+
+    var passwordlessCalls = 0, loginCalls = 0;
+    // One dispatcher for every backend call the claim + passwordless flow
+    // touches (single handler avoids Playwright's last-registered-wins route
+    // ordering). An already-registered email -> pendingVerification (the exact
+    // case that used to dead-end); the code login succeeds.
+    await page.route('**/.netlify/functions/**', function (route) {
+      var url = route.request().url();
+      function json(obj) { route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(obj) }); }
+      if (url.indexOf('verify-pending-claim') !== -1) return json(READY_RESPONSE);
+      if (url.indexOf('register-account-passwordless') !== -1) { passwordlessCalls++; return json({ ok: true, pendingVerification: true }); }
+      if (url.indexOf('login-with-email-code') !== -1) { loginCalls++; return json({ ok: true, username: 'watcher', authToken: 'tok', emailVerified: true }); }
+      return json({ ok: true, dreams: [] }); // reconcile / claim-pending-generation / anything else
+    });
+
+    await page.goto(baseUrl + '/claim-dream.html?pending=pd1&token=tok1', { waitUntil: 'domcontentloaded' });
+    await page.locator('#signup-view').waitFor({ state: 'visible', timeout: 5000 });
+
+    // Passwordless only — the old password field is gone.
+    assert.equal(await page.locator('#claim-password').count(), 0, 'the password field must be gone (passwordless only)');
+    assert.equal(await page.locator('#claim-code-btn').isVisible(), true, 'the "email me a code" CTA is shown');
+    assert.equal(await page.locator('#claim-email').inputValue(), 'watcher@example.com', 'email is locked to the dream address');
+
+    // Click "Email me a login code" — an already-registered email must RESOLVE
+    // to the code step, NOT show "email already exists".
+    await page.locator('#claim-code-btn').click();
+    await page.locator('#claim-code-step').waitFor({ state: 'visible', timeout: 5000 });
+    assert.equal((await page.locator('#claim-error').textContent()).trim(), '', 'an already-registered email must NOT error — it resolves to the code step');
+    assert.ok(passwordlessCalls >= 1, 'signupPasswordless was called');
+
+    // Enter the code -> logs in -> saves the dream and opens it.
+    await page.locator('#claim-code').fill('123456');
+    await page.locator('#claim-verify-btn').click();
+    await page.waitForURL(/result\.html/, { timeout: 6000 });
+    assert.ok(loginCalls >= 1, 'loginWithEmailCode was called');
+    assert.match(page.url(), /result\.html/, 'a successful code login saves the dream and opens it — the dead-end is gone');
   } finally {
     await context.close();
   }

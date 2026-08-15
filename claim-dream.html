@@ -75,7 +75,7 @@
 
   <div class="px" id="ready-view" style="flex:1; display:none; flex-direction:column;">
     <div style="border-radius:18px; overflow:hidden; margin:10px 0 16px; background:#000;">
-      <video id="ready-video" controls playsinline muted preload="metadata" style="width:100%; display:block; max-height:60vh;"></video>
+      <video id="ready-video" controls playsinline muted preload="metadata" poster="assets/store/dream-neon.webp" style="width:100%; display:block; max-height:60vh;"></video>
     </div>
     <div style="font-weight:700; font-size:15px; margin-bottom:6px;">It's ready to watch.</div>
     <div style="color:var(--text-muted); font-size:13px; line-height:1.5; margin-bottom:18px;" id="ready-caption"></div>
@@ -95,30 +95,42 @@
       <button class="btn btn-secondary btn-block" id="mismatch-logout-btn">Log out and continue</button>
     </div>
 
+    <!-- PASSWORDLESS claim signup (founder 2026-08-15): this page used to
+         create the account with a username + PASSWORD, which hard-rejected an
+         already-registered email ("An account with that email already exists")
+         with no way forward -- and since the funnel registers the email at its
+         email-entry step, EVERY returning user hit that dead-end and was
+         locked out of their own finished dream. It now uses the same
+         passwordless email-code flow the funnel itself uses
+         (DreamStore.signupPasswordless -> loginWithEmailCode), which RESOLVES
+         an already-registered email instead of erroring. The email stays
+         locked to the address this dream was sent to. -->
     <div id="signup-view" style="display:none;">
-      <div class="auth-sub" style="margin-bottom:14px;">Save this dream (and keep making more) — create your free account.</div>
+      <div class="auth-sub" style="margin-bottom:14px;">Save this dream (and keep making more) — it's free.</div>
       <input class="field" id="claim-email" type="email" disabled style="opacity:.7;">
-      <input class="field" id="claim-username" placeholder="Choose a username" autocomplete="username" dir="auto">
-      <div class="field-pw-wrap">
-        <input class="field" id="claim-password" placeholder="Create a password" type="password" autocomplete="new-password">
-        <button type="button" class="field-pw-toggle" id="claim-pw-toggle" tabindex="-1" aria-label="Show password"></button>
-      </div>
-      <div class="err-text" id="claim-error"></div>
 
-      <!-- Persuasion, not pressure (founder 2026-07-28, tracker item
-           for-product-claim-dream-html-retention-e-b27l7l): two short,
-           concrete reasons to finish signup, placed right next to the CTA
-           itself -- NOT a barrier in front of the "maybe later" escape link
-           below, which stays exactly where and as reachable as before.
-           Reuses .proc-checklist/.proc-check-item's existing "done" check-
-           mark row styling (processing.html) rather than inventing a new
-           bullet-list component. -->
-      <div class="proc-checklist" id="claim-benefits" style="margin:4px 0 14px;">
-        <div class="proc-check-item done"><span class="proc-check-mark" id="claim-benefit-icon-1"></span><span class="proc-check-label">Get your dream's interpretation — private, just for you</span></div>
-        <div class="proc-check-item done"><span class="proc-check-mark" id="claim-benefit-icon-2"></span><span class="proc-check-label">See what others are dreaming on Explore</span></div>
+      <div id="claim-email-step">
+        <div class="err-text" id="claim-error"></div>
+
+        <!-- Persuasion, not pressure (founder 2026-07-28, tracker item
+             for-product-claim-dream-html-retention-e-b27l7l): two short,
+             concrete reasons to finish, right next to the CTA -- NOT a barrier
+             in front of the "maybe later" escape link below. -->
+        <div class="proc-checklist" id="claim-benefits" style="margin:4px 0 14px;">
+          <div class="proc-check-item done"><span class="proc-check-mark" id="claim-benefit-icon-1"></span><span class="proc-check-label">Get your dream's interpretation — private, just for you</span></div>
+          <div class="proc-check-item done"><span class="proc-check-mark" id="claim-benefit-icon-2"></span><span class="proc-check-label">See what others are dreaming on Explore</span></div>
+        </div>
+
+        <button class="btn btn-primary btn-block" id="claim-code-btn" style="margin-top:2px;">Email me a login code</button>
       </div>
 
-      <button class="btn btn-primary btn-block" id="claim-signup-btn" style="margin-top:2px;">Create account &amp; save</button>
+      <div id="claim-code-step" style="display:none;">
+        <div class="auth-sub" id="claim-code-sub" style="margin-bottom:10px;">We sent a 6-digit code to your email — enter it to save your dream.</div>
+        <input class="field" id="claim-code" placeholder="6-digit code" inputmode="numeric" autocomplete="one-time-code" dir="auto">
+        <div class="err-text" id="claim-code-error"></div>
+        <button class="btn btn-primary btn-block" id="claim-verify-btn" style="margin-top:2px;">Verify &amp; save my dream</button>
+        <span class="link-text" id="claim-resend-link" style="cursor:pointer; display:inline-block; margin-top:12px;">Resend code</span>
+      </div>
     </div>
 
     <div style="flex:1"></div>
@@ -237,6 +249,84 @@
         if(dream){ location.href = 'result.html?id=' + dream.id; }
       }
 
+      // PASSWORDLESS claim signup (founder 2026-08-15) — wired as a function
+      // so BOTH the not-logged-in load AND the mismatch->logout path get a
+      // working signup (the old code wired the handler only inside the
+      // not-logged-in branch, so a logged-out-from-mismatch visitor landed on
+      // a dead signup form). The email is locked to the dream's address;
+      // signupPasswordless RESOLVES an already-registered email (the common
+      // case for a funnel user) instead of erroring, then loginWithEmailCode
+      // finishes the login and finishClaim() saves + opens the dream.
+      var signupWired = false;
+      function wireSignupView(){
+        document.getElementById('claim-email').value = data.email || '';
+        document.getElementById('claim-benefit-icon-1').innerHTML = Icons.check;
+        document.getElementById('claim-benefit-icon-2').innerHTML = Icons.check;
+        if(signupWired) return;
+        signupWired = true;
+
+        var claimEmail = data.email;
+        var emailStep = document.getElementById('claim-email-step');
+        var codeStep = document.getElementById('claim-code-step');
+        var codeBtn = document.getElementById('claim-code-btn');
+        var verifyBtn = document.getElementById('claim-verify-btn');
+        var codeInput = document.getElementById('claim-code');
+        var errEl = document.getElementById('claim-error');
+        var codeErrEl = document.getElementById('claim-code-error');
+
+        function showCodeStep(){
+          emailStep.style.display = 'none';
+          codeStep.style.display = 'block';
+          try { codeInput.focus(); } catch(e){ /* focus is best-effort */ }
+        }
+
+        function sendCode(){
+          errEl.textContent = '';
+          codeBtn.disabled = true;
+          codeBtn.textContent = 'Sending…';
+          DreamStore.signupPasswordless(claimEmail).then(function(result){
+            codeBtn.disabled = false;
+            codeBtn.textContent = 'Email me a login code';
+            if(!result || !result.ok){
+              errEl.textContent = (result && result.error) || "Couldn't send a code — try again.";
+              return;
+            }
+            // A brand-new account with a session already established (rare here,
+            // since a funnel user's email is already registered) -> save now.
+            if(result.created && !result.pendingVerification){
+              fireMetaConversionIfAvailable();
+              finishClaim();
+              return;
+            }
+            // Already-registered / needs verification -> code entry.
+            showCodeStep();
+          });
+        }
+
+        function verifyCode(){
+          var code = (codeInput.value || '').trim();
+          codeErrEl.textContent = '';
+          if(!code){ codeErrEl.textContent = 'Enter the 6-digit code from your email.'; return; }
+          verifyBtn.disabled = true;
+          verifyBtn.textContent = 'Verifying…';
+          DreamStore.loginWithEmailCode(claimEmail, code).then(function(result){
+            if(!result || !result.ok){
+              verifyBtn.disabled = false;
+              verifyBtn.textContent = 'Verify & save my dream';
+              codeErrEl.textContent = (result && result.error) || "That code didn't work — check it and try again.";
+              return;
+            }
+            fireMetaConversionIfAvailable();
+            finishClaim();
+          });
+        }
+
+        codeBtn.addEventListener('click', sendCode);
+        verifyBtn.addEventListener('click', verifyCode);
+        codeInput.addEventListener('keydown', function(ev){ if(ev.key === 'Enter'){ ev.preventDefault(); verifyCode(); } });
+        document.getElementById('claim-resend-link').addEventListener('click', sendCode);
+      }
+
       if(mismatch){
         document.getElementById('mismatch-copy').textContent =
           "You're logged in as " + (DreamStore.getAccountEmail() || 'a different account') +
@@ -245,7 +335,7 @@
           DreamStore.logout();
           document.getElementById('mismatch-view').style.display = 'none';
           document.getElementById('signup-view').style.display = 'block';
-          document.getElementById('claim-email').value = data.email || '';
+          wireSignupView();
         });
       }
 
@@ -253,39 +343,7 @@
         document.getElementById('save-to-account-btn').addEventListener('click', finishClaim);
       }
       if(!loggedIn){
-        document.getElementById('claim-email').value = data.email || '';
-        document.getElementById('claim-benefit-icon-1').innerHTML = Icons.check;
-        document.getElementById('claim-benefit-icon-2').innerHTML = Icons.check;
-        var pwToggle = document.getElementById('claim-pw-toggle');
-        var pwInput = document.getElementById('claim-password');
-        pwToggle.innerHTML = Icons.eye;
-        pwToggle.addEventListener('click', function(){
-          var showing = pwInput.type === 'text';
-          pwInput.type = showing ? 'password' : 'text';
-          pwToggle.innerHTML = showing ? Icons.eye : Icons.eyeOff;
-        });
-
-        document.getElementById('claim-signup-btn').addEventListener('click', function(){
-          var username = document.getElementById('claim-username').value.trim();
-          var password = pwInput.value;
-          var errEl = document.getElementById('claim-error');
-          errEl.textContent = '';
-          if(username.length < 3){ errEl.textContent = 'Username must be at least 3 characters.'; return; }
-          if(!password){ errEl.textContent = 'Enter a password.'; return; }
-          var btn = document.getElementById('claim-signup-btn');
-          btn.disabled = true;
-          btn.textContent = 'Creating your account…';
-          DreamStore.signup(username, password, data.email).then(function(result){
-            if(!result.ok){
-              btn.disabled = false;
-              btn.textContent = 'Create account & save';
-              errEl.textContent = result.error;
-              return;
-            }
-            fireMetaConversionIfAvailable();
-            finishClaim();
-          });
-        });
+        wireSignupView();
       }
 
       document.getElementById('just-watch-link').addEventListener('click', function(){
@@ -311,15 +369,13 @@
   // "safe even if Meta Pixel isn't loaded" convention.
   function fireMetaConversionIfAvailable(){
     if(typeof fireMetaConversion === 'function'){
-      // signup_method: 'email' -- this page only ever offers a plain
-      // password field (see #claim-password above), no passwordless
-      // option (tracker item for-product-signup-method-
-      // analytics-foun-y1oqt4, founder ask 2026-08-03) -- tagged for
-      // consistency with every other CompleteRegistration call site in
-      // this app, even though this claim-retention flow isn't itself part
-      // of the dream-details -> signup-wall funnel the founder asked
-      // about.
-      try { fireMetaConversion('CompleteRegistration', { email: document.getElementById('claim-email').value, custom_data: { signup_method: 'email' } }); }
+      // signup_method: 'passwordless_code' -- this page now uses the same
+      // passwordless email-code flow the funnel uses (see the #signup-view
+      // header comment; founder 2026-08-15), matching the funnel's own
+      // CompleteRegistration tag (tracker item
+      // for-product-signup-method-analytics-foun-y1oqt4, founder ask
+      // 2026-08-03).
+      try { fireMetaConversion('CompleteRegistration', { email: document.getElementById('claim-email').value, custom_data: { signup_method: 'passwordless_code' } }); }
       catch(e){ /* analytics must never break account creation */ }
     }
   }

@@ -133,6 +133,12 @@ async function sendReadyEmail(event, record) {
     var token = await pendingDreamToken.createToken(event, record.id);
     var url = pendingDreamToken.buildUrl(event, record.id, token);
     var inner = (
+      // Branded dreamscape hero (founder 2026-08-15) — this email previously
+      // had NO image at all, so it landed thumbnail-less. A pre-signup dream
+      // never has a per-recipient still (no browser rendered it to capture a
+      // frame; fal returns no poster), so use the shared branded fallback,
+      // exactly like the unwatched-dream nudge does.
+      emailLayout.mediaImage(emailLayout.brandedFallbackImageUrl(event), '') +
       '<p style="font-size:16px;line-height:1.5;color:' + emailLayout.COLORS.textPrimary + ';margin:0 0 18px;">The dream you started building is ready to watch.</p>' +
       '<p style="margin:0 0 16px;">' + emailLayout.ctaButton(url, 'Watch my dream') + '</p>' +
       '<p style="color:' + emailLayout.COLORS.textMuted + ';font-size:13px;margin:0;">Tap the button to watch it and save it to your DreamTube account. If you didn\'t start building a dream on DreamTube, you can safely ignore this email.</p>'
