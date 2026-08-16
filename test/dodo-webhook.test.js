@@ -136,6 +136,30 @@ function installAnalyticsFetchSpy(opts) {
   return { posthogCalls: posthogCalls, metaCalls: metaCalls };
 }
 
+/**
+ * Runs `fn` (an async function) with console.log replaced by a recording
+ * stub, returning `{ result, lines }` where `lines` is every console.log
+ * call made during `fn`'s execution, each joined the same way
+ * test/effective-config-logging.test.js's requireFreshCapturingLogs already
+ * does. Used below to assert dodo-webhook.js's logSubEvent() diagnostic
+ * calls (conversion.meta_capi_failed[...]/conversion.posthog_failed[...])
+ * actually fire with the right content when a vendor call fails — restores
+ * the real console.log afterward no matter what.
+ */
+async function captureConsoleLogsDuring(fn) {
+  var lines = [];
+  var realLog = console.log;
+  console.log = function () {
+    lines.push(Array.prototype.slice.call(arguments).join(' '));
+  };
+  try {
+    var result = await fn();
+    return { result: result, lines: lines };
+  } finally {
+    console.log = realLog;
+  }
+}
+
 test.beforeEach(function () {
   mockBlobs.reset();
   process.env.DODO_WEBHOOK_SECRET = WEBHOOK_SECRET;
@@ -278,34 +302,63 @@ test('distinct_id falls back to the normalized email when no matching account re
   assert.equal(spies.posthogCalls[0].body.distinct_id, 'noaccountrecord@example.com');
 });
 
-test('a PostHog capture failure never blocks the token credit or the webhook\'s 200 response', async function () {
+test('a PostHog capture failure never blocks the token credit or the webhook\'s 200 response, and IS logged for visibility', async function () {
   await seedZeroBalance('posthogdown@example.com');
   var spies = installAnalyticsFetchSpy({ posthogFails: true });
-  var res = await handler(signedEvent(paymentPayload({
-    payment_id: 'pay_posthog_down',
-    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
-    customer: { customer_id: 'cus_phd', email: 'posthogdown@example.com' },
-    metadata: { dreamtube_event_id: 'evt-ph-down' }
-  })));
+  var captured = await captureConsoleLogsDuring(function () {
+    return handler(signedEvent(paymentPayload({
+      payment_id: 'pay_posthog_down',
+      product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
+      customer: { customer_id: 'cus_phd', email: 'posthogdown@example.com' },
+      metadata: { dreamtube_event_id: 'evt-ph-down' }
+    })));
+  });
+  var res = captured.result;
   assert.equal(res.statusCode, 200, 'a PostHog failure must never surface as a webhook failure');
   var record = await entitlements.getEntitlement({}, 'posthogdown@example.com');
   assert.equal(record.tokens.balance, 300, 'the token credit must still have landed');
   assert.equal(spies.metaCalls.length, 1, 'the Meta CAPI call must still have been attempted independent of the PostHog failure');
+
+  // The bug this closes: a silently-swallowed vendor failure with zero
+  // visibility. Prove the failure IS now logged, with the vendor, the
+  // conversion type, the payment_id to correlate it, and the real error text
+  // (never the raw access token -- there's none to leak on the PostHog path).
+  var failureLine = captured.lines.find(function (l) { return l.indexOf('conversion.posthog_failed[pack_purchase]') !== -1; });
+  assert.ok(failureLine, 'a PostHog failure must produce a conversion.posthog_failed[pack_purchase] log line -- got: ' + JSON.stringify(captured.lines));
+  assert.match(failureLine, /"payment_id":"pay_posthog_down"/);
+  assert.match(failureLine, /"email":"posthogdown@example\.com"/);
+  assert.match(failureLine, /posthog_request_failed/, 'the real PostHog error text must be logged');
+  // The Meta side succeeded in this test -- must NOT also log a Meta failure.
+  assert.ok(!captured.lines.some(function (l) { return l.indexOf('conversion.meta_capi_failed') !== -1; }), 'no Meta failure occurred, so no Meta failure log line should appear');
 });
 
-test('a Meta CAPI failure never blocks the token credit or the webhook\'s 200 response', async function () {
+test('a Meta CAPI failure never blocks the token credit or the webhook\'s 200 response, and IS logged for visibility (never with the raw access token)', async function () {
   await seedZeroBalance('metadown@example.com');
   var spies = installAnalyticsFetchSpy({ metaFails: true });
-  var res = await handler(signedEvent(paymentPayload({
-    payment_id: 'pay_meta_down',
-    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
-    customer: { customer_id: 'cus_md', email: 'metadown@example.com' },
-    metadata: { dreamtube_event_id: 'evt-meta-down' }
-  })));
+  var captured = await captureConsoleLogsDuring(function () {
+    return handler(signedEvent(paymentPayload({
+      payment_id: 'pay_meta_down',
+      product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
+      customer: { customer_id: 'cus_md', email: 'metadown@example.com' },
+      metadata: { dreamtube_event_id: 'evt-meta-down' }
+    })));
+  });
+  var res = captured.result;
   assert.equal(res.statusCode, 200, 'a Meta CAPI failure must never surface as a webhook failure');
   var record = await entitlements.getEntitlement({}, 'metadown@example.com');
   assert.equal(record.tokens.balance, 300, 'the token credit must still have landed');
   assert.equal(spies.posthogCalls.length, 1, 'the PostHog call must still have been attempted independent of the Meta failure');
+
+  // Same visibility proof as the PostHog case above, for the exact bug this
+  // whole change targets: real Dreamer Pass/pack revenue landing in PostHog
+  // while Meta CAPI silently failed with nothing logged anywhere.
+  var failureLine = captured.lines.find(function (l) { return l.indexOf('conversion.meta_capi_failed[pack_purchase]') !== -1; });
+  assert.ok(failureLine, 'a Meta CAPI failure must produce a conversion.meta_capi_failed[pack_purchase] log line -- got: ' + JSON.stringify(captured.lines));
+  assert.match(failureLine, /"payment_id":"pay_meta_down"/);
+  assert.match(failureLine, /"email":"metadown@example\.com"/);
+  assert.match(failureLine, /meta down/, 'the real Meta error message must be logged');
+  assert.ok(failureLine.indexOf(REAL_META_TOKEN) === -1, 'the raw Meta access token must NEVER appear in a log line');
+  assert.ok(!captured.lines.some(function (l) { return l.indexOf('conversion.posthog_failed') !== -1; }), 'no PostHog failure occurred, so no PostHog failure log line should appear');
 });
 
 test('missing META_CAPI_ACCESS_TOKEN: PostHog still fires, Meta CAPI is skipped gracefully, credit + 200 unaffected', async function () {
@@ -1601,17 +1654,53 @@ test('a Dreamer Pass renewal with no resolvable recurring_pre_tax_amount skips t
   assert.equal(spies.metaCalls.length, 0);
 });
 
-test('a Meta CAPI / PostHog failure on the Dreamer Pass conversion never blocks the token credit or the webhook\'s 200 response', async function () {
+test('a Meta CAPI / PostHog failure on the Dreamer Pass conversion never blocks the token credit or the webhook\'s 200 response, and BOTH are logged for visibility with the failing Meta event name', async function () {
   await seedZeroBalance('passconvdown@example.com');
   var spies = installAnalyticsFetchSpy({ posthogFails: true, metaFails: true });
-  var res = await handler(signedEvent(passPaymentPayload({
-    payment_id: 'pay_pass_conv_down',
-    customer: { customer_id: 'cus_pcd', email: 'passconvdown@example.com' },
-    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-pass-down' }
-  })));
+  var captured = await captureConsoleLogsDuring(function () {
+    return handler(signedEvent(passPaymentPayload({
+      payment_id: 'pay_pass_conv_down',
+      customer: { customer_id: 'cus_pcd', email: 'passconvdown@example.com' },
+      metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-pass-down' }
+    })));
+  });
+  var res = captured.result;
   assert.equal(res.statusCode, 200, 'an analytics failure must never surface as a webhook failure');
   var record = await entitlements.getEntitlement({}, 'passconvdown@example.com');
   assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'the token credit must still have landed');
+
+  // Same visibility fix as the pack-purchase path above, for
+  // fireDreamerPassConversion's own Promise.all -- this is the FIRST charge
+  // (Subscribe), so the log line must identify it as such, and carry the
+  // payment_id to correlate against the real Dodo charge.
+  var metaLine = captured.lines.find(function (l) { return l.indexOf('conversion.meta_capi_failed[dreamer_pass_Subscribe]') !== -1; });
+  assert.ok(metaLine, 'a Meta CAPI failure on the Dreamer Pass FIRST charge must log conversion.meta_capi_failed[dreamer_pass_Subscribe] -- got: ' + JSON.stringify(captured.lines));
+  assert.match(metaLine, /"payment_id":"pay_pass_conv_down"/);
+  assert.match(metaLine, /"email":"passconvdown@example\.com"/);
+  assert.match(metaLine, /meta down/);
+  assert.ok(metaLine.indexOf(REAL_META_TOKEN) === -1, 'the raw Meta access token must NEVER appear in a log line');
+
+  var postHogLine = captured.lines.find(function (l) { return l.indexOf('conversion.posthog_failed[dreamer_pass_Subscribe]') !== -1; });
+  assert.ok(postHogLine, 'a PostHog failure on the Dreamer Pass FIRST charge must log conversion.posthog_failed[dreamer_pass_Subscribe] -- got: ' + JSON.stringify(captured.lines));
+  assert.match(postHogLine, /"payment_id":"pay_pass_conv_down"/);
+});
+
+test('a Meta CAPI failure on a Dreamer Pass RENEWAL is logged tagged dreamer_pass_Purchase (not Subscribe), correlated by payment_id', async function () {
+  await seedZeroBalance('passrenewconvdown@example.com');
+  installAnalyticsFetchSpy({ metaFails: true });
+  var captured = await captureConsoleLogsDuring(function () {
+    return handler(signedEvent(subEvent('subscription.renewed', {
+      payment_id: 'pay_renew_conv_down',
+      customer: { customer_id: 'cus_prcd', email: 'passrenewconvdown@example.com' },
+      recurring_pre_tax_amount: 999,
+      currency: 'USD'
+    })));
+  });
+  assert.equal(captured.result.statusCode, 200, 'an analytics failure must never surface as a webhook failure');
+
+  var metaLine = captured.lines.find(function (l) { return l.indexOf('conversion.meta_capi_failed[dreamer_pass_Purchase]') !== -1; });
+  assert.ok(metaLine, 'a Meta CAPI failure on a Dreamer Pass RENEWAL must log conversion.meta_capi_failed[dreamer_pass_Purchase], not Subscribe -- got: ' + JSON.stringify(captured.lines));
+  assert.match(metaLine, /"payment_id":"pay_renew_conv_down"/, 'the renewal\'s own payment_id must be logged, to correlate against the real Dodo charge');
 });
 
 test('the Dreamer Pass conversion\'s distinct_id resolves the same way as the pack path -- account username, falling back to normalized email', async function () {
