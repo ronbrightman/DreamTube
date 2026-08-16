@@ -416,7 +416,7 @@ function mockGenerationCompletesImmediately(page) {
   ]);
 }
 
-/** Every dream-sync upsert attempt for every id comes back as a genuine server-side 500 -- exhausts attemptPrivateDreamSync's full local retry budget (PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS = [800, 2500], 3 attempts total) every single time. */
+/** Every dream-sync upsert attempt for every id comes back as a genuine server-side 500 -- exhausts attemptPrivateDreamSync's full local retry budget (PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS = [800, 2500, 8000, 20000, 45000], 6 attempts total over ~76.3s -- extended from the original [800, 2500]/3-attempt/~3.3s budget by commit 3ae4fe7, "Harden private-dream sync for the webview/funnel cohort", to give an open page a real chance to ride out a longer transient dream-sync outage instead of giving up after ~3s) every single time. */
 function mockDreamSyncAlwaysFails(page) {
   var upsertCallsById = {};
   page.route('**/.netlify/functions/dream-sync*', function (route) {
@@ -468,13 +468,14 @@ test('generation_failed: fires reason:\'E304: dream_sync_unconfirmed\' once a co
     var localDream = await page.evaluate(function () { return window.DreamStore.getMyDreams()[0]; });
     assert.equal(localDream.caption, 'A dream that will vanish', 'sanity: the dream itself was created locally -- generation genuinely succeeded, only its sync is failing');
 
-    // Wait out the full local retry budget (800ms + 2500ms scheduled
-    // delays, plus the 3 real network round trips themselves) for this
-    // dream's id specifically.
+    // Wait out the full local retry budget (800ms + 2500ms + 8000ms +
+    // 20000ms + 45000ms scheduled delays = ~76.3s, plus the 6 real network
+    // round trips themselves -- see PRIVATE_DREAM_SYNC_RETRY_DELAYS_MS in
+    // js/store.js) for this dream's id specifically.
     var exhausted = await settle(function () {
-      return (upsertCallsById[localDream.id] || 0) >= 3;
-    }, { timeout: 8000, interval: 50 });
-    assert.ok(exhausted, 'expected all 3 upsert attempts to have been made');
+      return (upsertCallsById[localDream.id] || 0) >= 6;
+    }, { timeout: 85000, interval: 100 });
+    assert.ok(exhausted, 'expected all 6 upsert attempts to have been made');
     // Give the final failed attempt's own .then/.catch a moment to run the
     // give-up branch and fire the event.
     await page.waitForTimeout(300);
