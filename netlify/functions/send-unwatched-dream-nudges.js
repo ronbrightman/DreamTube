@@ -151,6 +151,26 @@ async function reportDrop(record, reason) {
   } catch (e) { /* analytics must never break the app */ }
 }
 
+/**
+ * A nudge that terminally resolved WITHOUT sending and WITHOUT being a drop —
+ * the user already watched their dream (reason 'viewed', the common case) or a
+ * terminal skip fired (reason 'terminal'). Emitted so the enqueue→resolution
+ * accounting closes to 100% (enqueued = sent + dropped + suppressed + the
+ * transient still-waiting), which is what makes "why did only N of M enqueued
+ * send?" answerable at source instead of an inferred gap (founder asked exactly
+ * this 2026-08-16: most enqueued nudges are suppressed because the user watched
+ * their dream, but nothing recorded that until now).
+ */
+async function reportSuppress(record, reason) {
+  try {
+    await posthogCapture.captureEvent({
+      event: 'unwatched_dream_nudge_suppressed',
+      distinct_id: (record && (record.username || record.email)) || 'unknown',
+      properties: { reason: reason }
+    });
+  } catch (e) { /* analytics must never break the app */ }
+}
+
 /** Finds the private dream (if any) whose sourceOperationName matches — the zero-new-client-contract correlation on the already-synced private-dream record. */
 function findDreamForOperation(dreams, operationName) {
   for (var i = 0; i < dreams.length; i++) {
@@ -191,6 +211,7 @@ async function scanAndSend(event) {
     if (viewed) {
       await nudgeStore.removePending(event, operationName);
       result.suppressedViewed++;
+      await reportSuppress(record, 'viewed');
       continue;
     }
 
@@ -244,6 +265,7 @@ async function scanAndSend(event) {
       if (TERMINAL_SKIPS[sendResult.skipped]) {
         await nudgeStore.removePending(event, operationName);
         result.skippedTerminal++;
+        await reportSuppress(record, 'terminal:' + sendResult.skipped);
         continue;
       }
 

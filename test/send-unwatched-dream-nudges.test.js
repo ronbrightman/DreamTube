@@ -148,6 +148,15 @@ test('a VIEWED dream is suppressed — no send, dequeued', async function () {
   assert.equal(result.sent, 0);
   assert.equal(spies.resendCalls.length, 0, 'a watched dream must never get an unwatched nudge');
   assert.equal(await nudgeStore.getPending(fakeEvent({}), op), null, 'dequeued once suppressed');
+  // Observability (founder ask 2026-08-16 "why only N of M enqueued sent?"): a
+  // viewed-suppression must now emit unwatched_dream_nudge_suppressed{reason:viewed}
+  // so the enqueue->resolution accounting closes at source instead of leaving a
+  // silent gap.
+  var suppressed = spies.posthogCalls.filter(function (c) {
+    return c.body && c.body.event === 'unwatched_dream_nudge_suppressed';
+  });
+  assert.equal(suppressed.length, 1, 'a viewed-suppression fires exactly one suppressed telemetry event');
+  assert.equal(suppressed[0].body.properties.reason, 'viewed', 'suppressed event carries reason:viewed');
 });
 
 test('an UNSUBSCRIBED recipient is suppressed — no send', async function () {
