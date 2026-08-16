@@ -123,6 +123,26 @@
 // Both gate on the SAME `credited: true` dedup contract the pack path uses.
 // See docs/EVENT_TAXONOMY.md's Subscribe/Purchase (Dreamer Pass) entry.
 // ---------------------------------------------------------------------
+//
+// Analytics failure visibility (found investigating real Dreamer Pass
+// revenue reported by PostHog but not Meta CAPI over 08-12/13/14): both
+// firePurchaseConversion and fireDreamerPassConversion fire PostHog and Meta
+// CAPI via `await Promise.all([...])` but, until this fix, never inspected
+// the resolved results — lib/posthog-capture.js's captureEvent and
+// lib/meta-capi.js's sendCapiEvent both follow this codebase's "analytics
+// never throws" convention (returning `{ ok:false, error }` on any failure
+// instead), so a failed send was completely silent: the token credit/grant
+// above had already succeeded, the webhook still returned 200, and nothing
+// logged which vendor failed or why. Both functions now check
+// `results[0]`/`results[1]` after the Promise.all and, on `ok:false`, call
+// the existing logSubEvent() helper (defined further down, function-hoisted
+// so it's callable from up here) with the failed vendor, the conversion
+// type/Meta event name, the (already-redacted — see lib/meta-capi.js's
+// redactToken) error string, and the payment_id to correlate against the
+// real Dodo charge. Purely additive logging — it can never affect the
+// credit/grant already applied or these functions' own never-throws
+// contract (the outer try/catch is unchanged).
+// ---------------------------------------------------------------------
 
 var crypto = require('crypto');
 var DodoPayments = require('dodopayments').default;
@@ -327,7 +347,7 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
       $insert_id: eventId // PostHog's own dedup key -- see lib/posthog-capture.js header comment
     };
 
-    await Promise.all([
+    var results = await Promise.all([
       posthogCapture.captureEvent({
         event: 'purchase_completed',
         distinct_id: distinctId,
@@ -342,6 +362,36 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
         custom_data: { value: price, currency: 'USD' }
       })
     ]);
+    // Neither vendor call throws (both return { ok:false, error } on any
+    // failure instead) -- so without this, a failed Meta/PostHog send was
+    // completely invisible: the token credit above already succeeded, the
+    // webhook still returns 200, and nothing logs which vendor failed or why.
+    // That's a real visibility gap, not just cosmetic -- it's exactly how a
+    // Meta CAPI outage/misconfig can silently zero out ad-platform purchase
+    // reporting for real, paying customers while PostHog keeps looking fine.
+    // Purely additive: logSubEvent only logs (console.log, already
+    // exception-safe internally), it can never affect the credit already
+    // granted or this function's own never-throws contract. sendCapiEvent's
+    // own error strings are already redacted via redactToken before it
+    // returns them (see lib/meta-capi.js), so nothing secret reaches here.
+    var postHogResult = results[0];
+    var metaResult = results[1];
+    if (metaResult && metaResult.ok === false) {
+      logSubEvent('conversion.meta_capi_failed[pack_purchase]', {
+        payment_id: payment.payment_id || null,
+        email: payEmail || null,
+        pack: pack,
+        error: metaResult.error
+      });
+    }
+    if (postHogResult && postHogResult.ok === false) {
+      logSubEvent('conversion.posthog_failed[pack_purchase]', {
+        payment_id: payment.payment_id || null,
+        email: payEmail || null,
+        pack: pack,
+        error: postHogResult.error
+      });
+    }
   } catch (e) {
     // analytics must never break the app -- the token credit above has
     // already happened and must not be undone or fail because of this.
@@ -399,6 +449,14 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
  * place either moment is ever reported. See docs/EVENT_TAXONOMY.md's
  * Subscribe/Purchase (Dreamer Pass) entry.
  *
+ * `params.paymentId` — the Dodo payment_id of the charge this conversion is
+ * for (threaded through by both call sites below), used ONLY for the
+ * meta_capi_failed/posthog_failed diagnostic log lines further down, to
+ * correlate a logged analytics failure back to the real charge in Dodo's own
+ * dashboard. Never sent to PostHog/Meta themselves and never affects the
+ * grant/credit or dedup logic above, which is keyed on payment_id
+ * independently (see grantDreamerPassCharge).
+ *
  * Never throws — identical contract to firePurchaseConversion: analytics
  * failure must never turn a successful token credit into a failed webhook
  * response.
@@ -443,7 +501,7 @@ async function fireDreamerPassConversion(event, params) {
     };
     if (params.variant) postHogProps.variant = params.variant;
 
-    await Promise.all([
+    var results = await Promise.all([
       posthogCapture.captureEvent({
         event: 'purchase_completed',
         distinct_id: distinctId,
@@ -458,6 +516,29 @@ async function fireDreamerPassConversion(event, params) {
         custom_data: { value: price, currency: currency }
       })
     ]);
+    // Same visibility gap as firePurchaseConversion above (see its comment
+    // for the full why) -- this is the Dreamer Pass sibling, so it needs the
+    // identical additive logging, tagged with which Meta event name failed
+    // (Subscribe vs. Purchase) since they're two different call sites/
+    // moments in the subscription lifecycle.
+    var postHogResult = results[0];
+    var metaResult = results[1];
+    if (metaResult && metaResult.ok === false) {
+      logSubEvent('conversion.meta_capi_failed[dreamer_pass_' + (params.metaEventName || 'unknown') + ']', {
+        payment_id: params.paymentId || null,
+        email: payEmail || null,
+        renewal: renewal,
+        error: metaResult.error
+      });
+    }
+    if (postHogResult && postHogResult.ok === false) {
+      logSubEvent('conversion.posthog_failed[dreamer_pass_' + (params.metaEventName || 'unknown') + ']', {
+        payment_id: params.paymentId || null,
+        email: payEmail || null,
+        renewal: renewal,
+        error: postHogResult.error
+      });
+    }
   } catch (e) {
     // analytics must never break the app -- the token credit above has
     // already happened and must not be undone or fail because of this.
@@ -859,7 +940,9 @@ async function handleDreamerPassPayment(event, payment) {
       // Which price/trial variant — resolved once above (from the payment's
       // product_id, falling back to the metadata variant tag). Analytics-only
       // here; never affects the grant.
-      variant: passVariant
+      variant: passVariant,
+      // Diagnostic-only, see fireDreamerPassConversion's own doc comment.
+      paymentId: payment.payment_id || null
     });
   }
 
@@ -1046,7 +1129,9 @@ async function handleSubscriptionEvent(event, type, sub) {
         // Resolved once above (from the subscription's own product_id — its
         // metadata is static across the whole lifetime, so product_id is the
         // reliable per-renewal signal — falling back to the variant tag).
-        variant: variant
+        variant: variant,
+        // Diagnostic-only, see fireDreamerPassConversion's own doc comment.
+        paymentId: subscriptionEventPaymentId(sub)
       });
     }
   }
