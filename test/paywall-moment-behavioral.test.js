@@ -177,22 +177,14 @@ test('GATE: with NO founder override, a real user toggling ON always checks out 
   } finally { await page.close(); }
 });
 
-test('FOUNDER OVERRIDE: ?trialarm=fifty force-reveals trial50 — toggle ON POSTs passVariant "trial50"', async function (t) {
-  if (unavailableReason) { t.skip(unavailableReason); return; }
-  var page = await browser.newPage();
-  await blockThirdParty(page);
-  try {
-    var checkoutCalls = await stubBackend(page);
-    await signupToMoment(page, '?paywall=subscription&trialarm=fifty', 'founder-trial50@example.com');
-    // The toggle-ON copy must always say "one-time" for the $1 trial.
-    await page.click('#mm-sw');
-    await page.waitForSelector('#mm-sw.on');
-    assert.match(await page.locator('#mm-cue').textContent(), /one-time \$1/, 'the $1 trial is always written as one-time');
-    await page.click('#mm-cta');
-    await settle(function () { return checkoutCalls.length >= 1; });
-    assert.equal(checkoutCalls[0].passVariant, 'trial50', 'the founder override reaches trial50');
-  } finally { await page.close(); }
-});
+// NOTE (2026-08-16): the "?trialarm=fifty force-reveals trial50" test was
+// REMOVED here — the one-time $1 paid-trial arm (trial50 / ?trialarm=fifty) was
+// RETIRED by the founder 2026-08-11 (Dodo couldn't deliver a clean one-time-$1
+// paid trial; see js/paywall-moment.js's header). The override no longer reveals
+// trial50, so that test had been deterministically failing on main for days —
+// dead-test noise that masks real failures. The retired arm's live behavior is
+// still covered by the test above ("a real user can never reach trial50 while
+// the gate is closed" -> passVariant 'freetrial').
 
 test('TOKENS arm (forced): the 99c/300-token starter renders and its CTA POSTs pack "pack099"', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
