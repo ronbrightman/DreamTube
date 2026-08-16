@@ -172,6 +172,15 @@ test('an UNSUBSCRIBED recipient is suppressed — no send', async function () {
   assert.equal(result.skippedTerminal, 1);
   assert.equal(spies.resendCalls.length, 0, 'unsubscribed users get nothing');
   assert.equal(await nudgeStore.getPending(fakeEvent({}), op), null, 'dequeued — unsubscribe does not change on retry');
+  // Observability (founder ask 2026-08-16): a TERMINAL skip (not just the
+  // viewed path) must also fire unwatched_dream_nudge_suppressed, carrying
+  // the sender's own skip reason prefixed 'terminal:' — so the accounting
+  // closes for every non-send resolution, not just the viewed one.
+  var suppressed = spies.posthogCalls.filter(function (c) {
+    return c.body && c.body.event === 'unwatched_dream_nudge_suppressed';
+  });
+  assert.equal(suppressed.length, 1, 'a terminal-skip suppression fires exactly one suppressed telemetry event');
+  assert.equal(suppressed[0].body.properties.reason, 'terminal:suppressed', 'suppressed event carries reason:terminal:<skip>');
 });
 
 test('a double-scan sends only ONCE (idempotent via the once-per-dream guard)', async function () {
