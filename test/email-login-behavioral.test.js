@@ -121,3 +121,34 @@ test('an expired email-login token redirects signed-out (no ?bt=)', async functi
   assert.equal(res.statusCode, 302);
   assert.equal(new URL(locationOf(res)).searchParams.get('bt'), null, 'expired token grants no session');
 });
+
+test('email-click tracking: a valid login forwards ?ec= onto the redirect so the landing page can fire email_link_clicked', async function () {
+  var evt = q(null);
+  await accountStore.createAccount(evt, { username: 'ecuser', email: 'ec@real-user.com' });
+  var token = await emailLoginToken.createToken(evt, 'ecuser', 'ec@real-user.com');
+
+  var res = await emailLogin.handler(q({ elt: token, dest: '/home.html', ec: 'recovery_nudge' }));
+  var url = new URL(locationOf(res));
+  assert.equal(res.statusCode, 302);
+  assert.equal(url.pathname, '/home.html');
+  assert.ok(url.searchParams.get('bt'), 'still mints the session token');
+  assert.equal(url.searchParams.get('ec'), 'recovery_nudge', 'the email-click marker is forwarded to the landing page');
+});
+
+test('email-click tracking: ?ec= is forwarded even when the token is missing/invalid (a click is a click)', async function () {
+  var res = await emailLogin.handler(q({ dest: '/home.html', ec: 'recovery_nudge' }));
+  var url = new URL(locationOf(res));
+  assert.equal(res.statusCode, 302);
+  assert.equal(url.searchParams.get('ec'), 'recovery_nudge', 'ec forwarded on the missing-token path too');
+  assert.equal(url.searchParams.get('bt'), null, 'but no session is granted without a valid token');
+});
+
+test('email-click tracking: an ordinary login with no ?ec= carries no ec param (no pollution)', async function () {
+  var evt = q(null);
+  await accountStore.createAccount(evt, { username: 'noecuser', email: 'noec@real-user.com' });
+  var token = await emailLoginToken.createToken(evt, 'noecuser', 'noec@real-user.com');
+
+  var res = await emailLogin.handler(q({ elt: token, dest: '/home.html' }));
+  var url = new URL(locationOf(res));
+  assert.equal(url.searchParams.get('ec'), null, 'no ec param when the link did not carry one');
+});

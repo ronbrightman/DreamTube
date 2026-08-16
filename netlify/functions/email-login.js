@@ -62,15 +62,23 @@ exports.handler = async function (event) {
   var query = event.queryStringParameters || {};
   var destination = ALLOWED_DESTS.indexOf(query.dest) !== -1 ? query.dest : DEFAULT_DEST;
 
+  // Email-click tracking (founder 2026-08-16): the recovery/winback CTAs route
+  // their click through this endpoint, so forward the `ec` (email-type) marker
+  // onto the final redirect — js/email-click-track.js on the landing page turns
+  // it into an email_link_clicked event. Forwarded on EVERY outcome (a click is
+  // a click even if the token is missing/expired). redirect() drops it when
+  // absent, so ordinary logins are unaffected.
+  var ec = query.ec;
+
   var token = (query.elt || '').trim();
   if (!token) {
-    return redirect(event, destination, { login_error: 'E2: missing_token' });
+    return redirect(event, destination, { login_error: 'E2: missing_token', ec: ec });
   }
 
   var resolved = await emailLoginToken.verifyAndConsumeToken(event, token);
   if (!resolved.ok) {
     // Unknown / expired / already-consumed — land signed-out, they can log in.
-    return redirect(event, destination, { login_error: 'E3: invalid_or_expired' });
+    return redirect(event, destination, { login_error: 'E3: invalid_or_expired', ec: ec });
   }
 
   // Look up the account for the email session-transfer-token.js's createToken
@@ -101,5 +109,5 @@ exports.handler = async function (event) {
   // reaches the browser. Same ?bt= mechanism as verify-email-link.js / the
   // FB OAuth callback.
   var transferToken = await sessionTransferToken.createToken(event, resolved.username, email);
-  return redirect(event, destination, { bt: transferToken });
+  return redirect(event, destination, { bt: transferToken, ec: ec });
 };

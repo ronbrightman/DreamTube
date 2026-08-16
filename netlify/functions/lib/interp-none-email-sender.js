@@ -84,7 +84,7 @@ function resolveMediaUrl(event, dream) {
 
 /** The deep link to THIS dream's interpretation view — result.html?id=<dreamId>&interp=1 auto-opens the Chamber (see result.html's `interp=1` handler). */
 function interpUrl(event, dreamId) {
-  return siteOrigin.emailOrigin(event) + '/result.html?id=' + encodeURIComponent(String(dreamId || '')) + '&interp=1';
+  return siteOrigin.emailOrigin(event) + '/result.html?id=' + encodeURIComponent(String(dreamId || '')) + '&interp=1&ec=interp_none';
 }
 
 function buildHtml(opts) {
@@ -287,7 +287,7 @@ async function sendPreview(event, previewEmail) {
     // link would dead-end to explore (the exact thing the founder flagged).
     // Point the preview CTA at the reachable Dream Meaning entry (home.html)
     // instead — never explore. REAL sends use the per-dream deep link above.
-    interpUrl: siteOrigin.emailOrigin(event) + '/home.html',
+    interpUrl: siteOrigin.emailOrigin(event) + '/home.html?ec=interp_none',
     unsubscribeUrl: unsubscribeUrl
   });
   try {

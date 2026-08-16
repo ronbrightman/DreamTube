@@ -128,9 +128,9 @@ async function loginHomeUrl(event, username, email) {
   try {
     var token = await emailLoginToken.createToken(event, username, email);
     return siteOrigin.emailOrigin(event) + '/.netlify/functions/email-login?elt=' +
-      encodeURIComponent(token) + '&dest=' + encodeURIComponent('/home.html');
+      encodeURIComponent(token) + '&dest=' + encodeURIComponent('/home.html') + '&ec=recovery_nudge';
   } catch (e) {
-    return siteOrigin.emailOrigin(event) + '/home.html';
+    return siteOrigin.emailOrigin(event) + '/home.html?ec=recovery_nudge';
   }
 }
 

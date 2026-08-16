@@ -86,7 +86,7 @@ function isExcludedEmail(email, ownerEmail) {
 }
 
 function createUrl(event) {
-  return siteOrigin.emailOrigin(event) + '/create.html';
+  return siteOrigin.emailOrigin(event) + '/create.html?ec=winback';
 }
 
 /**
@@ -101,7 +101,7 @@ async function loginCreateUrl(event, username, email) {
   try {
     var token = await emailLoginToken.createToken(event, username, email);
     return siteOrigin.emailOrigin(event) + '/.netlify/functions/email-login?elt=' +
-      encodeURIComponent(token) + '&dest=' + encodeURIComponent('/create.html');
+      encodeURIComponent(token) + '&dest=' + encodeURIComponent('/create.html') + '&ec=winback';
   } catch (e) {
     return createUrl(event);
   }

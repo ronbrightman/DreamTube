@@ -44,6 +44,9 @@
     });
   }
 </script>
+<!-- Email-click tracking: converts an email CTA's ?ec=<type> into a first-party
+     email_link_clicked event (founder ask 2026-08-16). No-ops without ?ec=. -->
+<script src="js/email-click-track.js"></script>
 <script>
   // Meta Pixel base code — https://developers.facebook.com/docs/meta-pixel/get-started
   // The <noscript> fallback pixel <img> from Meta's standard snippet is deliberately
