@@ -166,8 +166,11 @@ test('clicking a pack button posts {email, pack, password} (returning-buyer pref
     // real shape (see that function's own comment), so this now mirrors
     // what a genuinely signed-in browser sends. Never a requirement server-
     // side (see create-checkout-session-dodo.js's own header comment) —
-    // this is a pure client-side convenience send.
-    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack999', password: 'testpass1' });
+    // this is a pure client-side convenience send. fbc/fbp are null here —
+    // this test sets no Meta cookies — see
+    // test/shop-purchase-conversion-behavioral.test.js's dedicated fbc/fbp
+    // threading tests for the cookies-present case.
+    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack999', fbc: null, fbp: null, password: 'testpass1' });
   } finally {
     await context.close();
   }
@@ -204,7 +207,7 @@ test('a signed-in account with NO locally-cached password (e.g. established via 
     await page.click('#shop-buy-pack999');
     await page.waitForURL(/checkout=success/, { timeout: 5000 });
 
-    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack999' });
+    assert.deepEqual(capturedBody, { email: 'shopper@example.com', pack: 'pack999', fbc: null, fbp: null });
   } finally {
     await context.close();
   }
@@ -383,7 +386,8 @@ test('Dreamer Pass is shown to a non-owner account and its Start button begins t
     await page.waitForURL(/checkout=success/, { timeout: 5000 });
     // A subscription checkout — plan, not pack. password is the account's
     // cached password (returning-buyer prefill, same as the pack path).
-    assert.deepEqual(capturedBody, { email: 'shopper@example.com', plan: 'dreamer_pass', password: 'testpass1' });
+    // fbc/fbp are null — no Meta cookies set in this test.
+    assert.deepEqual(capturedBody, { email: 'shopper@example.com', plan: 'dreamer_pass', fbc: null, fbp: null, password: 'testpass1' });
   } finally {
     await context.close();
   }

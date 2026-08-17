@@ -589,7 +589,18 @@ body{ background:#000; color:var(--shop-ink); }
     // gets today's unchanged checkout, no different from before this
     // feature existed.
     var cachedPassword = DreamStore.getCachedPassword();
-    var checkoutBody = { email: email, pack: pack };
+    // fbc/fbp (tracker item for-product-for-manager-purchase-meta-ro-nfrfl5,
+    // item 2): Meta's own first-party click/browser cookies, read via
+    // js/analytics-config.js's existing getMetaCookies() helper (already
+    // loaded on this page -- see its own client-side Meta fire in that
+    // file's fireMetaConversion). Carried through create-checkout-session-
+    // dodo.js's metadata and back on dodo-webhook.js's server-side Purchase
+    // CAPI call, so a purchase can actually be attributed to the ad that
+    // drove it -- see that function's own doc comment for the full chain.
+    // Either can be null (Pixel not loaded, ad blocker, organic visit) --
+    // that's expected, not an error, and never blocks checkout.
+    var metaCookies = getMetaCookies();
+    var checkoutBody = { email: email, pack: pack, fbc: metaCookies.fbc, fbp: metaCookies.fbp };
     if (cachedPassword) checkoutBody.password = cachedPassword;
 
     fetch('/.netlify/functions/create-checkout-session-dodo', {
@@ -684,7 +695,12 @@ body{ background:#000; color:var(--shop-ink); }
     // checkout uses (see purchasePack); lets the server attach this buyer's
     // saved Dodo payment methods after a real ownership check.
     var cachedPassword = DreamStore.getCachedPassword();
-    var checkoutBody = { email: email, plan: DREAMER_PASS_PLAN };
+    // fbc/fbp — same ad-attribution threading as purchasePack above (see its
+    // comment for the full why); the Dreamer Pass checkout needs the exact
+    // same handoff so a subscription start can also be attributed to the ad
+    // that drove it.
+    var metaCookies = getMetaCookies();
+    var checkoutBody = { email: email, plan: DREAMER_PASS_PLAN, fbc: metaCookies.fbc, fbp: metaCookies.fbp };
     if (cachedPassword) checkoutBody.password = cachedPassword;
 
     fetch('/.netlify/functions/create-checkout-session-dodo', {

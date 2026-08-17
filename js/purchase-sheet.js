@@ -580,9 +580,18 @@
       // own doc comment for the full reasoning. Omitted entirely when
       // there's nothing cached, exactly like today.
       var cachedPassword = DreamStore.getCachedPassword();
+      // fbc/fbp (tracker item for-product-for-manager-purchase-meta-ro-nfrfl5,
+      // item 2) — same Meta click/browser-cookie threading as shop.html's
+      // purchasePack(); see that file's comment for the full why. This sheet
+      // is a separate real checkout entry point (style.html/result.html/
+      // home.html's out-of-tokens flow) so needs the same threading, not just
+      // the shop page.
+      var metaCookies = getMetaCookies();
       var checkoutBody = {
         email: email,
         pack: pack,
+        fbc: metaCookies.fbc,
+        fbp: metaCookies.fbp,
         // Relative paths only — create-checkout-session-dodo.js's own
         // server-side guard rejects anything else (see that file's
         // header comment on the open-redirect fix this feature required).

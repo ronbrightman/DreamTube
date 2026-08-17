@@ -214,6 +214,57 @@ test('TOKENS arm (forced): the 99c/300-token starter renders and its CTA POSTs p
   } finally { await page.close(); }
 });
 
+// ============================================================================
+// fbc/fbp ad-attribution threading into the checkout REQUEST (tracker item
+// for-product-for-manager-purchase-meta-ro-nfrfl5, item 2): this is the
+// post-signup paywall moment shown to every fresh signup, so it's a real
+// ad-attributed conversion surface in its own right — review round 1 found
+// it had been missed when shop.html's purchasePack()/purchasePlan() were
+// first threaded. Both arms funnel through startPaywallCheckout(), so one
+// pair of tests (subscription arm) covers the shared threading point; the
+// pack (tokens) arm is exercised for the pack-checkout body shape.
+// ============================================================================
+
+test('fbc/fbp: the subscription arm CTA sends fbc/fbp in the checkout request body when Meta\'s cookies are present', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await context.addCookies([
+      { name: '_fbc', value: 'fb.1.1700000000000.mmfbc', url: baseUrl },
+      { name: '_fbp', value: 'fb.1.1700000000000.mmfbp', url: baseUrl }
+    ]);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var checkoutCalls = await stubBackend(page);
+    await signupToMoment(page, '?paywall=subscription&trialarm=free', 'sub-fbc@example.com');
+    await page.click('#mm-cta');
+    await settle(function () { return checkoutCalls.length >= 1; });
+    assert.equal(checkoutCalls[0].fbc, 'fb.1.1700000000000.mmfbc', 'the checkout request body must carry the real _fbc cookie value');
+    assert.equal(checkoutCalls[0].fbp, 'fb.1.1700000000000.mmfbp', 'the checkout request body must carry the real _fbp cookie value');
+  } finally {
+    await context.close();
+  }
+});
+
+test('fbc/fbp: the tokens (pack099) arm CTA sends fbc/fbp as null (not omitted, not an error) when Meta\'s cookies are absent', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    // Deliberately no addCookies call -- simulates a real fresh signup with
+    // no Meta Pixel cookies at all (e.g. ad blocker, organic).
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    var checkoutCalls = await stubBackend(page);
+    await signupToMoment(page, '?paywall=tokens', 'tokens-nofbc@example.com');
+    await page.click('#mm-cta');
+    await settle(function () { return checkoutCalls.length >= 1; });
+    assert.equal(checkoutCalls[0].fbc, null, 'no _fbc cookie must mean a null fbc field, not an error and not a fabricated value');
+    assert.equal(checkoutCalls[0].fbp, null);
+  } finally {
+    await context.close();
+  }
+});
+
 test('DISMISS (topbar X) goes straight to home.html with no checkout POST', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();

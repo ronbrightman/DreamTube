@@ -309,6 +309,20 @@ exports.handler = async function (event) {
   var email = normalizeEmail(payload.email);
   var pack = (payload.pack || '').trim().toLowerCase();
 
+  // fbc/fbp (tracker item for-product-for-manager-purchase-meta-ro-nfrfl5,
+  // item 2): Meta's own first-party click/browser cookies, read client-side
+  // by shop.html's getMetaCookies() (js/analytics-config.js) and sent along
+  // here purely so they can be threaded through to Dodo's `metadata` below
+  // and echoed back on the eventual payment/subscription webhook, where
+  // dodo-webhook.js's firePurchaseConversion/fireDreamerPassConversion read
+  // them back for their Meta CAPI calls — see this file's header comment
+  // and dodo-webhook.js's own comment for the full chain. Purely optional,
+  // attribution-only metadata: NEVER a requirement for checkout, and never
+  // fabricated here if absent — only ever forwarded exactly as sent (a
+  // non-string or empty value resolves to `null`, same as an absent field).
+  var fbc = (typeof payload.fbc === 'string' && payload.fbc) ? payload.fbc : null;
+  var fbp = (typeof payload.fbp === 'string' && payload.fbp) ? payload.fbp : null;
+
   // ── Dreamer Pass subscription vs. one-time token pack ──
   // The client asks for the $9.99/month Dreamer Pass with `{ plan:
   // "dreamer_pass" }` instead of a `{ pack }`. Dodo itself decides
@@ -594,6 +608,15 @@ exports.handler = async function (event) {
             dreamtube_starter: pack === STARTER_PACK_ID
           }
     };
+
+    // fbc/fbp — see this file's own earlier comment on the `fbc`/`fbp`
+    // local vars for the full why. Added conditionally (never a placeholder
+    // `null` key) so a checkout with neither cookie present produces
+    // byte-identical metadata to before this change, and dodo-webhook.js's
+    // eventual `metadata.dreamtube_fbc`/`dreamtube_fbp` read simply finds
+    // nothing to forward — never a fabricated value.
+    if (fbc) sessionParams.metadata.dreamtube_fbc = fbc;
+    if (fbp) sessionParams.metadata.dreamtube_fbp = fbp;
 
     // Default false (Dodo's own default) unless this is a verified,
     // returning buyer with a real customer_id to attach — see the block

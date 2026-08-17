@@ -151,6 +151,20 @@ function markPendingPurchase(page, info) {
   }, info);
 }
 
+/** Intercepts every POST to create-checkout-session-dodo, recording each parsed request body -- used by the fbc/fbp threading tests below to confirm the checkout request itself (not just the eventual conversion fire) carries Meta's cookies. Always fulfills with a real-shaped success response so the click-to-checkout flow can proceed past it. */
+function captureCheckoutSessionRequest(page) {
+  var calls = [];
+  return page.route('**/.netlify/functions/create-checkout-session-dodo', function (route) {
+    var body = null;
+    try { body = JSON.parse(route.request().postData() || '{}'); } catch (e) { /* leave null */ }
+    calls.push(body);
+    route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ url: baseUrl + '/shop.html?checkout=success', sessionId: 'cks_fbc_test', eventId: 'evt-fbc-test-id' })
+    });
+  }).then(function () { return calls; });
+}
+
 test('a real checkout return (marker present) fires purchase_completed on PostHog and Purchase on Meta, with the correct pack/value, and consumes the marker', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
@@ -377,6 +391,102 @@ test('the REAL click-to-checkout flow -- not a hand-seeded marker -- carries cre
     assert.equal(purchaseCaptures[0][2].$insert_id, 'evt-real-server-eventid', 'PostHog\'s $insert_id must also be the real server-returned eventId, not a client-generated fallback, so dodo-webhook.js\'s own server-side Purchase fire can actually dedupe against this one');
     assert.equal(purchaseCaptures[0][2].pack, 'pack199');
     assert.equal(purchaseCaptures[0][2].starter, false, 'pack199 is not the starter pack');
+  } finally {
+    await context.close();
+  }
+});
+
+// ============================================================================
+// fbc/fbp ad-attribution threading into the checkout REQUEST itself (tracker
+// item for-product-for-manager-purchase-meta-ro-nfrfl5, item 2): before
+// create-checkout-session-dodo.js can thread fbc/fbp into Dodo's metadata for
+// dodo-webhook.js's eventual server-side Purchase CAPI call, the client has
+// to actually send them in the first place -- via js/analytics-config.js's
+// getMetaCookies() (same helper fireMetaConversion already uses for its own
+// client-side Meta fire, see that file's header comment). These tests check
+// the create-checkout-session-dodo REQUEST body, not the eventual conversion
+// fire (already covered by the tests above and by
+// test/dodo-webhook.test.js's server-side threading coverage).
+// ============================================================================
+
+test('purchasePack() sends fbc/fbp in the checkout request body when Meta\'s _fbc/_fbp cookies are present', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await context.addCookies([
+      { name: '_fbc', value: 'fb.1.1700000000000.IwAR0abc', url: baseUrl },
+      { name: '_fbp', value: 'fb.1.1700000000000.999888777', url: baseUrl }
+    ]);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+
+    await seedAccount(page);
+    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
+
+    var checkoutCalls = await captureCheckoutSessionRequest(page);
+    await page.click('#shop-buy-pack199');
+    await page.waitForURL(/checkout=success/, { timeout: 5000 });
+
+    assert.equal(checkoutCalls.length, 1, 'expected exactly one create-checkout-session-dodo request');
+    assert.equal(checkoutCalls[0].fbc, 'fb.1.1700000000000.IwAR0abc', 'the checkout request body must carry the real _fbc cookie value');
+    assert.equal(checkoutCalls[0].fbp, 'fb.1.1700000000000.999888777', 'the checkout request body must carry the real _fbp cookie value');
+    assert.equal(checkoutCalls[0].pack, 'pack199');
+  } finally {
+    await context.close();
+  }
+});
+
+test('purchasePack() sends fbc/fbp as null (not omitted, not an error) when Meta\'s cookies are absent -- e.g. Pixel not loaded, ad blocker, organic visit', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    // Deliberately no addCookies call -- simulates a real visitor with no
+    // Meta Pixel cookies at all.
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+
+    await seedAccount(page);
+    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
+
+    var checkoutCalls = await captureCheckoutSessionRequest(page);
+    await page.click('#shop-buy-pack199');
+    await page.waitForURL(/checkout=success/, { timeout: 5000 });
+
+    assert.equal(checkoutCalls.length, 1);
+    assert.equal(checkoutCalls[0].fbc, null, 'no _fbc cookie must mean a null fbc field, not an error and not a fabricated value');
+    assert.equal(checkoutCalls[0].fbp, null);
+  } finally {
+    await context.close();
+  }
+});
+
+test('purchasePlan() (Dreamer Pass) sends fbc/fbp in the checkout request body when Meta\'s cookies are present -- same threading as the pack flow', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await context.addCookies([
+      { name: '_fbc', value: 'fb.1.1700000000000.passfbc', url: baseUrl },
+      { name: '_fbp', value: 'fb.1.1700000000000.passfbp', url: baseUrl }
+    ]);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page);
+
+    await seedAccount(page);
+    await page.goto(baseUrl + '/shop.html', { waitUntil: 'domcontentloaded' });
+
+    var checkoutCalls = await captureCheckoutSessionRequest(page);
+    var passButton = await page.$('#shop-start-pass');
+    if (!passButton) { t.skip('Dreamer Pass start button (#shop-start-pass) not present on this page render -- see shop.html\'s passStartBtn wiring'); return; }
+    await passButton.click();
+    await page.waitForURL(/checkout=success/, { timeout: 5000 });
+
+    assert.equal(checkoutCalls.length, 1, 'expected exactly one create-checkout-session-dodo request');
+    assert.equal(checkoutCalls[0].fbc, 'fb.1.1700000000000.passfbc');
+    assert.equal(checkoutCalls[0].fbp, 'fb.1.1700000000000.passfbp');
+    assert.equal(checkoutCalls[0].plan, 'dreamer_pass');
   } finally {
     await context.close();
   }

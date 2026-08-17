@@ -2301,6 +2301,18 @@
     var cachedPassword = null;
     try{ cachedPassword = DreamStore.getCachedPassword && DreamStore.getCachedPassword(); }catch(e){}
     if(cachedPassword) body.password = cachedPassword;
+    // fbc/fbp (tracker item for-product-for-manager-purchase-meta-ro-nfrfl5,
+    // item 2) — same Meta click/browser-cookie threading as shop.html's
+    // purchasePack()/purchasePlan(). This is the post-signup paywall moment
+    // shown to every fresh signup, so it's a real ad-attributed conversion
+    // surface in its own right, not just shop.html.
+    try{
+      if(typeof getMetaCookies === 'function'){
+        var metaCookies = getMetaCookies();
+        body.fbc = metaCookies.fbc;
+        body.fbp = metaCookies.fbp;
+      }
+    }catch(e){}
     fetch('/.netlify/functions/create-checkout-session-dodo', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     })
