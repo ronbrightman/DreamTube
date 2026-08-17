@@ -283,6 +283,84 @@ test('style.html: tapping the buy button POSTs the contextual pack (starter, sin
   }
 });
 
+// ============================================================================
+// fbc/fbp ad-attribution threading into the checkout REQUEST (tracker item
+// for-product-for-manager-purchase-meta-ro-nfrfl5, item 2): this sheet is a
+// second, independent create-checkout-session-dodo call site alongside
+// shop.html's -- review round 1 found it had been missed when shop.html's
+// purchasePack()/purchasePlan() were first threaded. See
+// test/shop-purchase-conversion-behavioral.test.js's own fbc/fbp block for
+// the fuller why.
+// ============================================================================
+
+test('style.html: tapping Buy in the out-of-tokens sheet sends fbc/fbp in the checkout request body when Meta\'s cookies are present', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    await context.addCookies([
+      { name: '_fbc', value: 'fb.1.1700000000000.sheetfbc', url: baseUrl },
+      { name: '_fbp', value: 'fb.1.1700000000000.sheetfbp', url: baseUrl }
+    ]);
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    var captured = null;
+    await page.route('**/.netlify/functions/create-checkout-session-dodo', function (route) {
+      captured = JSON.parse(route.request().postData());
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: 'about:blank', sessionId: 'sess1', eventId: 'evt1' }) });
+    });
+
+    await seedAccount(page, { username: 'stylebuyfbc', draft: { caption: 'A city made of light' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(200);
+    await page.click('.style-card[data-style="Anime"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    await page.click('#ps-buy-btn');
+    await page.waitForTimeout(300);
+
+    assert.ok(captured, 'create-checkout-session-dodo must have been called');
+    assert.equal(captured.fbc, 'fb.1.1700000000000.sheetfbc', 'the checkout request body must carry the real _fbc cookie value');
+    assert.equal(captured.fbp, 'fb.1.1700000000000.sheetfbp', 'the checkout request body must carry the real _fbp cookie value');
+  } finally {
+    await context.close();
+  }
+});
+
+test('style.html: tapping Buy in the out-of-tokens sheet sends fbc/fbp as null (not omitted, not an error) when Meta\'s cookies are absent', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var context = await browser.newContext();
+  try {
+    // Deliberately no addCookies call -- simulates a real visitor with no
+    // Meta Pixel cookies at all.
+    var page = await context.newPage();
+    await blockThirdParty(page);
+    await mockTokenStatus(page, { balance: 40, nextClaimAt: Date.now() + 3600000, dailyClaimAmount: 20, claimable: false, streak: 0 });
+
+    var captured = null;
+    await page.route('**/.netlify/functions/create-checkout-session-dodo', function (route) {
+      captured = JSON.parse(route.request().postData());
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ url: 'about:blank', sessionId: 'sess1', eventId: 'evt1' }) });
+    });
+
+    await seedAccount(page, { username: 'stylebuynofbc', draft: { caption: 'A city made of light' } });
+    await page.goto(baseUrl + '/style.html', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(200);
+    await page.click('.style-card[data-style="Anime"]');
+    await page.click('#generate-btn');
+    await page.waitForSelector('#purchase-sheet-overlay.open', { timeout: 5000 });
+    await page.click('#ps-buy-btn');
+    await page.waitForTimeout(300);
+
+    assert.ok(captured, 'create-checkout-session-dodo must have been called');
+    assert.equal(captured.fbc, null, 'no _fbc cookie must mean a null fbc field, not an error and not a fabricated value');
+    assert.equal(captured.fbp, null);
+  } finally {
+    await context.close();
+  }
+});
+
 test('style.html: dismissing the sheet right after tapping Buy, then reopening and tapping Buy again, does not let the first (dismissed) request\'s late failure corrupt the reopened sheet\'s in-flight state', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   // Round-5 review finding: wireBuyButton's checkout-session .catch() was
