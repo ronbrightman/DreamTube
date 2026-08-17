@@ -325,6 +325,15 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
     // server-side event, without needing a second query joined against
     // pack ids.
     var starter = resolveIsStarterPack(payment);
+    // fbc/fbp (tracker item for-product-for-manager-purchase-meta-ro-nfrfl5,
+    // item 2): Meta's own first-party click/browser cookies, captured
+    // client-side by shop.html and threaded through here via create-checkout-
+    // session-dodo.js's metadata, echoed back verbatim by Dodo on this
+    // payment. Forwarded to sendCapiEvent below exactly as received — never
+    // fabricated, and undefined/missing is a normal, expected case (organic
+    // traffic, ad blocker, a purchase that predates this metadata field).
+    var fbc = payment.metadata && payment.metadata.dreamtube_fbc;
+    var fbp = payment.metadata && payment.metadata.dreamtube_fbp;
 
     // distinct_id must match what the client's posthog.identify() used —
     // the account's raw username, not its email (see
@@ -359,6 +368,8 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
         event_id: eventId,
         event_time: Math.floor(eventTimeMs / 1000),
         email: payEmail,
+        fbc: fbc,
+        fbp: fbp,
         custom_data: { value: price, currency: 'USD' }
       })
     ]);
@@ -457,6 +468,16 @@ async function firePurchaseConversion(event, payment, payEmail, tokens) {
  * grant/credit or dedup logic above, which is keyed on payment_id
  * independently (see grantDreamerPassCharge).
  *
+ * `params.fbc`/`params.fbp` (tracker item
+ * for-product-for-manager-purchase-meta-ro-nfrfl5, item 2) — Meta's own
+ * first-party click/browser cookies, threaded through by both call sites
+ * below from whichever Dodo object (Payment vs. Subscription) carries the
+ * `dreamtube_fbc`/`dreamtube_fbp` metadata create-checkout-session-dodo.js
+ * attached at checkout time. Forwarded to sendCapiEvent's own fbc/fbp params
+ * exactly as received — undefined/missing is expected and normal (organic
+ * traffic, ad blocker, a subscription that predates this metadata field),
+ * never fabricated here.
+ *
  * Never throws — identical contract to firePurchaseConversion: analytics
  * failure must never turn a successful token credit into a failed webhook
  * response.
@@ -511,6 +532,8 @@ async function fireDreamerPassConversion(event, params) {
       metaCapi.sendCapiEvent({
         event_name: params.metaEventName, // 'Subscribe' (first charge) or 'Purchase' (renewal) -- see doc comment above
         event_id: eventId,
+        fbc: params.fbc,
+        fbp: params.fbp,
         event_time: Math.floor(eventTimeMs / 1000),
         email: payEmail,
         custom_data: { value: price, currency: currency }
@@ -942,7 +965,11 @@ async function handleDreamerPassPayment(event, payment) {
       // here; never affects the grant.
       variant: passVariant,
       // Diagnostic-only, see fireDreamerPassConversion's own doc comment.
-      paymentId: payment.payment_id || null
+      paymentId: payment.payment_id || null,
+      // fbc/fbp — see fireDreamerPassConversion's own doc comment. Read off
+      // this same payment's metadata, exactly like eventId just above.
+      fbc: payment.metadata && payment.metadata.dreamtube_fbc,
+      fbp: payment.metadata && payment.metadata.dreamtube_fbp
     });
   }
 
@@ -1131,7 +1158,14 @@ async function handleSubscriptionEvent(event, type, sub) {
         // reliable per-renewal signal — falling back to the variant tag).
         variant: variant,
         // Diagnostic-only, see fireDreamerPassConversion's own doc comment.
-        paymentId: subscriptionEventPaymentId(sub)
+        paymentId: subscriptionEventPaymentId(sub),
+        // fbc/fbp — see fireDreamerPassConversion's own doc comment. The
+        // subscription's metadata is static across its whole lifetime (same
+        // reasoning as dreamtube_pass_variant's own fallback above), so this
+        // is the original checkout's click-attribution data, still valid to
+        // report on a later renewal charge.
+        fbc: sub.metadata && sub.metadata.dreamtube_fbc,
+        fbp: sub.metadata && sub.metadata.dreamtube_fbp
       });
     }
   }

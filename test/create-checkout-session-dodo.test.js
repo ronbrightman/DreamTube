@@ -193,6 +193,41 @@ test('valid request (pack199, not the starter) -> 200 with checkout url + sessio
   assert.equal(sentBody.allow_tax_id, undefined, 'allow_tax_id must NOT be sent as a top-level field -- Dodo\'s API silently ignores it there, leaving the real default (true) in effect');
 });
 
+// ============================================================================
+// fbc/fbp ad-attribution threading (tracker item
+// for-product-for-manager-purchase-meta-ro-nfrfl5, item 2): shop.html sends
+// these client-captured Meta cookies alongside email/pack; this endpoint
+// must carry them into Dodo's metadata (dreamtube_fbc/dreamtube_fbp) so
+// dodo-webhook.js's eventual Meta CAPI call can read them back. Purely
+// additive, attribution-only -- never required, never fabricated.
+// ============================================================================
+
+test('fbc/fbp on the request body are threaded into metadata.dreamtube_fbc/dreamtube_fbp (pack checkout)', async function () {
+  var captured = stubFetchCapture();
+  await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack199', fbc: 'fb.1.1700000000000.IwAR0abc', fbp: 'fb.1.1700000000000.999888777' } }));
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.metadata.dreamtube_fbc, 'fb.1.1700000000000.IwAR0abc');
+  assert.equal(sentBody.metadata.dreamtube_fbp, 'fb.1.1700000000000.999888777');
+});
+
+test('missing/null fbc/fbp are simply omitted from metadata, not sent as a fabricated placeholder, and checkout still succeeds (pack checkout)', async function () {
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack199', fbc: null, fbp: null } }));
+  assert.equal(res.statusCode, 200, 'a missing fbc/fbp must never block checkout');
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.metadata.dreamtube_fbc, undefined);
+  assert.equal(sentBody.metadata.dreamtube_fbp, undefined);
+});
+
+test('a non-string fbc/fbp is ignored (treated as absent), never forwarded verbatim', async function () {
+  var captured = stubFetchCapture();
+  var res = await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack199', fbc: 12345, fbp: { nested: 'object' } } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.metadata.dreamtube_fbc, undefined);
+  assert.equal(sentBody.metadata.dreamtube_fbp, undefined);
+});
+
 test('pack499 maps to DODO_PRODUCT_PACK_MEDIUM1500 and carries 1000 tokens/$4.99 in metadata', async function () {
   var captured = stubFetchCapture();
   await handler(reqEvent({ body: { email: 'buyer@example.com', pack: 'pack499' } }));
@@ -541,6 +576,27 @@ test('a Dreamer Pass checkout with DODO_PRODUCT_DREAMER_PASS unset -> 500 E6 (E6
   assert.equal(res.statusCode, 500);
   assert.match(JSON.parse(res.body).error, /^E6: missing_product_id: DODO_PRODUCT_DREAMER_PASS/);
   assert.equal(captured.calls.length, 0);
+});
+
+test('fbc/fbp on the request body are threaded into metadata.dreamtube_fbc/dreamtube_fbp (Dreamer Pass checkout)', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_dreamer_pass_test';
+  var captured = stubFetchCapture({ session_id: 'cks_pass', checkout_url: 'https://checkout.dodopayments.com/cks_pass' });
+  await handler(reqEvent({ body: { email: 'sub@example.com', plan: 'dreamer_pass', fbc: 'fb.1.1700000000000.subfbc', fbp: 'fb.1.1700000000000.subfbp' } }));
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.metadata.dreamtube_fbc, 'fb.1.1700000000000.subfbc');
+  assert.equal(sentBody.metadata.dreamtube_fbp, 'fb.1.1700000000000.subfbp');
+  delete process.env.DODO_PRODUCT_DREAMER_PASS;
+});
+
+test('missing fbc/fbp on a Dreamer Pass checkout is omitted from metadata, checkout still succeeds', async function () {
+  process.env.DODO_PRODUCT_DREAMER_PASS = 'pdt_dreamer_pass_test';
+  var captured = stubFetchCapture({ session_id: 'cks_pass', checkout_url: 'https://checkout.dodopayments.com/cks_pass' });
+  var res = await handler(reqEvent({ body: { email: 'sub@example.com', plan: 'dreamer_pass' } }));
+  assert.equal(res.statusCode, 200);
+  var sentBody = JSON.parse(captured.calls[0].init.body);
+  assert.equal(sentBody.metadata.dreamtube_fbc, undefined);
+  assert.equal(sentBody.metadata.dreamtube_fbp, undefined);
+  delete process.env.DODO_PRODUCT_DREAMER_PASS;
 });
 
 test('a Dreamer Pass checkout with no email -> 400 E4 (email required)', async function () {

@@ -229,6 +229,51 @@ test('payment.succeeded fires a server-side Purchase to BOTH PostHog and Meta CA
   assert.ok(metaEvent.event_time, 'event_time should be present');
 });
 
+// ===== fbc/fbp ad-attribution threading (tracker item
+// for-product-for-manager-purchase-meta-ro-nfrfl5, item 2): create-checkout-
+// session-dodo.js carries a checkout's fbc/fbp through Dodo's metadata as
+// dreamtube_fbc/dreamtube_fbp, echoed back verbatim on this payment --
+// firePurchaseConversion must read them back and forward them to Meta CAPI's
+// sendCapiEvent, so a purchase can actually be attributed to the ad that
+// drove it. Purely additive: absence must never break the conversion fire
+// or the credit. =====
+
+test('payment.succeeded carrying metadata.dreamtube_fbc/dreamtube_fbp forwards them to Meta CAPI\'s user_data.fbc/fbp', async function () {
+  await seedZeroBalance('purchasefbc@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_fbc_1',
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
+    customer: { customer_id: 'cus_fbc', email: 'purchasefbc@example.com' },
+    metadata: { dreamtube_event_id: 'evt-fbc-pack', dreamtube_fbc: 'fb.1.1700000000000.IwAR0abc', dreamtube_fbp: 'fb.1.1700000000000.999888777' }
+  })));
+
+  assert.equal(spies.metaCalls.length, 1);
+  var userData = spies.metaCalls[0].body.data[0].user_data;
+  assert.equal(userData.fbc, 'fb.1.1700000000000.IwAR0abc');
+  assert.equal(userData.fbp, 'fb.1.1700000000000.999888777');
+});
+
+test('payment.succeeded with NO metadata.dreamtube_fbc/dreamtube_fbp still fires Purchase normally, with no fbc/fbp key on user_data -- absence must never break the conversion or the credit', async function () {
+  await seedZeroBalance('purchasenofbc@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var res = await handler(signedEvent(paymentPayload({
+    payment_id: 'pay_no_fbc_1',
+    product_cart: [{ product_id: 'pdt_pack099_test', quantity: 1 }],
+    customer: { customer_id: 'cus_nofbc', email: 'purchasenofbc@example.com' },
+    metadata: { dreamtube_event_id: 'evt-no-fbc-pack' }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var record = await entitlements.getEntitlement({}, 'purchasenofbc@example.com');
+  assert.equal(record.tokens.balance, 300, 'the credit must land regardless of fbc/fbp being absent');
+
+  assert.equal(spies.metaCalls.length, 1, 'the Purchase conversion must still fire');
+  var userData = spies.metaCalls[0].body.data[0].user_data;
+  assert.equal(userData.fbc, undefined, 'sendCapiEvent must not send a fbc key at all when none was provided');
+  assert.equal(userData.fbp, undefined);
+});
+
 test('pack199 resolves price 2.99 for the Purchase event, and starter:false', async function () {
   await seedZeroBalance('purchase300@example.com');
   var spies = installAnalyticsFetchSpy();
@@ -1532,6 +1577,40 @@ test('a Dreamer Pass charge value scales with the REAL total_amount -- proving i
   assert.equal(spies.metaCalls[0].body.data[0].custom_data.value, 4.99);
 });
 
+test('a Dreamer Pass FIRST charge carrying metadata.dreamtube_fbc/dreamtube_fbp forwards them to Meta CAPI\'s user_data.fbc/fbp on the Subscribe event', async function () {
+  await seedZeroBalance('passfbcsubscribe@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_fbc_subscribe',
+    customer: { customer_id: 'cus_pfs', email: 'passfbcsubscribe@example.com' },
+    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-pass-fbc-subscribe', dreamtube_fbc: 'fb.1.1700000000000.subscribefbc', dreamtube_fbp: 'fb.1.1700000000000.subscribefbp' }
+  })));
+
+  assert.equal(spies.metaCalls.length, 1);
+  var userData = spies.metaCalls[0].body.data[0].user_data;
+  assert.equal(userData.fbc, 'fb.1.1700000000000.subscribefbc');
+  assert.equal(userData.fbp, 'fb.1.1700000000000.subscribefbp');
+});
+
+test('a Dreamer Pass FIRST charge with no metadata.dreamtube_fbc/dreamtube_fbp still fires Subscribe normally, with no fbc/fbp on user_data', async function () {
+  await seedZeroBalance('passnofbcsubscribe@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var res = await handler(signedEvent(passPaymentPayload({
+    payment_id: 'pay_pass_no_fbc_subscribe',
+    customer: { customer_id: 'cus_pnfs', email: 'passnofbcsubscribe@example.com' },
+    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-pass-no-fbc-subscribe' }
+  })));
+  assert.equal(res.statusCode, 200);
+
+  var record = await entitlements.getEntitlement({}, 'passnofbcsubscribe@example.com');
+  assert.equal(record.tokens.balance, DREAMER_PASS_MONTHLY, 'the credit must land regardless of fbc/fbp being absent');
+
+  assert.equal(spies.metaCalls.length, 1, 'the Subscribe conversion must still fire');
+  var userData = spies.metaCalls[0].body.data[0].user_data;
+  assert.equal(userData.fbc, undefined);
+  assert.equal(userData.fbp, undefined);
+});
+
 test('a $0 trial-start Dreamer Pass payment.succeeded fires NO conversion on either vendor (not a real charge)', async function () {
   await seedZeroBalance('passtrialconv@example.com');
   var spies = installAnalyticsFetchSpy();
@@ -1600,6 +1679,40 @@ test('a Dreamer Pass RENEWAL (subscription.renewed) fires Meta Purchase + PostHo
   })));
   assert.equal(spies2.posthogCalls.length, 1, 'a second, genuinely new renewal charge must fire its own conversion');
   assert.notEqual(spies2.posthogCalls[0].body.properties.$insert_id, phBody.properties.$insert_id, 'each renewal must get its own distinct eventId, never the shared subscription-level metadata one');
+});
+
+test('a Dreamer Pass RENEWAL reads fbc/fbp off the SUBSCRIPTION\'s own (static, lifetime) metadata.dreamtube_fbc/dreamtube_fbp and forwards them to Meta CAPI\'s user_data', async function () {
+  await seedZeroBalance('passrenewfbc@example.com');
+  var spies = installAnalyticsFetchSpy();
+  await handler(signedEvent(subEvent('subscription.renewed', {
+    payment_id: 'pay_renew_fbc_1',
+    customer: { customer_id: 'cus_prfbc', email: 'passrenewfbc@example.com' },
+    recurring_pre_tax_amount: 999,
+    currency: 'USD',
+    metadata: { dreamtube_plan: 'dreamer_pass', dreamtube_event_id: 'evt-static-sub-level-fbc', dreamtube_fbc: 'fb.1.1700000000000.renewfbc', dreamtube_fbp: 'fb.1.1700000000000.renewfbp' }
+  })));
+
+  assert.equal(spies.metaCalls.length, 1);
+  var userData = spies.metaCalls[0].body.data[0].user_data;
+  assert.equal(userData.fbc, 'fb.1.1700000000000.renewfbc');
+  assert.equal(userData.fbp, 'fb.1.1700000000000.renewfbp');
+});
+
+test('a Dreamer Pass RENEWAL with no metadata.dreamtube_fbc/dreamtube_fbp still fires Purchase normally, with no fbc/fbp on user_data', async function () {
+  await seedZeroBalance('passrenewnofbc@example.com');
+  var spies = installAnalyticsFetchSpy();
+  var res = await handler(signedEvent(subEvent('subscription.renewed', {
+    payment_id: 'pay_renew_no_fbc_1',
+    customer: { customer_id: 'cus_prnofbc', email: 'passrenewnofbc@example.com' },
+    recurring_pre_tax_amount: 999,
+    currency: 'USD'
+  })));
+  assert.equal(res.statusCode, 200);
+
+  assert.equal(spies.metaCalls.length, 1, 'the renewal conversion must still fire');
+  var userData = spies.metaCalls[0].body.data[0].user_data;
+  assert.equal(userData.fbc, undefined);
+  assert.equal(userData.fbp, undefined);
 });
 
 test('a redelivered Dreamer Pass renewal (subscription.renewed then payment.succeeded sharing the SAME payment_id) fires the conversion only ONCE', async function () {
