@@ -1,6 +1,6 @@
 // netlify/functions/lib/ben-agreement-store.js
 //
-// Backing store for ben-x7q4.html — the founder's family agreement with
+// Backing store for ben/index.html — the founder's family agreement with
 // his son over when Instagram may be installed. ONE shared record, read
 // and written by exactly two people (the son on his own phone, the
 // founder on his), so the page shows both of them the same numbers
