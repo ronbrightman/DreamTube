@@ -2332,6 +2332,7 @@
     };
     var t = TRIAL[trialArm] || TRIAL.free;
     overlay.innerHTML =
+      '<button class="mm-x" type="button" aria-label="Close">✕</button>' +
       '<div class="mm-body">' +
         '<div class="mm-hero">' +
           '<div class="mm-badge">MOST POPULAR · BEST VALUE</div>' +
@@ -2385,6 +2386,7 @@
     }
     renderPrice();
     sw.addEventListener('click', function(){ trialOn = !trialOn; renderPrice(); });
+    overlay.querySelector('.mm-x').addEventListener('click', dismiss);
     cta.addEventListener('click', function(){
       var passVariant = window.PaywallMoment.passVariantFor(trialOn, trialArm);
       track('paywall_cta_tapped', { arm: arm, variant: passVariant });
@@ -2423,6 +2425,7 @@
     // create-checkout-session-dodo PACK path (pack099, the one-time-per-account
     // starter). Same big-X dismiss as the subscription arm.
     overlay.innerHTML =
+      '<button class="mm-x" type="button" aria-label="Close">✕</button>' +
       '<div class="mm-body">' +
         '<div class="mm-hero mm-hero-tokens">' +
           '<div class="mm-badge mm-badge-gold">WELCOME OFFER</div>' +
@@ -2452,7 +2455,7 @@
           '<div class="mm-fine">One-time charge. No subscription.</div>' +        '</div>' +
       '</div>';
 
-    var cta = overlay.querySelector('#mm-cta');
+    overlay.querySelector('.mm-x').addEventListener('click', dismiss);    var cta = overlay.querySelector('#mm-cta');
     cta.addEventListener('click', function(){
       track('paywall_cta_tapped', { arm: arm, variant: 'pack099' });
       cta.disabled = true;
