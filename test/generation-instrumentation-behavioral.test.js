@@ -7,11 +7,26 @@
 // rate" — both were completely unmeasurable before this build: live
 // PostHog data showed tokens_refunded firing 0 times against 205
 // video_created over 60 days, and no generation-duration, poll-timeout, or
-// vanish event existed at all). Deliberately instrumentation-only, no
-// recovery-UX behavior change — see this build's own report for the scope
-// line this mirrors.
+// vanish event existed at all).
 //
-// Three new/changed signals, each covered below:
+// UPDATE (2026-08-18, recovery-UX part (a)): pollUntilDone's E301
+// poll-timeout path itself changed — the first time the poll budget is
+// exhausted while a job is still genuinely just not-done-yet, it now gets
+// ONE extension (MAX_POLL_MS * 2) before actually giving up, firing a new
+// 'generation_slow_retry' event at the moment of that extension (see
+// js/store.js's own doc comment on pollUntilDone). The E301
+// generation_failed test below was updated in place for the new timing
+// (an E301 now only fires after BOTH the original and extended budgets are
+// exhausted), and a new test proves a job that recovers within the
+// extended budget completes normally rather than being killed early. Also
+// affected: home.html's generic-technical-failure branch now shows the
+// persistent GenerationFailPanel instead of a toast (recovery-UX part
+// (b)) — every '.toast.show' wait in this file for a plain technical
+// failure was updated to '#gfp-root'; see
+// test/generation-fail-panel-behavioral.test.js for that panel's own
+// dedicated coverage.
+//
+// Four new/changed signals, each covered below:
 //   1. 'video_created' gains a `duration_ms` property (js/store.js's
 //      finalizeDream) — Date.now() minus startGeneration's own hoisted
 //      `startedAt`.
@@ -30,6 +45,11 @@
 //      Also proves generation_failed is deliberately SKIPPED for a stale/
 //      superseded edit's late failure (already silently ignored elsewhere
 //      in the app — see js/store.js's own isStaleEdit doc comment).
+//   4. 'generation_slow_retry' — a NEW event (recovery-UX part (a)), fired
+//      the moment pollUntilDone extends a job's poll budget once instead of
+//      rejecting with E301 immediately. Proven to fire exactly once even
+//      when the job goes on to time out for real, and exactly once when it
+//      goes on to genuinely complete within the extended budget.
 //
 // Follows test/phase1-product-events-behavioral.test.js's
 // readPostHogCaptureCalls approach, test/auto-refund-behavioral.test.js's
@@ -239,7 +259,11 @@ test('generation_failed: fires on a real fal-reported error (E205), with reason/
     });
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
+    // A plain technical failure now surfaces as the persistent
+    // GenerationFailPanel (recovery-UX part (b)), not a toast -- see
+    // test/generation-fail-panel-behavioral.test.js for that panel's own
+    // dedicated coverage.
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 8000 });
 
     var calls = await readPostHogCaptureCalls(page);
     var failedCalls = calls.filter(function (c) { return c.name === 'generation_failed'; });
@@ -265,7 +289,7 @@ test('generation_failed: the image path reports mediaType:\'image\' too (image-s
     });
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 8000 });
 
     var calls = await readPostHogCaptureCalls(page);
     var failedCalls = calls.filter(function (c) { return c.name === 'generation_failed'; });
@@ -283,15 +307,22 @@ test('generation_failed: the image path reports mediaType:\'image\' too (image-s
 
 // ===== generation_failed: client-side poll timeout (E301) =====
 
-test('generation_failed: fires on a client-side poll timeout (E301) -- no fal response needed at all, MAX_POLL_MS alone trips it', async function (t) {
+test('generation_failed: fires on a client-side poll timeout (E301) -- only AFTER the one-time recovery-UX extension (part (a)) is exhausted too, no fal response needed at all', { timeout: 30000 }, async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
   try {
-    // 11 minutes ago -- already past MAX_POLL_MS (10 min) the instant
-    // pollUntilDone's very first poll() call checks it, synchronously,
-    // before any fetch is even issued.
-    var startedAt = Date.now() - (11 * 60 * 1000);
+    // 21 minutes ago -- already past BOTH the original MAX_POLL_MS (10 min)
+    // AND the one-time extended budget (MAX_POLL_MS * 2 = 20 min) a
+    // genuinely-still-polling job now gets before this actually fires
+    // (recovery-UX part (a), tracker item for-product-track-avg-video-
+    // generation-t-2ci8ue -- see js/store.js's pollUntilDone). The very
+    // first poll() breach still only EXTENDS (never rejects immediately the
+    // instant MAX_POLL_MS alone is crossed); only the NEXT tick
+    // (POLL_INTERVAL_MS later), still past the now-doubled budget, finally
+    // rejects with E301 for real -- exercised in real wall-clock time here
+    // (one real ~10s POLL_INTERVAL_MS wait), not faked.
+    var startedAt = Date.now() - (21 * 60 * 1000);
     await seedLoggedInWithPendingJob(page, 'failtimeoutuser', 'failtimeoutuserpassword1', 'failtimeoutuser@example.com', { startedAt: startedAt });
     var statusCallCount = 0;
     await page.route('**/.netlify/functions/video-status*', function (route) {
@@ -300,16 +331,61 @@ test('generation_failed: fires on a client-side poll timeout (E301) -- no fal re
     });
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 20000 });
 
-    assert.equal(statusCallCount, 0, 'a job already past MAX_POLL_MS at load time must time out on the very first synchronous check, with no network call at all');
+    assert.equal(statusCallCount, 0, 'a job already past the full 21-minute extended budget at load time must never issue a real network call -- both the original and extended budget checks happen synchronously before any fetch');
 
     var calls = await readPostHogCaptureCalls(page);
+    var retryCalls = calls.filter(function (c) { return c.name === 'generation_slow_retry'; });
+    assert.equal(retryCalls.length, 1, 'the one-time extension must fire generation_slow_retry exactly once, before the eventual real timeout');
+    assert.equal(retryCalls[0].props.mediaType, 'video');
+    assert.ok(retryCalls[0].props.elapsed_ms >= 21 * 60 * 1000, 'expected generation_slow_retry elapsed_ms roughly 1260000+, got ' + retryCalls[0].props.elapsed_ms);
+
     var failedCalls = calls.filter(function (c) { return c.name === 'generation_failed'; });
-    assert.equal(failedCalls.length, 1);
+    assert.equal(failedCalls.length, 1, 'exactly one final E301 generation_failed, not one per extension tick');
     assert.equal(failedCalls[0].props.reason, 'E301: generation_timeout');
     assert.equal(failedCalls[0].props.mediaType, 'video');
-    assert.ok(failedCalls[0].props.elapsed_ms >= 11 * 60 * 1000, 'expected elapsed_ms roughly 660000+, got ' + failedCalls[0].props.elapsed_ms);
+    assert.ok(failedCalls[0].props.elapsed_ms >= 21 * 60 * 1000, 'expected elapsed_ms roughly 1260000+, got ' + failedCalls[0].props.elapsed_ms);
+  } finally {
+    await page.close();
+  }
+});
+
+test('pollUntilDone: a job past the ORIGINAL 10-minute budget but still under the extended 20-minute one gets the one-time extension and then genuinely completes -- not killed early', { timeout: 30000 }, async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var page = await browser.newPage();
+  await blockThirdParty(page);
+  try {
+    // 10 minutes + 5 seconds ago -- past the original MAX_POLL_MS (10 min)
+    // on the very first poll() check, but comfortably under the extended
+    // 20-minute budget. The first breach extends (fires
+    // generation_slow_retry) instead of rejecting; the NEXT tick
+    // (POLL_INTERVAL_MS later, ~10min15s elapsed) is still under the
+    // extended budget, so it proceeds to actually fetch video-status and
+    // resolves normally -- proving a job that's simply still running past
+    // the old 10-minute ceiling is no longer killed outright.
+    var startedAt = Date.now() - (10 * 60 * 1000 + 5000);
+    await seedLoggedInWithPendingJob(page, 'extendrecoveruser', 'extendrecoveruserpassword1', 'extendrecoveruser@example.com', { startedAt: startedAt });
+    var statusCallCount = 0;
+    await page.route('**/.netlify/functions/video-status*', function (route) {
+      statusCallCount++;
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ done: true, videoUrl: 'https://example.com/extended-recovery.mp4' }) });
+    });
+
+    await safeGoto(page, baseUrl + '/home.html');
+    await page.waitForSelector('#d0-video.ready', { timeout: 20000 });
+
+    assert.ok(statusCallCount >= 1, 'the extended poll must have actually reached video-status and resolved, not given up');
+
+    var calls = await readPostHogCaptureCalls(page);
+    var retryCalls = calls.filter(function (c) { return c.name === 'generation_slow_retry'; });
+    assert.equal(retryCalls.length, 1, 'the one-time extension must have fired exactly once on the way to this successful completion');
+
+    var failedCalls = calls.filter(function (c) { return c.name === 'generation_failed'; });
+    assert.equal(failedCalls.length, 0, 'a job that goes on to genuinely complete within the extended budget must never fire generation_failed');
+
+    var videoCreated = calls.filter(function (c) { return c.name === 'video_created'; });
+    assert.equal(videoCreated.length, 1, 'the job must complete normally and fire video_created despite the earlier extension');
   } finally {
     await page.close();
   }

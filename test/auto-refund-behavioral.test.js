@@ -11,14 +11,22 @@
 //   1. js/store.js's pollUntilDone actually sends `email` on the
 //      video-status.js/image-status.js poll request (the refund can't be
 //      credited to the right account without it).
-//   2. home.html's failure toast shows "Your tokens were returned."
-//      exactly when (and only when) the poll response actually carried
+//   2. home.html's failure UI shows "Your tokens were returned." exactly
+//      when (and only when) the poll response actually carried
 //      `tokensRefunded: true` — never assumed client-side just because
 //      generation failed at all. (Formerly processing.html's own
-//      dedicated #proc-fail-refund DOM chip, before tracker item
-//      for-product-funnel-ending-v2-founder-ins-tfuu0q removed that page
-//      and folded the same logic into home.html's onGenerationSettled
-//      catch handler's toast text.)
+//      dedicated #proc-fail-refund DOM chip; folded into home.html's
+//      onGenerationSettled catch handler after tracker item for-product-
+//      funnel-ending-v2-founder-ins-tfuu0q removed that page — first as
+//      plain toast text, then UPDATED 2026-08-18, recovery-UX part (b),
+//      tracker item for-product-track-avg-video-generation-t-2ci8ue: the
+//      toast was replaced with the PERSISTENT GenerationFailPanel
+//      (js/generation-fail-panel.js) so the refund statement stays
+//      visible until the user acts, rather than auto-dismissing in
+//      ~2.2s — see test/generation-fail-panel-behavioral.test.js for that
+//      panel's own dedicated coverage. This file's assertions were
+//      updated in place to read the panel's `.gfp-refund` line instead of
+//      the old `#toast` text.)
 //
 // Follows test/logout-clears-pendingjob-behavioral.test.js's/test/image-
 // generation-turn-into-video-behavioral.test.js's conventions: a plain
@@ -116,7 +124,7 @@ async function seedLoggedInWithPendingJob(page, username, password, email, opts)
   await safeGoto(page, baseUrl + '/login.html');
 }
 
-test('home.html: a refund-eligible generation failure (tokensRefunded:true from video-status.js) shows "Your tokens were returned." in the failure toast, and video-status.js received the account email', async function (t) {
+test('home.html: a refund-eligible generation failure (tokensRefunded:true from video-status.js) shows "Your tokens were returned." on the persistent recovery panel, and video-status.js received the account email', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -132,25 +140,26 @@ test('home.html: a refund-eligible generation failure (tokensRefunded:true from 
     });
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 8000 });
 
     await settle(function () { return videoStatusCalls.length >= 1; });
     assert.equal(videoStatusCalls.length, 1);
     assert.equal(videoStatusCalls[0].email, 'refundshown@example.com', 'video-status.js must receive the logged-in account\'s email so a refund can be credited to the right balance');
     assert.equal(videoStatusCalls[0].name, 'fal:fal-ai/veo3.1/fast:req-refundshown');
 
-    var toastText = await page.textContent('#toast');
-    assert.match(toastText, /Your tokens were returned\./, 'the "Your tokens were returned." copy must show in the toast when the server reported tokensRefunded:true');
-    // The underlying failure reason must still be part of the same toast
+    var refundText = await page.textContent('.gfp-refund');
+    assert.match(refundText, /Your tokens were returned\./, 'the "Your tokens were returned." copy must show on the panel when the server reported tokensRefunded:true');
+    // The underlying failure reason must still be shown on the same panel
     // too -- this is an addition to the existing failure message, not a
     // replacement of it.
-    assert.match(toastText, /generation_failed/i);
+    var msgText = await page.textContent('.gfp-msg');
+    assert.match(msgText, /generation_failed/i);
   } finally {
     await page.close();
   }
 });
 
-test('home.html: a generation failure WITHOUT a server-reported refund does not show "Your tokens were returned." in the toast', async function (t) {
+test('home.html: a generation failure WITHOUT a server-reported refund does not show "Your tokens were returned." on the panel', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await browser.newPage();
   await blockThirdParty(page);
@@ -166,10 +175,9 @@ test('home.html: a generation failure WITHOUT a server-reported refund does not 
     });
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 8000 });
 
-    var toastText = await page.textContent('#toast');
-    assert.doesNotMatch(toastText, /Your tokens were returned\./, 'the refund copy must not be assumed just because generation failed -- only the server\'s tokensRefunded flag can show it');
+    assert.equal(await page.locator('.gfp-refund').count(), 0, 'the refund copy must not be assumed just because generation failed -- only the server\'s tokensRefunded flag can show it');
   } finally {
     await page.close();
   }
@@ -191,13 +199,13 @@ test('home.html: the refund copy also works for the image path (image-status.js)
     });
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 8000 });
 
     await settle(function () { return imageStatusCalls.length >= 1; });
     assert.equal(imageStatusCalls.length, 1);
     assert.equal(imageStatusCalls[0].email, 'refundimage@example.com');
-    var toastText = await page.textContent('#toast');
-    assert.match(toastText, /Your tokens were returned\./);
+    var refundText = await page.textContent('.gfp-refund');
+    assert.match(refundText, /Your tokens were returned\./);
   } finally {
     await page.close();
   }
@@ -216,16 +224,21 @@ test('home.html: the refund copy from an earlier failure does not linger into a 
     });
 
     await safeGoto(page, baseUrl + '/home.html');
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
-    var firstToastText = await page.textContent('#toast');
-    assert.match(firstToastText, /Your tokens were returned\./, 'sanity check: the first failure shows the refund copy');
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 8000 });
+    var firstRefundText = await page.textContent('.gfp-refund');
+    assert.match(firstRefundText, /Your tokens were returned\./, 'sanity check: the first failure shows the refund copy');
+    // Dismiss the first panel before triggering the second attempt --
+    // GenerationFailPanel.show() itself would replace it anyway (never
+    // stacks two panels), but dismissing here reflects the real user path.
+    await page.locator('.gfp-btn', { hasText: 'Dismiss' }).click();
+    assert.equal(await page.locator('#gfp-root').count(), 0);
 
-    // No dedicated "Try Again" button on home.html anymore (unlike the old
-    // processing.html fail screen) -- a real retry is just a fresh
-    // generation, driven here the same way style.html's Generate button
-    // does it (?generate=1). Mocks a NON-refund-eligible failure on this
-    // second, unrelated attempt and confirms the copy from the PREVIOUS
-    // failure doesn't linger into it.
+    // No dedicated "Try Again" button on home.html's own page chrome
+    // (unlike the old processing.html fail screen) -- a real retry is just
+    // a fresh generation, driven here the same way style.html's Generate
+    // button does it (?generate=1). Mocks a NON-refund-eligible failure on
+    // this second, unrelated attempt and confirms the copy from the
+    // PREVIOUS failure doesn't linger into it.
     await page.evaluate(function () {
       var raw = localStorage.getItem('dreamtube_state_v1');
       var state = JSON.parse(raw);
@@ -244,9 +257,8 @@ test('home.html: the refund copy from an earlier failure does not linger into a 
     });
 
     await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 8000 });
-    var secondToastText = await page.textContent('#toast');
-    assert.doesNotMatch(secondToastText, /Your tokens were returned\./, 'the refund copy from the earlier failure must not linger into an unrelated later failure');
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 8000 });
+    assert.equal(await page.locator('.gfp-refund').count(), 0, 'the refund copy from the earlier failure must not linger into an unrelated later failure');
   } finally {
     await page.close();
   }

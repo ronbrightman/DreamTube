@@ -250,7 +250,11 @@
 // Error codes E3xx = client-side generation failures (as opposed to E1xx/E2xx,
 // which come from generate-video.js/video-status.js and already carry their
 // own codes by the time they reach here — those are passed through as-is).
-//   E301 generation_timeout       — gave up polling after MAX_POLL_MS
+//   E301 generation_timeout       — gave up polling after MAX_POLL_MS, once
+//        extended once already (recovery-UX part (a), tracker item
+//        for-product-track-avg-video-generation-t-2ci8ue, see pollUntilDone's
+//        own doc comment for the one-time MAX_POLL_MS * 2 extension a
+//        genuinely-still-polling job gets before this actually fires)
 //   E302 network error while polling video-status (e.g. connection dropped) —
 //        only surfaces after MAX_NETWORK_RETRIES consecutive transient
 //        fetch/network failures (see pollUntilDone); a single dropped poll
@@ -2140,8 +2144,40 @@
       // case regardless.
       var MAX_NETWORK_RETRIES = 3;
       var networkFailureCount = 0;
+      // Recovery-UX part (a) (tracker item for-product-track-avg-video-
+      // generation-t-2ci8ue, founder ask 2026-08-10: "auto-retry once on a
+      // poll timeout before giving up"). The FIRST time the poll budget is
+      // exhausted while the job is still just genuinely not-done-yet (never
+      // touches the two OTHER ways this promise can already reject below —
+      // a real `data.error` response, or MAX_NETWORK_RETRIES consecutive
+      // network failures — those still reject immediately, unchanged),
+      // widen the budget once to MAX_POLL_MS * 2 and keep polling instead
+      // of giving up. Only a job that's STILL not done after that extended
+      // budget rejects with E301 for real. `extended` stays false for the
+      // overwhelming majority of jobs, which finish well inside the
+      // original 10-minute budget.
+      var pollBudgetMs = MAX_POLL_MS;
+      var extended = false;
       function poll() {
-        if (Date.now() - startedAt > MAX_POLL_MS) { reject(new Error('E301: generation_timeout')); return; }
+        if (Date.now() - startedAt > pollBudgetMs) {
+          if (!extended) {
+            extended = true;
+            pollBudgetMs = MAX_POLL_MS * 2;
+            // 'generation_slow_retry' — visibility into how often this
+            // extension actually gets used, same fire-and-forget discipline
+            // as every other trackAnalytics call in this file (never allowed
+            // to affect the retry decision itself, see trackAnalytics's own
+            // try/catch).
+            trackAnalytics('generation_slow_retry', {
+              mediaType: mediaType,
+              elapsed_ms: Date.now() - startedAt
+            });
+            setTimeout(poll, POLL_INTERVAL_MS);
+            return;
+          }
+          reject(new Error('E301: generation_timeout'));
+          return;
+        }
         var url = statusEndpointFor(mediaType) + '?name=' + encodeURIComponent(operationName)
           + (email ? '&email=' + encodeURIComponent(email) : '');
         fetch(url)

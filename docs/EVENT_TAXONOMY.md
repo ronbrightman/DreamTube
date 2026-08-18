@@ -132,6 +132,24 @@ ceiling; a generation can cross this and still finish completely normally).
 | **Guard** | `durationMs !== null && durationMs > GENERATION_SLOW_THRESHOLD_MS`. A SEPARATE event, not just a flag property riding along on `video_created` — deliberately, so Growth/Ron can build a PostHog alert/insight directly off this event's own volume without first having to filter `video_created` by a duration property (mirrors how `tokens_refunded` is its own event rather than a flag on `video_created`, even though both describe the same underlying job). Only ever fires alongside `video_created` on the same job, never on its own |
 | **What's sent** | `{ style, mediaType, modelUsed, duration_ms }` — `modelUsed` (video-only, null otherwise — same convention as `model_used`'s own field) is included specifically so a slow job can be chased down by model/style, per the founder's own ask |
 
+### generation_slow_retry
+
+Recovery-UX part (a) — tracker item `for-product-track-avg-video-generation-t-2ci8ue`,
+founder ask (2026-08-10): "auto-retry once on a poll timeout before giving
+up." Visibility into how often that one-time extension actually gets used,
+distinct from `generation_slow` above (which fires on every completed job
+past 3 minutes, success or not) — this only fires for a job that hit the
+FULL original 10-minute `MAX_POLL_MS` budget and got a second chance instead
+of an immediate `E301` failure.
+
+| | |
+|---|---|
+| **Trigger** | `js/store.js`'s `pollUntilDone` would otherwise reject with `E301: generation_timeout` (still not `done`, no `data.error`, past `MAX_POLL_MS`) for the FIRST time on this job — instead of rejecting, the poll budget is widened once to `MAX_POLL_MS * 2` and polling continues |
+| **Fires from** | `js/store.js`'s `pollUntilDone`, at the moment of that one-time extension |
+| **Vendors** | PostHog only — an internal reliability signal, not an ad-optimization conversion |
+| **Guard** | Fires at most once per job (the extension itself only ever happens once — a job still not done after the extended budget rejects with `E301` for real, no second extension, no second fire). Deliberately does NOT affect the real `data.error` path (rejects immediately, unchanged) or the separate `MAX_NETWORK_RETRIES` network-failure-exhaustion path (unchanged) — only the "genuinely still polling, job just hasn't reported done yet" case reaches this |
+| **What's sent** | `{ mediaType, elapsed_ms }` — `elapsed_ms` is time-since-submission at the moment of extension (will always be just past `MAX_POLL_MS`, i.e. ~10 minutes) |
+
 ### generation_failed
 
 Tracker item `for-product-track-avg-video-generation-t-2ci8ue` (founder ask,
