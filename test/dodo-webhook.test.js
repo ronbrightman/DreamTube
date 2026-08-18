@@ -2223,3 +2223,89 @@ test('subscription.plan_changed when Dodo\'s payload itself explicitly claims tr
   assert.equal(record.subscription.status, 'trialing', 'an explicit trialing payload on plan_changed is honored via the pre-existing explicitTrialing path');
   assert.equal(record.subscription.trialEnd, trialEnd);
 });
+
+// ── FRESHNESS fix (recurring-pattern-pre-cas-re-69aaqh, 2026-08-17) ──
+// The preservation decision above used to come from a separate
+// entitlements.getEntitlement() read taken BEFORE updateSubscription's own
+// CAS write started — a decision computed from that read and handed in as a
+// static patch could go stale before the CAS write's own read-mutate-write
+// loop even began (CAS protects a write from being LOST, not from its own
+// CONTENT being built on stale data). The fix moved this decision inside
+// updateSubscription's new function-form subPatch, so it's now made against
+// the CAS write's own fresh read on whichever attempt actually succeeds.
+// This test proves that end to end at the real dodo-webhook.js call site:
+// force the CAS write's FIRST attempt to observe a stale (rejected,
+// mismatched-etag) snapshot that looks like the trial already ended, and
+// confirm the handler still correctly preserves the trial — because the
+// decision was (re-)made from the RETRY's fresh read, not memoized from the
+// stale first attempt.
+test('subscription.plan_changed preservation decides from the CAS write\'s own FRESH retry read, not a stale first attempt (freshness fix regression)', async function () {
+  var email = 'planchangefreshretry@example.com';
+  await seedZeroBalance(email);
+  var trialEnd = Date.now() + 3 * DAY_MS;
+  await handler(signedEvent(subEvent('subscription.active', {
+    status: 'active', trialing: false,
+    trial_period_days: 3, created_at: new Date().toISOString(),
+    next_billing_date: new Date(trialEnd).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_pcfr', email: email }
+  })));
+  var beforeChange = await entitlements.getEntitlement({}, email);
+  assert.equal(beforeChange.subscription.status, 'trialing', 'sanity: trial synthesized');
+
+  // Force updateSubscription's own CAS write to reject its first attempt:
+  // that attempt observes a snapshot that LOOKS like the trial already
+  // ended (as if a concurrent event had landed first), with an etag that
+  // can never match the real current one. The retry must fall through to
+  // the real, still-trialing stored state.
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 1) {
+      return { value: { data: { email: key, tokens: { balance: 0 }, subscription: { status: 'active', trialEnd: null } }, etag: 'stale-etag-will-never-match', metadata: {} } };
+    }
+    return null;
+  });
+
+  var res;
+  try {
+    res = await handler(signedEvent(subEvent('subscription.plan_changed', {
+      status: 'active', trialing: false,
+      next_billing_date: new Date(trialEnd).toISOString(),
+      product_id: 'pdt_dreamer_pass_test',
+      customer: { customer_id: 'cus_pcfr', email: email }
+    })));
+  } finally {
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
+  }
+  assert.equal(res.statusCode, 200);
+
+  var afterChange = await entitlements.getEntitlement({}, email);
+  assert.equal(afterChange.subscription.status, 'trialing', 'THE FRESHNESS FIX: the preservation decision must be re-made from the CAS retry\'s own fresh read, correctly preserving the trial even though the first (rejected) attempt looked like it had already ended');
+  assert.equal(afterChange.subscription.trialEnd, trialEnd);
+
+  var status = await entitlements.getTokenStatus({}, email);
+  assert.equal(status.dailyClaimAmount, 100, 'the 100/day boost survives, proving the real committed state (not just a decision variable) reflects the fresh read');
+});
+
+// Review finding (non-blocking, 2026-08-17): the decision function's prevSub
+// degrades safely to {} when the account has no prior subscription record at
+// all (entitlements.isTrialActive's own null/empty guard) -- this was true
+// by construction but had no explicit test proving it stays true. A
+// plan_changed arriving with no preceding subscription.active on file isn't
+// a normal Dodo sequence, but the code must not throw or misbehave if it
+// somehow does (a redelivery race, an out-of-order webhook, etc).
+test('subscription.plan_changed on an account with NO prior subscription record at all degrades safely to active/no-trial (prevSub={} case, does not throw)', async function () {
+  var email = 'planchangenopriorrecord@example.com';
+  await seedZeroBalance(email); // entitlement record exists, but with no `subscription` field at all
+
+  var res = await handler(signedEvent(subEvent('subscription.plan_changed', {
+    status: 'active', trialing: false,
+    next_billing_date: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_pcnp', email: email }
+  })));
+  assert.equal(res.statusCode, 200, 'must not throw/500 when prevSub is {} inside the decision function');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.subscription.status, 'active', 'no prior record means nothing to preserve -- correctly falls through to active');
+  assert.equal(record.subscription.trialEnd, null);
+});

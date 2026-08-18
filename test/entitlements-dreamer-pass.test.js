@@ -176,3 +176,64 @@ test('updateSubscription undefined keys are dropped (do not blank a prior value)
   assert.equal(record.subscription.status, 'active');
   assert.equal(record.subscription.trialEnd, null, 'explicit null clears trialEnd');
 });
+
+// ---------- updateSubscription decision-function form (freshness fix,
+// recurring-pattern-pre-cas-re-69aaqh, 2026-08-17) ----------
+//
+// subPatch may now be a function(prevSub) instead of a plain object, called
+// INSIDE the CAS mutate against that attempt's own fresh subscription state
+// -- built specifically so a caller whose patch CONTENT depends on persisted
+// state (dodo-webhook.js's plan_changed trial-preservation carve-out is the
+// first real one) can decide from the SAME read the CAS write itself acts
+// on, instead of a separate pre-CAS read that could go stale before the
+// write's own read-mutate-write loop even starts. This proves the mechanism
+// directly: a first CAS attempt observes a STALE snapshot (mismatched etag,
+// simulating a concurrent write already having changed the real state) and
+// is atomically rejected; the retry's mutate call must receive that RETRY's
+// own fresh prevSub, not memoize/reuse the first attempt's -- same
+// setCasReadOverride technique test/entitlements-daily-claim.test.js already
+// uses to prove claimDailyTokens' own CAS retry correctness.
+
+test('updateSubscription: a function subPatch is re-invoked fresh on CAS retry with THAT attempt\'s own prevSub, not the first (rejected) attempt\'s stale one', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  var email = 'freshdecision@example.com';
+  var realTrialEnd = Date.now() + 2 * DAY_MS;
+  // Real, currently-stored ground truth: genuinely still trialing.
+  await seed(email, { status: 'trialing', trialEnd: realTrialEnd });
+
+  var seenPrevSubStatuses = [];
+  mockBlobs.setCasReadOverride(entitlements.STORE_NAME, function (key, callIndex) {
+    if (callIndex === 1) {
+      // A stale snapshot with a non-matching etag -- as if a concurrent
+      // write had already ended the trial before this attempt's read, but
+      // that write's own commit hasn't actually landed in the real store
+      // this simulation reads from on retry (mirrors the existing "stale
+      // first CAS read is atomically REJECTED" pattern above).
+      return { value: { data: { email: key, tokens: { balance: 0 }, subscription: { status: 'active', trialEnd: null } }, etag: 'stale-etag-will-never-match', metadata: {} } };
+    }
+    return null; // retry falls through to the real current (still-trialing) state
+  });
+
+  try {
+    await entitlements.updateSubscription(ev, email, function (prevSub) {
+      seenPrevSubStatuses.push(prevSub.status);
+      var preserving = entitlements.isTrialActive(prevSub, Date.now());
+      return { status: preserving ? 'trialing' : 'active', trialEnd: preserving ? prevSub.trialEnd : null };
+    });
+  } finally {
+    mockBlobs.clearCasReadOverride(entitlements.STORE_NAME);
+  }
+
+  assert.deepEqual(seenPrevSubStatuses, ['active', 'trialing'], 'the decision function must be called once per CAS attempt, each with THAT attempt\'s own prevSub -- attempt 1 saw the stale non-trialing snapshot (and was rejected), attempt 2 saw the real trialing state');
+  var record = await entitlements.getEntitlement(ev, email);
+  assert.equal(record.subscription.status, 'trialing', 'the FINAL committed state must reflect the fresh (retry) read the CAS write actually acted on, not the stale first attempt');
+  assert.equal(record.subscription.trialEnd, realTrialEnd, 'trialEnd must come from the real stored state, not a value derived from the stale rejected attempt');
+});
+
+test('updateSubscription: the plain-object subPatch form is unaffected by the function-form addition (same exact behavior as before)', async function () {
+  var ev = fakeEvent({ ip: nextIp() });
+  await entitlements.updateSubscription(ev, 'upd6@example.com', { status: 'trialing', subscriptionId: 'sub_plain', trialEnd: Date.now() + DAY_MS });
+  var record = await entitlements.getEntitlement(ev, 'upd6@example.com');
+  assert.equal(record.subscription.status, 'trialing');
+  assert.equal(record.subscription.subscriptionId, 'sub_plain');
+});
