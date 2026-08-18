@@ -1366,6 +1366,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
      generateVideo AND the wizard/funnel resumePendingJob actually fire. -->
 <script src="js/wizard-chips.js"></script>
 <script src="js/content-block-panel.js"></script>
+<script src="js/generation-fail-panel.js"></script>
 <script src="js/dream-cards.js"></script>
 <script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
@@ -2799,15 +2800,41 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       // applyMediaTypeCopy/#proc-fail-copy, which showed BOTH a static
       // "Something went wrong generating your video/image" line AND a
       // separate server-reason line at once, in two different DOM
-      // elements) — this toast always leads with the media-aware phrase,
-      // then appends the server's own specific reason (when it sent one)
-      // as a second sentence, rather than treating the two as mutually
-      // exclusive.
+      // elements) — leads with the media-aware phrase, then appends the
+      // server's own specific reason (when it sent one) as a second
+      // sentence, rather than treating the two as mutually exclusive.
       var mediaTypeForCopy = DreamStore.getDraft().mediaType === 'image' ? 'picture' : 'video';
       var baseCopy = 'Something went wrong generating your ' + mediaTypeForCopy + ' — nothing was lost.';
       var reasonSuffix = (match && match[2]) ? (' (' + match[2] + ')') : '';
-      var refundNote = (err && err.tokensRefunded) ? ' Your tokens were returned.' : '';
-      showToast(baseCopy + reasonSuffix + refundNote);
+      // Persistent recovery panel, NOT a toast (recovery-UX part (b),
+      // tracker item for-product-track-avg-video-generation-t-2ci8ue,
+      // founder ask 2026-08-10: "always show a clear 'your tokens were
+      // returned — tap to try again' recovery UI on the failure screen") —
+      // same "stays until the user acts" upgrade E116 already got above
+      // (founder upgrade 2026-08-08), applied to every OTHER terminal
+      // technical failure this catch handler can reach (a real fal error,
+      // a poll timeout, a sustained poll network failure, a submission
+      // failure). GenerationFailPanel is a deliberately simpler sibling of
+      // ContentBlockPanel — just this message, a prominent refund line when
+      // err.tokensRefunded is true (read-only here, never written — the
+      // refund itself already happened server-side, or didn't, by the time
+      // this runs), and Try again / Dismiss.
+      GenerationFailPanel.show({
+        message: baseCopy + reasonSuffix,
+        tokensRefunded: !!(err && err.tokensRefunded),
+        onRetry: function(){
+          // Exact same "resubmit fresh from the intact draft" mechanism as
+          // the E112/E412 purchase-sheet's own onImageFallback retry above
+          // — reused verbatim rather than inventing a second retry path, so
+          // retry behavior stays consistent across the app (see this
+          // function's own comment on that call site for the fuller
+          // reasoning on each piece).
+          beginOptimisticFreshGeneration();
+          refreshHomeState();
+          onGenerationSettled(startFreshGenerationFromDraft());
+          pollForPendingJobToAppear(30);
+        }
+      });
     });
   }
 

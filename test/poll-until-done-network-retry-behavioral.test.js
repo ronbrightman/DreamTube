@@ -194,12 +194,17 @@ test('js/store.js pollUntilDone: a SUSTAINED run of network failures past the re
     // Must eventually give up (bounded retries, not infinite) -- home.html
     // has no dedicated failure screen anymore (tracker item for-product-
     // funnel-ending-v2-founder-ins-tfuu0q -- processing.html removed); the
-    // generating tile disappears and a toast reports the failure instead.
-    // The E302 code itself now only ever reaches analytics (this page's
-    // own 'generation_blocked' track() call), not a visible DOM chip, so
-    // it's asserted via the pendingJob-cleared signal below instead of a
-    // rendered code element.
-    await page.waitForSelector('.toast.show', { timeout: 50000 });
+    // generating tile disappears and a PERSISTENT recovery panel reports
+    // the failure instead (recovery-UX part (b), tracker item for-product-
+    // track-avg-video-generation-t-2ci8ue -- this generic-technical-failure
+    // branch used to show a vanishing toast; GenerationFailPanel replaced
+    // it, see test/generation-fail-panel-behavioral.test.js for that
+    // panel's own dedicated coverage). The E302 code itself only ever
+    // reaches analytics (this page's own 'generation_blocked' track()
+    // call) and the panel's own generic message, not a rendered error-code
+    // chip, so it's asserted via the pendingJob-cleared signal below
+    // instead.
+    await page.waitForSelector('#gfp-root', { timeout: 50000 });
 
     // And the pendingJob must actually be cleared once it genuinely gives
     // up -- this is the legitimate case where clearPendingJob() SHOULD run

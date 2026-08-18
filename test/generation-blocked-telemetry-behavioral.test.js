@@ -127,7 +127,9 @@ test("generation_blocked: fires with reason='E109' on the exact rate-limit failu
     await seedAccountWithDraft(page, { username: 'e109blockeduser' });
     await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 5000 });
+    // A plain technical failure now surfaces as the persistent
+    // GenerationFailPanel (recovery-UX part (b)), not a toast.
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 5000 });
 
     var calls = await readPostHogCaptureCalls(page);
     var blockedCalls = calls.filter(function (c) { return c.name === 'generation_blocked'; });
@@ -177,7 +179,9 @@ test('generation_blocked: falls back to the raw message as `reason` when the fai
     await seedAccountWithDraft(page, { username: 'unstructuredfailuser' });
     await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 5000 });
+    // A plain technical failure now surfaces as the persistent
+    // GenerationFailPanel (recovery-UX part (b)), not a toast.
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 5000 });
 
     var calls = await readPostHogCaptureCalls(page);
     var blockedCalls = calls.filter(function (c) { return c.name === 'generation_blocked'; });

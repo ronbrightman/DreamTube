@@ -575,11 +575,16 @@ test('home.html: an E112 (insufficient tokens) generation failure auto-opens the
 // ============================================================================
 // Media-aware fail-copy (hardening fix, tracker item
 // for-product-store-launch-copy-sweep-purc-m6xhkx, carried over to
-// home.html's own toast-based failure UX when processing.html's dedicated
-// fail screen was removed): a failed generation's toast says "video" or
-// "picture" specifically, never a static wrong media type.
+// home.html's own failure UX when processing.html's dedicated fail screen
+// was removed): a failed generation's message says "video" or "picture"
+// specifically, never a static wrong media type. UPDATED 2026-08-18
+// (recovery-UX part (b), tracker item for-product-track-avg-video-
+// generation-t-2ci8ue): this copy now shows on the persistent
+// GenerationFailPanel (js/generation-fail-panel.js) rather than a toast --
+// see test/generation-fail-panel-behavioral.test.js for that panel's own
+// dedicated coverage.
 // ============================================================================
-test('home.html: a failed VIDEO generation (non-E112/E412) shows "video" in the failure toast', async function (t) {
+test('home.html: a failed VIDEO generation (non-E112/E412) shows "video" in the failure panel', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -593,8 +598,8 @@ test('home.html: a failed VIDEO generation (non-E112/E412) shows "video" in the 
     await seedAccount(page, { username: 'failcopyvideo', draft: { caption: 'A whale made of stars', style: 'Cinematic', mediaType: 'video' } });
     await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('.toast.show', { timeout: 8000 });
-    var copy = await page.textContent('#toast');
+    await page.waitForSelector('#gfp-root', { timeout: 8000 });
+    var copy = await page.textContent('.gfp-msg');
     assert.match(copy, /generating your video/i);
     assert.doesNotMatch(copy, /generating your picture/i);
   } finally {
@@ -602,7 +607,7 @@ test('home.html: a failed VIDEO generation (non-E112/E412) shows "video" in the 
   }
 });
 
-test('home.html: a failed IMAGE generation (non-E112/E412) shows "picture" in the failure toast, not "video"', async function (t) {
+test('home.html: a failed IMAGE generation (non-E112/E412) shows "picture" in the failure panel, not "video"', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -616,8 +621,8 @@ test('home.html: a failed IMAGE generation (non-E112/E412) shows "picture" in th
     await seedAccount(page, { username: 'failcopyimage', draft: { caption: 'A whale made of stars', style: 'Cinematic', mediaType: 'image' } });
     await page.goto(baseUrl + '/home.html?generate=1', { waitUntil: 'domcontentloaded' });
 
-    await page.waitForSelector('.toast.show', { timeout: 8000 });
-    var copy = await page.textContent('#toast');
+    await page.waitForSelector('#gfp-root', { timeout: 8000 });
+    var copy = await page.textContent('.gfp-msg');
     assert.match(copy, /generating your picture/i);
     assert.doesNotMatch(copy, /generating your video/i);
   } finally {
