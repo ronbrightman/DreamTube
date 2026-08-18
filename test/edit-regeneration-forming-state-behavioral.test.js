@@ -272,7 +272,7 @@ test('result.html: on completion the SAME room transitions in place -- new video
 //    toast, rather than silently reverting to the old video
 // ============================================================================
 
-test('result.html: a FAILED regeneration surfaces a visible error toast with the refund note, drops back to the OLD video (not silently) -- and re-enables controls', async function (t) {
+test('result.html: a FAILED regeneration surfaces the PERSISTENT GenerationFailPanel (not a toast) with the refund note, drops back to the OLD video (not silently) -- and re-enables controls', async function (t) {
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var context = await browser.newContext();
   try {
@@ -288,10 +288,24 @@ test('result.html: a FAILED regeneration surfaces a visible error toast with the
     // reasoning in the completion test above.
     await page.waitForFunction(function () { return !document.getElementById('dreamvideo-frame').classList.contains('regenerating'); }, null, { timeout: 5000 });
 
-    await page.waitForSelector('.toast.show', { state: 'visible', timeout: 3000 });
-    var toastText = await page.locator('.toast').textContent();
-    assert.match(toastText, /something went wrong regenerating/i, 'the failure must be surfaced honestly, not silently swallowed');
-    assert.match(toastText, /tokens were returned/i, 'the existing refund-note UX must surface here too');
+    // Parity fix, follow-up to tracker item
+    // for-product-track-avg-video-generation-t-2ci8ue: this branch used to
+    // show a vanishing toast (home.html's own identical branch already got
+    // upgraded to the persistent GenerationFailPanel; this defensive-
+    // duplicate branch didn't, until now). See
+    // test/result-generation-fail-panel-behavioral.test.js for the full
+    // panel/retry coverage -- this test only re-verifies the surrounding
+    // "honest failure, old video restored, controls re-enable" behavior
+    // still holds with the new surface.
+    await page.waitForSelector('#gfp-root', { state: 'visible', timeout: 3000 });
+    var msgText = await page.locator('.gfp-msg').innerText();
+    assert.match(msgText, /something went wrong regenerating/i, 'the failure must be surfaced honestly, not silently swallowed');
+    assert.match(await page.locator('.gfp-refund').innerText(), /tokens were returned/i, 'the existing refund-note UX must surface here too');
+    // Some other unrelated toast (e.g. the video player's own "Tap for
+    // sound" mute-state hint) may legitimately be showing at the same time
+    // -- only assert the OLD failure-toast copy specifically never appears.
+    var toastTexts = await page.locator('.toast').allInnerTexts();
+    assert.equal(toastTexts.some(function (tx) { return /something went wrong regenerating/i.test(tx); }), false, 'must not ALSO show the old vanishing failure toast');
 
     // Reverts to the OLD video (nothing was lost) -- WITH the explanation
     // above, not a silent, unexplained revert.

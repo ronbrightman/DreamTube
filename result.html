@@ -852,6 +852,7 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
 <script src="js/store.js"></script>
 <script src="js/music-bed.js"></script>
 <script src="js/content-block-panel.js"></script>
+<script src="js/generation-fail-panel.js"></script>
 <script src="js/bottom-nav.js"></script>
 <script src="js/pwa.js"></script>
 <script src="js/install-nudge.js"></script>
@@ -1646,8 +1647,60 @@ body{ background:linear-gradient(180deg,#171233,#100d20 55%,#0d0a1e); }
       var mediaTypeForCopy = (dream.mediaType === 'image') ? 'picture' : 'video';
       var baseCopy = 'Something went wrong regenerating your ' + mediaTypeForCopy + ' — nothing was lost.';
       var reasonSuffix = (match && match[2]) ? (' (' + match[2] + ')') : '';
-      var refundNote = (err && err.tokensRefunded) ? ' Your tokens were returned.' : '';
-      showToast(baseCopy + reasonSuffix + refundNote);
+      // Persistent recovery panel, NOT a toast (parity fix, follow-up to
+      // tracker item for-product-track-avg-video-generation-t-2ci8ue —
+      // home.html's own identical generic-failure branch got this upgrade
+      // in isolation; this defensive-duplicate branch didn't, and was
+      // explicitly disclosed/deferred at the time rather than missed).
+      // Same shared js/generation-fail-panel.js component and
+      // message/tokensRefunded shape as home.html's own call (see that
+      // page's generic-failure branch) -- deliberately NOT reusing
+      // home.html's own onRetry body verbatim, since that mechanism
+      // (beginOptimisticFreshGeneration/startFreshGenerationFromDraft/
+      // pollForPendingJobToAppear) is home.html's own in-page fresh-
+      // generation machinery, not something this page has.
+      GenerationFailPanel.show({
+        message: baseCopy + reasonSuffix,
+        tokensRefunded: !!(err && err.tokensRefunded),
+        onRetry: function(){
+          // This page's OWN established retry route for a regenerate is
+          // "persist a draft, then land on home.html?generate=1" (see
+          // proceedWithGenerateAgain/persistEditDeltaDraft above) --
+          // reused here rather than inventing a third retry path. But
+          // this resume-on-load catch must NOT call
+          // persistGenerateAgainDraft() itself: that helper rebuilds the
+          // draft from `dream`'s own fields (mediaType/promptText/style),
+          // and `dream` is always the untouched PRE-attempt record (see
+          // this driver's own comment above -- finalizeDream never ran).
+          // For a plain "regenerate as-is" that reconstruction happens to
+          // match what was submitted, but for a "turn this into a video"
+          // regenerate (js/store.js's turnImageIntoVideo -- same
+          // sourceDreamId as the source image dream, so it satisfies
+          // regeneratingThisDream() too) it would silently rebuild the
+          // draft back to dream.mediaType ('image') and null out
+          // sourceImageUrl, downgrading the retried attempt to a cheaper,
+          // wrong-media-type regenerate instead of resuming the video
+          // attempt that actually failed. The draft that produced the
+          // REAL failed attempt (whichever kind it was) is still sitting
+          // in DreamStore.getDraft() -- store.js's clearPendingJob (run
+          // from inside the promise chain before this catch ever sees the
+          // rejection) only clears the pendingJob slot, never the
+          // separate draft, and nothing else here rewrites it. Verified
+          // against dream.id before trusting it, in case some unrelated
+          // draft-writing action ran elsewhere (another tab, or this same
+          // account starting a different dream's edit) during the time
+          // this job was in flight -- a stale/foreign draft must never be
+          // silently resubmitted as this dream's retry.
+          var d = DreamStore.getDraft();
+          if(d && d.sourceDreamId === dream.id){
+            location.href = 'home.html?generate=1';
+          } else {
+            // Nothing safe to auto-resubmit -- open the existing manual
+            // edit sheet instead of guessing at what to regenerate.
+            openFullEditWizardSheet();
+          }
+        }
+      });
       track('generation_blocked', { reason: code || raw, source: 'result' });
     });
   }
