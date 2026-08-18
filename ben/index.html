@@ -62,6 +62,11 @@ body{margin:0; background:var(--bg); color:var(--ink);
 .bigword{font-size:19px; font-weight:800; color:var(--muted)}
 .unlock{font-size:15px; color:var(--muted)}
 .unlock b{color:var(--ink); font-weight:800}
+.pace{margin-top:10px; display:flex; flex-direction:column; align-items:center; gap:1px;
+  font-size:12.5px; color:var(--muted); background:var(--surface-2);
+  border:1px solid var(--line); border-radius:14px; padding:8px 16px; line-height:1.4}
+.pace .v{font-size:14.5px; color:var(--ink); font-weight:800; white-space:nowrap}
+.pace[hidden]{display:none}
 .bar{width:100%; height:10px; border-radius:99px; background:var(--surface-2); border:1px solid var(--line); overflow:hidden; margin-top:14px}
 .bar>i{display:block; height:100%; background:linear-gradient(90deg,var(--teal),var(--amber)); transition:width .5s ease}
 .barlabels{width:100%; display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-top:6px; font-variant-numeric:tabular-nums}
@@ -183,6 +188,16 @@ function streak(f){
   }
   return n;
 }
+/* The BEST case, and the one worth putting in front of a child: tick both
+   boxes every remaining day and each calendar day takes three off the count
+   -- the day that elapsed anyway, plus the two earned -- so the finish is
+   ceil(remaining / 3) days out. Deliberately separate from forecast()
+   below, which reports the pace actually being kept. */
+function perfectPaceDays(){
+  var rem=remaining();
+  return rem<=0 ? 0 : Math.ceil(rem/3);
+}
+
 /* Projection off the last fortnight's REAL pace, not an optimistic one:
    nothing ticked means the rate is 0 and this simply reports the original
    birthday, which is the honest answer. */
@@ -203,6 +218,7 @@ var SHELL=''
   +'<div class="bignum" id="num">—</div>'
   +'<div class="bigword" id="word">ימים</div>'
   +'<div class="unlock" id="unlock"></div>'
+  +'<div class="pace" id="pace" hidden></div>'
   +'<div class="bar"><i id="fill" style="width:0%"></i></div>'
   +'<div class="barlabels"><span id="lbl-start"></span><span id="lbl-goal"></span></div>'
 +'</section>'
@@ -255,10 +271,15 @@ function render(){
     $('num').textContent='0'; shownNum=0;
     $('word').textContent='אפשר להתקין! 🎉';
     $('unlock').innerHTML='הגעת ליעד ב־<b>'+fmt(today())+'</b>';
+    $('pace').hidden=true;
   }else{
     animate(rem);
     $('word').textContent=(rem===1?'יום':'ימים');
     $('unlock').innerHTML='התאריך הנוכחי: <b>'+fmt(unlockDate())+'</b>';
+    var pd=perfectPaceDays();
+    $('pace').innerHTML='<span>אם תסמן את שניהם כל יום<\/span>'
+      +'<span class="v">עוד '+pd+(pd===1?' יום':' ימים')+' — '+fmt(addD(today(),pd))+'<\/span>';
+    $('pace').hidden=false;
   }
   $('fill').style.width=(TOTAL?done/TOTAL*100:0)+'%';
   $('lbl-start').textContent=TOTAL+' ימים בהתחלה';
