@@ -1292,11 +1292,26 @@ async function claimDailyTokens(event, email) {
  * the trial boost). See the DREAMER PASS constants doc block above for the
  * record shape and what the trial vs. paid states mean.
  *
- * `subPatch` is MERGED onto whatever subscription sub-object already exists
- * (Object.assign onto the prior value), with `undefined` keys dropped first
- * so an event that doesn't know a particular field (Dodo doesn't echo every
- * field on every event type) can't blank out a value a previous event
- * already recorded — same discipline setEntitlement itself already applies.
+ * `subPatch` is either a plain object or a `function(prevSub)` returning one
+ * — the function form is called INSIDE the CAS mutate against the record's
+ * own fresh subscription state (`prevSub`, the pre-merge value — `{}` if
+ * none exists yet), not a value read before this call started. Use it
+ * whenever the patch's CONTENT depends on a decision made from persisted
+ * subscription state (e.g. "is this account still genuinely mid-trial right
+ * now") — a decision computed from a pre-CAS read and handed in as a static
+ * object can go stale before the CAS write's own read-mutate-write loop even
+ * begins, since CAS only protects against a LOST write, not a stale-content
+ * one (recurring-pattern-pre-cas-re-69aaqh; see dodo-webhook.js's
+ * plan_changed preservation carve-out for the first real fix built on this).
+ * The plain-object form is unchanged and still correct for a patch whose
+ * content depends only on the incoming event payload, not on prior state.
+ *
+ * Either way, the resolved patch is MERGED onto whatever subscription
+ * sub-object already exists (Object.assign onto the prior value), with
+ * `undefined` keys dropped first so an event that doesn't know a particular
+ * field (Dodo doesn't echo every field on every event type) can't blank out
+ * a value a previous event already recorded — same discipline setEntitlement
+ * itself already applies.
  * A key explicitly set to `null` (e.g. `trialEnd: null` on a terminal event)
  * IS applied, since null is a deliberate clear, not "unknown". The record's
  * top-level `active` flag and `plan` are kept in sync with the resulting
@@ -1338,9 +1353,10 @@ async function updateSubscription(event, email, subPatch) {
       var rec = existing || { email: key };
       var baseTokens = rec.tokens || syncedTokens;
       var prevSub = rec.subscription || {};
+      var resolvedPatch = typeof subPatch === 'function' ? (subPatch(prevSub) || {}) : (subPatch || {});
       var clean = {};
-      Object.keys(subPatch || {}).forEach(function (k) {
-        if (subPatch[k] !== undefined) clean[k] = subPatch[k];
+      Object.keys(resolvedPatch).forEach(function (k) {
+        if (resolvedPatch[k] !== undefined) clean[k] = resolvedPatch[k];
       });
       var nextSub = Object.assign({}, prevSub, clean, { updatedAt: now });
       // Trial-window fallback cap (see TRIAL_WINDOW_MS): if we end up trialing

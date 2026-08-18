@@ -1089,44 +1089,68 @@ async function handleSubscriptionEvent(event, type, sub) {
   // grant-path doc block further down; never a wrong charge or a withheld
   // real grant, since those are gated by separate payment_id-keyed logic).
   //
-  // The fix: for plan_changed only, read the account's CURRENTLY STORED
+  // The fix: for plan_changed only, PRESERVE the account's CURRENTLY STORED
   // subscription state (written by an earlier subscription.active, possibly
-  // itself synthesized) and PRESERVE it — never re-derive it from THIS
-  // payload — if it is still genuinely trialing right now. Uses
-  // entitlements.isTrialActive, the exact same "status==='trialing' AND
-  // trialEnd is still in the future" gate the daily-claim boost itself reads
-  // live, so this can never indefinitely re-preserve a stale trialing state
-  // past its real end (mirrors resolveSynthesizedTrialEnd's own "must be in
-  // the future" discipline against a stale replay) — a genuinely-expired
-  // trial's plan_changed still falls through to the normal 'active'/null
-  // write below, same as before this fix. A notrial subscription is never
-  // stored as trialing in the first place (see firstPeriodIsTrial), so
+  // itself synthesized) — never re-derive it from THIS payload — if it is
+  // still genuinely trialing right now. Uses entitlements.isTrialActive, the
+  // exact same "status==='trialing' AND trialEnd is still in the future"
+  // gate the daily-claim boost itself reads live, so this can never
+  // indefinitely re-preserve a stale trialing state past its real end
+  // (mirrors resolveSynthesizedTrialEnd's own "must be in the future"
+  // discipline against a stale replay) — a genuinely-expired trial's
+  // plan_changed still falls through to the normal 'active'/null write
+  // below, same as before this fix. A notrial subscription is never stored
+  // as trialing in the first place (see firstPeriodIsTrial), so
   // isTrialActive is always false for it here — completely unaffected.
-  var preservedTrialEnd = null;
-  if (!explicitTrialing && !synthesizedTrialEnd && type === 'subscription.plan_changed') {
-    var currentRecord = await entitlements.getEntitlement(event, email);
-    var currentSub = currentRecord && currentRecord.subscription;
-    if (entitlements.isTrialActive(currentSub, Date.now())) {
-      preservedTrialEnd = currentSub.trialEnd;
-    }
+  //
+  // FRESHNESS (recurring-pattern-pre-cas-re-69aaqh, fixed 2026-08-17): this
+  // preservation decision depends on PERSISTED subscription state, unlike
+  // explicitTrialing/synthesizedTrialEnd above (which depend only on THIS
+  // event's own payload) — so it must be decided against the CAS write's own
+  // fresh read, not a separate pre-CAS entitlements.getEntitlement() call
+  // that could go stale before the CAS write's read-mutate-write loop even
+  // starts. updateSubscription's decision-function form (see that function's
+  // own doc comment) exists for exactly this: the patch below is only a
+  // function when this preservation path is even reachable (explicitTrialing
+  // and synthesizedTrialEnd both come from the payload, so those cases keep
+  // the plain, simpler object form — behaviorally identical to before, just
+  // not re-plumbed through a function for no reason).
+  var trialing = explicitTrialing || !!synthesizedTrialEnd;
+  var staticTrialEnd = trialing ? (resolveTrialEnd(sub) || synthesizedTrialEnd || undefined) : null;
+
+  var subPatch;
+  if (!trialing && type === 'subscription.plan_changed') {
+    subPatch = function (prevSub) {
+      var preserving = entitlements.isTrialActive(prevSub, Date.now());
+      return {
+        status: preserving ? 'trialing' : 'active',
+        subscriptionId: sub.subscription_id,
+        productId: sub.product_id || dreamerPassProductId(),
+        nextBillingAt: resolveNextBilling(sub),
+        currentPeriodEnd: resolveNextBilling(sub),
+        // preserving WITH the fresh prevSub's own trialEnd (guaranteed set —
+        // isTrialActive requires it) -> set it; not preserving -> null (clear),
+        // same 'active'/null shape as the non-preserving branch below.
+        trialEnd: preserving ? prevSub.trialEnd : null
+      };
+    };
+  } else {
+    subPatch = {
+      status: trialing ? 'trialing' : 'active',
+      subscriptionId: sub.subscription_id,
+      productId: sub.product_id || dreamerPassProductId(),
+      nextBillingAt: resolveNextBilling(sub),
+      currentPeriodEnd: resolveNextBilling(sub),
+      // trialing WITH a resolvable end (a real payload trial_end, else the
+      // synthesized first-period end) -> set it; trialing WITHOUT any
+      // resolvable end -> undefined (updateSubscription keeps a prior
+      // trialEnd, or caps a first sighting to now + 3 days); not trialing ->
+      // null (clear).
+      trialEnd: staticTrialEnd
+    };
   }
 
-  var trialing = explicitTrialing || !!synthesizedTrialEnd || !!preservedTrialEnd;
-
-  await entitlements.updateSubscription(event, email, {
-    status: trialing ? 'trialing' : 'active',
-    subscriptionId: sub.subscription_id,
-    productId: sub.product_id || dreamerPassProductId(),
-    nextBillingAt: resolveNextBilling(sub),
-    currentPeriodEnd: resolveNextBilling(sub),
-    // trialing WITH a resolvable end (a real payload trial_end, else the
-    // synthesized first-period end, else a preserved prior trialEnd from the
-    // plan_changed carve-out above) -> set it; trialing WITHOUT any
-    // resolvable end -> undefined (updateSubscription keeps a prior
-    // trialEnd, or caps a first sighting to now + 3 days); not trialing ->
-    // null (clear).
-    trialEnd: trialing ? (resolveTrialEnd(sub) || synthesizedTrialEnd || preservedTrialEnd || undefined) : null
-  });
+  await entitlements.updateSubscription(event, email, subPatch);
 
   // A renewal is also a charge — grant that charge's 3000, keyed by its own
   // payment_id so it dedups against any payment.succeeded for the same charge.
