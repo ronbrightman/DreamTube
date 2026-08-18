@@ -60,7 +60,12 @@ function start(options) {
   return new Promise(function (resolve, reject) {
     var server = http.createServer(function (req, res) {
       var urlPath = decodeURIComponent(req.url.split('?')[0]);
-      if (urlPath === '/') urlPath = '/index.html';
+      // Directory index, the way the real host resolves it: '/' and any
+      // other trailing-slash path serve that directory's index.html. Added
+      // for ben/index.html (served at /ben) — the first page in this repo
+      // that lives in a folder rather than at the root. Only ever affects
+      // paths that would otherwise 404 on readFile-of-a-directory.
+      if (urlPath.charAt(urlPath.length - 1) === '/') urlPath += 'index.html';
       var filePath = path.normalize(path.join(root, urlPath));
       // Never serve anything outside the served root (defends against a
       // "../../" style path in the request even though nothing in these
