@@ -2285,3 +2285,27 @@ test('subscription.plan_changed preservation decides from the CAS write\'s own F
   var status = await entitlements.getTokenStatus({}, email);
   assert.equal(status.dailyClaimAmount, 100, 'the 100/day boost survives, proving the real committed state (not just a decision variable) reflects the fresh read');
 });
+
+// Review finding (non-blocking, 2026-08-17): the decision function's prevSub
+// degrades safely to {} when the account has no prior subscription record at
+// all (entitlements.isTrialActive's own null/empty guard) -- this was true
+// by construction but had no explicit test proving it stays true. A
+// plan_changed arriving with no preceding subscription.active on file isn't
+// a normal Dodo sequence, but the code must not throw or misbehave if it
+// somehow does (a redelivery race, an out-of-order webhook, etc).
+test('subscription.plan_changed on an account with NO prior subscription record at all degrades safely to active/no-trial (prevSub={} case, does not throw)', async function () {
+  var email = 'planchangenopriorrecord@example.com';
+  await seedZeroBalance(email); // entitlement record exists, but with no `subscription` field at all
+
+  var res = await handler(signedEvent(subEvent('subscription.plan_changed', {
+    status: 'active', trialing: false,
+    next_billing_date: new Date(Date.now() + 30 * DAY_MS).toISOString(),
+    product_id: 'pdt_dreamer_pass_test',
+    customer: { customer_id: 'cus_pcnp', email: email }
+  })));
+  assert.equal(res.statusCode, 200, 'must not throw/500 when prevSub is {} inside the decision function');
+
+  var record = await entitlements.getEntitlement({}, email);
+  assert.equal(record.subscription.status, 'active', 'no prior record means nothing to preserve -- correctly falls through to active');
+  assert.equal(record.subscription.trialEnd, null);
+});
