@@ -2,7 +2,7 @@
 //
 // Covers netlify/functions/ben-agreement.js and its
 // lib/ben-agreement-store.js — the family agreement tracker behind
-// ben-x7q4.html. Run with: node --test test/
+// ben/index.html, served at /ben. Run with: node --test test/
 
 var test = require('node:test');
 var assert = require('node:assert/strict');

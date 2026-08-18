@@ -1,9 +1,9 @@
 // netlify/functions/ben-agreement.js
 //
-// Read + write endpoint behind ben-x7q4.html, the founder's family
-// agreement tracker (see lib/ben-agreement-store.js's own header comment
-// for the agreement, the record shape, and why writes go through a
-// compare-and-verify loop).
+// Read + write endpoint behind ben/index.html, the founder's family
+// agreement tracker served at /ben (see lib/ben-agreement-store.js's own
+// header comment for the agreement, the record shape, and why writes go
+// through a compare-and-verify loop).
 //
 //   GET  -> { ok:true, days, updatedAt }
 //   POST { date, field:'s'|'r', value:boolean } -> { ok:true, days, updatedAt }
@@ -19,8 +19,8 @@
 // this page is that the child has no account anywhere — no claude.ai
 // login, no DreamTube account, nothing to sign into — so there is no
 // identity to check. The only thing standing between a stranger and this
-// record is not knowing the page exists, exactly like every other
-// -x7q4 page in this repo. Two things bound what a stranger who DID find
+// record is not knowing the page exists, the same posture every other
+// unlisted page in this repo takes. Two things bound what a stranger who DID find
 // it could do: writes are limited to real calendar days inside the
 // agreement's own window (MIN_DATE..tomorrow — see validateDate below, so
 // nobody can tick a thousand future days and zero out the countdown), and
