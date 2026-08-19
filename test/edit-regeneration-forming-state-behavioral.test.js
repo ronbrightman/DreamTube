@@ -30,8 +30,11 @@
 //   2. home.html's room card treats "an edit of the dream it currently
 //      owns" as forming immediately (optimisticEditDreamId), closing the
 //      pre-existing race window described above.
-//   3. A failed regeneration surfaces a visible, honest error/refund toast
-//      on result.html rather than silently reverting with no explanation.
+//   3. A failed regeneration surfaces a visible, honest error/refund message
+//      on result.html rather than silently reverting with no explanation
+//      (originally a toast; upgraded to the persistent GenerationFailPanel —
+//      see result-generation-fail-panel-parity — so this comment now says
+//      "message", not "toast").
 //   4. js/store.js's startGeneration now guards finalize/clearPendingJob
 //      against a STALE completion — a second, later edit of the same
 //      dream superseding an in-flight first one must not let the first's
