@@ -124,7 +124,7 @@ test('the perfect-pace line is exactly ceil(remaining / 3) days out, on the date
   var page = await openTracker({});
 
   var remaining = Number(await page.textContent('#num'));
-  var paceText = await page.textContent('#pace');
+  var paceText = await page.textContent('.pace .v');
   var paceDays = firstInt(paceText);
 
   assert.equal(paceDays, Math.ceil(remaining / 3),
@@ -139,7 +139,7 @@ test('the perfect pace never lands after the pace actually being kept, nor after
   if (unavailableReason) { t.skip(unavailableReason); return; }
   var page = await openTracker({});
 
-  var perfect = parseHebrewDate(await page.textContent('#pace'));
+  var perfect = parseHebrewDate(await page.textContent('.pace .v'));
   var actual = parseHebrewDate(await page.textContent('#st-f'));
 
   assert.ok(perfect <= actual, 'ticking everything can never finish later than the current pace');
@@ -153,7 +153,7 @@ test('ticking both of today\'s boxes takes exactly two days off, and the perfect
   var page = await openTracker({});
 
   var before = Number(await page.textContent('#num'));
-  var paceBefore = parseHebrewDate(await page.textContent('#pace'));
+  var paceBefore = parseHebrewDate(await page.textContent('.pace .v'));
 
   await page.click('.tg[data-k="s"]');
   await page.waitForTimeout(400);
@@ -164,7 +164,7 @@ test('ticking both of today\'s boxes takes exactly two days off, and the perfect
   assert.equal(after, before - 2, 'screen-time plus reading is two days, no more and no less');
   assert.equal(await page.textContent('#st-c'), '2');
 
-  var paceText = await page.textContent('#pace');
+  var paceText = await page.textContent('.pace .v');
   assert.equal(firstInt(paceText), Math.ceil(after / 3), 'the perfect-pace line recomputes off the new remaining');
   assert.ok(parseHebrewDate(paceText) <= paceBefore, 'and can only ever move earlier');
 
@@ -182,7 +182,83 @@ test('a day already ticked on the server is reflected on load, not just after a 
   assert.equal(await page.getAttribute('.tg[data-k="r"]', 'aria-pressed'), 'true');
 
   var remaining = Number(await page.textContent('#num'));
-  assert.equal(firstInt(await page.textContent('#pace')), Math.ceil(remaining / 3));
+  assert.equal(firstInt(await page.textContent('.pace .v')), Math.ceil(remaining / 3));
+
+  await page.close();
+});
+
+test('every tick changes the perfect-pace block, including the two in three that leave its date alone', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+
+  // The bug this covers, reported by the founder on 2026-08-20: ticking
+  // "read" on an earlier day "barely changes" the perfect-pace line. It is
+  // real and inherent — a tick takes ONE day off the count while that line
+  // is quantised to three-day steps, so its DATE only moves on every third
+  // tick. What must never happen is a tick that changes nothing at all on
+  // screen, because a child who ticks a box and sees no response concludes
+  // the page is broken. So this asserts the whole block, not the date: no
+  // tick may leave it identical.
+  var seeded = {};
+  for (var i = 1; i <= 3; i++) {
+    // Screen-time only, so each of these days still has a reading box to tick.
+    seeded[localKey(addDays(today(), -i))] = { s: true, r: false };
+  }
+  var page = await openTracker(seeded);
+
+  var seenDates = [];
+  var previousBlock = await page.textContent('#pace');
+  for (var day = 1; day <= 3; day++) {
+    await page.click('.cell[data-d="' + localKey(addDays(today(), -day)) + '"]');
+    await page.waitForTimeout(250);
+    await page.click('.tg[data-k="r"]');
+    await page.waitForTimeout(900);
+
+    var block = await page.textContent('#pace');
+    assert.notEqual(block, previousBlock,
+      'tick ' + day + ' left the perfect-pace block byte-identical — that is the "nothing happened" bug');
+    previousBlock = block;
+
+    var toNext = Number(await page.getAttribute('#pace-next', 'data-ticks'));
+    assert.ok(toNext >= 1 && toNext <= 3, 'the countdown to the next day-shift stays inside one three-day step, got ' + toNext);
+    seenDates.push(localKey(parseHebrewDate(await page.textContent('.pace .v'))));
+  }
+
+  // Three ticks is exactly one three-day step, so the date must have moved
+  // earlier over the run — the ticks are not merely cosmetic.
+  assert.ok(seenDates[2] < seenDates[0], 'three ticks must pull the projected date at least a day earlier');
+
+  await page.close();
+});
+
+test('the countdown to the next day-shift lands on 1 exactly when the next tick moves the date', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var seeded = {};
+  for (var i = 1; i <= 3; i++) seeded[localKey(addDays(today(), -i))] = { s: true, r: false };
+  var page = await openTracker(seeded);
+
+  // Tick reading on earlier days until the block promises the date is one
+  // tick away, then take that tick and hold it to its word.
+  var moved = false;
+  for (var day = 1; day <= 3 && !moved; day++) {
+    var promisedOneAway = (await page.getAttribute('#pace-next', 'data-ticks')) === '1';
+    var dateBefore = parseHebrewDate(await page.textContent('.pace .v'));
+
+    await page.click('.cell[data-d="' + localKey(addDays(today(), -day)) + '"]');
+    await page.waitForTimeout(250);
+    await page.click('.tg[data-k="r"]');
+    await page.waitForTimeout(900);
+
+    var dateAfter = parseHebrewDate(await page.textContent('.pace .v'));
+    if (promisedOneAway) {
+      assert.equal(localKey(dateAfter), localKey(addDays(dateBefore, -1)),
+        'the block said one more tick would pull the date in by a day, so it must have');
+      moved = true;
+    } else {
+      assert.equal(localKey(dateAfter), localKey(dateBefore),
+        'and while it says more than one tick is needed, the date must hold still');
+    }
+  }
+  assert.ok(moved, 'three ticks span a full three-day step, so the promise must have come due within them');
 
   await page.close();
 });

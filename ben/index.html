@@ -66,6 +66,8 @@ body{margin:0; background:var(--bg); color:var(--ink);
   font-size:12.5px; color:var(--muted); background:var(--surface-2);
   border:1px solid var(--line); border-radius:14px; padding:8px 16px; line-height:1.4}
 .pace .v{font-size:14.5px; color:var(--ink); font-weight:800; white-space:nowrap}
+.pace .n{font-size:12px; margin-top:2px}
+.pace .n b{color:var(--teal-ink); font-weight:800}
 .pace[hidden]{display:none}
 .bar{width:100%; height:10px; border-radius:99px; background:var(--surface-2); border:1px solid var(--line); overflow:hidden; margin-top:14px}
 .bar>i{display:block; height:100%; background:linear-gradient(90deg,var(--teal),var(--amber)); transition:width .5s ease}
@@ -198,6 +200,20 @@ function perfectPaceDays(){
   return rem<=0 ? 0 : Math.ceil(rem/3);
 }
 
+/* How many more ticks until the perfect-pace date above moves a day
+   earlier. It exists because that date is quantised to three-day steps --
+   a tick only takes ONE day off the count, so two ticks in every three
+   leave the date visibly unchanged, and a child who just ticked "read" on
+   an earlier day sees nothing happen and concludes the page is broken
+   (founder, 2026-08-20: "it barely changes for a reading tick on previous
+   days"). This number, by contrast, moves on EVERY tick: 3 -> 2 -> 1 ->
+   the date itself jumps a day and it resets. Nothing here is rounded
+   away, so no tick ever looks wasted. */
+function ticksToNextDay(){
+  var rem=remaining();
+  return rem<=0 ? 0 : ((rem-1)%3)+1;
+}
+
 /* Projection off the last fortnight's REAL pace, not an optimistic one:
    nothing ticked means the rate is 0 and this simply reports the original
    birthday, which is the honest answer. */
@@ -277,8 +293,10 @@ function render(){
     $('word').textContent=(rem===1?'יום':'ימים');
     $('unlock').innerHTML='התאריך הנוכחי: <b>'+fmt(unlockDate())+'</b>';
     var pd=perfectPaceDays();
+    var tn=ticksToNextDay();
     $('pace').innerHTML='<span>אם תסמן את שניהם כל יום<\/span>'
-      +'<span class="v">עוד '+pd+(pd===1?' יום':' ימים')+' — '+fmt(addD(today(),pd))+'<\/span>';
+      +'<span class="v">עוד '+pd+(pd===1?' יום':' ימים')+' — '+fmt(addD(today(),pd))+'<\/span>'
+      +'<span class="n" id="pace-next" data-ticks="'+tn+'">עוד <b>'+(tn===1?'סימון אחד':tn+' סימונים')+'<\/b> והתאריך הזה יקדים ביום<\/span>';
     $('pace').hidden=false;
   }
   $('fill').style.width=(TOTAL?done/TOTAL*100:0)+'%';
