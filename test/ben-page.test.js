@@ -104,6 +104,47 @@ function mockAgreementEndpoint(page, seedDays) {
   });
 }
 
+/**
+ * Waits for the countdown to stop tweening, by polling until two
+ * consecutive reads agree. Deliberately NOT a fixed sleep: a sleep long
+ * enough to be safe here keeps this file's browser alive for seconds
+ * longer than it needs, and `node --test` runs test FILES in parallel —
+ * that idle browser was measurably starving the other browser-driven
+ * suites into their own timeouts (two of them failed reproducibly when
+ * this file used sleeps, and passed once it stopped).
+ */
+async function settled(page) {
+  // Clear the marker first, so this always compares two reads taken AFTER
+  // the change being waited on. Leaving a value behind from the previous
+  // settle made the very first poll match it and return early, reading the
+  // countdown mid-tween — which is exactly how the "a perfect day takes two
+  // days off" test saw the pre-tick number and failed.
+  await page.evaluate(function () { window.__benLastNum = undefined; });
+  await page.waitForFunction(function () {
+    var current = document.querySelector('#num').textContent;
+    var previous = window.__benLastNum;
+    window.__benLastNum = current;
+    return previous === current;
+  }, null, { polling: 100, timeout: 10000 });
+}
+
+/** Ticks one box on the selected day and waits for the write to round-trip, by watching the credit total reach `expectedCredits`. */
+async function tick(page, field, expectedCredits) {
+  await page.click('.tg[data-k="' + field + '"]');
+  await page.waitForFunction(function (expected) {
+    return document.querySelector('#st-c').textContent === String(expected);
+  }, expectedCredits, { timeout: 10000 });
+  await settled(page);
+}
+
+async function selectDay(page, dateKey) {
+  await page.click('.cell[data-d="' + dateKey + '"]');
+  await page.waitForFunction(function (key) {
+    var cell = document.querySelector('.cell[data-d="' + key + '"]');
+    return cell && cell.classList.contains('sel');
+  }, dateKey, { timeout: 5000 });
+}
+
 async function openTracker(seedDays) {
   var page = await browser.newPage({ viewport: MOBILE_VIEWPORT });
   await page.route(/fonts\.(googleapis|gstatic)\.com/, function (route) { route.abort(); });
@@ -113,9 +154,7 @@ async function openTracker(seedDays) {
     var el = document.querySelector('#num');
     return el && el.textContent !== '—' && !document.querySelector('#pace').hidden;
   }, null, { timeout: 15000 });
-  // The countdown tweens to its value; wait for it to settle rather than
-  // reading a mid-animation frame.
-  await page.waitForTimeout(700);
+  await settled(page);
   return page;
 }
 
@@ -155,10 +194,8 @@ test('ticking both of today\'s boxes takes exactly two days off, and the perfect
   var before = Number(await page.textContent('#num'));
   var paceBefore = parseHebrewDate(await page.textContent('.pace .v'));
 
-  await page.click('.tg[data-k="s"]');
-  await page.waitForTimeout(400);
-  await page.click('.tg[data-k="r"]');
-  await page.waitForTimeout(900);
+  await tick(page, 's', 1);
+  await tick(page, 'r', 2);
 
   var after = Number(await page.textContent('#num'));
   assert.equal(after, before - 2, 'screen-time plus reading is two days, no more and no less');
@@ -208,10 +245,8 @@ test('every tick changes the perfect-pace block, including the two in three that
   var seenDates = [];
   var previousBlock = await page.textContent('#pace');
   for (var day = 1; day <= 3; day++) {
-    await page.click('.cell[data-d="' + localKey(addDays(today(), -day)) + '"]');
-    await page.waitForTimeout(250);
-    await page.click('.tg[data-k="r"]');
-    await page.waitForTimeout(900);
+    await selectDay(page, localKey(addDays(today(), -day)));
+    await tick(page, 'r', 3 + day);
 
     var block = await page.textContent('#pace');
     assert.notEqual(block, previousBlock,
@@ -243,10 +278,8 @@ test('the countdown to the next day-shift lands on 1 exactly when the next tick 
     var promisedOneAway = (await page.getAttribute('#pace-next', 'data-ticks')) === '1';
     var dateBefore = parseHebrewDate(await page.textContent('.pace .v'));
 
-    await page.click('.cell[data-d="' + localKey(addDays(today(), -day)) + '"]');
-    await page.waitForTimeout(250);
-    await page.click('.tg[data-k="r"]');
-    await page.waitForTimeout(900);
+    await selectDay(page, localKey(addDays(today(), -day)));
+    await tick(page, 'r', 3 + day);
 
     var dateAfter = parseHebrewDate(await page.textContent('.pace .v'));
     if (promisedOneAway) {
