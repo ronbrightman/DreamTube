@@ -170,8 +170,26 @@ var view=parseK(sel); view=new Date(view.getFullYear(),view.getMonth(),1);
 var loaded=false, inFlight=0;
 
 /* ---------- the agreement's arithmetic ---------- */
+
+/* The last day that counts, and the last one that can be ticked.
+   NOT simply this device's own "today": the two people sharing this page
+   read the same record from two phones, and a phone one timezone ahead
+   rolls over to the next date hours before the other does. Bounding on
+   each viewer's own clock made them disagree about the same data -- a
+   day already ticked on the phone that was ahead did not count at all on
+   the phone behind, and the two screens showed a three-day gap in the
+   countdown while both were "right". So the horizon is this device's
+   today OR the latest day anyone has actually recorded, whichever is
+   later. It cannot run away: the server refuses to store a day past
+   UTC-tomorrow (see ben-agreement.js's validateDate). */
+function lastCountedDay(){
+  var t=key(today());
+  for(var k in days){ if(k>t) t=k; }
+  return t;
+}
+
 function credits(){
-  var t=key(today()), c=0;
+  var t=lastCountedDay(), c=0;
   for(var k in days){
     if(k<START||k>t) continue;
     var v=days[k]; if(!v) continue;
@@ -179,10 +197,23 @@ function credits(){
   }
   return c;
 }
+
+/* Boxes still untouched on days that are already open for ticking. When
+   this is zero the tick counter below must not tell a child to go and
+   tick something -- there is nothing left until tomorrow. */
+function ticksAvailable(){
+  var t=lastCountedDay(), d=parseK(START), n=0;
+  while(key(d)<=t){
+    var v=days[key(d)]||{};
+    if(!v.s) n++; if(!v.r) n++;
+    d=addD(d,1);
+  }
+  return n;
+}
 function unlockDate(){return addD(parseK(TARGET),-credits());}
 function remaining(){return diffD(today(),unlockDate());}
 function streak(f){
-  var d=today(), n=0, v=days[key(d)];
+  var d=parseK(lastCountedDay()), n=0, v=days[key(d)];
   if(!v||!f(v)) d=addD(d,-1);
   while(key(d)>=START){
     var x=days[key(d)];
@@ -296,7 +327,11 @@ function render(){
     var tn=ticksToNextDay();
     $('pace').innerHTML='<span>אם תסמן את שניהם כל יום<\/span>'
       +'<span class="v">עוד '+pd+(pd===1?' יום':' ימים')+' — '+fmt(addD(today(),pd))+'<\/span>'
-      +'<span class="n" id="pace-next" data-ticks="'+tn+'">עוד <b>'+(tn===1?'סימון אחד':tn+' סימונים')+'<\/b> והתאריך הזה יקדים ביום<\/span>';
+      +'<span class="n" id="pace-next" data-ticks="'+tn+'">'
+      +(ticksAvailable()===0
+        ? 'סימנת את כל מה שאפשר — הסימון הבא הוא <b>מחר<\/b>'
+        : 'עוד <b>'+(tn===1?'סימון אחד':tn+' סימונים')+'<\/b> והתאריך הזה יקדים ביום')
+      +'<\/span>';
     $('pace').hidden=false;
   }
   $('fill').style.width=(TOTAL?done/TOTAL*100:0)+'%';
@@ -313,7 +348,7 @@ function render(){
   $('ed-date').innerHTML=(isToday?'היום':'יום '+DOW[d.getDay()])+'<small>'+fmt(d)+'</small>';
   $('btn-today').hidden=isToday;
   var v=days[sel]||{};
-  var editable=(sel>=START && sel<=key(today()) && loaded);
+  var editable=(sel>=START && sel<=lastCountedDay() && loaded);
   var tgs=app.querySelectorAll('.tg');
   for(var i=0;i<tgs.length;i++){
     var k=tgs[i].getAttribute('data-k');
@@ -322,7 +357,7 @@ function render(){
   }
   var got=(v.s?1:0)+(v.r?1:0);
   $('daysum').innerHTML = !loaded ? 'טוען…'
-    : (sel<START||sel>key(today())) ? 'אפשר לסמן רק ימים שכבר עברו.'
+    : (sel<START||sel>lastCountedDay()) ? 'אפשר לסמן רק ימים שכבר עברו.'
     : got===2 ? 'יום מושלם — <b>הורדת 2 ימים</b> 💪'
     : got===1 ? 'הורדת <b>יום אחד</b>. עוד סימון אחד ליום מושלם.'
     : 'עוד לא סימנת את היום הזה.';
@@ -353,12 +388,12 @@ function drawCal(){
   for(var w=0;w<7;w++) h+='<div class="wd">'+WD[w]+'</div>';
   var lead=new Date(y,m,1).getDay(), last=new Date(y,m+1,0).getDate();
   for(var i=0;i<lead;i++) h+='<div class="cell blank"></div>';
-  var tk=key(today()), gk=key(unlockDate());
+  var tk=lastCountedDay(), gk=key(unlockDate());
   for(var d=1;d<=last;d++){
     var k=key(new Date(y,m,d)), v=days[k]||{};
     var cls='cell', dis='';
     if(k<START||k>tk){cls+=' out'; dis=' disabled';}
-    if(k===tk) cls+=' today';
+    if(k===key(today())) cls+=' today';
     if(k===sel) cls+=' sel';
     if(k===gk) cls+=' goal';
     var dots=dis?'<span class="dots"></span>'

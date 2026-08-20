@@ -145,8 +145,8 @@ async function selectDay(page, dateKey) {
   }, dateKey, { timeout: 5000 });
 }
 
-async function openTracker(seedDays) {
-  var page = await browser.newPage({ viewport: MOBILE_VIEWPORT });
+async function openTracker(seedDays, timezoneId) {
+  var page = await browser.newPage(timezoneId ? { viewport: MOBILE_VIEWPORT, timezoneId: timezoneId } : { viewport: MOBILE_VIEWPORT });
   await page.route(/fonts\.(googleapis|gstatic)\.com/, function (route) { route.abort(); });
   await mockAgreementEndpoint(page, seedDays);
   await page.goto(baseUrl + '/ben/', { waitUntil: 'domcontentloaded' });
@@ -295,3 +295,59 @@ test('the countdown to the next day-shift lands on 1 exactly when the next tick 
 
   await page.close();
 });
+
+test('two viewers in different timezones read the same record the same way', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+
+  // The bug this covers: the page used to bound the days it counted on the
+  // VIEWER's own clock. Two phones share this record, and the one a
+  // timezone ahead rolls over hours earlier — so a day it had already
+  // ticked counted for nobody else yet, and the two screens disagreed
+  // about the same data (three days apart, live, on 2026-08-20). What the
+  // agreement is actually about is the unlock DATE, so that above all must
+  // match; the countdown in days may still differ by one, because the two
+  // viewers genuinely stand on different calendar days.
+  var seeded = {};
+  seeded[localKey(today())] = { s: true, r: true };
+  seeded[localKey(addDays(today(), -1))] = { s: true, r: true };
+
+  var ahead = await openTracker(seeded, 'Pacific/Kiritimati');   // UTC+14
+  var behind = await openTracker(seeded, 'Pacific/Midway');      // UTC-11
+
+  var aheadDate = await ahead.evaluate(function () { return new Date().toDateString(); });
+  var behindDate = await behind.evaluate(function () { return new Date().toDateString(); });
+  assert.notEqual(aheadDate, behindDate, 'the two contexts must actually sit on different calendar days for this to test anything');
+
+  assert.equal(await ahead.textContent('#st-c'), await behind.textContent('#st-c'),
+    'both viewers must count the same earned days');
+  assert.equal(await ahead.textContent('#unlock'), await behind.textContent('#unlock'),
+    'and above all must agree on the unlock date, which is what the agreement is about');
+
+  var aheadRemaining = Number(await ahead.textContent('#num'));
+  var behindRemaining = Number(await behind.textContent('#num'));
+  assert.ok(Math.abs(aheadRemaining - behindRemaining) <= 1,
+    'the countdown may differ by the one calendar day between them, never more — got ' + aheadRemaining + ' vs ' + behindRemaining);
+
+  await ahead.close();
+  await behind.close();
+});
+
+test('with every available box already ticked, the line says the next tick is tomorrow instead of asking for one now', async function (t) {
+  if (unavailableReason) { t.skip(unavailableReason); return; }
+  var seeded = {};
+  var day = parseAgreementStart();
+  while (localKey(day) <= localKey(today())) {
+    seeded[localKey(day)] = { s: true, r: true };
+    day = addDays(day, 1);
+  }
+  var page = await openTracker(seeded);
+
+  var next = await page.textContent('#pace-next');
+  assert.match(next, /מחר/, 'nothing is left to tick today, so the line must point at tomorrow: ' + next);
+  assert.doesNotMatch(next, /סימונים/, 'and must not ask for ticks that do not exist: ' + next);
+
+  await page.close();
+});
+
+/** The agreement's own start date, as the page itself defines it — the first day that can carry a tick. */
+function parseAgreementStart() { return new Date(2026, 7, 17); }
