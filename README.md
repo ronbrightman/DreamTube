@@ -1,5 +1,12 @@
 # DreamTube — Web App (Multi-Page v2)
 
+> **⏸️ Project paused (2026-08-20).** The app stays live; ads are off. The
+> **knowledge harvest** — operating system, playbooks, the honest retrospective,
+> the project-agnostic *Agent Field Guide*, cost inventory, and pause checklist —
+> lives in the **Manager repo** (`ronbrightman/manager`), start at its
+> [`README`](https://github.com/ronbrightman/manager#-knowledge-harvest--start-here-for-the-next-project)
+> / [`harvest/`](https://github.com/ronbrightman/manager/tree/main/harvest).
+
 A real, working DreamTube web app rebuilt as a **true multi-page site**: every screen is its own `.html` file with normal browser navigation (real `<a href>` links, real page loads). No single-page-app framework, no ES modules, no build step.
 
 This replaces the earlier single-page-app version. If that one didn't load for you, it was almost certainly because it used `<script type="module">`, which browsers refuse to load over `file://` — double-clicking `index.html` looked like nothing worked. This version uses plain `<script>` tags everywhere, so **it works even opened directly from disk**, in addition to being deployable as a real website.
