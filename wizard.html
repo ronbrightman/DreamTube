@@ -508,6 +508,14 @@
 
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
+  function hasOwnerBypass(){
+    try{
+      var token = localStorage.getItem('dreamtube_owner_bypass_token');
+      var expires = localStorage.getItem('dreamtube_owner_bypass_expires');
+      if(!token || !expires) return false;
+      return parseInt(expires, 10) > Date.now();
+    }catch(e){ return false; }
+  }
 
   // ===================================================================
   // Layout-B option-row furniture (tracker item
@@ -2282,6 +2290,7 @@
     overlay.setAttribute('aria-modal', 'true');
 
     function dismiss(){
+      if(!hasOwnerBypass()) return; // only Ron (owner bypass token) can dismiss
       track('paywall_dismissed', { arm: arm });
       try{ overlay.parentNode && overlay.parentNode.removeChild(overlay); }catch(e){}
       location.href = navUrl; // straight to home — the dream is already resuming, no second nag
@@ -2499,7 +2508,7 @@
         '--surface:#181425;--surface2:#211b33;--line:rgba(255,255,255,.10);--ink2:#cfc8e6;--muted:#a79fc0;',
         '--purple:#9d90ff;--grad:linear-gradient(120deg,#a24bff,#e0559f 55%,#ff8a5b);',
         '--gold:#e7b45a;--gold-ink:#f4cd7a;--gold-soft:rgba(231,180,90,.16);--good:#63d69b;}',
-      '.mm-x{position:fixed;top:14px;right:14px;width:40px;height:40px;background:transparent;border:none;color:transparent;font-size:0;z-index:2;cursor:default;-webkit-tap-highlight-color:transparent;}',
+      '.mm-x{position:fixed;top:14px;right:14px;width:40px;height:40px;background:transparent;border:none;color:#fff;font-size:20px;z-index:2;cursor:pointer;-webkit-tap-highlight-color:transparent;}',
       '.mm-body{max-width:440px;margin:0 auto;padding:56px 18px 32px;box-sizing:border-box;}',
       '.mm-hero{position:relative;border-radius:20px;padding:18px 16px 16px;background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--grad) border-box;border:2px solid transparent;box-shadow:0 12px 34px rgba(131,58,180,.30);}',
       '.mm-badge{position:absolute;top:-11px;left:16px;background:var(--grad);color:#fff;font-size:10px;font-weight:800;padding:4px 12px;border-radius:20px;letter-spacing:.03em;}',
