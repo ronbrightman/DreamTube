@@ -509,6 +509,7 @@
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
   function hasOwnerBypass(email){
+    // Ron can dismiss the paywall
     if(email === 'ronbrightman@gmail.com') return true;
     try{
       var token = localStorage.getItem('dreamtube_owner_bypass_token');
