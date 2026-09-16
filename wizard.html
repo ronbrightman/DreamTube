@@ -508,16 +508,6 @@
 
   function esc(str){ var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
   function getParam(name){ return new URLSearchParams(location.search).get(name); }
-  function hasOwnerBypass(email){
-    // Ron can dismiss the paywall
-    if(email === 'ronbrightman@gmail.com') return true;
-    try{
-      var token = localStorage.getItem('dreamtube_owner_bypass_token');
-      var expires = localStorage.getItem('dreamtube_owner_bypass_expires');
-      if(!token || !expires) return false;
-      return parseInt(expires, 10) > Date.now();
-    }catch(e){ return false; }
-  }
 
   // ===================================================================
   // Layout-B option-row furniture (tracker item
@@ -2292,7 +2282,6 @@
     overlay.setAttribute('aria-modal', 'true');
 
     function dismiss(){
-      if(!hasOwnerBypass(email)) return; // only Ron can dismiss
       track('paywall_dismissed', { arm: arm });
       try{ overlay.parentNode && overlay.parentNode.removeChild(overlay); }catch(e){}
       location.href = navUrl; // straight to home — the dream is already resuming, no second nag
