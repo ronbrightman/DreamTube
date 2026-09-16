@@ -2698,6 +2698,314 @@
   }
 
   // ===================================================================
+  // POST-SIGNUP PAYWALL MOMENT (monetization)
+  // Shown to every fresh signup, with two arms (Dreamer Pass subscription
+  // vs. 99¢/300-token starter pack) assigned via A/B test (js/paywall-moment.js).
+  // Owner-gated dismiss (2026-09-16): the X dismiss button is visible to
+  // Ron (owner) with valid bypass token, but appears disabled/non-functional
+  // to other users — allowing Ron to pass through for testing while keeping
+  // the hard paywall for real users.
+  // ===================================================================
+
+  function hasOwnerBypass() {
+    try {
+      var token = localStorage.getItem('dreamtube_owner_bypass_token');
+      var expiresAt = parseInt(localStorage.getItem('dreamtube_owner_bypass_expires'), 10);
+      if (!token || !expiresAt || Date.now() >= expiresAt) return false;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // founder traffic is already excluded from arm analysis by the IL/alias
+  // filters, so an override can't pollute the real read.
+  // All A/B assignment + mapping + gate logic lives in js/paywall-moment.js
+  // (window.PaywallMoment) so it's unit-testable without a browser and stays
+  // the single source of truth. wizard.html owns only the DOM/checkout/track
+  // wiring. `_pwStorage` bridges the module's storage shim to real localStorage.
+  var _pwStorage = { getItem: function(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }, setItem: function(k,v){ try{ localStorage.setItem(k,v); }catch(e){} } };
+  function paywallOverride(name){ try{ return new URLSearchParams(location.search).get(name); }catch(e){ return null; } }
+
+  var monetizationMomentShown = false; // one-shot guard
+  function showMonetizationMoment(email, navUrl){
+    if(monetizationMomentShown){ location.href = navUrl; return; }
+    monetizationMomentShown = true;
+
+    var PM = window.PaywallMoment;
+    var hash = PM.hashAccount(email);
+    var arm = PM.assignArm(hash, _pwStorage, { forced: paywallOverride('paywall') });
+    var trialArm = PM.effectiveTrialArm(); // always 'free' — the $1 ('fifty') arm was retired 2026-08-11
+
+    // Exposure events (super-props ride every later event; explicit exposure
+    // rows let growth read the split directly). trialArm here is the EFFECTIVE
+    // arm the user sees — the one that maps to passVariant.
+    try{ if(window.posthog && typeof posthog.register === 'function') posthog.register({ paywall_arm: arm, paywall_trial_arm: trialArm }); }catch(e){}
+    track('experiment_exposure', { experiment: 'paywall-arm', variant: arm });
+    if(arm === 'subscription') track('experiment_exposure', { experiment: 'paywall-trial-arm', variant: trialArm });
+    track('paywall_moment_shown', { arm: arm, trialArm: (arm === 'subscription' ? trialArm : null) });
+
+    injectMonetizationStyles();
+    var overlay = document.createElement('div');
+    overlay.className = 'mm-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+
+    function dismiss(){
+      if(!hasOwnerBypass()) return; // owner-gated: only dismiss if bypass token is valid
+      track('paywall_dismissed', { arm: arm });
+      try{ overlay.parentNode && overlay.parentNode.removeChild(overlay); }catch(e){}
+      location.href = navUrl; // straight to home — the dream is already resuming, no second nag
+    }
+
+    if(arm === 'tokens') buildTokensScreen(overlay, email, arm, dismiss);
+    else buildSubscriptionScreen(overlay, email, arm, trialArm, dismiss);
+
+    document.body.appendChild(overlay);
+  }
+
+  // POSTs the checkout body, then redirects to whatever URL field Dodo returns
+  // (url/checkoutUrl/checkout_url/paymentLink — accept all, per spec). Returns
+  // to home.html on both legs so the already-adopted pending generation
+  // resumes (home.html's pendingJob-first resume + its checkout-return path).
+  function startPaywallCheckout(body, ctaBtn, onFail){
+    var cachedPassword = null;
+    try{ cachedPassword = DreamStore.getCachedPassword && DreamStore.getCachedPassword(); }catch(e){}
+    if(cachedPassword) body.password = cachedPassword;
+    // fbc/fbp (tracker item for-product-for-manager-purchase-meta-ro-nfrfl5,
+    // item 2) — same Meta click/browser-cookie threading as shop.html's
+    // purchasePack()/purchasePlan(). This is the post-signup paywall moment
+    // shown to every fresh signup, so it's a real ad-attributed conversion
+    // surface in its own right, not just shop.html.
+    try{
+      if(typeof getMetaCookies === 'function'){
+        var metaCookies = getMetaCookies();
+        body.fbc = metaCookies.fbc;
+        body.fbp = metaCookies.fbp;
+      }
+    }catch(e){}
+    fetch('/.netlify/functions/create-checkout-session-dodo', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    })
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        var url = data && (data.url || data.checkoutUrl || data.checkout_url || data.paymentLink);
+        if(!url) throw new Error((data && data.error) || 'no_checkout_url');
+        try{ if(typeof body._afterCheckoutMarker === 'function') body._afterCheckoutMarker(data); }catch(e){}
+        location.href = url; // top-level nav — works inside the FB/IG in-app webview
+      })
+      .catch(function(){ if(typeof onFail === 'function') onFail(); });
+  }
+
+  function buildSubscriptionScreen(overlay, email, arm, trialArm, dismiss){
+    var TRIAL = {
+      free:  { label: 'Enable 3-day free trial',        onCue: '3-day free trial · 100 free tokens/day · then $9.99/mo', onCta: 'Start free trial',      onSub: 'On — free for 3 days first' }
+    };
+    var t = TRIAL[trialArm] || TRIAL.free;
+    overlay.innerHTML =
+      '<button class="mm-x" type="button" aria-label="Close">✕</button>' +
+      '<div class="mm-body">' +
+        '<div class="mm-hero">' +
+          '<div class="mm-badge">MOST POPULAR · BEST VALUE</div>' +
+          '<div class="mm-name"><span class="mm-ico">✦</span> Dreamer Pass</div>' +
+          '<div class="mm-cadence">3,000 tokens — a new dream video every day (30/mo)</div>' +
+          '<span class="mm-perday">Less than 35¢ per daily video</span>' +
+          '<div class="mm-feats">' +
+            '<div class="mm-feat"><span class="mm-tk">✓</span><div><div class="mm-bt">A dream every day</div><div class="mm-bd">30 dream videos a month, refilled automatically — never run dry.</div></div></div>' +
+            '<div class="mm-feat"><span class="mm-tk">✓</span><div><div class="mm-bt">Dream Meaning</div><div class="mm-bd">A personal interpretation of every dream from the great methods — Jungian, Freudian, Gestalt, modern dream science and the Talmudic tradition.</div></div></div>' +
+            '<div class="mm-feat"><span class="mm-tk">✓</span><div><div class="mm-bt">Watch &amp; Share</div><div class="mm-bd">Get inspired by dreams from like-minded dreamers — and choose if and when to share your own.</div></div></div>' +
+            '<div class="mm-feat"><span class="mm-tk">✓</span><div><div class="mm-bt">Your private dream journal</div><div class="mm-bd">Every dream you make, saved and yours forever.</div></div></div>' +
+          '</div>' +
+          '<div class="mm-toggle">' +
+            '<div class="mm-tl"><span id="mm-toglabel">' + esc(t.label) + '</span><span id="mm-togsub">Off — no trial, save 20%</span></div>' +
+            '<button class="mm-sw" id="mm-sw" type="button" aria-label="Toggle trial" aria-pressed="false"></button>' +
+          '</div>' +
+          '<div class="mm-pricerow">' +
+            '<span class="mm-wk" id="mm-wk">$1.84<small> / week</small></span>' +
+            '<span class="mm-savebadge" id="mm-savebadge">SAVE 20%</span>' +
+          '</div>' +
+          '<div class="mm-cue" id="mm-cue">$7.99/mo, billed today — save 20%, no trial.</div>' +
+          '<button class="mm-cta" id="mm-cta">Get Dreamer Pass — $7.99/mo</button>' +
+          '<div class="mm-fine">Subscriptions renew automatically each month unless cancelled. <span class="mm-cancel">Free to cancel anytime.</span></div>' +
+        '</div>' +
+      '</div>';
+
+    var trialOn = false; // toggle DEFAULTS OFF = no-trial $7.99
+    var sw = overlay.querySelector('#mm-sw'),
+        wk = overlay.querySelector('#mm-wk'),
+        cue = overlay.querySelector('#mm-cue'),
+        cta = overlay.querySelector('#mm-cta'),
+        savebadge = overlay.querySelector('#mm-savebadge'),
+        toglabel = overlay.querySelector('#mm-toglabel'),
+        togsub = overlay.querySelector('#mm-togsub');
+    function renderPrice(){
+      toglabel.textContent = t.label;
+      if(trialOn){
+        sw.classList.add('on'); sw.setAttribute('aria-pressed', 'true');
+        wk.innerHTML = '$2.31<small> / week</small>';
+        savebadge.style.display = 'none';
+        cue.textContent = t.onCue;
+        cta.textContent = t.onCta;
+        togsub.textContent = t.onSub;
+      }else{
+        sw.classList.remove('on'); sw.setAttribute('aria-pressed', 'false');
+        wk.innerHTML = '$1.84<small> / week</small>';
+        savebadge.style.display = 'inline-block';
+        cue.textContent = '$7.99/mo, billed today — save 20%, no trial.';
+        cta.textContent = 'Get Dreamer Pass — $7.99/mo';
+        togsub.textContent = 'Off — no trial ($7.99), save 20%';
+      }
+    }
+    renderPrice();
+    sw.addEventListener('click', function(){ trialOn = !trialOn; renderPrice(); });
+    overlay.querySelector('.mm-x').addEventListener('click', dismiss);
+    cta.addEventListener('click', function(){
+      var passVariant = window.PaywallMoment.passVariantFor(trialOn, trialArm);
+      track('paywall_cta_tapped', { arm: arm, variant: passVariant });
+      cta.disabled = true;
+      var prevLabel = cta.textContent;
+      cta.textContent = 'Redirecting…';
+      startPaywallCheckout({
+        email: email,
+        plan: 'dreamer_pass',
+        passVariant: passVariant,
+        // Return to home on both legs so the adopted pending dream resumes.
+        // The cancel leg MUST carry ?generate=1: on the pendingStartFailed
+        // path (pre-account generation call failed -> no pendingJob adopted)
+        // there is nothing for home.html's pendingJob-resume to pick up, so
+        // without ?generate=1 a cancelled checkout would silently drop the
+        // drafted dream (handleCheckoutReturn ignores non-success). ?generate=1
+        // fires home.html's fresh-generation fallback from the intact draft.
+        // When a pendingJob IS present, ?generate=1 is ignored (pendingJob-first
+        // resume wins), so this can never cause a double-generation.
+        successUrl: '/home.html?checkout=success',
+        cancelUrl: '/home.html?generate=1&checkout=cancelled',
+        _afterCheckoutMarker: function(data){
+          // Subscription-shaped pending marker (same key/shape shop.html uses)
+          // so home.html's checkout-return shows the "trial/subscription
+          // started" confirmation and refreshes subscription status. The arm
+          // context is carried on the Dodo metadata (dreamtube_pass_variant),
+          // so the downstream Subscribe revenue event joins to this variant.
+          try{ sessionStorage.setItem('dreamtube_pending_purchase', JSON.stringify({ plan: 'dreamer_pass', eventId: (data && data.eventId) || null, paywallArm: arm, paywallVariant: passVariant })); }catch(e){}
+        }
+      }, cta, function(){ cta.disabled = false; cta.textContent = prevLabel; showMomentError(overlay, 'Checkout isn't available right now — try again.'); });
+    });
+  }
+
+  function buildTokensScreen(overlay, email, arm, dismiss){
+    // The 99¢ / 300-token starter welcome pop-up — reuses the existing
+    // create-checkout-session-dodo PACK path (pack099, the one-time-per-account
+    // starter). Same big-X dismiss as the subscription arm.
+    overlay.innerHTML =
+      '<button class="mm-x" type="button" aria-label="Close">✕</button>' +
+      '<div class="mm-body">' +
+        '<div class="mm-hero mm-hero-tokens">' +
+          '<div class="mm-badge mm-badge-gold">WELCOME OFFER</div>' +
+          '<div class="mm-name"><span class="mm-ico mm-ico-gold">◆</span> 300 tokens</div>' +
+          '<div class="mm-cadence">300 tokens — enough for 3 dream videos, one time only.</div>' +
+          '<span class="mm-perday mm-perday-big">Just 33¢ per dream video</span>' +
+          '<div class="mm-feats">' +
+            '<div class="mm-feat"><span class="mm-tk">✓</span><div><div class="mm-bt">3 dream videos</div><div class="mm-bd">100 tokens each — start turning your dreams into videos right now.</div></div></div>' +
+            '<div class="mm-feat"><span class="mm-tk">✓</span><div><div class="mm-bt">Dream Meaning</div><div class="mm-bd">A personal interpretation of every dream from the great methods — Jungian, Freudian, Gestalt, modern dream science and the Talmudic tradition.</div></div></div>' +
+            '<div class="mm-feat"><span class="mm-tk">✓</span><div><div class="mm-bt">Watch &amp; Share</div><div class="mm-bd">Get inspired by dreams from like-minded dreamers — and choose if and when to share your own.</div></div></div>' +
+            '<div class="mm-feat"><span class="mm-tk">✓</span><div><div class="mm-bt">Your private dream journal</div><div class="mm-bd">Every dream you make, saved and yours forever.</div></div></div>' +
+          '</div>' +
+          '<div class="mm-pricerow">' +
+            '<span class="mm-wk">99¢<small> one-time</small></span>' +
+            '<span class="mm-savebadge mm-savebadge-gold">NO SUBSCRIPTION</span>' +
+          '</div>' +
+          '<div class="mm-cue">Just 99¢, one time — 300 tokens that never expire.</div>' +
+          '<button class="mm-cta mm-cta-gold" id="mm-cta">Get 300 tokens · $0.99</button>' +
+          '<div class="mm-fine">One-time charge. No subscription.</div>' +
+        '</div>' +
+      '</div>';
+
+    overlay.querySelector('.mm-x').addEventListener('click', dismiss);
+    var cta = overlay.querySelector('#mm-cta');
+    cta.addEventListener('click', function(){
+      track('paywall_cta_tapped', { arm: arm, variant: 'pack099' });
+      cta.disabled = true;
+      var prevLabel = cta.textContent;
+      cta.textContent = 'Redirecting…';
+      startPaywallCheckout({
+        email: email,
+        pack: 'pack099',
+        // Cancel leg carries ?generate=1 for the same reason as the
+        // subscription CTA above: on the pendingStartFailed path a cancelled
+        // checkout must still run the fresh-generation fallback from the intact
+        // draft, and ?generate=1 is ignored when a pendingJob was adopted.
+        successUrl: '/home.html?checkout=success',
+        cancelUrl: '/home.html?generate=1&checkout=cancelled',
+        _afterCheckoutMarker: function(data){
+          // Same pending-purchase marker shape shop.html/purchase-sheet.js set
+          // for a pack buy, so home.html's checkout-return confirmation + token
+          // credit poll fire on return.
+          try{ sessionStorage.setItem('dreamtube_pending_purchase', JSON.stringify({ pack: 'pack099', tokens: 300, price: 0.99, starter: true, eventId: (data && data.eventId) || null, paywallArm: arm })); }catch(e){}
+        }
+      }, cta, function(){ cta.disabled = false; cta.textContent = prevLabel; showMomentError(overlay, 'Checkout isn't available right now — try again.'); });
+    });
+  }
+
+  function showMomentError(overlay, msg){
+    var hero = overlay.querySelector('.mm-hero');
+    if(!hero) return;
+    var existing = overlay.querySelector('.mm-err');
+    if(!existing){ existing = document.createElement('div'); existing.className = 'mm-err'; hero.appendChild(existing); }
+    existing.textContent = msg;
+  }
+
+  function injectMonetizationStyles(){
+    if(document.getElementById('mm-styles')) return;
+    var s = document.createElement('style');
+    s.id = 'mm-styles';
+    s.textContent = [
+      '.mm-overlay{position:fixed;inset:0;z-index:100000;overflow-y:auto;-webkit-overflow-scrolling:touch;',
+        'background:radial-gradient(120% 80% at 50% -10%, #1c1830 0%, #0b0a10 60%);color:#e9e6f2;',
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Manrope,system-ui,sans-serif;',
+        '--surface:#181425;--surface2:#211b33;--line:rgba(255,255,255,.10);--ink2:#cfc8e6;--muted:#a79fc0;',
+        '--purple:#9d90ff;--grad:linear-gradient(120deg,#a24bff,#e0559f 55%,#ff8a5b);',
+        '--gold:#e7b45a;--gold-ink:#f4cd7a;--gold-soft:rgba(231,180,90,.16);--good:#63d69b;}',
+      '.mm-x{position:fixed;top:14px;right:14px;width:40px;height:40px;background:transparent;border:none;color:#fff;font-size:20px;z-index:2;cursor:pointer;-webkit-tap-highlight-color:transparent;}',
+      '.mm-body{max-width:440px;margin:0 auto;padding:56px 18px 32px;box-sizing:border-box;}',
+      '.mm-hero{position:relative;border-radius:20px;padding:18px 16px 16px;background:linear-gradient(var(--surface),var(--surface)) padding-box,var(--grad) border-box;border:2px solid transparent;box-shadow:0 12px 34px rgba(131,58,180,.30);}',
+      '.mm-badge{position:absolute;top:-11px;left:16px;background:var(--grad);color:#fff;font-size:10px;font-weight:800;padding:4px 12px;border-radius:20px;letter-spacing:.03em;}',
+      '.mm-badge-gold{background:linear-gradient(120deg,#e7b45a,#f4cd7a);color:#160f2b;}',
+      '.mm-name{font-weight:800;font-size:17px;color:#fff;display:flex;align-items:center;gap:7px;margin-top:2px;}',
+      '.mm-name .mm-ico{color:var(--purple);}',
+      '.mm-name .mm-ico-gold{color:var(--gold-ink);}',
+      '.mm-cadence{color:var(--ink2);font-size:12.5px;margin-top:6px;font-weight:600;}',
+      '.mm-perday{display:inline-block;margin-top:9px;background:var(--gold-soft);color:var(--gold-ink);font-weight:800;font-size:11.5px;padding:4px 11px;border-radius:20px;}',
+      '.mm-perday-big{font-size:13px;}',
+      '.mm-feats{margin-top:14px;display:flex;flex-direction:column;gap:8px;}',
+      '.mm-feat{display:flex;gap:9px;align-items:flex-start;background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:9px 11px;}',
+      '.mm-feat .mm-tk{color:var(--purple);font-weight:900;font-size:14px;line-height:1.3;flex:none;}',
+      '.mm-feat .mm-bt{font-weight:800;font-size:12.5px;color:#fff;}',
+      '.mm-feat .mm-bd{color:var(--muted);font-size:11px;line-height:1.4;margin-top:1px;}',
+      '.mm-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);margin:14px 0 12px;}',
+      '.mm-tl #mm-toglabel{font-size:13px;font-weight:700;color:#fff;}',
+      '.mm-tl #mm-togsub{display:block;font-size:10.5px;font-weight:400;color:var(--muted);margin-top:2px;}',
+      '.mm-sw{width:50px;height:29px;border-radius:99px;background:#3a3352;position:relative;flex:none;cursor:pointer;transition:background .18s;border:none;padding:0;-webkit-tap-highlight-color:transparent;}',
+      '.mm-sw::after{content:"";position:absolute;top:3px;left:3px;width:23px;height:23px;border-radius:50%;background:#fff;transition:transform .18s;box-shadow:0 2px 5px rgba(0,0,0,.35);}',
+      '.mm-sw.on{background:var(--grad);}',
+      '.mm-sw.on::after{transform:translateX(21px);}',
+      '.mm-pricerow{display:flex;align-items:baseline;justify-content:center;gap:10px;flex-wrap:wrap;}',
+      '.mm-wk{font-size:20px;font-weight:500;letter-spacing:-.01em;color:#fff;}',
+      '.mm-wk small{font-size:12px;color:var(--muted);font-weight:400;}',
+      '.mm-savebadge{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px;font-weight:800;letter-spacing:.04em;color:#160f2b;background:var(--good);border-radius:99px;padding:3px 9px;}',
+      '.mm-savebadge-gold{background:var(--gold-ink);}',
+      '.mm-cue{font-size:12px;color:var(--ink2);margin-top:5px;font-weight:600;text-align:center;}',
+      '.mm-cta{margin:13px 0 0;display:flex;align-items:center;justify-content:center;width:100%;min-height:52px;padding:14px;border-radius:16px;background:var(--grad);color:#fff;font-weight:800;font-size:15px;border:none;cursor:pointer;box-shadow:0 10px 26px rgba(131,58,180,.4);-webkit-tap-highlight-color:transparent;}',
+      '.mm-cta[disabled]{opacity:.6;}',
+      '.mm-cta-gold{background:linear-gradient(120deg,#e7b45a,#f4cd7a);color:#160f2b;box-shadow:0 10px 26px rgba(231,180,90,.35);}',
+      '.mm-fine{margin-top:11px;color:var(--muted);font-size:10.5px;line-height:1.5;text-align:center;}',
+      '.mm-fine .mm-cancel{color:#c3bcd8;font-weight:700;}',
+      '.mm-err{margin-top:10px;color:#ff9a9a;font-size:12px;text-align:center;}',
+      '@media (prefers-reduced-motion: reduce){.mm-sw,.mm-sw::after{transition:none!important;}}'
+    ].join('');
+    document.head.appendChild(s);
+  }
+
+  // ===================================================================
   // Entry chooser — the approved mock's screen 1 (🪄 build / ✍️ write /
   // 🎙️ speak), added as wizard.html's FIRST screen per founder round 8:
   // "Clicking get started skips the choosing between the 3 options."
